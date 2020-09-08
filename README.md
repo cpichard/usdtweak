@@ -7,7 +7,7 @@ The UI is based on [ImGUI](https://github.com/ocornut/imgui) and is fully C++/Op
 
 Status
 ------
-It started as a week-end hack to mess around with USD and ImGUI, and grew to the point it starts to be useful and shared. But still, the editor is a prototype and more a sandbox to experiment UI workflows rather than a proper editing system. It is possible to edit multiple stages and layers at the same time, and do simple editions, like adding deleting prims in layers, add references, translates, etc. but most of the features are missing and the architectural work is still ongoing. Many widgets are in their enfancy, but feel free to hack it !
+It started as a week-end hack to mess around with USD and ImGUI, and grew to the point it can be useful and shared. The editor is a prototype and should be seen as a sandbox to experiment USD UI workflows rather than a proper editing system yet. It is possible to edit multiple stages and layers at the same time, and do simple editions like adding or deleting prims in layers, add references, translates, etc. but most of the features are missing and the architectural work is still ongoing. Many widgets are in their enfancy, but feel free to clone the code and hack it !
 
 Requirement
 -----------
@@ -18,9 +18,11 @@ The project is almost self contained and only needs:
 
 Building the code
 -----------------
-If you managed to build USD, building usd-tweak should be straightforward.
+If you managed to build USD, building usdtweak should be straightforward.
 
     git clone https://github.com/cpichard/usdtweak
+    cd usdtweak
+    git checkout develop
     mkdir build
     cd build
     cmake ..
