@@ -25,13 +25,13 @@ public:
     Viewport & operator = (const Viewport &) = delete;
 
 
-    void Render(Selection &);
-    void Update(Selection &);
+    void Render(const Selection &);
+    void Update(const Selection &);
 
     void SetSize(int width, int height);
     void Draw();
 
-    void FrameSelection(Selection & );
+    void FrameSelection(const Selection & );
     void FrameRootPrim();
 
     GLuint _textureId = 0;

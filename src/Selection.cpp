@@ -48,7 +48,7 @@ namespace std
     };
 }
 
-std::size_t GetSelectionHash(Selection &selection) {
+std::size_t GetSelectionHash(const Selection &selection) {
     if (selection) {
         auto paths = selection->GetAllSelectedPrimPaths();
         return std::hash<SdfPathVector>{}(paths);
@@ -56,7 +56,7 @@ std::size_t GetSelectionHash(Selection &selection) {
     return 0;
 }
 
-SdfPath GetSelectedPath(Selection & selection) {
+SdfPath GetSelectedPath(const Selection & selection) {
 
     if (selection) {
         const auto & paths = selection->GetSelectedPrimPaths(HdSelection::HighlightModeSelect);
@@ -67,7 +67,7 @@ SdfPath GetSelectedPath(Selection & selection) {
     return {};
 }
 
-std::vector<SdfPath> GetSelectedPaths(Selection & selection) {
+std::vector<SdfPath> GetSelectedPaths(const Selection & selection) {
     if (selection) {
         return selection->GetAllSelectedPrimPaths();
     }

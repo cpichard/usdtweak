@@ -24,7 +24,7 @@ bool IsSelected(const Selection &, const SdfPath &);
 
 /// Returns a unique identifier for this selection
 /// This must be fast as it's called at every frame ideally cached everytime the selection change
-SelectionHash GetSelectionHash(Selection &);
+SelectionHash GetSelectionHash(const Selection &);
 
-SdfPath GetSelectedPath(Selection & selection);
-std::vector<SdfPath> GetSelectedPaths(Selection & selection);
+SdfPath GetSelectedPath(const Selection & selection);
+std::vector<SdfPath> GetSelectedPaths(const Selection & selection);

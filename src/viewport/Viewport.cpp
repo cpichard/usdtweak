@@ -255,7 +255,7 @@ void Viewport::SetSize(int width, int height) {
 }
 
 /// Frane the viewport using the bounding box of the selection
-void Viewport::FrameSelection(Selection &selection) {
+void Viewport::FrameSelection(const Selection &selection) {
     if (GetCurrentStage() && selection) {
         UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
         GfBBox3d bbox;
@@ -409,7 +409,7 @@ void Viewport::HandleEvents(Selection & selection) {
     }
 }
 
-void Viewport::Render(Selection & selection) {
+void Viewport::Render(const Selection & selection) {
 
     GfVec2i renderSize = _drawTarget->GetSize();
     int width = renderSize[0];
@@ -459,7 +459,7 @@ void Viewport::Render(Selection & selection) {
 
 /// Check if the current stage has a renderer associated to it
 /// Create one if needed
-void Viewport::Update(Selection &selection) {
+void Viewport::Update(const Selection &selection) {
     if (GetCurrentStage()) {
         auto whichRenderer = _renderers.find(GetCurrentStage()); /// We expect a very limited number of opened stages
         if (whichRenderer == _renderers.end()) {
