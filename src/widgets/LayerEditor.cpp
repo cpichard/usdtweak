@@ -28,7 +28,7 @@
 //  [*] select and remove a sublayer
 //  [.] find all prim spec types
 //  [*] prim tree extend size to the bottom of the window
-//  [ ] set scene orientation
+//  [*] set scene orientation
 //  [ ] add metadata comment
 //  [*] set prim is hidden
 //  [*] set prim is active
@@ -70,7 +70,7 @@ struct AddSublayer : public ModalDialog {
     SdfLayerRefPtr layer;
 };
 
-// Look for a new name. If prefix ends with a number, it will increase this value until
+// Look for a new name. If prefix ends with a number, it will increase its value until
 // a valid name/token is found
 static std::string FindNextAvailablePrimName(std::string prefix) {
     // Find number in the prefix
@@ -266,6 +266,34 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
     }
 }
 
+/// Draw the up axis orientation.
+/// It should normally be set by the stage, not the layer, so the code bellow follows what the api is doing
+/// inside
+void DrawUpAxis(SdfLayerRefPtr layer) {
+
+    VtValue upAxis = layer->GetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis);
+
+    std::string upAxisStr("Default");
+    if (!upAxis.IsEmpty()) {
+        upAxisStr = upAxis.Get<TfToken>().GetString();
+    }
+
+    if (ImGui::BeginCombo("Up Axis", upAxisStr.c_str())) {
+        bool selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->z;
+        if (ImGui::Selectable("Z", selected)) {
+            // TODO: command
+            layer->SetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->z);
+        }
+        selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->y;
+        if (ImGui::Selectable("Y", selected)) {
+            // TODO: command
+            layer->SetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->y);
+        }
+        ImGui::EndCombo();
+    }
+}
+
+
 void DrawLayerMetadata(SdfLayerRefPtr layer) {
 
     if (!layer)
@@ -275,12 +303,12 @@ void DrawLayerMetadata(SdfLayerRefPtr layer) {
 
     // DrawComments();
 
-    // DrawIsZUp();
+    DrawUpAxis(layer);
 
     // Time
     auto startTimeCode = layer->GetStartTimeCode();
     if (ImGui::InputDouble("Start Time Code", &startTimeCode)) {
-        // DispatchCommand<LayerSetStartTime>(layer, startTimeCode);
+        // TODO: DispatchCommand<LayerSetStartTime>(layer, startTimeCode);
         layer->SetStartTimeCode(startTimeCode);
     }
     auto endTimeCode = layer->GetEndTimeCode();
