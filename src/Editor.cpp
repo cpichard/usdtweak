@@ -57,6 +57,39 @@ struct CreateLayerModal : public ModalDialog {
     Editor &editor;
 };
 
+struct CreateStageModal : public ModalDialog {
+
+    CreateStageModal(Editor &editor) : editor(editor) {};
+
+    void Draw() override {
+        DrawFileBrowser();
+        auto filePath = GetFileBrowserFilePath();
+
+        if (FilePathExists()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
+        }
+        else {
+            ImGui::Text("Create: ");
+        } // ... could add other messages like permission denied, or incorrect extension
+        ImGui::Text("%s", filePath.c_str());
+
+        if (ImGui::Button("Cancel")) {
+            CloseModal();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Ok")) {
+            if (!filePath.empty()) {
+                editor.CreateStage(filePath);
+            }
+            CloseModal();
+        }
+    }
+
+    const char *DialogId() const override { return "Create stage"; }
+    Editor &editor;
+};
+
+
 /// Modal dialog to open a layer
 struct OpenLayerModal : public ModalDialog {
 
@@ -209,11 +242,12 @@ void Editor::ImportStage(const std::string &path) {
 }
 
 void Editor::CreateStage(const std::string &path) {
-    //auto usdaFormat = SdfFileFormat::FindByExtension("usda");
-    //auto layer = SdfLayer::New(usdaFormat, path, path);
-    //_currentStage = UsdStage::Open(layer, layer);
-    //stageCache.Insert(_currentStage);
-    //showTheater = true;
+    auto usdaFormat = SdfFileFormat::FindByExtension("usda");
+    auto layer = SdfLayer::New(usdaFormat, path, path);
+    _currentStage = UsdStage::Open(layer, layer);
+    _stageCache.Insert(_currentStage);
+    _showTheater = true;
+    _showViewport = true;
 }
 
 
@@ -233,6 +267,9 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::BeginMenu("New")) {
                 if (ImGui::MenuItem("Layer")) {
                     TriggerOpenModal<CreateLayerModal>(*this);
+                }
+                if (ImGui::MenuItem("Stage")) {
+                    TriggerOpenModal<CreateStageModal>(*this);
                 }
                 ImGui::EndMenu();
             }
