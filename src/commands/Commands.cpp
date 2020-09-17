@@ -1,32 +1,41 @@
 #include "Commands.h"
 #include <functional>
 #include <iostream>
+#include <vector>
 
 /// Base class for all commands.
 struct Command {
     virtual ~Command(){};
-    virtual bool doIt() = 0;
-    // virtual void undoIt() = 0; // one day, one day
+    virtual bool DoIt() = 0;
+    virtual bool UndoIt() { return false; }
 };
 
-// Storing only one command for now, no undo/redo as the architecture is still in flux
-static Command *lastCmd = nullptr;
 
-/// Memory used for storing the current and only command.
-/// Avoid allocating memory for commands ...
-/// This is probably not useful and definitely for fun right now
-static char commandMemory[512]; // TODO: the size should be computed as the max of all commands size
+using UndoStackT = std::vector<std::unique_ptr<Command>>;
+
+// Storing only one command per frame for now
+static Command *lastCmd = nullptr;
+static UndoStackT undoStack;
+
+/// The pointer to the current command
+static int undoStackPos = 0;
 
 template <typename CommandClass, typename... ArgTypes> void DispatchCommand(ArgTypes... arguments) {
-    if (!lastCmd)
-        lastCmd = new (&commandMemory[0]) CommandClass(arguments...);
+    if (!lastCmd) {
+        lastCmd = new CommandClass(arguments...);
+    }
 }
 
 void ProcessCommands() {
     if (lastCmd) {
-        lastCmd->doIt();
-        lastCmd->~Command(); // Need to explicitly call the destructor with a placement new
-        lastCmd = nullptr;   // Reset the command
+        if (lastCmd->DoIt()) {
+            if (undoStackPos != undoStack.size()) {
+                undoStack.resize(undoStackPos);
+            }
+            undoStack.emplace_back(std::move(lastCmd));
+            undoStackPos++;
+        }
+       lastCmd = nullptr;   // Reset the command
     }
 }
 
@@ -34,6 +43,7 @@ void ProcessCommands() {
 // We can later on create a CommandsUndoRedoImpl.cpp and CommandsUndoRedoImpl.tpp
 // and another version without undo/redo for the widget library:
 // CommandsLibraryImpl.cpp and CommandsLibraryImpl.tpp
+#include "UndoRedoCommands.cpp"
 #include "PrimCommands.cpp"
 #include "EditorCommands.cpp"
 #include "LayerCommands.cpp"

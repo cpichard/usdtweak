@@ -23,6 +23,7 @@
 #include "Theater.h"
 #include "PrimSpecEditor.h"
 #include "Constants.h"
+#include "Commands.h"
 
 /// Modal dialog used to create a new layer
 struct CreateLayerModal : public ModalDialog {
@@ -293,10 +294,12 @@ void Editor::DrawMainMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "CTRL+Z", false, false)) {
+            if (ImGui::MenuItem("Undo", "CTRL+Z")) {
+                DispatchCommand<UndoCommand>();
             }
-            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {
-            } // Disabled item
+            if (ImGui::MenuItem("Redo", "CTRL+Y")) {
+                DispatchCommand<RedoCommand>();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Cut", "CTRL+X", false, false)) {
             }

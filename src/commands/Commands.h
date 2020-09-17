@@ -16,6 +16,10 @@ struct LayerRemoveSubLayer;
 struct LayerInsertSubLayer;
 struct LayerMoveSubLayer;
 
+struct UndoCommand;
+struct RedoCommand;
+
+
 /// Post a command to be executed after the the UI has been drawn
 template<typename CommandClass, typename... ArgTypes>
 void DispatchCommand(ArgTypes... arguments);

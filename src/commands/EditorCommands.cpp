@@ -15,7 +15,7 @@ struct EditorSelectPrimPath : public Command {
 
     // TODO: wip, we want an "Selection" object to be passed around
     // At the moment it is just the pointer to the current selection held by the editor
-    bool doIt() override {
+    bool DoIt() override {
         *selectionObject = selectedPath;
         return true;
     }

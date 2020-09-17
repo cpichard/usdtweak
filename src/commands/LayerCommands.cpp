@@ -9,7 +9,7 @@ struct LayerInsertSubLayer : public Command {
     LayerInsertSubLayer(SdfLayerRefPtr layer, std::string subLayerPath)
         : _layer(layer), _subLayerPath(std::move(subLayerPath)) {}
     ~LayerInsertSubLayer(){}
-    bool doIt() override {
+    bool DoIt() override {
         if (!_layer)
             return false;
         _layer->InsertSubLayerPath(_subLayerPath);
@@ -29,7 +29,7 @@ struct LayerRemoveSubLayer : public Command {
 
     ~LayerRemoveSubLayer() override {}
 
-    bool doIt() override {
+    bool DoIt() override {
         if (!_layer)
             return false;
 
@@ -55,7 +55,7 @@ struct LayerMoveSubLayer : public Command {
 
     ~LayerMoveSubLayer() override {}
 
-    bool doIt() override {
+    bool DoIt() override {
         return _movingUp ? MoveUp() : MoveDown();
     }
 
