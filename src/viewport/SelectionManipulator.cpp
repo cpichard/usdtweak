@@ -29,14 +29,13 @@ struct SelectionEditingState : public ViewportEditingState {
             /// TODO: manage selection
             ClearSelection(selection);
         }
-
         return new MouseHoveringState(_viewport);
     }
 
     Viewport &_viewport;
 };
 
-void SelectionManipulator::Draw(const GfCamera &camera) {
+void SelectionManipulator::OnDrawFrame(const Viewport &) {
     // Draw a rectangle for the selection
 }
 
