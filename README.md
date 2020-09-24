@@ -4,11 +4,7 @@ A free and open source experimental usd editor eventually coming with a set of r
 
 The UI is based on [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. It should be possible to integrate it easyly into any DCC or in-house projects using OpenGL. 
 
-
-Screenshot
-----------
 ![screenshot1](doc/screenshot1.jpg)
-
 
 Status
 ------
