@@ -5,6 +5,11 @@ A free and open source experimental usd editor eventually coming with a set of r
 The UI is based on [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. It should be possible to integrate it easyly into any DCC or in-house projects using OpenGL. 
 
 
+Screenshot
+----------
+![screenshot1](doc/screenshot1.jpg)
+
+
 Status
 ------
 It started as a week-end hack to mess around with USD and ImGUI, and grew to the point it can be useful and shared. The editor is a prototype and should be seen as a sandbox to experiment USD UI workflows rather than a proper editing system yet. It is possible to edit multiple stages and layers at the same time, and do simple editions like adding or deleting prims in layers, add references, translates, etc. but most of the features are missing and the architectural work is still ongoing. Many widgets are in their enfancy, but feel free to clone the code and hack it !
