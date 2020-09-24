@@ -11,6 +11,7 @@ struct PrimChangeSpecifier;
 struct PrimAddReference;
 
 struct EditorSelectPrimPath;
+struct EditorOpenStage;
 
 struct LayerRemoveSubLayer;
 struct LayerInsertSubLayer;

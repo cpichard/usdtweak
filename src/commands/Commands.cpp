@@ -10,7 +10,7 @@ struct Command {
     virtual bool UndoIt() { return false; }
 };
 
-
+// This should ultimately belong to an editor
 using UndoStackT = std::vector<std::unique_ptr<Command>>;
 
 // Storing only one command per frame for now
@@ -40,7 +40,7 @@ void ProcessCommands() {
 }
 
 // Include all the commands as cpp files to compile them with this unit
-// We can later on create a CommandsUndoRedoImpl.cpp and CommandsUndoRedoImpl.tpp
+// We can create a CommandsUndoRedoImpl.cpp and CommandsUndoRedoImpl.tpp later on
 // and another version without undo/redo for the widget library:
 // CommandsLibraryImpl.cpp and CommandsLibraryImpl.tpp
 #include "UndoRedoCommands.cpp"

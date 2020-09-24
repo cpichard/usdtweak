@@ -14,73 +14,11 @@
 #include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
+#include "RendererSettings.h"
 
-/// Renderer settings widget, TODO: this could go in a different cpp file with specialized
-/// ui for each usd components
 
-void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
-    // General render parameters
-    ImGui::ColorEdit4("Background color", renderparams.clearColor.data());
-
-    // TODO: check there isn't a function that already returns the strings for an enum
-    // I have seen that in the USD code
-    static std::array<std::pair<UsdImagingGLDrawMode, const char *>, 8> UsdImagingGLDrawModeStrings = {
-        std::make_pair(UsdImagingGLDrawMode::DRAW_POINTS, "DRAW_POINTS"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_WIREFRAME, "DRAW_WIREFRAME"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_WIREFRAME_ON_SURFACE, "DRAW_WIREFRAME_ON_SURFACE"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_SHADED_FLAT, "DRAW_SHADED_FLAT"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH, "DRAW_SHADED_SMOOTH"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_GEOM_ONLY, "DRAW_GEOM_ONLY"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_GEOM_FLAT, "DRAW_GEOM_FLAT"),
-        std::make_pair(UsdImagingGLDrawMode::DRAW_GEOM_SMOOTH, "DRAW_GEOM_SMOOTH")};
-
-    // Look for the current on
-    auto currentdrawmode = UsdImagingGLDrawModeStrings[0];
-    for (const auto &mode : UsdImagingGLDrawModeStrings) {
-        if (renderparams.drawMode == mode.first) {
-            currentdrawmode = mode;
-        }
-    }
-    if (ImGui::BeginCombo("Draw mode", currentdrawmode.second)) {
-        for (const auto &drawMode : UsdImagingGLDrawModeStrings) {
-            bool is_selected = (renderparams.drawMode == drawMode.first);
-            if (ImGui::Selectable(drawMode.second, is_selected)) {
-                renderparams.drawMode = drawMode.first;
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
-    ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
-    ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
-
-    // Renderer
-    ImGui::Separator();
-    const auto currentPlugin = renderer.GetCurrentRendererId();
-    if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
-        auto plugins = renderer.GetRendererPlugins();
-        for (int n = 0; n < plugins.size(); n++) {
-            bool is_selected = (currentPlugin == plugins[n]);
-            if (ImGui::Selectable(plugins[n].GetText(), is_selected)) {
-                if (!renderer.SetRendererPlugin(plugins[n])) {
-                    std::cerr << "unable to set default renderer plugin" << std::endl;
-                }
-            }
-            if (is_selected)
-                ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
-
-    // Renderer settings
-    for (auto setting : renderer.GetRendererSettingsList()) {
-        // TODO: create a dedicated interface for each parameter
-        ImGui::Text("%s", setting.name.c_str());
-    }
-}
-
-template <typename BasicShader> void DrawBasicShadingProperties(BasicShader &shader) {
+template <typename BasicShaderT>
+void DrawBasicShadingProperties(BasicShaderT &shader) {
     auto ambient = shader.GetAmbient();
     ImGui::ColorEdit4("ambient", ambient.data());
     shader.SetAmbient(ambient);
@@ -112,12 +50,6 @@ void DrawCameraList(Viewport &viewport) {
     // TODO: the viewport cameras and the stage camera should live in different lists
     constexpr char const *freeCamera = "Perspective";
     if (ImGui::ListBoxHeader("")) {
-        /// TODO
-        // for (auto cam : viewport.cameras) {
-        //    // Camera provided by the applications
-
-        //}
-
         if (ImGui::Selectable(freeCamera, viewport._selectedCameraPath == SdfPath::EmptyPath())) {
             viewport._selectedCameraPath = SdfPath::EmptyPath();
         }
@@ -136,54 +68,15 @@ void DrawCameraList(Viewport &viewport) {
     }
 }
 
-/// Draw the viewport wi
-void Viewport::Draw() {
-    ImVec2 wsize = ImGui::GetWindowSize();
-    ImGui::Button("Cameras");
-    ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
-    if (ImGui::BeginPopupContextItem("Cameras", flags) && _renderer) {
-        DrawCameraList(*this);
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Button("Lighting");
-    if (ImGui::BeginPopupContextItem("Lighting", flags) && _renderer) {
-        ImGui::BulletText("Default shader");
-        DrawBasicShadingProperties(_material);
-        ImGui::Separator();
-        ImGui::BulletText("Ambient light");
-        ImGui::InputFloat4("Ambient", _ambient.data());
-        ImGui::Separator();
-        if (ImGui::TreeNode("Lights")) {
-            DrawGLLights(_lights);
-            ImGui::TreePop();
-        }
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Button("Render settings");
-    if (ImGui::BeginPopupContextItem("Render settings", flags) && _renderer) {
-        DrawRendererSettings(*_renderer, *_renderparams);
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Frame Stage")) {
-        FrameRootPrim();
-    }
 
-    if (_textureId) {
-        // Get the size of the child (i.e. the whole draw size of the windows).
-        ImGui::Image((ImTextureID)_textureId, ImVec2(wsize.x, wsize.y - ViewportBorderSize), ImVec2(0, 1), ImVec2(1, 0));
-    }
-}
 
-Viewport::Viewport(UsdStageRefPtr stage) : _stage(stage),
-_cameraManipulator({InitialWindowWidth, InitialWindowHeight})
+Viewport::Viewport(UsdStageRefPtr stage, Selection &selection) : _stage(stage),
+_cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
+_currentEditingState(new MouseHoveringState(*this)),
+_selection(selection)
  {
-    _handleEventFunction = &Viewport::HandleHovering;
-
     // Viewport draw target
-    _cameraManipulator.Reset(_currentCamera);
+    _cameraManipulator.ResetPosition(_currentCamera);
     _drawTarget = GlfDrawTarget::New(GfVec2i(InitialWindowWidth, InitialWindowHeight), false);
     _drawTarget->Bind();
     _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
@@ -240,7 +133,54 @@ Viewport::~Viewport() {
         delete _renderparams;
         _renderparams = nullptr;
     }
+
+    if (_currentEditingState){
+        delete _currentEditingState;
+        _currentEditingState = nullptr;
+    }
 }
+
+/// Draw the viewport widget
+void Viewport::Draw() {
+    ImVec2 wsize = ImGui::GetWindowSize();
+    ImGui::Button("Cameras");
+    ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
+    if (ImGui::BeginPopupContextItem("Cameras", flags) && _renderer) {
+        DrawCameraList(*this);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Button("Lighting");
+    if (ImGui::BeginPopupContextItem("Lighting", flags) && _renderer) {
+        ImGui::BulletText("Default shader");
+        DrawBasicShadingProperties(_material);
+        ImGui::Separator();
+        ImGui::BulletText("Ambient light");
+        ImGui::InputFloat4("Ambient", _ambient.data());
+        ImGui::Separator();
+        if (ImGui::TreeNode("Lights")) {
+            DrawGLLights(_lights);
+            ImGui::TreePop();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Button("Render settings");
+    if (ImGui::BeginPopupContextItem("Render settings", flags) && _renderer) {
+        DrawRendererSettings(*_renderer, *_renderparams);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Frame Stage")) {
+        FrameRootPrim();
+    }
+
+    if (_textureId) {
+        // Get the size of the child (i.e. the whole draw size of the windows).
+        ImGui::Image((ImTextureID)_textureId, ImVec2(wsize.x, wsize.y - ViewportBorderSize), ImVec2(0, 1), ImVec2(1, 0));
+    }
+}
+
 
 /// Resize the Hydra viewport/render panel
 void Viewport::SetSize(int width, int height) {
@@ -255,7 +195,7 @@ void Viewport::SetSize(int width, int height) {
 }
 
 /// Frane the viewport using the bounding box of the selection
-void Viewport::FrameSelection(const Selection &selection) {
+void Viewport::FrameSelection(const Selection &selection) { // Camera manipulator ???
     if (GetCurrentStage() && selection) {
         UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
         GfBBox3d bbox;
@@ -267,135 +207,34 @@ void Viewport::FrameSelection(const Selection &selection) {
     }
 }
 
-/// Frane the viewport using the bounding box of the root prim
+/// Frame the viewport using the bounding box of the root prim
 void Viewport::FrameRootPrim(){
     if (GetCurrentStage()) {
         UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        _cameraManipulator.FrameBoundingBox(_currentCamera, bboxcache.ComputeWorldBound(defaultPrim));
-    }
-}
-
-
-void Viewport::HandleHovering(Selection & selection) {
-    ImGuiIO &io = ImGui::GetIO();
-    if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        // Changing the calling function ... does that work really ???
-        _handleEventFunction = &Viewport::HandleCameraEditing;
-        return;
-    }
-    else if (ImGui::IsMouseClicked(0)) {
-        // Left click start picking !
-        _handleEventFunction = &Viewport::HandleSelecting;
-        return;
-    }
-    else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
-        if (GetCurrentStage() && _renderparams) {
-            FrameSelection(selection);
+        if(defaultPrim){
+            _cameraManipulator.FrameBoundingBox(_currentCamera, bboxcache.ComputeWorldBound(defaultPrim));
+        } else {
+            auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
+            _cameraManipulator.FrameBoundingBox(_currentCamera, bboxcache.ComputeWorldBound(rootPrim));
         }
     }
 }
 
-
-void Viewport::HandleCameraEditing(Selection & selection) {
-
-    ImGuiIO &io = ImGui::GetIO();
-
-    /// If the user released key alt, escape camera manipulation
-    if (!io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        _handleEventFunction = &Viewport::HandleHovering;
-        return;
-    }
-    else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
-        _cameraManipulator.SetMovementType(MovementType::None);
-    }
-    else if (ImGui::IsMouseClicked(0)) {
-        _cameraManipulator.SetMovementType(MovementType::Orbit);
-    }
-    else if (ImGui::IsMouseClicked(2)) {
-        _cameraManipulator.SetMovementType(MovementType::Truck);
-    }
-    else if (ImGui::IsMouseClicked(1)) {
-        _cameraManipulator.SetMovementType(MovementType::Dolly);
-    }
-
-    _cameraManipulator.Move(_currentCamera, io.MouseDelta.x, io.MouseDelta.y);
+GfVec2d Viewport::GetPickingBoundarySize() const {
+    const GfVec2i renderSize = _drawTarget->GetSize();
+    const double width = static_cast<double>(renderSize[0]);
+    const double height = static_cast<double>(renderSize[1]);
+    return GfVec2d(20.0 / width, 20.0 / height);
 }
 
-
-void Viewport::HandleManipulatorEditing(Selection & selection) {
-    // The selected manipulator captures events
-    auto mousePosition = GetMousePosition();
-    if (!_translateManipulator.CaptureEvents(_currentCamera, mousePosition)) {
-        _handleEventFunction = &Viewport::HandleHovering;
-    }
-}
-
-/// Called when there was a left click
-void Viewport::HandleSelecting(Selection & selection) {
-    GfVec2i renderSize = _drawTarget->GetSize();
-    double width = static_cast<double>(renderSize[0]);
-    double height = static_cast<double>(renderSize[1]);
-    const GfVec2d clickedPoint(_mouseX, _mouseY);
-    const GfVec2d limits(20.0 / width, 20.0 / height);
-
-    // Escape this state by releasing the mouse
-    if (ImGui::IsMouseReleased(0)) {
-        _handleEventFunction = &Viewport::HandleHovering;
-        return;
-    }
-
-    /// What is under the mouse ? start looking at the manipulators
-    if( _translateManipulator.Pick(_currentCamera.GetFrustum().ComputeViewMatrix(),
-                _currentCamera.GetFrustum().ComputeProjectionMatrix(), clickedPoint,
-                limits)) {
-                _handleEventFunction = &Viewport::HandleManipulatorEditing;
-                // TODO this should also select the manipulator
-                // _selectedManipulator = _translateManipulator;
-    }
-    // Then look at the objects in the scene
-    else {
-
-        // Should that go in a SelectionManipulator ????
-        GfFrustum pixelFrustum = _currentCamera.GetFrustum().ComputeNarrowedFrustum(
-            clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
-        // Make a pixel frustum
-        GfVec3d outHitPoint;
-        SdfPath outHitPrimPath;
-        SdfPath outHitInstancerPath;
-        int outHitInstanceIndex = 0;
-
-        if (_renderparams &&
-            _renderer->TestIntersection(_currentCamera.GetFrustum().ComputeViewMatrix(),
-                pixelFrustum.ComputeProjectionMatrix(),
-                GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint,
-                &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex)) {
-            // Add to selection
-            if (!outHitPrimPath.IsEmpty()) {
-                if (ImGui::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) {
-                    AddSelection(selection, outHitPrimPath);
-                }
-                else {
-                    SetSelected(selection, outHitPrimPath);
-                }
-            }
-            else if (!outHitInstancerPath.IsEmpty()) {
-                /// TODO: manage selection
-                ClearSelection(selection);
-            }
-        }
-        else {
-            ClearSelection(selection);
-        }
-    }
-}
-
-void Viewport::HandleEvents(Selection & selection) {
+void Viewport::HandleEvents() {
 
     ImGuiContext *g = ImGui::GetCurrentContext();
     ImGuiWindow *window = g->CurrentWindow;
     ImGuiIO &io = ImGui::GetIO();
 
+    // Check the mouse is over this widget
     if (ImGui::IsItemHovered()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
         if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0) return;
@@ -405,11 +244,29 @@ void Viewport::HandleEvents(Selection & selection) {
         _mouseY = -2.0 * (static_cast<double>(io.MousePos.y - (window->DC.LastItemRect.Min.y)) /
             static_cast<double>(drawTargetSize[1])) +
             1.0;
-        _handleEventFunction(*this, selection);
+
+        /// Finite state machine
+        if (!_currentEditingState){
+            _currentEditingState = new MouseHoveringState(*this);
+        }
+
+        auto newState = _currentEditingState->NextState();
+        if (newState != _currentEditingState) {
+            _currentEditingState->OnExit();
+            delete _currentEditingState; // TODO: this allocs and deletes a lot of states, is that slow ???
+            _currentEditingState = newState;
+            _currentEditingState->OnEnter();
+        }
+    } else { // Mouse is out of the viewport, reset the state
+        if (_currentEditingState) {
+            _currentEditingState->OnExit();
+            delete _currentEditingState;
+            _currentEditingState = nullptr;
+        }
     }
 }
 
-void Viewport::Render(const Selection & selection) {
+void Viewport::Render() {
 
     GfVec2i renderSize = _drawTarget->GetSize();
     int width = renderSize[0];
@@ -420,7 +277,7 @@ void Viewport::Render(const Selection & selection) {
     /// Use the selected camera
     if (GetCurrentStage() && _renderparams && _selectedCameraPath != SdfPath::EmptyPath()) {
         auto selectedCameraPrim = UsdGeomCamera::Get(GetCurrentStage(), _selectedCameraPath);
-        // Overrides and destroy the freeCamera position,
+        // This overrides and destroy the freeCamera position,
         _currentCamera = selectedCameraPrim.GetCamera(_renderparams->frame);
         // cameraManipulator.CopyCameraAtPath(freeCamera, selectedCameraPath);
     }
@@ -450,16 +307,15 @@ void Viewport::Render(const Selection & selection) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    //// Draw Manipulators.. need to write a loop on the manipulators in the scene
-    _translateManipulator.Draw(_currentCamera.GetFrustum().ComputeViewMatrix(),
-        _currentCamera.GetFrustum().ComputeProjectionMatrix());
+    // Draw active manipulator
+    GetActiveManipulator().OnDrawFrame(*this);
 
     _drawTarget->Unbind();
 }
 
 /// Check if the current stage has a renderer associated to it
 /// Create one if needed
-void Viewport::Update(const Selection &selection) {
+void Viewport::Update() {
     if (GetCurrentStage()) {
         auto whichRenderer = _renderers.find(GetCurrentStage()); /// We expect a very limited number of opened stages
         if (whichRenderer == _renderers.end()) {
@@ -474,15 +330,95 @@ void Viewport::Update(const Selection &selection) {
         else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
             _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+            // TODO: the selection is also different per stage
+            //_selection =
         }
     }
 
     /// Note that the following will have terrible performances when selecting thousands of paths
     /// this is a way to check if the selection has changed since the previous frame, not the most efficient way.
-    SelectionHash currentSelectionHash = GetSelectionHash(selection);
+    SelectionHash currentSelectionHash = GetSelectionHash(_selection);
     if (_renderer && _lastSelectionHash != currentSelectionHash) {
         _renderer->ClearSelected();
-        _renderer->SetSelected(GetSelectedPaths(selection));
+        _renderer->SetSelected(GetSelectedPaths(_selection));
         _lastSelectionHash = currentSelectionHash;
+
+        // Tell the manipulators the selection has changed
+        GetActiveManipulator().OnSelectionChange(*this);
     }
+}
+
+
+bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex) {
+
+    GfVec2i renderSize = _drawTarget->GetSize();
+    double width = static_cast<double>(renderSize[0]);
+    double height = static_cast<double>(renderSize[1]);
+
+    GfFrustum pixelFrustum = _currentCamera.GetFrustum().ComputeNarrowedFrustum(clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
+    GfVec3d outHitPoint;
+
+    return (_renderparams &&
+        _renderer->TestIntersection(_currentCamera.GetFrustum().ComputeViewMatrix(),
+            pixelFrustum.ComputeProjectionMatrix(),
+            GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint,
+            &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
+}
+
+ViewportEditingState * MouseHoveringState::NextState() {
+    ImGuiIO &io = ImGui::GetIO();
+
+    if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
+        return new CameraEditingState(_viewport);
+    }
+    else if (ImGui::IsMouseClicked(0)) {
+        // Left click start picking !
+        return new SelectingState(_viewport);
+    }
+    else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
+        _viewport.FrameSelection(_viewport.GetSelection());
+    }
+    return this;
+}
+
+ViewportEditingState * CameraEditingState::NextState() {
+    auto & cameraManipulator = _viewport.GetCameraManipulator();
+    ImGuiIO &io = ImGui::GetIO();
+    /// If the user released key alt, escape camera manipulation
+    if (!io.KeysDown[GLFW_KEY_LEFT_ALT]) {
+        return new MouseHoveringState(_viewport);
+    }
+    else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
+        cameraManipulator.SetMovementType(MovementType::None);
+    }
+    else if (ImGui::IsMouseClicked(0)) {
+        cameraManipulator.SetMovementType(MovementType::Orbit);
+    }
+    else if (ImGui::IsMouseClicked(2)) {
+        cameraManipulator.SetMovementType(MovementType::Truck);
+    }
+    else if (ImGui::IsMouseClicked(1)) {
+        cameraManipulator.SetMovementType(MovementType::Dolly);
+    }
+    auto & currentCamera = _viewport.GetCurrentCamera();
+    cameraManipulator.Move(currentCamera, io.MouseDelta.x, io.MouseDelta.y);
+    return this;
+}
+
+ViewportEditingState * SelectingState::NextState() {
+    // Escape this state by releasing the mouse
+    if (ImGui::IsMouseReleased(0)) {
+        return new MouseHoveringState(_viewport);
+    }
+    // Check if the mouse is over the manipulator
+    auto & manipulator = _viewport.GetActiveManipulator();
+    if (manipulator.IsMouseOver(_viewport)) {
+        return manipulator.NewEditingState(_viewport);
+    }
+    // Otherwise default to selection
+    else {
+        auto &selectionManipulator = _viewport.GetSelectionManipulator();
+        return selectionManipulator.NewEditingState(_viewport);
+    }
+    return new MouseHoveringState(_viewport);
 }

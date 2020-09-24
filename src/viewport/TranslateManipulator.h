@@ -3,45 +3,55 @@
 #include <pxr/base/gf/camera.h> // TODO GET RID
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec2d.h>
+#include <pxr/usd/usdGeom/gprim.h>
+
 #ifdef _WIN32
 #include <GL/glew.h>
 #endif
 
-//#define GLFW_INCLUDE_GLCOREARB
-//#include <GLFW/glfw3.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
+struct ViewportEditingState;
+class Viewport;
 
-
-typedef std::function<void(class TranslateGizmo&, GfCamera &, const GfVec2d&)> CaptureFunction;
-
-class TranslateGizmo {
+class TranslateManipulator final {
 
   public:
-    TranslateGizmo();
-    ~TranslateGizmo();
+    TranslateManipulator();
+    ~TranslateManipulator();
 
-    // rename Hover ?? intersect ??
-    bool Pick(const GfMatrix4d &mv, const GfMatrix4d &proj, const GfVec2d &clicked, const GfVec2d &sizes);
+    /// Return true if the mouse is over this manipulator for the viewport passed in argument
+    bool IsMouseOver(const Viewport &);
 
-    ///
-    bool CaptureEvents(GfCamera &camera, const GfVec2d &mousePosition);
+    /// Process the events and action what has to be manipulated
+    void OnProcessFrameEvents(Viewport &viewport);
 
-    void StartEdition(GfCamera &camera, const GfVec2d &mousePosition);
-    void Edit(GfCamera &camera, const GfVec2d &mousePosition);
-    void EndEdition(GfCamera &camera, const GfVec2d &mousePosition);
+    /// Draw the translate manipulator as seen in the viewport
+    void OnDrawFrame(const Viewport &);
 
-    CaptureFunction _capture;
+    /// Called when the viewport changes its selection
+    void OnSelectionChange(Viewport &);
 
-    void Draw(const GfMatrix4d &mv, const GfMatrix4d &proj);
+    /// Return a new editing state for the viewport. The editing state is in charge of controlling the
+    /// translate manipulator
+    ViewportEditingState * NewEditingState(Viewport &viewport);
 
-  private:
-    GfVec2d _limits;
+    typedef enum { // use class enum ??
+        XAxis,
+        YAxis,
+        ZAxis,
+        None,
+    } SelectedAxis;
+
+private:
+    SelectedAxis _selectedAxis;
+    UsdGeomXformable _xformable;
+    UsdGeomXformOp _translateOp;
+
     GfMatrix4d _mat;
 
     GfVec3f _origin;
     GfVec2d _mouseClickPosition;
-
 
     unsigned int axisGLBuffers;
     unsigned int vertexShader;
@@ -50,4 +60,5 @@ class TranslateGizmo {
     unsigned int vertexArrayObject;
     unsigned int modelViewUniform;
     unsigned int projectionUniform;
+    unsigned int originUniform;
 };

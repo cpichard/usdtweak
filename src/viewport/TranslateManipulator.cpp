@@ -3,19 +3,51 @@
 
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
-#include "TranslateGizmo.h"
+#include "TranslateManipulator.h"
 #include "GeometricFunctions.h"
 #include "Viewport.h"
 
 #include "Gui.h"
 
+/// State of the viewport when the translate manipulator is selected
+struct TranslateEditingState : public ViewportEditingState {
+
+    TranslateEditingState(Viewport &viewport, TranslateManipulator &manipulator)
+        : _viewport(viewport), _manipulator(manipulator) {}
+
+    /// When we enter the edition state, we want to store the mouse position as well
+    /// as all data used for the command
+    void OnEnter() {
+        _manipulator.IsMouseOver(_viewport); // This will store the mouse position and set the correct axis
+        // TODO Store translate position for issuing a command later
+        // Look for the operator to change in the transform stack
+    }
+
+
+    void OnExit() {
+        // TODO: emit a Translate command for the undo/redo
+    }
+
+    ViewportEditingState * NextState() { // OnEdit ???
+        if (ImGui::IsMouseReleased(0)) {
+            return new MouseHoveringState(_viewport);
+        }
+
+        _manipulator.OnProcessFrameEvents(_viewport);
+        return this;
+    }
+    Viewport &_viewport;
+    TranslateManipulator &_manipulator;
+};
+
+
 // TODO: this should really be using the ImGui API instead of this OpenGL code
 // as it could be used with Vulkan and Metal. Have a look before going too deep into the OpenGL implementation
+// Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
+// implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
 
-TranslateGizmo::TranslateGizmo() : _origin(0.f, 0.f, 0.f) {
-
-    _capture = &TranslateGizmo::StartEdition;
-    // TODO _mat;
+TranslateManipulator::TranslateManipulator()
+    : _origin(0.f, 0.f, 0.f), _selectedAxis(None) {
 
     // Vertex array object
     glGenVertexArrays(1, &vertexArrayObject);
@@ -27,15 +59,16 @@ TranslateGizmo::TranslateGizmo() : _origin(0.f, 0.f, 0.f) {
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
 
-    const char *vertexShaderSrc = "#version 330 core\n"
+    static const char *vertexShaderSrc = "#version 330 core\n"
                                   "layout (location = 0) in vec3 aPos;"
                                   "uniform mat4 modelView;"
                                   "uniform mat4 projection;"
+                                  "uniform vec3 origin;"
                                   "void main()"
                                   "{"
-                                  "gl_Position = projection*modelView*vec4(aPos.x, aPos.y, aPos.z, 1.0);"
+                                  "gl_Position = projection*modelView*vec4(aPos.x+origin.x, aPos.y+origin.y, aPos.z+origin.z, 1.0);"
                                   "}";
-    const char *fragmentShaderSrc = "#version 330 core\n"
+    static const char *fragmentShaderSrc = "#version 330 core\n"
                                     "out vec4 FragColor;"
                                     "void main()"
                                     "{"
@@ -68,7 +101,7 @@ TranslateGizmo::TranslateGizmo() : _origin(0.f, 0.f, 0.f) {
 
     glAttachShader(programShader, vertexShader);
     glAttachShader(programShader, fragmentShader);
-    // glBindAttribLocation(programShader, 0, "aPos");
+    glBindAttribLocation(programShader, 0, "aPos");
     glLinkProgram(programShader);
     glGetProgramiv(programShader, GL_LINK_STATUS, &success);
     if (!success) {
@@ -80,7 +113,8 @@ TranslateGizmo::TranslateGizmo() : _origin(0.f, 0.f, 0.f) {
     glDeleteShader(fragmentShader);
     modelViewUniform = glGetUniformLocation(programShader, "modelView");
     projectionUniform = glGetUniformLocation(programShader, "projection");
-    std::cout << "uniform location " << modelViewUniform << std::endl;
+    originUniform = glGetUniformLocation(programShader, "origin");
+
     // Create OpenGL buffers
     glGenBuffers(1, &axisGLBuffers);
     glBindBuffer(GL_ARRAY_BUFFER, axisGLBuffers);
@@ -92,125 +126,151 @@ TranslateGizmo::TranslateGizmo() : _origin(0.f, 0.f, 0.f) {
     // view matrix
 }
 
-TranslateGizmo::~TranslateGizmo() {
+TranslateManipulator::~TranslateManipulator() {
     // Delete OpenGL buffers
     glDeleteBuffers(1, &axisGLBuffers);
 }
 
-/// Must return false to release the capture
-bool TranslateGizmo::CaptureEvents(GfCamera &camera, const GfVec2d &mousePosition) {
-
-    // Stop capturing events if mouse is released
-    if (ImGui::IsMouseReleased(0)) {
-        EndEdition(camera, mousePosition);
-        return false;
+void TranslateManipulator::OnProcessFrameEvents(Viewport &viewport) {
+    ImGuiIO &io = ImGui::GetIO();
+    GfVec3d translateValues(0);
+    if (_translateOp) {
+        auto currentTimeCode = _translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S] ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
+        _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
     }
 
-    // State machine: _capture function is different depending on what to do
-    _capture(*this, camera, mousePosition);
-
-    return true;
-}
-
-
-void TranslateGizmo::StartEdition(GfCamera &camera, const GfVec2d &mousePosition) {
-    // Which axis is picked ?
-    // WHICH AXIS IS PICKED ???
-    _mouseClickPosition = mousePosition;
-    std::cout << "Testing" << std::endl;
-    // TODO: store the axis as a unique array somewhere on this class
-    auto mv = camera.GetFrustum().ComputeViewMatrix();
-    auto proj = camera.GetFrustum().ComputeProjectionMatrix();
-    GfVec3d origin3d(0.0, 0.0, 0.0);
-    GfVec3d xAxis3d(100.0, 0.0, 0.0);
-    GfVec3d yAxis3d(0.0, 100.0, 0.0);
-    GfVec3d zAxis3d(0.0, 0.0, 100.0);
-
-    auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d);
-    auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d);
-    auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d);
-    auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d);
-
-    if (PickSegment(xAxisOnScreen, originOnScreen, _mouseClickPosition, _limits)) {
-        std::cout << "Picked xAxis" << std::endl;
-        std::cout << "start edition" << std::endl;
-        _capture = &TranslateGizmo::Edit;
+    // TODO project to get the correct value
+    switch (_selectedAxis) {
+    case XAxis:
+        translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
+        break;
+    case YAxis:
+        translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
+        break;
+    case ZAxis:
+        translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
+        break;
     }
-    else if (PickSegment(yAxisOnScreen, originOnScreen, _mouseClickPosition, _limits)) {
-        std::cout << "Picked yAxis" << std::endl;
-        std::cout << "start edition" << std::endl;
-        _capture = &TranslateGizmo::Edit;
-    }
-    else if (PickSegment(zAxisOnScreen, originOnScreen, _mouseClickPosition, _limits)) {
-        std::cout << "Picked zAxis" << std::endl;
-        std::cout << "start edition" << std::endl;
-        // Prepare a command
-        _capture = &TranslateGizmo::Edit;
+
+    if (_translateOp) {
+        // TODO: as a command ?
+        auto currentTimeCode = _translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S] ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
+        _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
     }
 }
+bool TranslateManipulator::IsMouseOver(const Viewport &viewport) {
 
-void TranslateGizmo::Edit(GfCamera &camera, const GfVec2d &mousePosition) {
+    // Always store the mouse position/
+    _mouseClickPosition = viewport.GetMousePosition();
 
-    auto delta = _mouseClickPosition - mousePosition;
-    _origin[0] -= delta[0]*1000;
-    _origin[1] -= delta[1]*1000;
-    _mouseClickPosition = mousePosition;
-}
+    if(_xformable) {
+        auto timeCode = viewport.GetCurrentTimeCode();
+        const auto & camera = viewport.GetCurrentCamera();
+        auto mv = camera.GetFrustum().ComputeViewMatrix();
+        auto proj = camera.GetFrustum().ComputeProjectionMatrix();
 
-void TranslateGizmo::EndEdition(GfCamera &camera, const GfVec2d &mousePosition) {
+        //std::cout << _xformable.GetPath().GetString() << std::endl;
+        auto matrix = _xformable.ComputeLocalToWorldTransform(timeCode);
+        auto origin4d = GfVec4d(_origin[0], _origin[1], _origin[2], 1.0)* _xformable.ComputeLocalToWorldTransform(timeCode);
+        auto _origin3d = GfVec3d(origin4d[0], origin4d[1], origin4d[2]);
+        // TODO: store the axis as a unique array somewhere on this class
+        GfVec3d origin3d(0.0, 0.0, 0.0);
+        GfVec3d xAxis3d(100.0, 0.0, 0.0);
+        GfVec3d yAxis3d(0.0, 100.0, 0.0);
+        GfVec3d zAxis3d(0.0, 0.0, 100.0);
 
-    // TODO: send a undo/redo command
-    std::cout << "end edition" << std::endl;
-    // Reset capture function
-    _capture = &TranslateGizmo::StartEdition;
-}
+        auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d + _origin3d);
+        auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d + _origin3d);
+        auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d + _origin3d);
+        auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d + _origin3d);
 
-bool TranslateGizmo::Pick(const GfMatrix4d &mv, const GfMatrix4d &proj, const GfVec2d &clickedPoint,
-                          const GfVec2d &limits) {
-    _limits = limits;
-    // TODO: store the axis as a unique array somewhere on this class
-    GfVec3d origin3d(0.0, 0.0, 0.0);
-    GfVec3d xAxis3d(100.0, 0.0, 0.0);
-    GfVec3d yAxis3d(0.0, 100.0, 0.0);
-    GfVec3d zAxis3d(0.0, 0.0, 100.0);
-
-    auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d);
-    auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d);
-    auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d);
-    auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d);
-
-    if (PickSegment(xAxisOnScreen, originOnScreen, clickedPoint, limits)) {
-        std::cout << "Picked xAxis" << std::endl;
-        return true;
-    } else if (PickSegment(yAxisOnScreen, originOnScreen, clickedPoint, limits)) {
-        std::cout << "Picked yAxis" << std::endl;
-        return true;
-    } else if (PickSegment(zAxisOnScreen, originOnScreen, clickedPoint, limits)) {
-        std::cout << "Picked zAxis" << std::endl;
-        return true;
+        auto pickBounds = viewport.GetPickingBoundarySize();
+        if (PickSegment(xAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+            _selectedAxis = XAxis;
+            return true;
+        }
+        else if (PickSegment(yAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+            _selectedAxis = YAxis;
+            return true;
+        }
+        else if (PickSegment(zAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+            _selectedAxis = ZAxis;
+            return true;
+        }
     }
-
+    _selectedAxis = None;
     return false;
+
 }
 
-void TranslateGizmo::Draw(const GfMatrix4d &mv, const GfMatrix4d &proj) {
+void TranslateManipulator::OnSelectionChange(Viewport &viewport) {
+    auto &selection = viewport.GetSelection();
+    auto primPath = GetSelectedPath(selection);
+    _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 
-    GLboolean depthTestStatus;
-    glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
-    if (depthTestStatus) glDisable(GL_DEPTH_TEST);
+    // Look for the translate in the transform stack
+    if(_xformable) {
+        bool resetsXformStack = false;
+        auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
+        for (auto &xform : xforms) {
+            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate) {
+                _translateOp = xform;
+                return;
+            }
+        }
+        // This should be stored in the state ? isn't it ?
+        // It seems that creating a translate op won't affect the xformable until there is a value set
+        _translateOp = _xformable.AddTranslateOp();
+    }
+    else {
+        _translateOp = UsdGeomXformOp();
+    }
+}
 
-    glLineWidth(1);
-    glUseProgram(programShader);
-    // TODO: add a function to change the matrix position,
-    // like "Update(const GfMatrix4f &modelView);
-    GfMatrix4f mvp(mv);
-    GfMatrix4f projp(proj);
-    mvp[3][0] += _origin[0];
-    mvp[3][1] += _origin[1];
-    glUniformMatrix4fv(modelViewUniform, 1, GL_FALSE, mvp.data());
-    glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projp.data());
-    glBindVertexArray(vertexArrayObject);
-    glDrawArrays(GL_LINES, 0, 18);
-    glBindVertexArray(0);
-    if (depthTestStatus) glEnable(GL_DEPTH_TEST);
+void TranslateManipulator::OnDrawFrame(const Viewport &viewport) {
+
+    if (_xformable) {
+        auto timeCode = viewport.GetCurrentTimeCode();
+        const auto & camera = viewport.GetCurrentCamera();
+        auto mv =  camera.GetFrustum().ComputeViewMatrix();
+        auto proj = camera.GetFrustum().ComputeProjectionMatrix();
+        //std::cout << _xformable.GetPath().GetString() << std::endl;
+        auto matrix = _xformable.ComputeLocalToWorldTransform(timeCode);
+        auto _origind =  GfVec4d(_origin[0], _origin[1], _origin[2], 1.0)* _xformable.ComputeLocalToWorldTransform(timeCode);
+        // TODO: from the doc:
+        // If you need to compute the transform for multiple prims on a stage,
+        // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse sub-computations shared by the prims.
+        //
+
+        // https://graphics.pixar.com/usd/docs/api/usd_geom_page_front.html
+        // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second column of the fourth row.
+        //std::cout << _origind[0] << " " << _origind[1] << " " << _origind[2] << std::endl;
+        //std::cout << matrix << std::endl;
+
+        GLboolean depthTestStatus;
+        glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
+        if (depthTestStatus) glDisable(GL_DEPTH_TEST);
+
+        glLineWidth(2);
+        glUseProgram(programShader);
+        GfMatrix4f mvp(mv);
+        GfMatrix4f projp(proj);
+        glUniformMatrix4fv(modelViewUniform, 1, GL_FALSE, mvp.data());
+        glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projp.data());
+        glUniform3f(originUniform, _origind[0], _origind[1], _origind[2]);
+        glBindVertexArray(vertexArrayObject);
+        glDrawArrays(GL_LINES, 0, 18);
+        glBindVertexArray(0);
+        if (depthTestStatus) glEnable(GL_DEPTH_TEST);
+    }
+
+    UsdGeomBoundable bounds(_xformable);
+    if (bounds) {
+        // draw bounding box
+
+    }
+}
+
+ViewportEditingState * TranslateManipulator::NewEditingState(Viewport &viewport) {
+    return new TranslateEditingState(viewport, *this);
 }

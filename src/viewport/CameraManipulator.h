@@ -22,13 +22,13 @@ class CameraManipulator final {
     CameraManipulator &operator=(const CameraManipulator &) = delete;
 
     /// Reset the camera position to the original position
-    void Reset(GfCamera &);
+    void ResetPosition(GfCamera &);
 
     /// Set the type of movement
     void SetMovementType(MovementType mode) { _movementType = mode; }
 
     /// Update the camera position depending on the Movement type
-    bool Move(GfCamera &, double deltaX, double deltaY);
+    bool Move(GfCamera &, double deltaX, double deltaY); // OnNewFrame ??
 
     /// Frame the camera so that the bounding box is visible.
     void FrameBoundingBox(GfCamera &, const GfBBox3d &);

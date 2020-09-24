@@ -10,7 +10,8 @@ add_executable(usdtweak
  src/Selection.cpp
  src/commands/Commands.cpp
  src/viewport/CameraManipulator.cpp
- src/viewport/TranslateGizmo.cpp
+ src/viewport/TranslateManipulator.cpp
+ src/viewport/SelectionManipulator.cpp
  src/viewport/Viewport.cpp
  src/widgets/ModalDialogs.cpp
  src/widgets/LayerEditor.cpp
@@ -21,6 +22,7 @@ add_executable(usdtweak
  src/widgets/Theater.cpp
  src/widgets/PrimSpecEditor.cpp
  src/widgets/ValueEditor.cpp
+ src/widgets/RendererSettings.cpp
  src/3rdparty/imgui/imgui.cpp
  src/3rdparty/imgui/imgui_draw.cpp
  src/3rdparty/imgui/imgui_impl_glfw.cpp

@@ -1,7 +1,9 @@
 #include <functional>
 #include "Selection.h"
 
-/// One possible implementation with HdSelection
+///
+/// One possible implementation using HdSelection and functions instead of a new class
+///
 
 /// Clear selection, editor implementation
 void ClearSelection(Selection &selection) {

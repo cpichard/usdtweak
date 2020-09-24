@@ -204,7 +204,7 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
 }
 
 
-Editor::Editor() : _viewport(UsdStageRefPtr()) {}
+Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {}
 
 Editor::~Editor(){}
 
@@ -238,6 +238,9 @@ void Editor::ImportStage(const std::string &path) {
     _currentStage = UsdStage::Open(path);
     _stageCache.Insert(_currentStage);
     _viewport.SetCurrentStage(_currentStage);
+    if (!_currentLayer && _currentStage){
+        SetCurrentLayer(_currentStage->GetRootLayer());
+    }
     _showTheater = true;
     _showViewport = true;
 }
@@ -257,8 +260,8 @@ Viewport & Editor::GetViewport() {
 }
 
 void Editor::HydraRender() {
-    _viewport.Update(_selection);
-    _viewport.Render(_selection);
+    _viewport.Update();
+    _viewport.Render();
 }
 
 void Editor::DrawMainMenuBar() {
@@ -343,7 +346,7 @@ void Editor::Draw() {
         ImVec2 wsize = ImGui::GetWindowSize();
         GetViewport().Draw();
 
-        GetViewport().HandleEvents(_selection); // TODO: handle events should be in this file, not in the viewport
+        GetViewport().HandleEvents(); // TODO: handle events should be in this file, not in the viewport
         GetViewport().SetSize(wsize.x, wsize.y - ViewportBorderSize); // for the next render
         ImGui::End();
     }
@@ -380,7 +383,9 @@ void Editor::Draw() {
 
     if (GetCurrentStage() && GetViewport()._renderparams && _showTimeline) {
         ImGui::Begin("Timeline", &_showTimeline);
-        DrawTimeline(*GetCurrentStage(), GetViewport()._renderparams->frame);
+        UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
+        DrawTimeline(*GetCurrentStage(), tc);
+        GetViewport().SetCurrentTimeCode(tc);
         ImGui::End();
     }
 

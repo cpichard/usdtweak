@@ -9,7 +9,7 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 ///
-/// Camera manipulator, this is basically following how usdview manipulated camera.
+/// Camera manipulator, this is basically following how usdview camera.manipulation works
 /// This doesn't handle orthographic cameras yet
 ///
 
@@ -23,12 +23,9 @@ CameraManipulator::CameraManipulator(const GfVec2i &viewportSize, bool isZUp)
     SetZIsUp(isZUp);
 }
 
-void CameraManipulator::Reset(GfCamera &camera) {
+void CameraManipulator::ResetPosition(GfCamera &camera) {
     camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
-    // auto modelview = GfMatrix4d(1.0);
     camera.SetFocusDistance(300.f);
-    // modelview.SetLookAt({0, 0, 0}, {0.0, 0.0, 100.0}, {0.0, 1.0, 0.0});
-    // camera.SetTransform(modelview);
 }
 void CameraManipulator::SetZIsUp(bool isZUp) {
     _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0));
@@ -87,7 +84,6 @@ void CameraManipulator::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox)
     auto lengthToFit = _selectionSize * 0.5;
     dist = lengthToFit / atan(fov * 0.5 * (3.14 / 180.f));
     // TODO: handle orthographic cameras
-
     ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
 }
 
