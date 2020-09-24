@@ -3,6 +3,7 @@
 #include <pxr/usd/usd/stage.h>
 #include "Gui.h"
 #include "Theater.h"
+#include "Commands.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -23,7 +24,7 @@ void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nul
 }
 
 template <typename SdfLayerSetT>
-void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const ImVec2 &listSize = ImVec2(0, -10)) {
+void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, Editor *editor, const ImVec2 &listSize = ImVec2(0, -10)) {
     ImGui::PushItemWidth(-1);
 
     // Sort the layer set
@@ -40,11 +41,16 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                 if (selectedLayer)
                     *selectedLayer = layer;
             }
-            if (ImGui::BeginPopupContextItem()) {
-                if (ImGui::MenuItem("Open as Stage")) {
-                    //TODO: DispatchCommand<EditorOpenStage>();
+            if (editor) {
+                if (ImGui::BeginPopupContextItem()) {
+                    if (ImGui::MenuItem("Open as Stage")) {
+                        DispatchCommand<EditorOpenStage>(editor, layer->GetRealPath());
+                    }
+                    if (ImGui::MenuItem("Set edit target")) {
+                        //DispatchCommand<EditorSetEditTarget>(editor, layer);
+                    }
+                    ImGui::EndPopup();
                 }
-                ImGui::EndPopup();
             }
         }
         ImGui::ListBoxFooter();
@@ -66,7 +72,7 @@ void DrawTheater(Editor &editor) {
     if (ImGui::BeginTabItem("Layers")) {
         SdfLayerHandle selected(editor.GetCurrentLayer());
         auto layers = SdfLayer::GetLoadedLayers();
-        DrawLayerSet(layers, &selected);
+        DrawLayerSet(layers, &selected, &editor);
         if (selected != editor.GetCurrentLayer()) {
             editor.SetCurrentLayer(selected);
         }
