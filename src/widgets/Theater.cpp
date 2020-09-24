@@ -56,7 +56,7 @@ void DrawTheater(Editor &editor) {
     ImGui::BeginTabBar("theatertabbar");
     if (ImGui::BeginTabItem("Stages")) {
         UsdStageCache::Id selected;
-        DrawStageCache(editor._stageCache, &selected);
+        DrawStageCache(editor.GetStageCache(), &selected);
         if (selected != UsdStageCache::Id()) {
             editor.SetCurrentStage(selected);
         }

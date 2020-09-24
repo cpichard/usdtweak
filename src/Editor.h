@@ -10,9 +10,10 @@ class GLFWwindow;
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-/// Editor contains the data shared between widgets, like selections, etc etc
-struct Editor { // everything is public while moving the code around
+/// Editor contains the data shared between widgets, like selections, stages, etc etc
+class Editor {
 
+public:
     Editor();
     ~Editor();
 
@@ -22,54 +23,32 @@ struct Editor { // everything is public while moving the code around
     Editor(const Editor &) = delete;
     Editor &operator=(const Editor &) = delete;
 
-    ///
-    /// Editor manages the windows states
-    ///
-    bool _showDebugWindow = false;
-    bool _showPropertyEditor = false;
-    bool _showOutliner = false;
-    bool _showTimeline = false;
-    bool _showLayerEditor = false;
-    bool _showTheater = false;
-    bool _showPrimSpecEditor = false;
-    bool _showViewport = false;
-
     /// Setting _shutdownRequested to true will stop the main loop
-    bool _shutdownRequested = false;
     bool ShutdownRequested() const { return _shutdownRequested; }
 
-    /// List of layers.
-    /// NOTE "interface wise" a SdfLayerHandleSet would be better than a std::set<SdfLayerRefPtr>,
-    /// but SdfLayerHandleSet doesn't keep the smart pointer live for some reason. (to be investigated)
-    // SdfLayerHandleSet layers;
-    std::set<SdfLayerRefPtr> _layers;
-    SdfLayerRefPtr _currentLayer;
+    /// Sets the current edited layer
     void SetCurrentLayer(SdfLayerRefPtr layer) { _currentLayer = layer; }
     SdfLayerRefPtr GetCurrentLayer() { return _currentLayer; }
 
     /// List of stages
     /// Using a stage cache to store the stages, seems to work well
-    UsdStageCache _stageCache;
     UsdStageRefPtr GetCurrentStage() { return _currentStage; }
     void SetCurrentStage(UsdStageCache::Id current);
     void SetCurrentStage(UsdStageRefPtr stage);
 
-    // Editor owns the selection for the application
-    Selection _selection;
+    UsdStageCache & GetStageCache() { return _stageCache; }
 
-    // TODO: NOT SURE.... should that live in the editor or just in the PrimSpec module ???
+    /// Returns the selected primspec
+    /// There should be one selected primspec per layer ideally, so it's very likely this function will move
     SdfPrimSpecHandle &GetSelectedPrimSpec() { return _selectedPrimSpec; }
-    // SdfPrimSpecHandle & SetSelectedPrimSpec(const SdfPrimSpecHandle &primSpec) { selectedPrimSpec =
-    // primSpec; }
-    SdfPrimSpecHandle _selectedPrimSpec;
 
-    //
+    /// Create a new layer in file path
     void CreateLayer(const std::string &path);
     void ImportLayer(const std::string &path);
     void CreateStage(const std::string &path);
     void ImportStage(const std::string &path);
 
-    /// Render all the hydra viewports
+    /// Render the hydra viewport
     void HydraRender();
 
     ///
@@ -89,6 +68,38 @@ struct Editor { // everything is public while moving the code around
     Viewport &GetViewport();
 
 private:
+
+    /// Using a stage cache to store the stages, seems to work well
+    UsdStageCache _stageCache;
+
+        /// List of layers.
+    /// NOTE "interface wise" a SdfLayerHandleSet would be better than a std::set<SdfLayerRefPtr>,
+    /// but SdfLayerHandleSet doesn't keep the smart pointer live for some reason. (to be investigated)
+    // SdfLayerHandleSet _layers;
+    std::set<SdfLayerRefPtr> _layers;
+    SdfLayerRefPtr _currentLayer;
+
+    /// Setting _shutdownRequested to true will stop the main loop
+    bool _shutdownRequested = false;
+
+    ///
+    /// Editor manages the windows states
+    ///
+    bool _showDebugWindow = false;
+    bool _showPropertyEditor = false;
+    bool _showOutliner = false;
+    bool _showTimeline = false;
+    bool _showLayerEditor = false;
+    bool _showTheater = false;
+    bool _showPrimSpecEditor = false;
+    bool _showViewport = false;
+
     UsdStageRefPtr _currentStage;
     Viewport _viewport;
+
+    // Editor owns the selection for the application
+    Selection _selection;
+
+    /// Selected prim spec. This variable might move somewhere else
+    SdfPrimSpecHandle _selectedPrimSpec;
 };
