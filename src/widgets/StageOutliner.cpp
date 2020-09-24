@@ -18,7 +18,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
 
     auto unfolded = ImGui::TreeNodeEx(prim.GetName().GetText(), flags);
 
-    if (ImGui::IsItemClicked()) {
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
         SetSelected(selectedPaths, prim.GetPath());
     }
     ImGui::NextColumn();
