@@ -18,6 +18,7 @@ struct TranslateEditingState : public ViewportEditingState {
     /// When we enter the edition state, we want to store the mouse position as well
     /// as all data used for the command
     void OnEnter() {
+        // should it be _manipulator.BeginEdition() ?
         _manipulator.IsMouseOver(_viewport); // This will store the mouse position and set the correct axis
         // TODO Store translate position for issuing a command later
         // Look for the operator to change in the transform stack
@@ -28,9 +29,10 @@ struct TranslateEditingState : public ViewportEditingState {
         // TODO: emit a Translate command for the undo/redo
     }
 
-    ViewportEditingState * NextState() { // OnEdit ???
+    ViewportEditingState * NextState() { // OnUpdateFrame ???
         if (ImGui::IsMouseReleased(0)) {
             return new MouseHoveringState(_viewport);
+            //return MouseHovering(_viewport);
         }
 
         _manipulator.OnProcessFrameEvents(_viewport);
@@ -134,33 +136,32 @@ TranslateManipulator::~TranslateManipulator() {
 void TranslateManipulator::OnProcessFrameEvents(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
     GfVec3d translateValues(0);
-    if (_translateOp) {
-        auto currentTimeCode = _translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S] ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
+    if (!_translateOp.IsDefined()){
+        _translateOp = _xformable.AddTranslateOp();
+    }
+    if (_translateOp.IsDefined()) {
+        auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
+            ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
         _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
-    }
-
-    // TODO project to get the correct value
-    switch (_selectedAxis) {
-    case XAxis:
-        translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
-        break;
-    case YAxis:
-        translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
-        break;
-    case ZAxis:
-        translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
-        break;
-    }
-
-    if (_translateOp) {
-        // TODO: as a command ?
-        auto currentTimeCode = _translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S] ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
+        // TODO project a ray to get the correct value
+        switch (_selectedAxis) {
+        case XAxis:
+            translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        case YAxis:
+            translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        case ZAxis:
+            translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        }
         _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
     }
 }
+
 bool TranslateManipulator::IsMouseOver(const Viewport &viewport) {
 
-    // Always store the mouse position/
+    // Always store the mouse position as this is used
     _mouseClickPosition = viewport.GetMousePosition();
 
     if(_xformable) {
@@ -207,23 +208,18 @@ void TranslateManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
     auto primPath = GetSelectedPath(selection);
     _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
-
+    _translateOp = UsdGeomXformOp();
     // Look for the translate in the transform stack
+    // Should that be called when entering the state ?
     if(_xformable) {
         bool resetsXformStack = false;
         auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
         for (auto &xform : xforms) {
-            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate) {
+            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate && xform.GetName()=="translate") {
                 _translateOp = xform;
                 return;
             }
         }
-        // This should be stored in the state ? isn't it ?
-        // It seems that creating a translate op won't affect the xformable until there is a value set
-        _translateOp = _xformable.AddTranslateOp();
-    }
-    else {
-        _translateOp = UsdGeomXformOp();
     }
 }
 
