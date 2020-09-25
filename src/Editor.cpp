@@ -24,6 +24,7 @@
 #include "PrimSpecEditor.h"
 #include "Constants.h"
 #include "Commands.h"
+#include "CommandLayerStateDelegate.h"
 
 /// Modal dialog used to create a new layer
 struct CreateLayerModal : public ModalDialog {
@@ -216,7 +217,20 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     _currentStage = stage;
     // TODO viewport management
     _viewport.SetCurrentStage(stage);
+
 }
+
+void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
+    _currentLayer = layer;
+
+    // Install handler for undo redo
+    if (_currentLayer) {
+        auto clsd = CommandLayerStateDelegate::New();
+        _currentLayer->SetStateDelegate(clsd);
+    }
+}
+
+
 
 void Editor::CreateLayer(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");

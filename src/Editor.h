@@ -27,7 +27,7 @@ public:
     bool ShutdownRequested() const { return _shutdownRequested; }
 
     /// Sets the current edited layer
-    void SetCurrentLayer(SdfLayerRefPtr layer) { _currentLayer = layer; }
+    void SetCurrentLayer(SdfLayerRefPtr layer);
     SdfLayerRefPtr GetCurrentLayer() { return _currentLayer; }
 
     /// List of stages
