@@ -27,6 +27,8 @@ static const char *ArcAppendChar = "Append";
 static const char *ArcAddChar = "Add";
 static const char *ArcPrependChar = "Prepend";
 static const char *ArcDeleteChar = "Delete";
+static const char *ArcExplicitChar = "Explicit";
+static const char *ArcOrderedChar = "Ordered";
 
 /// Should that move in Common.h ???
 std::array<char, TextEditBufferSize> CreateEditBufferFor(const std::string &str) {
@@ -36,7 +38,7 @@ std::array<char, TextEditBufferSize> CreateEditBufferFor(const std::string &str)
     return buffer; // Should construct in place with copy ellision
 }
 
-// TODO: rename AddCompositionArc
+// TODO: add all the composition arcs
 struct EditReferences : public ModalDialog {
 
     EditReferences(SdfPrimSpecHandle &primSpec) : primSpec(primSpec), operation(0), composition(0){};
@@ -206,6 +208,8 @@ void DrawCompositionArcOperations(const SdfPath &path, SdfListEditorProxy<ArcT> 
     DrawCompositionArcItems<ArcT>(path, ArcAddChar, refList.GetAddedItems(), compositionType);
     DrawCompositionArcItems<ArcT>(path, ArcPrependChar, refList.GetPrependedItems(), compositionType);
     DrawCompositionArcItems<ArcT>(path, ArcDeleteChar, refList.GetDeletedItems(), compositionType);
+    DrawCompositionArcItems<ArcT>(path, ArcExplicitChar, refList.GetExplicitItems(), compositionType);
+    DrawCompositionArcItems<ArcT>(path, ArcOrderedChar, refList.GetOrderedItems(), compositionType);
 }
 
 /// Draw all compositions in one big list
@@ -217,7 +221,7 @@ void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
 }
 
 void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
-    if (PrimHasReferences(primSpec)) {
+    if (PrimHasComposition(primSpec)) {
         DrawPrimCompositions(primSpec);
         const auto &pathStr = primSpec->GetPath().GetString();
         SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
@@ -232,25 +236,36 @@ void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+static bool HasComposition(SdfPrimSpecHandle &primSpec) {
+    return primSpec->HasReferences()
+        || primSpec->HasPayloads()
+        || primSpec->HasInheritPaths()
+        || primSpec->HasSpecializes();
+}
+
 /// Returns if the prim has references, checking the variants
-bool PrimHasReferences(SdfPrimSpecHandle &primSpec, bool checkVariants) {
-    if (primSpec->HasReferences())
+bool PrimHasComposition(SdfPrimSpecHandle &primSpec, bool checkVariants) {
+
+    if (HasComposition(primSpec)){
         return true;
+    }
+
     if (checkVariants) {
         SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
         TF_FOR_ALL(varSetIt, variantSetMap) {
             const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
             const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
             TF_FOR_ALL(varIt, variants) {
-                if ((*varIt)->GetPrimSpec()->HasReferences())
+                if (HasComposition((*varIt)->GetPrimSpec())){
                     return true;
+                }
             }
         }
     }
     return false;
 }
 
-// TODO: it's not a popup in this function
+
 void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec) {
 
     if (ImGui::BeginMenu(ArcAppendChar)) {
@@ -278,6 +293,20 @@ void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec) {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu(ArcDeleteChar)) {
+        ImGui::MenuItem("Payload");
+        ImGui::MenuItem("Inherit");
+        ImGui::MenuItem("Specialize");
+        ImGui::MenuItem("Reference");
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu(ArcExplicitChar)) {
+        ImGui::MenuItem("Payload");
+        ImGui::MenuItem("Inherit");
+        ImGui::MenuItem("Specialize");
+        ImGui::MenuItem("Reference");
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu(ArcOrderedChar)) {
         ImGui::MenuItem("Payload");
         ImGui::MenuItem("Inherit");
         ImGui::MenuItem("Specialize");
