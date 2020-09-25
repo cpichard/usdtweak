@@ -5,6 +5,8 @@
 
 #include "Gui.h"
 
+#include <iostream>
+#include <sstream>
 /// Returns the new value if the value was edited, otherwise an empty VtValue
 VtValue DrawVtValue(const std::string &label, const VtValue &value) {
     if (value.IsHolding<GfVec3f>()) {
@@ -33,10 +35,12 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         }
     } else if (value.IsHolding<TfToken>()) {
         TfToken token = value.Get<TfToken>();
-        ImGui::Text("\'%s\': [%s]", label.c_str(), token.GetString().c_str());
+        ImGui::Text("'%s': %s", label.c_str(), token.GetString().c_str());
     }
     else {
-        ImGui::Text("%s: not implemented yet", label.c_str());
+        std::stringstream ss;
+        ss << value;
+        ImGui::Text("'%s': %s", label.c_str(), ss.str().c_str());
     }
     return VtValue();
 }

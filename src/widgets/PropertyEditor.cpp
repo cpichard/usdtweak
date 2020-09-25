@@ -12,26 +12,15 @@ void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
     auto attributeTypeName = attribute.GetTypeName();
     ImGui::Text("[%s]", attribute.IsAuthored() ? "*" : " ");
     ImGui::SameLine();
-    if (attributeTypeName.IsScalar()) {
-        VtValue value;
-        if (attribute.Get(&value, currentTime)) {
-            VtValue modified = DrawVtValue(attribute.GetBaseName().GetString(), value);
-            if (!modified.IsEmpty()) {
-                // TODO: DispatchCommand DispatchCommand<AttributeSet>(attribute, modified);
-                if (attribute.Set(modified, currentTime)) {
-                    std::cout << "Value set at time " << currentTime << std::endl; // DEBUG TEST
-                }
-            }
-        } else {
-            ImGui::Text("Scalar no value %s %s", attribute.GetBaseName().GetString().c_str(),
-                        attribute.GetTypeName().GetAsToken().GetString().c_str());
+    VtValue value;
+    if (attribute.Get(&value, currentTime)) {
+        VtValue modified = DrawVtValue(attribute.GetBaseName().GetString(), value);
+        if (!modified.IsEmpty()) {
+            // TODO: DispatchCommand DispatchCommand<AttributeSet>(attribute, modified);
+            attribute.Set(modified, currentTime);
         }
-    } else if (attributeTypeName.IsArray()) {
-        ImGui::Text("Array %s %s", attribute.GetBaseName().GetString().c_str(),
-                    attribute.GetTypeName().GetAsToken().GetString().c_str());
     } else {
-        ImGui::Text("Unknown %s %s", attribute.GetBaseName().GetString().c_str(),
-                    attribute.GetTypeName().GetAsToken().GetString().c_str());
+        ImGui::Text("'%s': no value found", attribute.GetBaseName().GetString().c_str());
     }
 }
 
