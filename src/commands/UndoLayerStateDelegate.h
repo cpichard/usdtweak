@@ -2,16 +2,22 @@
 
 #include <pxr/usd/sdf/layerStateDelegate.h>
 
+
 PXR_NAMESPACE_USING_DIRECTIVE
 
-TF_DECLARE_WEAK_AND_REF_PTRS(CommandLayerStateDelegate);
+TF_DECLARE_WEAK_AND_REF_PTRS(UndoLayerStateDelegate);
 
-class CommandLayerStateDelegate : public SdfLayerStateDelegateBase {
+class SdfCommandGroup;
+
+class UndoLayerStateDelegate : public SdfLayerStateDelegateBase {
 public:
-    static CommandLayerStateDelegateRefPtr New();
+    static UndoLayerStateDelegateRefPtr New(SdfCommandGroup &undoCommands);
+
+    void SetClean();
+    void SetDirty();
 
 protected:
-    CommandLayerStateDelegate();
+    UndoLayerStateDelegate(SdfCommandGroup &undoCommands);
 
     // SdfLayerStateDelegateBase overrides
     virtual bool _IsDirty() override;
@@ -25,15 +31,18 @@ protected:
         const SdfPath& path,
         const TfToken& fieldName,
         const VtValue& value) override;
+
     virtual void _OnSetField(
         const SdfPath& path,
         const TfToken& fieldName,
         const SdfAbstractDataConstValue& value) override;
+
     virtual void _OnSetFieldDictValueByKey(
         const SdfPath& path,
         const TfToken& fieldName,
         const TfToken& keyPath,
         const VtValue& value) override;
+
     virtual void _OnSetFieldDictValueByKey(
         const SdfPath& path,
         const TfToken& fieldName,
@@ -44,6 +53,7 @@ protected:
         const SdfPath& path,
         double time,
         const VtValue& value) override;
+
     virtual void _OnSetTimeSample(
         const SdfPath& path,
         double time,
@@ -66,14 +76,17 @@ protected:
         const SdfPath& path,
         const TfToken& fieldName,
         const TfToken& value) override;
+
     virtual void _OnPushChild(
         const SdfPath& path,
         const TfToken& fieldName,
         const SdfPath& value) override;
+
     virtual void _OnPopChild(
         const SdfPath& path,
         const TfToken& fieldName,
         const TfToken& oldValue) override;
+
     virtual void _OnPopChild(
         const SdfPath& path,
         const TfToken& fieldName,
@@ -81,8 +94,7 @@ protected:
 
 private:
     bool _dirty;
-
-
-
+    SdfCommandGroup &_undoCommands;
+    SdfLayerHandle _layer;
 };
 
