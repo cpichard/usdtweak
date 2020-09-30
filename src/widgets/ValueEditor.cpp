@@ -48,9 +48,15 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         ImGui::Text("'%s': %s", label.c_str(), token.GetString().c_str());
     }
     else {
-        std::stringstream ss;
-        ss << value;
-        ImGui::Text("'%s': %s", label.c_str(), ss.str().c_str());
+        // This can be super slow when displaying a big geo
+        if (value.IsArrayValued() && value.GetArraySize() > 10) {
+            ImGui::Text("'%s': array with %d values", label.c_str(), value.GetArraySize());
+         }
+        else {
+            std::stringstream ss;
+            ss << value;
+            ImGui::Text("'%s': %s", label.c_str(), ss.str().c_str());
+        }
     }
     return VtValue();
 }
