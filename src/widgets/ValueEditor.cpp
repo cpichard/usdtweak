@@ -33,6 +33,16 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         if (ImGui::InputDouble(label.c_str(), &dblValue)) {
             return VtValue(dblValue);
         }
+    } else if (value.IsHolding<float>()) {
+        float fltValue = value.Get<float>();
+        if (ImGui::InputFloat(label.c_str(), &fltValue)) {
+            return VtValue(fltValue);
+        }
+    } else if (value.IsHolding<int>()) {
+        int intValue = value.Get<int>();
+        if (ImGui::InputInt(label.c_str(), &intValue)) {
+            return VtValue(intValue);
+        }
     } else if (value.IsHolding<TfToken>()) {
         TfToken token = value.Get<TfToken>();
         ImGui::Text("'%s': %s", label.c_str(), token.GetString().c_str());
