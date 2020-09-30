@@ -5,7 +5,7 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 class Viewport;
-struct ViewportEditingState;
+struct ViewportEditor;
 
 /// The selection manipulator will help selecting a region of the viewport, drawing a rectangle.
 class SelectionManipulator final{
@@ -15,5 +15,5 @@ class SelectionManipulator final{
 
         void OnDrawFrame(const Viewport &);
 
-        ViewportEditingState * NewEditingState(Viewport &viewport);
+        ViewportEditor * NewEditingState(Viewport &viewport);
 };

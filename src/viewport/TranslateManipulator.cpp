@@ -10,7 +10,7 @@
 #include "Gui.h"
 
 /// State of the viewport when the translate manipulator is selected
-struct TranslateEditingState : public ViewportEditingState {
+struct TranslateEditingState : public ViewportEditor {
 
     TranslateEditingState(Viewport &viewport, TranslateManipulator &manipulator)
         : _viewport(viewport), _manipulator(manipulator) {}
@@ -29,7 +29,7 @@ struct TranslateEditingState : public ViewportEditingState {
         // TODO: emit a Translate command for the undo/redo
     }
 
-    ViewportEditingState * NextState() { // OnUpdateFrame ???
+    ViewportEditor * NextState() { // OnUpdateFrame ???
         if (ImGui::IsMouseReleased(0)) {
             return new MouseHoveringState(_viewport);
             //return MouseHovering(_viewport);
@@ -136,10 +136,10 @@ TranslateManipulator::~TranslateManipulator() {
 void TranslateManipulator::OnProcessFrameEvents(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
     GfVec3d translateValues(0);
-    if (!_translateOp.IsDefined()){
+    if (!_translateOp){
         _translateOp = _xformable.AddTranslateOp();
     }
-    if (_translateOp.IsDefined()) {
+    if (_translateOp) {
         auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
             ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
         _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
@@ -155,7 +155,9 @@ void TranslateManipulator::OnProcessFrameEvents(Viewport &viewport) {
             translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
             break;
         }
+        //BeginModification(); // record the undo of the first Modification ??
         _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
+        //EndModification();
     }
 }
 
@@ -215,7 +217,8 @@ void TranslateManipulator::OnSelectionChange(Viewport &viewport) {
         bool resetsXformStack = false;
         auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
         for (auto &xform : xforms) {
-            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate && xform.GetName()=="translate") {
+            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate
+                && xform.GetBaseName() == "translate") {
                 _translateOp = xform;
                 return;
             }
@@ -267,6 +270,6 @@ void TranslateManipulator::OnDrawFrame(const Viewport &viewport) {
     }
 }
 
-ViewportEditingState * TranslateManipulator::NewEditingState(Viewport &viewport) {
+ViewportEditor * TranslateManipulator::NewEditingState(Viewport &viewport) {
     return new TranslateEditingState(viewport, *this);
 }

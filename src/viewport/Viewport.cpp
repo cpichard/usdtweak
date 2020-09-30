@@ -365,15 +365,15 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
 }
 
-ViewportEditingState * MouseHoveringState::NextState() {
+ViewportEditor * MouseHoveringState::NextState() {
     ImGuiIO &io = ImGui::GetIO();
 
     if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        return new CameraEditingState(_viewport);
+        return new CameraEditingState(_viewport);// _viewport.GetCameraEditor()
     }
     else if (ImGui::IsMouseClicked(0)) {
         // Left click start picking !
-        return new SelectingState(_viewport);
+        return new SelectingState(_viewport); //_viewport.GetSelectionEditor()
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
         _viewport.FrameSelection(_viewport.GetSelection());
@@ -381,7 +381,7 @@ ViewportEditingState * MouseHoveringState::NextState() {
     return this;
 }
 
-ViewportEditingState * CameraEditingState::NextState() {
+ViewportEditor * CameraEditingState::NextState() {
     auto & cameraManipulator = _viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
     /// If the user released key alt, escape camera manipulation
@@ -405,7 +405,7 @@ ViewportEditingState * CameraEditingState::NextState() {
     return this;
 }
 
-ViewportEditingState * SelectingState::NextState() {
+ViewportEditor * SelectingState::NextState() {
     // Escape this state by releasing the mouse
     if (ImGui::IsMouseReleased(0)) {
         return new MouseHoveringState(_viewport);
@@ -422,3 +422,4 @@ ViewportEditingState * SelectingState::NextState() {
     }
     return new MouseHoveringState(_viewport);
 }
+//ViewportEditor //// That contains a state it edits stuff in the viewport

@@ -9,19 +9,11 @@
 #include "TranslateManipulator.h"
 #include "SelectionManipulator.h"
 #include "Selection.h"
+#include "ViewportEditor.h"
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
 #include <pxr/usdImaging/usdImagingGL/renderParams.h>
 #include <pxr/imaging/glf/simpleLight.h>
-
-typedef std::function<void (class Viewport &, Selection &)> HandleEventsFunctionT;
-
-/// Editing state
-struct ViewportEditingState {
-    virtual void OnEnter() {};
-    virtual void OnExit() {};
-    virtual ViewportEditingState *  NextState() = 0;
-};
 
 
 class Viewport {
@@ -101,33 +93,32 @@ public:
     SelectionManipulator _selectionManipulator;
     SelectionManipulator & GetSelectionManipulator() {return _selectionManipulator;}
 
-    /// Handle events is implemented as a finite state machine using ViewportEditingState
+    /// Handle events is implemented as a finite state machine using ViewportEditor
     void HandleEvents();
 
 private:
-
-    ViewportEditingState * _currentEditingState;
+    ViewportEditor * _currentEditingState;
     Selection &_selection;
     GLuint _textureId = 0;
 };
 
 
 
-struct MouseHoveringState : public ViewportEditingState {
+struct MouseHoveringState : public ViewportEditor {
     MouseHoveringState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditingState * NextState() override;
+    ViewportEditor * NextState() override;
     Viewport &_viewport;
 };
 
-struct CameraEditingState : public ViewportEditingState {
+struct CameraEditingState : public ViewportEditor {
     CameraEditingState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditingState * NextState() override;
+    ViewportEditor * NextState() override;
     Viewport &_viewport;
 };
 
-struct SelectingState : public ViewportEditingState {
+struct SelectingState : public ViewportEditor {
     SelectingState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditingState * NextState() override;
+    ViewportEditor * NextState() override;
     Viewport &_viewport;
 };
 

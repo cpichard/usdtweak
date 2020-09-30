@@ -11,8 +11,11 @@
 
 
 PXR_NAMESPACE_USING_DIRECTIVE
-struct ViewportEditingState;
+struct ViewportEditor;
 class Viewport;
+
+// A Manipulator can be seen in multiple viewport
+// but only edited in one
 
 class TranslateManipulator final {
 
@@ -34,7 +37,7 @@ class TranslateManipulator final {
 
     /// Return a new editing state for the viewport. The editing state is in charge of controlling the
     /// translate manipulator
-    ViewportEditingState * NewEditingState(Viewport &viewport);
+    ViewportEditor * NewEditingState(Viewport &viewport);
 
     typedef enum { // use class enum ??
         XAxis,
@@ -53,6 +56,8 @@ private:
     GfVec3f _origin;
     GfVec2d _mouseClickPosition;
 
+
+    // OpenGL stuff
     unsigned int axisGLBuffers;
     unsigned int vertexShader;
     unsigned int fragmentShader;

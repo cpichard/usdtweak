@@ -5,12 +5,12 @@
 #include <GLFW/glfw3.h>
 
 
-struct SelectionEditingState : public ViewportEditingState {
+struct SelectionEditingState : public ViewportEditor {
 
     SelectionEditingState(Viewport &viewport)
         : _viewport(viewport) {}
 
-    ViewportEditingState *NextState() override {
+    ViewportEditor *NextState() override {
         Selection &selection = _viewport.GetSelection();
         auto mousePosition = _viewport.GetMousePosition();
         SdfPath outHitPrimPath;
@@ -39,6 +39,6 @@ void SelectionManipulator::OnDrawFrame(const Viewport &) {
     // Draw a rectangle for the selection
 }
 
-ViewportEditingState * SelectionManipulator::NewEditingState(Viewport &viewport) {
+ViewportEditor * SelectionManipulator::NewEditingState(Viewport &viewport) {
     return new SelectionEditingState(viewport);
 }
