@@ -5,13 +5,14 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-struct LayerInsertSubLayer : public Command {
+struct LayerInsertSubLayer : public SdfLayerCommand {
     LayerInsertSubLayer(SdfLayerRefPtr layer, std::string subLayerPath)
         : _layer(layer), _subLayerPath(std::move(subLayerPath)) {}
     ~LayerInsertSubLayer(){}
     bool DoIt() override {
         if (!_layer)
             return false;
+        SdfUndoRecorder recorder(_undoCommands, _layer);
         _layer->InsertSubLayerPath(_subLayerPath);
         return true;
     }
@@ -21,7 +22,7 @@ struct LayerInsertSubLayer : public Command {
 };
 template void DispatchCommand<LayerInsertSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
 
-struct LayerRemoveSubLayer : public Command {
+struct LayerRemoveSubLayer : public SdfLayerCommand {
 
     // Removes a sublayer
     LayerRemoveSubLayer(SdfLayerRefPtr layer, std::string subLayerPath)
@@ -32,7 +33,7 @@ struct LayerRemoveSubLayer : public Command {
     bool DoIt() override {
         if (!_layer)
             return false;
-
+        SdfUndoRecorder recorder(_undoCommands, _layer);
         for (size_t i = 0; i < _layer->GetNumSubLayerPaths(); i++) {
             if (_layer->GetSubLayerPaths()[i] == _subLayerPath) {
                 _layer->RemoveSubLayerPath(i);
@@ -47,7 +48,7 @@ struct LayerRemoveSubLayer : public Command {
 template void DispatchCommand<LayerRemoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
 
 /// Change layer position in the layer stack, moivng up and down
-struct LayerMoveSubLayer : public Command {
+struct LayerMoveSubLayer : public SdfLayerCommand {
 
     // Removes a sublayer
     LayerMoveSubLayer(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp)
@@ -56,11 +57,9 @@ struct LayerMoveSubLayer : public Command {
     ~LayerMoveSubLayer() override {}
 
     bool DoIt() override {
+        SdfUndoRecorder recorder(_undoCommands, _layer);
         return _movingUp ? MoveUp() : MoveDown();
     }
-
-    // undo is easy !
-    // return _movingUp ? MoveDown() : MoveUp();
 
     bool MoveUp() {
         if (!_layer)
@@ -92,7 +91,7 @@ struct LayerMoveSubLayer : public Command {
 
     SdfLayerRefPtr _layer;
     std::string _subLayerPath;
-    bool _movingUp; // This cost a bool, create another command if too costly
+    bool _movingUp; /// Template instead ?
 };
 template void DispatchCommand<LayerMoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp);
 
