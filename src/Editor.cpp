@@ -377,7 +377,7 @@ void Editor::Draw() {
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
             // TODO: could set a different target here, try if this is possible
-            ImGui::Text("%s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
+            ImGui::Text("Edit target: %s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
             // TODO: time management should live outside the viewport, probably somewhere in the editor
             // and per stage, layer ??
             if (GetViewport()._renderparams){
