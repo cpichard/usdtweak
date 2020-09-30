@@ -10,6 +10,8 @@ add_executable(usdtweak
  src/Selection.cpp
  src/commands/Commands.cpp
  src/commands/UndoLayerStateDelegate.cpp
+ src/commands/SdfUndoRecorder.cpp
+ src/commands/SdfCommandGroup.cpp
  src/viewport/CameraManipulator.cpp
  src/viewport/TranslateManipulator.cpp
  src/viewport/SelectionManipulator.cpp
