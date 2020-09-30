@@ -20,6 +20,7 @@ struct LayerMoveSubLayer;
 struct UndoCommand;
 struct RedoCommand;
 
+struct AttributeSet;
 
 /// Post a command to be executed after the the UI has been drawn
 template<typename CommandClass, typename... ArgTypes>

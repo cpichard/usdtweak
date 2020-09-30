@@ -73,4 +73,5 @@ void ProcessCommands() {
 #include "PrimCommands.cpp"
 #include "EditorCommands.cpp"
 #include "LayerCommands.cpp"
+#include "AttributeCommands.cpp"
 

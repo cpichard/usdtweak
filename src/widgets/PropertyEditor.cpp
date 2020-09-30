@@ -16,8 +16,7 @@ void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
     if (attribute.Get(&value, currentTime)) {
         VtValue modified = DrawVtValue(attribute.GetBaseName().GetString(), value);
         if (!modified.IsEmpty()) {
-            // TODO: DispatchCommand DispatchCommand<AttributeSet>(attribute, modified);
-            attribute.Set(modified, currentTime);
+            DispatchCommand<AttributeSet>(attribute.GetStage(), attribute.GetPath(), modified, currentTime);
         }
     } else {
         ImGui::Text("'%s': no value found", attribute.GetBaseName().GetString().c_str());
