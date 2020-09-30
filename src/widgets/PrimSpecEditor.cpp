@@ -236,7 +236,7 @@ void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static bool HasComposition(SdfPrimSpecHandle &primSpec) {
+static bool HasComposition(const SdfPrimSpecHandle &primSpec) {
     return primSpec->HasReferences()
         || primSpec->HasPayloads()
         || primSpec->HasInheritPaths()
