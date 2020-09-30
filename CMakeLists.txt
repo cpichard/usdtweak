@@ -9,7 +9,7 @@ add_executable(usdtweak
  src/Editor.cpp
  src/Selection.cpp
  src/commands/Commands.cpp
- src/commands/CommandLayerStateDelegate.cpp
+ src/commands/UndoLayerStateDelegate.cpp
  src/viewport/CameraManipulator.cpp
  src/viewport/TranslateManipulator.cpp
  src/viewport/SelectionManipulator.cpp
