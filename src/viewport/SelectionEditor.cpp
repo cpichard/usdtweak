@@ -1,44 +1,32 @@
-#include "SelectionManipulator.h"
+#include "SelectionEditor.h"
 #include "Gui.h"
 #include "Viewport.h"
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
-
-struct SelectionEditingState : public ViewportEditor {
-
-    SelectionEditingState(Viewport &viewport)
-        : _viewport(viewport) {}
-
-    ViewportEditor *NextState() override {
-        Selection &selection = _viewport.GetSelection();
-        auto mousePosition = _viewport.GetMousePosition();
-        SdfPath outHitPrimPath;
-        SdfPath outHitInstancerPath;
-        int outHitInstanceIndex = 0;
-        _viewport.TestIntersection(mousePosition, outHitPrimPath, outHitInstancerPath, outHitInstanceIndex);
-        if (!outHitPrimPath.IsEmpty()) {
-            if (ImGui::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) {
-                AddSelection(selection, outHitPrimPath);
-            }
-            else {
-                SetSelected(selection, outHitPrimPath);
-            }
+ViewportEditor *SelectionEditor::OnUpdate(Viewport &viewport) {
+    Selection &selection = viewport.GetSelection();
+    auto mousePosition = viewport.GetMousePosition();
+    SdfPath outHitPrimPath;
+    SdfPath outHitInstancerPath;
+    int outHitInstanceIndex = 0;
+    viewport.TestIntersection(mousePosition, outHitPrimPath, outHitInstancerPath, outHitInstanceIndex);
+    if (!outHitPrimPath.IsEmpty()) {
+        if (ImGui::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) {
+            AddSelection(selection, outHitPrimPath);
         }
-        else if (outHitInstancerPath.IsEmpty()) {
-            /// TODO: manage selection
-            ClearSelection(selection);
+        else {
+            SetSelected(selection, outHitPrimPath);
         }
-        return new MouseHoveringState(_viewport);
     }
-
-    Viewport &_viewport;
-};
-
-void SelectionManipulator::OnDrawFrame(const Viewport &) {
-    // Draw a rectangle for the selection
+    else if (outHitInstancerPath.IsEmpty()) {
+        /// TODO: manage selection
+        ClearSelection(selection);
+    }
+    return viewport.GetEditor<MouseHoverEditor>();
 }
 
-ViewportEditor * SelectionManipulator::NewEditingState(Viewport &viewport) {
-    return new SelectionEditingState(viewport);
+
+void SelectionEditor::OnDrawFrame(const Viewport &) {
+    // Draw a rectangle for the selection
 }

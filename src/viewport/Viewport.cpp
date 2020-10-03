@@ -72,7 +72,7 @@ void DrawCameraList(Viewport &viewport) {
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection) : _stage(stage),
 _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
-_currentEditingState(new MouseHoveringState(*this)),
+_currentEditingState(new MouseHoverEditor()),
 _selection(selection)
  {
     // Viewport draw target
@@ -245,22 +245,22 @@ void Viewport::HandleEvents() {
             static_cast<double>(drawTargetSize[1])) +
             1.0;
 
-        /// Finite state machine
+        /// This works like a Finite state machine
+        /// where every manipulator/editor is a state
         if (!_currentEditingState){
-            _currentEditingState = new MouseHoveringState(*this);
+            _currentEditingState = GetEditor<MouseHoverEditor>();
+            _currentEditingState->OnBeginEdition(*this);
         }
 
-        auto newState = _currentEditingState->NextState();
+        auto newState = _currentEditingState->OnUpdate(*this);
         if (newState != _currentEditingState) {
-            _currentEditingState->OnExit();
-            delete _currentEditingState; // TODO: this allocs and deletes a lot of states, is that slow ???
+            _currentEditingState->OnEndEdition(*this);
             _currentEditingState = newState;
-            _currentEditingState->OnEnter();
+            _currentEditingState->OnBeginEdition(*this);
         }
-    } else { // Mouse is out of the viewport, reset the state
+    } else { // Mouse is outside of the viewport, reset the state
         if (_currentEditingState) {
-            _currentEditingState->OnExit();
-            delete _currentEditingState;
+            _currentEditingState->OnEndEdition(*this);
             _currentEditingState = nullptr;
         }
     }
@@ -364,62 +364,3 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
             GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint,
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
 }
-
-ViewportEditor * MouseHoveringState::NextState() {
-    ImGuiIO &io = ImGui::GetIO();
-
-    if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        return new CameraEditingState(_viewport);// _viewport.GetCameraEditor()
-    }
-    else if (ImGui::IsMouseClicked(0)) {
-        // Left click start picking !
-        return new SelectingState(_viewport); //_viewport.GetSelectionEditor()
-    }
-    else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
-        _viewport.FrameSelection(_viewport.GetSelection());
-    }
-    return this;
-}
-
-ViewportEditor * CameraEditingState::NextState() {
-    auto & cameraManipulator = _viewport.GetCameraManipulator();
-    ImGuiIO &io = ImGui::GetIO();
-    /// If the user released key alt, escape camera manipulation
-    if (!io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        return new MouseHoveringState(_viewport);
-    }
-    else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
-        cameraManipulator.SetMovementType(MovementType::None);
-    }
-    else if (ImGui::IsMouseClicked(0)) {
-        cameraManipulator.SetMovementType(MovementType::Orbit);
-    }
-    else if (ImGui::IsMouseClicked(2)) {
-        cameraManipulator.SetMovementType(MovementType::Truck);
-    }
-    else if (ImGui::IsMouseClicked(1)) {
-        cameraManipulator.SetMovementType(MovementType::Dolly);
-    }
-    auto & currentCamera = _viewport.GetCurrentCamera();
-    cameraManipulator.Move(currentCamera, io.MouseDelta.x, io.MouseDelta.y);
-    return this;
-}
-
-ViewportEditor * SelectingState::NextState() {
-    // Escape this state by releasing the mouse
-    if (ImGui::IsMouseReleased(0)) {
-        return new MouseHoveringState(_viewport);
-    }
-    // Check if the mouse is over the manipulator
-    auto & manipulator = _viewport.GetActiveManipulator();
-    if (manipulator.IsMouseOver(_viewport)) {
-        return manipulator.NewEditingState(_viewport);
-    }
-    // Otherwise default to selection
-    else {
-        auto &selectionManipulator = _viewport.GetSelectionManipulator();
-        return selectionManipulator.NewEditingState(_viewport);
-    }
-    return new MouseHoveringState(_viewport);
-}
-//ViewportEditor //// That contains a state it edits stuff in the viewport

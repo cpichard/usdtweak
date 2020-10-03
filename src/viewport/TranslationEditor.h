@@ -8,36 +8,32 @@
 #ifdef _WIN32
 #include <GL/glew.h>
 #endif
-
+#include "ViewportEditor.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
-struct ViewportEditor;
-class Viewport;
 
-// A Manipulator can be seen in multiple viewport
+// A Manipulator can be seen in multiple viewport, so it should not store a viewport
 // but only edited in one
 
-class TranslateManipulator final {
+class TranslationEditor : public ViewportEditor {
 
   public:
-    TranslateManipulator();
-    ~TranslateManipulator();
+    TranslationEditor();
+    ~TranslationEditor();
+
+    /// From ViewportEditor
+    void OnBeginEdition(Viewport &) override;
+    ViewportEditor* OnUpdate(Viewport &) override;
+    void OnEndEdition(Viewport &) override;
 
     /// Return true if the mouse is over this manipulator for the viewport passed in argument
-    bool IsMouseOver(const Viewport &);
-
-    /// Process the events and action what has to be manipulated
-    void OnProcessFrameEvents(Viewport &viewport);
+    bool IsMouseOver(const Viewport &) override;
 
     /// Draw the translate manipulator as seen in the viewport
-    void OnDrawFrame(const Viewport &);
+    void OnDrawFrame(const Viewport &) override;
 
     /// Called when the viewport changes its selection
-    void OnSelectionChange(Viewport &);
-
-    /// Return a new editing state for the viewport. The editing state is in charge of controlling the
-    /// translate manipulator
-    ViewportEditor * NewEditingState(Viewport &viewport);
+    void OnSelectionChange(Viewport &); // Should that inherit ?
 
     typedef enum { // use class enum ??
         XAxis,
@@ -55,7 +51,6 @@ private:
 
     GfVec3f _origin;
     GfVec2d _mouseClickPosition;
-
 
     // OpenGL stuff
     unsigned int axisGLBuffers;

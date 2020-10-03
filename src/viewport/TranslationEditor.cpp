@@ -3,52 +3,18 @@
 
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
-#include "TranslateManipulator.h"
+#include "TranslationEditor.h"
 #include "GeometricFunctions.h"
 #include "Viewport.h"
-
 #include "Gui.h"
-
-/// State of the viewport when the translate manipulator is selected
-struct TranslateEditingState : public ViewportEditor {
-
-    TranslateEditingState(Viewport &viewport, TranslateManipulator &manipulator)
-        : _viewport(viewport), _manipulator(manipulator) {}
-
-    /// When we enter the edition state, we want to store the mouse position as well
-    /// as all data used for the command
-    void OnEnter() {
-        // should it be _manipulator.BeginEdition() ?
-        _manipulator.IsMouseOver(_viewport); // This will store the mouse position and set the correct axis
-        // TODO Store translate position for issuing a command later
-        // Look for the operator to change in the transform stack
-    }
-
-
-    void OnExit() {
-        // TODO: emit a Translate command for the undo/redo
-    }
-
-    ViewportEditor * NextState() { // OnUpdateFrame ???
-        if (ImGui::IsMouseReleased(0)) {
-            return new MouseHoveringState(_viewport);
-            //return MouseHovering(_viewport);
-        }
-
-        _manipulator.OnProcessFrameEvents(_viewport);
-        return this;
-    }
-    Viewport &_viewport;
-    TranslateManipulator &_manipulator;
-};
-
+#include "Commands.h"
 
 // TODO: this should really be using the ImGui API instead of this OpenGL code
 // as it could be used with Vulkan and Metal. Have a look before going too deep into the OpenGL implementation
 // Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
 // implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
 
-TranslateManipulator::TranslateManipulator()
+TranslationEditor::TranslationEditor()
     : _origin(0.f, 0.f, 0.f), _selectedAxis(None) {
 
     // Vertex array object
@@ -128,40 +94,12 @@ TranslateManipulator::TranslateManipulator()
     // view matrix
 }
 
-TranslateManipulator::~TranslateManipulator() {
+TranslationEditor::~TranslationEditor() {
     // Delete OpenGL buffers
     glDeleteBuffers(1, &axisGLBuffers);
 }
 
-void TranslateManipulator::OnProcessFrameEvents(Viewport &viewport) {
-    ImGuiIO &io = ImGui::GetIO();
-    GfVec3d translateValues(0);
-    if (!_translateOp){
-        _translateOp = _xformable.AddTranslateOp();
-    }
-    if (_translateOp) {
-        auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
-            ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
-        _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
-        // TODO project a ray to get the correct value
-        switch (_selectedAxis) {
-        case XAxis:
-            translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
-        case YAxis:
-            translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
-        case ZAxis:
-            translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
-        }
-        //BeginModification(); // record the undo of the first Modification ??
-        _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
-        //EndModification();
-    }
-}
-
-bool TranslateManipulator::IsMouseOver(const Viewport &viewport) {
+bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
 
     // Always store the mouse position as this is used
     _mouseClickPosition = viewport.GetMousePosition();
@@ -206,7 +144,7 @@ bool TranslateManipulator::IsMouseOver(const Viewport &viewport) {
 
 }
 
-void TranslateManipulator::OnSelectionChange(Viewport &viewport) {
+void TranslationEditor::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
     auto primPath = GetSelectedPath(selection);
     _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
@@ -226,7 +164,7 @@ void TranslateManipulator::OnSelectionChange(Viewport &viewport) {
     }
 }
 
-void TranslateManipulator::OnDrawFrame(const Viewport &viewport) {
+void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformable) {
         auto timeCode = viewport.GetCurrentTimeCode();
@@ -270,6 +208,49 @@ void TranslateManipulator::OnDrawFrame(const Viewport &viewport) {
     }
 }
 
-ViewportEditor * TranslateManipulator::NewEditingState(Viewport &viewport) {
-    return new TranslateEditingState(viewport, *this);
+
+void TranslationEditor::OnBeginEdition(Viewport &viewport) {
+    _mouseClickPosition = viewport.GetMousePosition();
+    BeginEdition(viewport.GetCurrentStage());
 }
+
+// TODO try weak ptr
+ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
+        if (ImGui::IsMouseReleased(0)) {
+            return viewport.GetEditor<MouseHoverEditor>();
+        }
+
+    ImGuiIO &io = ImGui::GetIO();
+    GfVec3d translateValues(0);
+    if (!_translateOp){
+        BeginModification();
+        _translateOp = _xformable.AddTranslateOp();
+        EndModification();
+    }
+    if (_translateOp) {
+        auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
+            ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
+        _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
+        // TODO project a ray to get the correct value
+        switch (_selectedAxis) {
+        case XAxis:
+            translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        case YAxis:
+            translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        case ZAxis:
+            translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
+            break;
+        }
+        BeginModification(); // record the undo of the first Modification ??
+        _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
+        EndModification();
+    }
+    return this;
+};
+
+
+void TranslationEditor::OnEndEdition(Viewport &) {
+    EndEdition();
+};

@@ -5,11 +5,13 @@
 /// has grown too much and doing too many thing
 ///
 #include <map>
-#include "CameraManipulator.h"
-#include "TranslateManipulator.h"
-#include "SelectionManipulator.h"
-#include "Selection.h"
 #include "ViewportEditor.h"
+#include "CameraEditor.h"
+#include "TranslationEditor.h"
+#include "MouseHoverEditor.h"
+#include "SelectionEditor.h"
+#include "Selection.h"
+
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
 #include <pxr/usdImaging/usdImagingGL/renderParams.h>
@@ -63,15 +65,22 @@ public:
     const GfCamera & GetCurrentCamera() const { return _currentCamera; }
 
     std::vector<std::pair<std::string, GfCamera>> _cameras;
-    CameraManipulator _cameraManipulator;
-    CameraManipulator & GetCameraManipulator() { return _cameraManipulator; }
+    CameraEditor _cameraManipulator;
+    CameraEditor & GetCameraManipulator() { return _cameraManipulator; }
 
-    // Still testing how TranslateManipulator should interacts with the viewport
+    // Still testing how TranslationEditor should interacts with the viewport
     // TODO Test multiple viewport. A gizmo can be seen in multiple viewport
     // but only edited in one
 
-    TranslateManipulator _translateManipulator;
-    TranslateManipulator & GetActiveManipulator() { return _translateManipulator; }
+    TranslationEditor _translateManipulator;
+    TranslationEditor & GetActiveManipulator() { return _translateManipulator; }
+
+    MouseHoverEditor _mouseHover;
+
+
+    template <typename ViewportEditorT>
+    inline
+    ViewportEditor * GetEditor() { return nullptr; }; // This must be specialized
 
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
@@ -90,8 +99,8 @@ public:
 
     Selection & GetSelection() { return _selection; }
     SelectionHash _lastSelectionHash = 0;
-    SelectionManipulator _selectionManipulator;
-    SelectionManipulator & GetSelectionManipulator() {return _selectionManipulator;}
+    SelectionEditor _selectionManipulator;
+    SelectionEditor & GetSelectionManipulator() {return _selectionManipulator;}
 
     /// Handle events is implemented as a finite state machine using ViewportEditor
     void HandleEvents();
@@ -103,24 +112,22 @@ private:
 };
 
 
+template <>
+inline
+ViewportEditor * Viewport::GetEditor<TranslationEditor>() { return &_translateManipulator; }
 
-struct MouseHoveringState : public ViewportEditor {
-    MouseHoveringState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditor * NextState() override;
-    Viewport &_viewport;
-};
+template <>
+inline
+ViewportEditor * Viewport::GetEditor<MouseHoverEditor>() { return &_mouseHover; }
 
-struct CameraEditingState : public ViewportEditor {
-    CameraEditingState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditor * NextState() override;
-    Viewport &_viewport;
-};
+template <>
+inline
+ViewportEditor * Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
 
-struct SelectingState : public ViewportEditor {
-    SelectingState(Viewport &viewport) : _viewport(viewport) {}
-    ViewportEditor * NextState() override;
-    Viewport &_viewport;
-};
+template <>
+inline
+ViewportEditor * Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }
+
 
 
 
