@@ -12,7 +12,7 @@ enum struct MovementType { None, Orbit, Truck, Dolly };
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-class CameraManipulator final {
+class CameraManipulator {
   public:
     CameraManipulator(const GfVec2i &viewportSize, bool isZUp = false);
     ~CameraManipulator() = default;
@@ -28,7 +28,7 @@ class CameraManipulator final {
     void SetMovementType(MovementType mode) { _movementType = mode; }
 
     /// Update the camera position depending on the Movement type
-    bool Move(GfCamera &, double deltaX, double deltaY); // OnNewFrame ??
+    bool Move(GfCamera &, double deltaX, double deltaY);
 
     /// Frame the camera so that the bounding box is visible.
     void FrameBoundingBox(GfCamera &, const GfBBox3d &);

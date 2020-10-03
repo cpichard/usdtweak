@@ -13,7 +13,6 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// This doesn't handle orthographic cameras yet
 ///
 
-
 //
 using DistT = decltype(GfCamera().GetFocusDistance());
 using RotationT = decltype(GfRotation().Decompose(GfVec3d::YAxis(), GfVec3d::XAxis(), GfVec3d::ZAxis()));
