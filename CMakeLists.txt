@@ -13,9 +13,12 @@ add_executable(usdtweak
  src/commands/SdfUndoRecorder.cpp
  src/commands/SdfCommandGroup.cpp
  src/viewport/CameraManipulator.cpp
- src/viewport/TranslateManipulator.cpp
- src/viewport/SelectionManipulator.cpp
+ src/viewport/CameraEditor.cpp
+ src/viewport/TranslationEditor.cpp
+ src/viewport/SelectionEditor.cpp
  src/viewport/Viewport.cpp
+ src/viewport/ViewportEditor.cpp
+ src/viewport/MouseHoverEditor.cpp
  src/widgets/ModalDialogs.cpp
  src/widgets/LayerEditor.cpp
  src/widgets/FileBrowser.cpp
