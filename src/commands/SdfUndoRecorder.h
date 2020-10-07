@@ -6,6 +6,10 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+///
+/// Scoped undo recorder
+///
+
 class SdfUndoRecorder final {
 public:
 

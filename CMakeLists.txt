@@ -12,6 +12,7 @@ add_executable(usdtweak
  src/commands/UndoLayerStateDelegate.cpp
  src/commands/SdfUndoRecorder.cpp
  src/commands/SdfCommandGroup.cpp
+ src/commands/SdfLayerInstructions.cpp
  src/viewport/CameraManipulator.cpp
  src/viewport/CameraEditor.cpp
  src/viewport/TranslationEditor.cpp

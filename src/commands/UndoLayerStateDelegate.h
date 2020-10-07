@@ -5,19 +5,25 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-TF_DECLARE_WEAK_AND_REF_PTRS(UndoLayerStateDelegate);
+TF_DECLARE_WEAK_AND_REF_PTRS(UndoRedoLayerStateDelegate);
 
 class SdfCommandGroup;
 
-class UndoLayerStateDelegate : public SdfLayerStateDelegateBase {
+
+
+class UndoRedoLayerStateDelegate : public SdfLayerStateDelegateBase {
 public:
-    static UndoLayerStateDelegateRefPtr New(SdfCommandGroup &undoCommands);
+
+    static UndoRedoLayerStateDelegateRefPtr New(SdfCommandGroup &undoCommands);
 
     void SetClean();
     void SetDirty();
 
 protected:
-    UndoLayerStateDelegate(SdfCommandGroup &undoCommands);
+    UndoRedoLayerStateDelegate(SdfCommandGroup &undoCommands)
+        : _dirty(false), _undoCommands(undoCommands)
+    {
+    }
 
     // SdfLayerStateDelegateBase overrides
     virtual bool _IsDirty() override;
