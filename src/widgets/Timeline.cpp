@@ -1,25 +1,37 @@
 #include <iostream>
 #include "Gui.h"
 #include "Timeline.h"
+#include "Commands.h"
 
-// Draws slider in lieu of the timeline
+// The easiest version of a timeline: a slider
 void DrawTimeline(UsdStage &stage, UsdTimeCode &currentTimeCode) {
 
     int startTime = static_cast<int>(stage.GetStartTimeCode());
-    int endTime = static_cast<int>(stage.GetEndTimeCode());
-    int currentTime = static_cast<int>(currentTimeCode.GetValue());
-
     ImGui::InputInt("Start", &startTime);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (stage.GetStartTimeCode() != static_cast<double>(startTime)) {
+            ExecuteAfterDraw(&UsdStage::SetStartTimeCode, &stage, static_cast<double>(startTime));
+        }
+    }
+
+    int endTime = static_cast<int>(stage.GetEndTimeCode());
     ImGui::InputInt("End", &endTime);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (stage.GetEndTimeCode() != static_cast<double>(endTime)) {
+            ExecuteAfterDraw(&UsdStage::SetEndTimeCode, &stage, static_cast<double>(endTime));
+        }
+    }
+
+    int currentTime = static_cast<int>(currentTimeCode.GetValue());
     ImGui::InputInt("Frame", &currentTime);
-    ImGui::SliderInt("", &currentTime, startTime, endTime);
-    if (currentTimeCode.GetValue() != static_cast<double>(currentTime)) {
-        currentTimeCode = static_cast<UsdTimeCode>(currentTime);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (currentTimeCode.GetValue() != static_cast<double>(currentTime)) {
+            currentTimeCode = static_cast<UsdTimeCode>(currentTime);
+        }
     }
-    if (stage.GetStartTimeCode() != static_cast<double>(startTime)) {
-        stage.SetStartTimeCode(static_cast<double>(startTime));
-    }
-    if (stage.GetEndTimeCode() != static_cast<double>(endTime)) {
-        stage.SetEndTimeCode(static_cast<double>(endTime));
+    int currentTimeSlider = static_cast<int>(currentTimeCode.GetValue());
+    ImGui::SliderInt("", &currentTimeSlider, startTime, endTime);
+    if (currentTimeCode.GetValue() != static_cast<double>(currentTimeSlider)) {
+        currentTimeCode = static_cast<UsdTimeCode>(currentTimeSlider);
     }
 }

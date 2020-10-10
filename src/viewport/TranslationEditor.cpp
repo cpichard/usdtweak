@@ -208,24 +208,22 @@ void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
     }
 }
 
-
 void TranslationEditor::OnBeginEdition(Viewport &viewport) {
     _mouseClickPosition = viewport.GetMousePosition();
     BeginEdition(viewport.GetCurrentStage());
 }
 
-// TODO try weak ptr
 ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
-        if (ImGui::IsMouseReleased(0)) {
-            return viewport.GetEditor<MouseHoverEditor>();
-        }
+
+    if (ImGui::IsMouseReleased(0)) {
+        return viewport.GetEditor<MouseHoverEditor>();
+    }
 
     ImGuiIO &io = ImGui::GetIO();
     GfVec3d translateValues(0);
     if (!_translateOp){
-        BeginModification();
+
         _translateOp = _xformable.AddTranslateOp();
-        EndModification();
     }
     if (_translateOp) {
         auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
@@ -243,9 +241,7 @@ ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
             translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
             break;
         }
-        BeginModification(); // record the undo of the first Modification ??
         _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
-        EndModification();
     }
     return this;
 };

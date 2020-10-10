@@ -5,30 +5,20 @@
 #include <iostream>
 
 
-//SdfCommandGroup::SdfCommandGroup() {}
-//
-//SdfCommandGroup::~SdfCommandGroup() {}
-
-
-
-
 bool SdfCommandGroup::IsEmpty() const { return _instructions.empty(); }
 
 void SdfCommandGroup::Clear() { _instructions.clear(); }
-
-//void SdfCommandGroup::AddFunction(SdfCommandFunction &&function) {
-//    _commands.emplace_back(function);
-//}
-
 
 template <typename InstructionT>
 void SdfCommandGroup::StoreInstruction(InstructionT inst) {
 
     //std::cout << "Instruction contains " << inst._newValue << " " << inst._previousValue  << std::endl;
     InstructionWrapper wrapper(std::move(inst));
-    // TODO: specialize by type to compress the command, basically we don't want to stores thousand of setField instruction were only the last one matters
-    // Look for the previous instruction, was it a set field on the same path, same layer ?
-    // Update the latest instead of inserting a new one
+    // TODO: specialize by type to compress the commands,
+    // typically we don't want to store thousand of setField instruction were only the last one matters
+    // One optim would be to look for the previous instruction, check if it is a setfield on the same path, same layer ?
+    // Update the latest instruction instead of inserting a new instruction
+    // As StoreInstruction is templatized, it is possible to specialize it.
     _instructions.emplace_back(std::move(wrapper));
 }
 
@@ -46,16 +36,15 @@ template void SdfCommandGroup::StoreInstruction<UndoRedoPopChild<SdfPath>>(UndoR
 
 // Call all the functions stored in _commands in reverse order
 void SdfCommandGroup::UndoIt() {
-    for (auto &cmd2 : boost::adaptors::reverse(_instructions)) {
-        cmd2.ShowIt();
-        cmd2.UndoIt();
+    for (auto &cmd : boost::adaptors::reverse(_instructions)) {
+        cmd.ShowIt();  // FOR DEBUGGING now
+        cmd.UndoIt();
     }
-
 }
 
 void SdfCommandGroup::DoIt() {
-    for (auto &cmd2 : _instructions) {
-        cmd2.ShowIt();
-        cmd2.DoIt();
+    for (auto &cmd : _instructions) {
+        cmd.ShowIt();  // FOR DEBUGGING now
+        cmd.DoIt();
     }
 }

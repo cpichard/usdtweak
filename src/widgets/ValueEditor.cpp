@@ -30,17 +30,20 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         }
     } else if (value.IsHolding<double>()) {
         double dblValue = value.Get<double>();
-        if (ImGui::InputDouble(label.c_str(), &dblValue)) {
+        ImGui::InputDouble(label.c_str(), &dblValue);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(dblValue);
         }
     } else if (value.IsHolding<float>()) {
         float fltValue = value.Get<float>();
-        if (ImGui::InputFloat(label.c_str(), &fltValue)) {
+        ImGui::InputFloat(label.c_str(), &fltValue);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(fltValue);
         }
     } else if (value.IsHolding<int>()) {
         int intValue = value.Get<int>();
-        if (ImGui::InputInt(label.c_str(), &intValue)) {
+        ImGui::InputInt(label.c_str(), &intValue);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(intValue);
         }
     } else if (value.IsHolding<TfToken>()) {

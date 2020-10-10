@@ -122,7 +122,8 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
                     for (const auto &variant : variantSetHandle->GetVariants()) {
                         if (variant && ImGui::MenuItem(variant->GetName().c_str())) {
                             // TODO: as a command
-                            primSpec->SetVariantSelection(variantSet.first, variant->GetName());
+                            ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSet.first, variant->GetName());
+                            //primSpec->SetVariantSelection(variantSet.first, variant->GetName());
                         }
                     }
                     // TODO: highlight the one currently used
@@ -219,8 +220,24 @@ void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     }
 
     ImGui::SameLine();
+
     if (ImGui::Button("Remove selected") && selectedPrim) {
-        DispatchCommand<PrimRemove>(layer, selectedPrim);
+
+
+        // TODO: simplify
+        DispatchCommand<UsdApiFunction>(layer, std::function<void()> {
+            [=]() {
+                if (selectedPrim->GetNameParent()) {
+                    selectedPrim->GetNameParent()->RemoveNameChild(selectedPrim);
+                    return true;
+                }
+                else {
+                    layer->RemoveRootPrim(selectedPrim);
+                    return true;
+                    }
+                }
+        });
+
         selectedPrim = SdfPrimSpecHandle(); // resets selection
     }
     ImGui::PushItemWidth(-1);
@@ -255,11 +272,14 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
 
         if (layer->GetDefaultPrim() != defautPrim) {
             if (defautPrim != "")
-                // TODO: command
-                layer->SetDefaultPrim(defautPrim);
-            else
-                layer->ClearDefaultPrim();
-            // TODO:DispatchCommand<PrimChangeTypeName>(primSpec, std::string(currentItem));
+            {
+                ExecuteAfterDraw(&SdfLayer::SetDefaultPrim, layer, defautPrim);
+
+            }
+            else {
+                ExecuteAfterDraw(&SdfLayer::ClearDefaultPrim, layer);
+            }
+
         }
 
         ImGui::EndCombo();
@@ -281,13 +301,11 @@ void DrawUpAxis(SdfLayerRefPtr layer) {
     if (ImGui::BeginCombo("Up Axis", upAxisStr.c_str())) {
         bool selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->z;
         if (ImGui::Selectable("Z", selected)) {
-            // TODO: command
-            layer->SetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->z);
+            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->z);
         }
         selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->y;
         if (ImGui::Selectable("Y", selected)) {
-            // TODO: command
-            layer->SetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->y);
+            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->y);
         }
         ImGui::EndCombo();
     }
@@ -308,18 +326,17 @@ void DrawLayerMetadata(SdfLayerRefPtr layer) {
     // Time
     auto startTimeCode = layer->GetStartTimeCode();
     if (ImGui::InputDouble("Start Time Code", &startTimeCode)) {
-        // TODO: DispatchCommand<LayerSetStartTime>(layer, startTimeCode);
-        layer->SetStartTimeCode(startTimeCode);
+        ExecuteAfterDraw(&SdfLayer::SetStartTimeCode, layer, startTimeCode);
     }
     auto endTimeCode = layer->GetEndTimeCode();
     if (ImGui::InputDouble("End Time Code", &endTimeCode)) {
-        layer->SetEndTimeCode(endTimeCode); // TODO: Command
+        ExecuteAfterDraw(&SdfLayer::SetEndTimeCode, layer, endTimeCode);
     }
 
     auto framesPerSecond = layer->GetFramesPerSecond();
     ImGui::InputDouble("Frame per second", &framesPerSecond);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
-        layer->SetFramesPerSecond(framesPerSecond);// TODO: Command
+        ExecuteAfterDraw(&SdfLayer::SetFramesPerSecond, layer, framesPerSecond);
     }
 }
 

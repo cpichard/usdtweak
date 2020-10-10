@@ -89,7 +89,7 @@ void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec) {
         }
 
         if (selected != current) {
-            DispatchCommand<PrimChangeSpecifier>(primSpec, selected);
+            ExecuteAfterDraw(&SdfPrimSpec::SetSpecifier, primSpec, selected);
         }
 
         ImGui::EndCombo();
@@ -101,14 +101,12 @@ void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec) {
         return;
     bool isInstanceable = primSpec->GetInstanceable();
     if (ImGui::Checkbox("Instanceable", &isInstanceable)) {
-        // TODO COmmand
-        primSpec->SetInstanceable(isInstanceable);
+        ExecuteAfterDraw(&SdfPrimSpec::SetInstanceable, primSpec, isInstanceable);
     }
     if (primSpec->HasInstanceable()) {
         ImGui::SameLine();
         if (ImGui::Button("Clear")) {
-            // TODO: commands
-            primSpec->ClearInstanceable();
+            ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
         }
     }
 }
@@ -118,8 +116,8 @@ void DrawPrimHidden(SdfPrimSpecHandle &primSpec) {
         return;
     bool isHidden = primSpec->GetHidden();
     if (ImGui::Checkbox("Hidden", &isHidden)) {
-        // TODO COmmand
-        primSpec->SetHidden(isHidden);
+        ExecuteAfterDraw(&SdfPrimSpec::SetHidden, primSpec, isHidden);
+        //primSpec->SetHidden(isHidden);
     }
 }
 
@@ -129,13 +127,15 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
     bool isActive = primSpec->GetActive();
     if (ImGui::Checkbox("Active", &isActive)) {
         // TODO COmmand
-        primSpec->SetActive(isActive);
+        ExecuteAfterDraw(&SdfPrimSpec::SetActive, primSpec, isActive);
+        //primSpec->SetActive(isActive);
     }
     if (primSpec->HasActive()) {
         ImGui::SameLine();
         if (ImGui::Button("Clear")) {
             // TODO: commands
-            primSpec->ClearActive();
+            ExecuteAfterDraw(&SdfPrimSpec::ClearActive, primSpec);
+            //primSpec->ClearActive();
         }
     }
 }
@@ -175,8 +175,8 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec) {
         }
 
         if (currentItem && primSpec->GetTypeName() != currentItem) {
-            // TODO:DispatchCommand<PrimChangeTypeName>(primSpec, std::string(currentItem));
-            primSpec->SetTypeName(currentItem);
+            ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
+            //primSpec->SetTypeName(currentItem);
         }
         ImGui::EndCombo();
     }

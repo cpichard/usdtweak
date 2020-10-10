@@ -347,6 +347,7 @@ void Editor::Draw() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImFont *font_current = ImGui::GetFont();
+
     ImGui::PushFont(font_current);
 
     // Dock
@@ -429,6 +430,12 @@ void Editor::Draw() {
     }
 
     DrawCurrentModal();
+
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_Z]) {
+        DispatchCommand<UndoCommand>();
+    }
+
 
     EndBackgroundDock();
     ImGui::PopFont();

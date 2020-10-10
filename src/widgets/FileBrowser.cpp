@@ -89,7 +89,7 @@ void DrawFileBrowser() {
             displayedDirectory = path;
             ClearPathBuffer(lineEditBuffer);
             displayedFileName = "";
-        } else if (fs::is_directory(path.parent_path()) 
+        } else if (fs::is_directory(path.parent_path())
             && fs::exists(path.parent_path())) {
             displayedDirectory = path.parent_path();
             CopyToPathBuffer(path.filename().string(), lineEditBuffer);
@@ -102,9 +102,9 @@ void DrawFileBrowser() {
                 displayedFileName = path;
             }
         }
-        if (!displayedDirectory.empty() 
-            && !displayedFileName.empty() 
-            && fs::exists(displayedDirectory) 
+        if (!displayedDirectory.empty()
+            && !displayedFileName.empty()
+            && fs::exists(displayedDirectory)
             && fs::is_directory(displayedDirectory)) {
             filePath = displayedDirectory / displayedFileName;
         } else {
@@ -114,9 +114,10 @@ void DrawFileBrowser() {
         fileExists = fs::exists(filePath);
         directoryContent.clear();
         for (auto &p : fs::directory_iterator(displayedDirectory)) {
-            if (!fs::detail::startsWith(p.path().filename(), ".")) { 
+            if (!fs::detail::startsWith(p.path().filename(), ".")) {
                 directoryContent.push_back(p);} ;
         }
+        std::sort(directoryContent.begin(), directoryContent.end());
     });
 
     ImGui::PushItemWidth(-1); // List takes the full size

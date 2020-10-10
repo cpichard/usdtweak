@@ -52,16 +52,16 @@ struct SdfUndoRedoCommand : public Command {
 
 
 
-// The undo stacl should ultimately belong to an Editor, not be set as a global variable
+// The undo stack should ultimately belong to an Editor, not be a global variable
 using UndoStackT = std::vector<std::unique_ptr<Command>>;
 static UndoStackT undoStack;
 
-// Storing only one command per frame for now
-static Command *lastCmd = nullptr;
-
-
 /// The pointer to the current command in the undo stack
 static int undoStackPos = 0;
+
+// Storing only one command per frame for now, easier to reason about.
+static Command *lastCmd = nullptr;
+
 
 /// Dispatching a command from the software will create a command but not Run it.
 template <typename CommandClass, typename... ArgTypes> void DispatchCommand(ArgTypes... arguments) {
@@ -86,7 +86,7 @@ void ProcessCommands() {
             _PushCommand(lastCmd);
         }
         else {
-            delete lastCmd; // scary
+            delete lastCmd;
         }
        lastCmd = nullptr;   // Reset the command
     }
@@ -111,12 +111,11 @@ public:
             if (undoStackPos != undoStack.size()) {
                 undoStack.resize(undoStackPos);
             }
-            undoStack.emplace_back(std::move(_editedCommand)); // Could leak
+            undoStack.emplace_back(std::move(_editedCommand)); // Could leak ??
             _editedCommand = nullptr;
             undoStackPos++;
         }
     }
-
 
     void StartRecording() {
         if (_layer){
@@ -164,21 +163,14 @@ void BeginEdition(SdfLayerRefPtr layer) {
     if (layer) {
         std::cout << "Begin Edition" << std::endl;
         undoRedoRecorder = new SdfUndoRedoRecorder(layer);
+        undoRedoRecorder->StartRecording();
     }
 }
 
-/// Store the undo of the first modification
-void BeginModification() {
-    if(undoRedoRecorder) undoRedoRecorder->StartRecording();
-}
-
-/// Store the redo of the last modification
-void EndModification() {
-    if(undoRedoRecorder) undoRedoRecorder->StopRecording();
-}
 
 void EndEdition() {
     if (undoRedoRecorder) {
+        undoRedoRecorder->StopRecording();
         delete undoRedoRecorder;
         undoRedoRecorder = nullptr;
     }

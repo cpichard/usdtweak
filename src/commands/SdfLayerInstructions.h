@@ -200,7 +200,6 @@ struct UndoRedoPushChild {
     const ValueT _value;
 };
 
-
 template <typename ValueT>
 struct UndoRedoPopChild {
     UndoRedoPopChild(SdfLayerHandle layer, const SdfPath& parentPath, const TfToken& fieldName, const ValueT& value)

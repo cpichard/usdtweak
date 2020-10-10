@@ -43,16 +43,18 @@ struct RedoCommand : public Command {
 template void DispatchCommand<RedoCommand>();
 
 
+struct UsdApiFunction : public Command {
 
-struct DeferredCommand : public Command {
-
-    DeferredCommand(SdfLayerRefPtr layer, std::function<void()> func)
+    template <typename LayerT>
+    UsdApiFunction(LayerT layer, std::function<void()> func)
         : _layer(layer), _func(func)
-    {
+    {}
 
-    }
+    //UsdApiFunction(SdfLayerHandle layer, std::function<void()> func)
+    //    : _layer(layer), _func(func)
+    //{}
 
-    ~DeferredCommand() override {}
+    ~UsdApiFunction() override {}
 
     /// Undo the last command in the stack
     bool DoIt() override {
@@ -72,4 +74,6 @@ struct DeferredCommand : public Command {
     SdfLayerHandle _layer;
     std::function<void()> _func;
 };
-template void DispatchCommand<DeferredCommand>(SdfLayerRefPtr layer, std::function<void()> func);
+
+template void DispatchCommand<UsdApiFunction>(SdfLayerRefPtr layer, std::function<void()> func);
+template void DispatchCommand<UsdApiFunction>(SdfLayerHandle layer, std::function<void()> func);
