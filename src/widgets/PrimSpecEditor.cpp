@@ -146,6 +146,26 @@ void DrawPrimName(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
+    auto primKind = primSpec->GetKind();
+    if (ImGui::BeginCombo("Kind", primKind.GetString().c_str())) {
+        for (auto kind: KindRegistry::GetAllKinds()){
+            bool isSelected = primKind == kind;
+            if (ImGui::Selectable(kind.GetString().c_str(), isSelected)) {
+                // todo set kind
+                ExecuteAfterDraw(&SdfPrimSpec::SetKind, primSpec, kind);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (primSpec->HasKind()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) {
+            ExecuteAfterDraw(&SdfPrimSpec::ClearKind, primSpec);
+        }
+    }
+}
+
 /// Draw a prim type name combo
 void DrawPrimType(SdfPrimSpecHandle &primSpec) {
 

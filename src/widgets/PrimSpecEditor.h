@@ -6,6 +6,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Draw the full fledged primspec editor
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec);
 
+void DrawPrimKind(SdfPrimSpecHandle &primSpec);
 void DrawPrimType(SdfPrimSpecHandle &primSpec);
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec);
 void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec);
