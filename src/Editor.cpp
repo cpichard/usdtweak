@@ -155,6 +155,37 @@ struct OpenStageModal : public ModalDialog {
     Editor &editor;
 };
 
+struct SaveLayerAs : public ModalDialog {
+
+    SaveLayerAs(Editor &editor) : editor(editor) {};
+    ~SaveLayerAs() override {}
+    void Draw() override {
+        DrawFileBrowser();
+        auto filePath = GetFileBrowserFilePath();
+        if (FilePathExists()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
+        }
+        else {
+            ImGui::Text("Save to: ");
+        }
+        ImGui::Text("%s", filePath.c_str());
+
+        if (ImGui::Button("Cancel")) {
+            CloseModal();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Ok")) {
+            if (!filePath.empty() && !FilePathExists()) {
+                editor.SaveCurrentLayerAs(filePath);
+            }
+            CloseModal();
+        }
+    }
+
+    const char *DialogId() const override { return "Save layer as"; }
+    Editor &editor;
+};
+
 
 static void BeginBackgoundDock() {
     // Setup dockspace using experimental imgui branch
@@ -259,6 +290,14 @@ void Editor::ImportStage(const std::string &path) {
     _showViewport = true;
 }
 
+void Editor::SaveCurrentLayerAs(const std::string &path) {
+    auto newLayer = SdfLayer::CreateNew(path);
+    newLayer->TransferContent(GetCurrentLayer());
+    newLayer->Save();
+    _layers.emplace(newLayer);
+    SetCurrentLayer(newLayer);
+}
+
 void Editor::CreateStage(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");
     auto layer = SdfLayer::New(usdaFormat, path, path);
@@ -300,10 +339,18 @@ void Editor::DrawMainMenuBar() {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::MenuItem("Save current layer")) {
-                if (GetCurrentLayer()) {
-                    GetCurrentLayer()->Save(true);
+            if (ImGui::BeginMenu("Save")) {
+                if (ImGui::MenuItem("Selected layer")) {
+                    if (GetCurrentLayer()) {
+                        GetCurrentLayer()->Save(true);
+                    }
                 }
+                if (ImGui::MenuItem("Selected layer as")) {
+                    if (GetCurrentLayer()) {
+                        TriggerOpenModal<SaveLayerAs>(*this);
+                    }
+                }
+                ImGui::EndMenu();
             }
             if (ImGui::MenuItem("Quit")) {
                 _shutdownRequested = true;
