@@ -9,6 +9,7 @@
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/types.h>
 #include <pxr/usd/sdf/schema.h>
+#include <pxr/usd/kind/registry.h>
 #include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/attributeSpec.h>
@@ -71,15 +72,12 @@ struct EditReferences : public ModalDialog {
 
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec) {
 
-    // TODO: is this list already available in USD ?
-    static SdfSpecifier specList[] = {SdfSpecifierDef, SdfSpecifierOver, SdfSpecifierClass};
-
     const SdfSpecifier current = primSpec->GetSpecifier();
     SdfSpecifier selected = current;
     const std::string specifierName = TfEnum::GetDisplayName(current);
-    if (ImGui::BeginCombo("Prim Specifier", specifierName.c_str())) {
-        for (int n = 0; n < IM_ARRAYSIZE(specList); n++) {
-            const SdfSpecifier displayed = specList[n];
+    if (ImGui::BeginCombo("Specifier", specifierName.c_str())) {
+        for (int n = SdfSpecifierDef; n < SdfNumSpecifiers; n++) {
+            const SdfSpecifier displayed = static_cast<SdfSpecifier>(n);
             const bool isSelected = (current == displayed);
             if (ImGui::Selectable(TfEnum::GetDisplayName(displayed).c_str(), isSelected)) {
                 selected = displayed;
@@ -200,38 +198,73 @@ static inline const char *GetPathFrom(const SdfPath &value) { return value.GetSt
 static inline const char *GetPathFrom(const SdfReference &value) { return value.GetAssetPath().c_str(); }
 static inline const char *GetPathFrom(const SdfPayload &value) { return value.GetAssetPath().c_str(); }
 
-template <typename ArcT>
-void DrawCompositionArcItems(const SdfPath &path, const char *operation,
-                             const std::vector<typename ArcT::value_type> &items,
-                             const char *compositionType) {
+// NOTE: there might be a better way of removing reference, not keeping the index but a copy of value_type
+template <typename GetListFuncT, typename GetItemsFuncT>
+void PrimSpecRemoveArc(SdfLayerHandle layer, SdfPath primSpecPath, GetListFuncT listFunc, GetItemsFuncT itemsFunc, size_t index) {
+    if (layer) {
+        auto primSpec = layer->GetPrimAtPath(primSpecPath);
+        auto arcList = std::bind(listFunc, get_pointer(primSpec))();
+        auto items = std::bind(itemsFunc, &arcList)();
+        if (index<items.size()){
+            arcList.RemoveItemEdits(items[index]);
+        }
+    }
+}
+
+template <typename GetListFuncT, typename GetItemsFuncT>
+void DrawCompositionArcItems(const SdfPrimSpecHandle &primSpec, const char *operation,
+                             const char *compositionType, GetListFuncT listFunc, GetItemsFuncT itemsFunc) {
+    auto path = primSpec->GetPath();
+    auto arcList = std::bind(listFunc, get_pointer(primSpec))();
+    auto items = std::bind(itemsFunc,  &arcList)();
+    size_t index = 0;
     for (const auto &ref : items) {
+        // TODO: check if the variant code below would be still useful
         auto variantSelection = path.GetVariantSelection();
         ImGui::Text("%s %s", variantSelection.first.c_str(), variantSelection.second.c_str());
         ImGui::SameLine();
         ImGui::Text("%s %s", operation, compositionType);
         ImGui::SameLine();
         ImGui::TextUnformatted(GetPathFrom(ref));
+        if (ImGui::BeginPopupContextItem(GetPathFrom(ref))) {
+            if (ImGui::MenuItem("Remove reference")) {
+                std::function<void()> deferedRemoveArc = [=] () {
+                    PrimSpecRemoveArc(primSpec->GetLayer(), path, listFunc, itemsFunc, index);
+                };
+                DispatchCommand<UsdApiFunction>(primSpec->GetLayer(), deferedRemoveArc);
+             }
+            //if (ImGui::MenuItem("Copy path")) {
+            //    // TODO
+            // }
+            //if (ImGui::MenuItem("Open as stage")) {
+            //    // TODO
+            // }
+            ImGui::EndPopup();
+        }
+
         // TODO popup menu with JumpTo, Delete, Replace, etc
+        index++;
     }
 }
 
-template <typename ArcT>
-void DrawCompositionArcOperations(const SdfPath &path, SdfListEditorProxy<ArcT> &&refList,
+template <typename GetListFuncT>
+void DrawCompositionArcOperations(const SdfPrimSpecHandle &primSpec, GetListFuncT listFunc,
                                   const char *compositionType) {
-    DrawCompositionArcItems<ArcT>(path, ArcAppendChar, refList.GetAppendedItems(), compositionType);
-    DrawCompositionArcItems<ArcT>(path, ArcAddChar, refList.GetAddedItems(), compositionType);
-    DrawCompositionArcItems<ArcT>(path, ArcPrependChar, refList.GetPrependedItems(), compositionType);
-    DrawCompositionArcItems<ArcT>(path, ArcDeleteChar, refList.GetDeletedItems(), compositionType);
-    DrawCompositionArcItems<ArcT>(path, ArcExplicitChar, refList.GetExplicitItems(), compositionType);
-    DrawCompositionArcItems<ArcT>(path, ArcOrderedChar, refList.GetOrderedItems(), compositionType);
+    using SdfListT = decltype(std::bind(listFunc, get_pointer(primSpec))());
+    DrawCompositionArcItems(primSpec, ArcAppendChar, compositionType, listFunc, &SdfListT::GetAppendedItems);
+    DrawCompositionArcItems(primSpec, ArcAddChar, compositionType, listFunc, &SdfListT::GetAddedItems);
+    DrawCompositionArcItems(primSpec, ArcPrependChar, compositionType, listFunc, &SdfListT::GetPrependedItems);
+    DrawCompositionArcItems(primSpec, ArcDeleteChar, compositionType, listFunc, &SdfListT::GetDeletedItems);
+    DrawCompositionArcItems(primSpec, ArcExplicitChar, compositionType, listFunc, &SdfListT::GetExplicitItems);
+    DrawCompositionArcItems(primSpec, ArcOrderedChar, compositionType, listFunc, &SdfListT::GetOrderedItems);
 }
 
 /// Draw all compositions in one big list
 void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
-    DrawCompositionArcOperations(primSpec->GetPath(), primSpec->GetPayloadList(), "Payload");
-    DrawCompositionArcOperations(primSpec->GetPath(), primSpec->GetInheritPathList(), "Inherit");
-    DrawCompositionArcOperations(primSpec->GetPath(), primSpec->GetSpecializesList(), "Specialize");
-    DrawCompositionArcOperations(primSpec->GetPath(), primSpec->GetReferenceList(), "Reference");
+    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetPayloadList, "Payload");
+    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetInheritPathList, "Inherit");
+    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetSpecializesList, "Specialize");
+    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetReferenceList, "Reference");
 }
 
 void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
@@ -270,9 +303,7 @@ bool PrimHasComposition(SdfPrimSpecHandle &primSpec, bool checkVariants) {
             const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
             const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
             TF_FOR_ALL(varIt, variants) {
-                if (HasComposition((*varIt)->GetPrimSpec())){
-                    return true;
-                }
+                return PrimHasComposition((*varIt)->GetPrimSpec());
             }
         }
     }
@@ -350,8 +381,6 @@ void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec) {
     if (ImGui::Button("Add composition")) {
         ImGui::OpenPopup("DrawPrimCompositionPopupMenu");
     }
-    ImGui::SameLine();
-    ImGui::Button("Remove selected");
     if (ImGui::BeginPopupContextItem("DrawPrimCompositionPopupMenu")) {
         DrawPrimCompositionPopupMenu(primSpec);
         ImGui::EndPopup();
@@ -395,14 +424,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
-    DrawPrimSpecifierCombo(primSpec);
-    DrawPrimName(primSpec);
-    //// Kind: component/assembly, etc add a combo
-    ////ImGui::Text("%s", primSpec->GetKind().GetString().c_str());
-    DrawPrimType(primSpec);
-    DrawPrimInstanceable(primSpec);
-    DrawPrimHidden(primSpec);
-    DrawPrimActive(primSpec);
+
     ImGui::BeginTabBar("primspeceditortabbar");
     if (ImGui::BeginTabItem("Attributes")) {
         DrawPrimSpecAttributes(primSpec);
@@ -412,6 +434,20 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
         DrawPrimCompositionArcs(primSpec);
         ImGui::EndTabItem();
     }
+    if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
+        if (ImGui::BeginTabItem("Metadata")) {
+            DrawPrimSpecifierCombo(primSpec);
+            DrawPrimName(primSpec);
+            DrawPrimKind(primSpec);
+            DrawPrimType(primSpec);
+            DrawPrimInstanceable(primSpec);
+            DrawPrimHidden(primSpec);
+            DrawPrimActive(primSpec);
+            ImGui::EndTabItem();
+        }
+    }
+
+
 
     ImGui::EndTabBar();
 }
