@@ -23,5 +23,5 @@ void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec);
 void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec);
 
 /// Utility function which can check all the variants for possible references
-bool PrimHasComposition(SdfPrimSpecHandle &primSpec, bool checkVariants=true);
+bool PrimHasComposition(const SdfPrimSpecHandle &primSpec, bool checkVariants=true);
 

@@ -67,7 +67,7 @@ void ExecuteAfterDraw(FuncT &&func, SdfPrimSpecHandle handle, ArgsT&&... argumen
 }
 
 template<typename FuncT, typename... ArgsT>
-void ExecuteAfterDraw(FuncT &&func, UsdPrim &prim, ArgsT&&... arguments) {
+void ExecuteAfterDraw(FuncT &&func, const UsdPrim &prim, ArgsT&&... arguments) {
     const auto &path = prim.GetPath();
     UsdStageWeakPtr stage =  prim.GetStage();
     std::function<void()> usdApiFunc = [=]() {

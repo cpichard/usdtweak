@@ -16,7 +16,7 @@ struct AttributeSet : public SdfLayerCommand {
             auto layer = _stage->GetEditTarget().GetLayer();
             if (layer) {
                 SdfUndoRecorder recorder(_undoCommands, layer);
-                UsdAttribute &attribute = _stage->GetAttributeAtPath(_attributePath);
+                const UsdAttribute &attribute = _stage->GetAttributeAtPath(_attributePath);
                 attribute.Set(_value, _timeCode);
                 return true;
             }

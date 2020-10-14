@@ -24,13 +24,13 @@ struct PrimNew : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer && !_primSpec)
             return false;
-        auto editLayer = _layer ? _layer : _primSpec->GetLayer();
-        SdfUndoRecorder recorder(_undoCommands, editLayer);
         if (_layer) {
+            SdfUndoRecorder recorder(_undoCommands, _layer);
             _newPrimSpec = SdfPrimSpec::New(_layer, _primName, SdfSpecifier::SdfSpecifierDef);
             _layer->InsertRootPrim(_newPrimSpec);
             return true;
         } else {
+            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
             _newPrimSpec = SdfPrimSpec::New(_primSpec, _primName, SdfSpecifier::SdfSpecifierDef);
             return true;
         }

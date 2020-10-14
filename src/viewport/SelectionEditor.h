@@ -10,9 +10,9 @@ PXR_NAMESPACE_USING_DIRECTIVE
 class SelectionEditor : public ViewportEditor {
     public:
         SelectionEditor() = default;
-        ~SelectionEditor() = default; /// TODO virtual ....
+        ~SelectionEditor() = default; 
 
-        void OnDrawFrame(const Viewport &);
+        void OnDrawFrame(const Viewport &) override;
 
         ViewportEditor * OnUpdate(Viewport &) override;
 };

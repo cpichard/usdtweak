@@ -291,7 +291,7 @@ static bool HasComposition(const SdfPrimSpecHandle &primSpec) {
 }
 
 /// Returns if the prim has references, checking the variants
-bool PrimHasComposition(SdfPrimSpecHandle &primSpec, bool checkVariants) {
+bool PrimHasComposition(const SdfPrimSpecHandle &primSpec, bool checkVariants) {
 
     if (HasComposition(primSpec)){
         return true;
