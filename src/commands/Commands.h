@@ -2,6 +2,7 @@
 
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usdGeom/gprim.h>
 #include <functional>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -34,8 +35,8 @@ struct UsdApiFunction;
 template<typename CommandClass, typename... ArgTypes>
 void DispatchCommand(ArgTypes... arguments);
 
-/// Convenience function to execute any USD api function after the editor frame is rendered.
-/// It will also record the changes made by the function in the undo/redo.
+/// Convenience function to defer the execution of a function from the USD api after the editor frame is rendered.
+/// It will also record the changes made  on the layer by the function and store a command in the undo/redo.
 /// For the widget API ExecuteAfterRender might just be the call to the original function
 template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, SdfLayerRefPtr stageOrLayer, ArgsT&&... arguments) {
@@ -72,6 +73,18 @@ void ExecuteAfterDraw(FuncT &&func, UsdPrim &prim, ArgsT&&... arguments) {
     std::function<void()> usdApiFunc = [=]() {
         auto prim = stage->GetPrimAtPath(path);
         std::function<void()> primFunc = std::bind(func, &prim, arguments...);
+        primFunc();
+    };
+    DispatchCommand<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+}
+
+template<typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments) {
+    const auto &path =  geom.GetPrim().GetPath();
+    UsdStageWeakPtr stage =  geom.GetPrim().GetStage();
+    std::function<void()> usdApiFunc = [=]() {
+        UsdGeomImageable geomPrim = UsdGeomImageable::Get(stage, path);
+        std::function<void()> primFunc = std::bind(func, &geomPrim, arguments...);
         primFunc();
     };
     DispatchCommand<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
