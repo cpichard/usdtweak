@@ -5,16 +5,21 @@
 #include "Gui.h"
 #include "StageOutliner.h"
 #include "Commands.h"
+#include "ValueEditor.h"
 
 static void DrawUsdPrimEdit(UsdPrim &prim) {
     if (ImGui::MenuItem("Toggle active")) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
     }
-
-    if (ImGui::MenuItem("Toggle visible")) {
-        const bool active = !prim.IsActive();
-        ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
+    UsdGeomImageable geomPrim(prim);
+    if (geomPrim) {
+        if (ImGui::MenuItem("Make visible")) {
+            ExecuteAfterDraw(&UsdGeomImageable::MakeVisible, geomPrim, UsdTimeCode::Default());
+        }
+        if (ImGui::MenuItem("Make invisible")) {
+            ExecuteAfterDraw(&UsdGeomImageable::MakeInvisible, geomPrim, UsdTimeCode::Default());
+        }
     }
 }
 
@@ -42,7 +47,7 @@ static void DrawPrimTreeNode(UsdPrim &prim, Selection &selectedPaths) {
     }
 
     ImGui::NextColumn();
-    ImGui::Text("%s", prim.GetTypeName().GetText());
+    ImGui::Text("%s %s", prim.IsHidden() ? " " : "V", prim.GetTypeName().GetText());
 
     if (!prim.IsActive()) {
         ImGui::PopStyleColor();
