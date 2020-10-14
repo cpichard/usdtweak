@@ -29,9 +29,11 @@ void DrawTimeline(UsdStage &stage, UsdTimeCode &currentTimeCode) {
             currentTimeCode = static_cast<UsdTimeCode>(currentTime);
         }
     }
+
     int currentTimeSlider = static_cast<int>(currentTimeCode.GetValue());
-    ImGui::SliderInt("", &currentTimeSlider, startTime, endTime);
+    ImGui::SliderInt("##SliderFrame", &currentTimeSlider, startTime, endTime);
     if (currentTimeCode.GetValue() != static_cast<double>(currentTimeSlider)) {
         currentTimeCode = static_cast<UsdTimeCode>(currentTimeSlider);
     }
+
 }
