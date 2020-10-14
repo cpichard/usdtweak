@@ -111,6 +111,23 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::MenuItem("Remove")) {
+        // TODO: simplify
+        DispatchCommand<UsdApiFunction>(primSpec->GetLayer(), std::function<void()> {
+            [=]() {
+                if (primSpec->GetNameParent()) {
+                    primSpec->GetNameParent()->RemoveNameChild(primSpec);
+                    return true;
+                }
+                else {
+                    primSpec->GetLayer()->RemoveRootPrim(primSpec);
+                    return true;
+                    }
+                }
+        });
+    }
+
+
     // TODO a function DrawVariantsPopupMenu() instead of the following code ?
     auto variantSetNames = primSpec->GetVariantSets();
     if (!variantSetNames.empty()) {
@@ -253,8 +270,6 @@ void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     ImGui::SameLine();
 
     if (ImGui::Button("Remove selected") && selectedPrim) {
-
-
         // TODO: simplify
         DispatchCommand<UsdApiFunction>(layer, std::function<void()> {
             [=]() {
