@@ -24,7 +24,8 @@ struct PrimNew : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer && !_primSpec)
             return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        auto editLayer = _layer ? _layer : _primSpec->GetLayer();
+        SdfUndoRecorder recorder(_undoCommands, editLayer);
         if (_layer) {
             _newPrimSpec = SdfPrimSpec::New(_layer, _primName, SdfSpecifier::SdfSpecifierDef);
             _layer->InsertRootPrim(_newPrimSpec);
@@ -121,6 +122,7 @@ struct PrimAddReference : public SdfLayerCommand {
     std::string _reference;
 };
 
+
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void DispatchCommand<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void DispatchCommand<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
@@ -128,3 +130,5 @@ template void DispatchCommand<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandl
 template void DispatchCommand<PrimChangeName>(SdfPrimSpecHandle primSpec, std::string newName);
 template void DispatchCommand<PrimChangeSpecifier>(SdfPrimSpecHandle primSpec, SdfSpecifier newSpec);
 template void DispatchCommand<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
+
+
