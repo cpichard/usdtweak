@@ -165,12 +165,25 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
 
     auto childrenNames = primSpec->GetNameChildren();
     ImGuiTreeNodeFlags nodeFlags =
-        childrenNames.empty() ? ImGuiTreeNodeFlags_Leaf : ImGuiTreeNodeFlags_DefaultOpen;
+        childrenNames.empty() && ! primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf : ImGuiTreeNodeFlags_DefaultOpen;
     nodeFlags |= ImGuiTreeNodeFlags_OpenOnArrow;
 
     // Draw the hierarchy
     // Share the selection state by using the same label
-    auto unfolded = ImGui::TreeNodeEx((const void *)nodeId, nodeFlags, "%s", primSpec->GetName().c_str());
+
+
+    std::string primSpecName;
+    if (primSpec->GetPath().IsPrimVariantSelectionPath()) {
+        auto variantSelection = primSpec->GetPath().GetVariantSelection();
+        primSpecName = std::string("{") + variantSelection.first.c_str() + ":" + variantSelection.second.c_str() + "}";
+        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.5f));
+    }
+    else {
+        primSpecName = primSpec->GetPath().GetName();
+    }
+
+
+    auto unfolded = ImGui::TreeNodeEx((const void *)nodeId, nodeFlags, "%s", primSpecName.c_str() );
     if (ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
     }
@@ -182,8 +195,16 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     }
 
     ImGui::TableNextCell();
-    ImGui::Text("%s %s", TfEnum::GetDisplayName(primSpec->GetSpecifier()).c_str(),
-        primSpec->GetTypeName().GetText());
+
+    std::string description = primSpec->GetPath().IsPrimVariantSelectionPath() ? ""
+        : TfEnum::GetDisplayName(primSpec->GetSpecifier()) + " " +
+        primSpec->GetTypeName().GetString();
+
+    ImGui::Text("%s", description.c_str());
+
+    if (primSpec->GetPath().IsPrimVariantSelectionPath()) {
+        ImGui::PopStyleColor();
+    }
 
     // Draw composition summary
     ImGui::TableNextCell();
@@ -192,6 +213,16 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     // TODO: draw variant details or hidden or active
 
     if (unfolded) {
+        SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
+        TF_FOR_ALL(varSetIt, variantSetMap) {
+            const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
+            const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
+            TF_FOR_ALL(varIt, variants) {
+                const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
+                DrawPrimSpecTreeNode(variantSpec, selectedPrim, nodeId);
+            }
+        }
+
         for (int i = 0; i < childrenNames.size(); ++i) {
             DrawPrimSpecTreeNode(childrenNames[i], selectedPrim, nodeId);
         }
