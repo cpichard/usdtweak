@@ -478,11 +478,30 @@ void Editor::Draw() {
 
     DrawCurrentModal();
 
+    ///////////////////////
+    // The following piece of code should give birth to a more refined "shortcut" system
+    //
     ImGuiIO &io = ImGui::GetIO();
+    static bool UndoCommandpressedOnce = true;
     if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_Z]) {
-        DispatchCommand<UndoCommand>();
+        if (UndoCommandpressedOnce){
+            DispatchCommand<UndoCommand>();
+            UndoCommandpressedOnce = false;
+        }
+    } else {
+        UndoCommandpressedOnce = true;
+    }
+    static bool RedoCommandpressedOnce = true;
+    if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_R]) {
+        if (RedoCommandpressedOnce){
+            DispatchCommand<RedoCommand>();
+            RedoCommandpressedOnce = false;
+        }
+    }    else {
+        RedoCommandpressedOnce = true;
     }
 
+    /////////////////
 
     EndBackgroundDock();
     ImGui::PopFont();
