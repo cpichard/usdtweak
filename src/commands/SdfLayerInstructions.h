@@ -28,7 +28,7 @@ struct UndoRedoSetField {
         }
     }
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _path;
     const TfToken _fieldName;
     VtValue _newValue;
@@ -57,7 +57,7 @@ struct UndoRedoSetFieldDictValueByKey {
         }
     }
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _path;
     const TfToken _fieldName;
     const TfToken _keyPath;
@@ -95,7 +95,7 @@ struct UndoRedoSetTimeSample {
         }
     }
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _path;
     double _timeCode;
     VtValue _newValue;
@@ -119,7 +119,7 @@ struct UndoRedoCreateSpec {
     }
 
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _path;
     const SdfSpecType _specType;
     const bool _inert;
@@ -143,7 +143,7 @@ struct UndoRedoDeleteSpec {
     void DoIt();
     void UndoIt();
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _path;
     const bool _inert;
 
@@ -171,7 +171,7 @@ struct UndoRedoMoveSpec {
         }
     };
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _oldPath;
     const SdfPath _newPath;
 };
@@ -194,7 +194,7 @@ struct UndoRedoPushChild {
         }
     }
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _parentPath;
     const TfToken _fieldName;
     const ValueT _value;
@@ -218,7 +218,7 @@ struct UndoRedoPopChild {
         }
     }
 
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
     const SdfPath _parentPath;
     const TfToken _fieldName;
     const ValueT _value;
