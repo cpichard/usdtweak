@@ -108,37 +108,25 @@ public:
             _layer->SetStateDelegate(_previousDelegate);
         }
         if (_editedCommand){
-            if (undoStackPos != undoStack.size()) {
-                undoStack.resize(undoStackPos);
-            }
-            undoStack.emplace_back(std::move(_editedCommand)); // Could leak ??
+            _PushCommand(_editedCommand);
             _editedCommand = nullptr;
-            undoStackPos++;
         }
     }
 
     void StartRecording() {
         if (_layer){
             _previousDelegate = _layer->GetStateDelegate();
-            // We record the undo the first time only
             if (!_editedCommand) {
                 _editedCommand = new SdfUndoRedoCommand();
-                // Install undo/redo delegate
-                std::cout << "Recording commands" << std::endl;
-                _layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(_editedCommand->_instructions));
             }
-            else {
-                //_editedCommand->_redoCommands.Clear();
-                _layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(_editedCommand->_instructions));
-            }
+            // Install undo/redo delegate
+            _layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(_editedCommand->_instructions));
         }
     }
 
     void StopRecording() {
-        if (_layer){
-            if (_layer && _previousDelegate) {
-                _layer->SetStateDelegate(_previousDelegate);
-            }
+        if (_layer && _previousDelegate){
+            _layer->SetStateDelegate(_previousDelegate);
         }
     }
 
@@ -161,7 +149,6 @@ void BeginEdition(UsdStageRefPtr stage) {
 
 void BeginEdition(SdfLayerRefPtr layer) {
     if (layer) {
-        std::cout << "Begin Edition" << std::endl;
         undoRedoRecorder = new SdfUndoRedoRecorder(layer);
         undoRedoRecorder->StartRecording();
     }
@@ -174,7 +161,6 @@ void EndEdition() {
         delete undoRedoRecorder;
         undoRedoRecorder = nullptr;
     }
-    std::cout << "End Edition" << std::endl;
 }
 
 
