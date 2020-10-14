@@ -117,7 +117,6 @@ void DrawPrimHidden(SdfPrimSpecHandle &primSpec) {
     bool isHidden = primSpec->GetHidden();
     if (ImGui::Checkbox("Hidden", &isHidden)) {
         ExecuteAfterDraw(&SdfPrimSpec::SetHidden, primSpec, isHidden);
-        //primSpec->SetHidden(isHidden);
     }
 }
 
@@ -126,16 +125,12 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
         return;
     bool isActive = primSpec->GetActive();
     if (ImGui::Checkbox("Active", &isActive)) {
-        // TODO COmmand
         ExecuteAfterDraw(&SdfPrimSpec::SetActive, primSpec, isActive);
-        //primSpec->SetActive(isActive);
     }
     if (primSpec->HasActive()) {
         ImGui::SameLine();
         if (ImGui::Button("Clear")) {
-            // TODO: commands
             ExecuteAfterDraw(&SdfPrimSpec::ClearActive, primSpec);
-            //primSpec->ClearActive();
         }
     }
 }
@@ -176,7 +171,6 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec) {
 
         if (currentItem && primSpec->GetTypeName() != currentItem) {
             ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
-            //primSpec->SetTypeName(currentItem);
         }
         ImGui::EndCombo();
     }

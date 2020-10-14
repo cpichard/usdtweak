@@ -92,15 +92,7 @@ UndoRedoLayerStateDelegate::_OnSetField(
     SetDirty();
     const VtValue previousValue = _layer->GetField(path, fieldName);
     const VtValue newValue = value;
-
-    std::cout << "Storing AddInstruction for redo: " << newValue << " " << previousValue  << std::endl;
     _undoCommands.StoreInstruction<UndoRedoSetField>({_layer, path, fieldName, newValue, previousValue});
-
-    std::cout << "_OnSetField"
-        << " " << path.GetString()
-        << " " << fieldName.GetString()
-        << " " << value
-        << std::endl;
 }
 
 void
@@ -113,17 +105,7 @@ UndoRedoLayerStateDelegate::_OnSetField(
     const VtValue previousValue = _layer->GetField(path, fieldName);
     VtValue newValue;
     value.GetValue(&newValue);
-
     _undoCommands.StoreInstruction<UndoRedoSetField>({_layer, path, fieldName, newValue, previousValue});
-
-    ///
-    VtValue val;
-    value.GetValue(&val);
-    std::cout << "_OnSetFieldSdfAbstract"
-        << " " << path.GetString()
-        << " " << fieldName.GetString()
-        << " " << val
-        << std::endl;
 }
 
 void
@@ -137,13 +119,6 @@ UndoRedoLayerStateDelegate::_OnSetFieldDictValueByKey(
     const VtValue previousValue = _layer->GetFieldDictValueByKey(path, fieldName, keyPath); // TODO should the instruction retrieve the value instead ?
     const VtValue newValue = value;
     _undoCommands.StoreInstruction<UndoRedoSetFieldDictValueByKey>({_layer, path, fieldName, keyPath, newValue, previousValue});
-
-    std::cout << "_OnSetFieldDictValueByKey"
-        << " " << path.GetString()
-        << " " << fieldName.GetString()
-        << " " << keyPath.GetString()
-        << " " << value
-        << std::endl;
 }
 
 void
@@ -158,14 +133,7 @@ UndoRedoLayerStateDelegate::_OnSetFieldDictValueByKey(
 
     VtValue newValue;
     value.GetValue(&newValue);
-    _undoCommands.StoreInstruction<UndoRedoSetFieldDictValueByKey>({ _layer, path, fieldName, keyPath, newValue, previousValue });
-
-    std::cout << "_OnSetFieldDictValueByKey"
-        << " " << path.GetString()
-        << " " << fieldName.GetString()
-        << " " << keyPath.GetString()
-        << " " << newValue
-        << std::endl;
+    _undoCommands.StoreInstruction<UndoRedoSetFieldDictValueByKey>({_layer, path, fieldName, keyPath, newValue, previousValue});
 }
 
 void
@@ -175,22 +143,7 @@ UndoRedoLayerStateDelegate::_OnSetTimeSample(
     const VtValue& value)
 {
     SetDirty();
-
     _undoCommands.StoreInstruction<UndoRedoSetTimeSample>({_layer, path, timeCode, value});
-
-    //if (!_layer->HasField(path, SdfFieldKeys->TimeSamples)) {
-    //     _undoCommands.AddFunction(std::bind(&UndoSetField, _layer, path, SdfFieldKeys->TimeSamples, VtValue()));
-    //} else {
-    //    VtValue previousValue;
-    //    _layer->QueryTimeSample(path, timeCode, &previousValue);
-    //    _undoCommands.AddFunction(std::bind(&UndoSetTimeSample, _layer, path, timeCode, previousValue));
-    //}
-
-    std::cout << "_OnSetTimeSample"
-        << " " << path.GetString()
-        << " " << timeCode
-        << " " << value
-        << std::endl;
 }
 
 void
@@ -204,19 +157,6 @@ UndoRedoLayerStateDelegate::_OnSetTimeSample(
     value.GetValue(&newValue);
 
     _undoCommands.StoreInstruction<UndoRedoSetTimeSample>({_layer, path, timeCode, newValue});
-    //if (!_layer->HasField(path, SdfFieldKeys->TimeSamples)) {
-    //     _undoCommands.AddFunction(std::bind(&UndoSetField, _layer, path, SdfFieldKeys->TimeSamples, VtValue()));
-    //} else {
-    //    VtValue previousValue;
-    //    _layer->QueryTimeSample(path, timeCode, &previousValue);
-    //    _undoCommands.AddFunction(std::bind(&UndoSetTimeSample, _layer, path, timeCode, previousValue));
-    //}
-
-    std::cout << "_OnSetTimeSample"
-        << " " << path.GetString()
-        << " " << timeCode
-        << " " << newValue
-        << std::endl;
 }
 
 void
@@ -226,13 +166,7 @@ UndoRedoLayerStateDelegate::_OnCreateSpec(
     bool inert)
 {
     SetDirty();
-    //_undoCommands.AddFunction(std::bind(&UndoCreateSpec, _layer, path, inert));
     _undoCommands.StoreInstruction<UndoRedoCreateSpec>({_layer, path, specType, inert});
-
-    std::cout << "_OnCreateSpec"
-        << " " << path.GetString()
-        << " " << specType
-        << " " << inert << std::endl;
 }
 
 void
@@ -244,23 +178,6 @@ UndoRedoLayerStateDelegate::_OnDeleteSpec(
 
     _undoCommands.StoreInstruction<UndoRedoDeleteSpec>({_layer, path,  inert, _GetLayerData()});
 
-    //SdfChangeBlock changeBlock;
-
-    //// TODO: is there a faster way of copying and restoring the data ?
-    //// This can be really slow on big scenes
-    //SdfDataRefPtr deletedData = TfCreateRefPtr(new SdfData());
-    //SdfLayer::TraversalFunction copyFunc = std::bind(
-    //    &_CopySpecAtPath, boost::cref(*boost::get_pointer(_GetLayerData())),
-    //    boost::get_pointer(deletedData), std::placeholders::_1);
-    //_layer->Traverse(path, copyFunc);
-
-    //const SdfSpecType deletedSpecType = _layer->GetSpecType(path);
-    //_SpecCopier copier(boost::get_pointer(_GetLayerData()));
-    //_undoCommands.AddFunction(std::bind(&UndoDeleteSpec, _layer, path, inert, deletedSpecType, deletedData, copier));
-
-    std::cout << "_OnDeleteSpec"
-        << " " << path.GetString()
-        << " " << inert << std::endl;
 }
 
 void
@@ -269,14 +186,7 @@ UndoRedoLayerStateDelegate::_OnMoveSpec(
     const SdfPath& newPath)
 {
     SetDirty();
-    //_undoCommands.AddFunction(std::bind(&UndoMoveSpec, _layer, oldPath, newPath));
-
     _undoCommands.StoreInstruction<UndoRedoMoveSpec>({_layer, oldPath, newPath});
-
-    std::cout << "_OnMoveSpec"
-        << " " << oldPath.GetString()
-        << " " << newPath.GetString()
-        << std::endl;
 }
 
 void
@@ -286,15 +196,7 @@ UndoRedoLayerStateDelegate::_OnPushChild(
     const TfToken& value)
 {
     SetDirty();
-
     _undoCommands.StoreInstruction<UndoRedoPushChild<TfToken>>({_layer, parentPath, fieldName, value});
-
-    //_undoCommands.AddFunction(std::bind(&UndoPushChildToken, _layer, parentPath, fieldName, value));
-    std::cout << "_OnPushChild"
-        << " " << parentPath.GetString()
-        << " " << fieldName.GetString()
-        << " " << value.GetString()
-        << std::endl;
 }
 
 void
@@ -304,15 +206,7 @@ UndoRedoLayerStateDelegate::_OnPushChild(
     const SdfPath& value)
 {
     SetDirty();
-    //_undoCommands.AddFunction(std::bind(&UndoPushChildPath, _layer, parentPath, fieldName, value));
-
     _undoCommands.StoreInstruction<UndoRedoPushChild<SdfPath>>({_layer, parentPath, fieldName, value});
-
-
-    std::cout << "_OnPushChild"
-        << " " << parentPath.GetString()
-        << " " << fieldName.GetString()
-        << " " << value.GetString() << std::endl;
 }
 
 void
@@ -323,11 +217,6 @@ UndoRedoLayerStateDelegate::_OnPopChild(
 {
     SetDirty();
     _undoCommands.StoreInstruction<UndoRedoPopChild<TfToken>>({_layer, parentPath, fieldName, oldValue});
-    //_undoCommands.AddFunction(std::bind(&UndoPopChildToken, _layer, parentPath, fieldName, oldValue));
-    std::cout << "_OnPopChild"
-        << " " << parentPath.GetString()
-        << " " << fieldName.GetString()
-        << " " << oldValue.GetString() << std::endl;
 }
 
 void
@@ -338,11 +227,6 @@ UndoRedoLayerStateDelegate::_OnPopChild(
 {
     SetDirty();
     _undoCommands.StoreInstruction<UndoRedoPopChild<SdfPath>>({_layer, parentPath, fieldName, oldValue});
-    //_undoCommands.AddFunction(std::bind(&UndoPopChildPath, _layer, parentPath, fieldName, oldValue));
-    std::cout << "_OnPopChild"
-        << " " << parentPath.GetString()
-        << " " << fieldName.GetString()
-        << " " << oldValue.GetString() << std::endl;
 }
 
 
