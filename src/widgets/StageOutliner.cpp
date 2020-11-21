@@ -27,7 +27,7 @@ static void DrawUsdPrimEdit(const UsdPrim &prim) {
 /// Recursive function to draw a prim and its descendants
 static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-    if (prim.GetChildren().empty()) {
+    if (prim.GetAllChildren().empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
     if (IsSelected(selectedPaths, prim.GetPath())) {
