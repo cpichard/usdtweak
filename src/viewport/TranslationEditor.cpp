@@ -1,5 +1,6 @@
 #include <iostream>
 #include <pxr/base/gf/matrix4f.h>
+#include <pxr/base/gf/line.h>
 
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
@@ -8,117 +9,170 @@
 #include "Viewport.h"
 #include "Gui.h"
 #include "Commands.h"
+/*
+    TODO: this should really be using the ImGui API instead of native OpenGL code
+    as we ultimatelly want to use Vulkan / Metal. Have a look before going too deep into the OpenGL implementation
+    Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
+    implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
 
-// TODO: this should really be using the ImGui API instead of this OpenGL code
-// as it could be used with Vulkan and Metal. Have a look before going too deep into the OpenGL implementation
-// Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
-// implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
+    // NOTES from the doc:
+    // If you need to compute the transform for multiple prims on a stage,
+    // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse sub-computations shared by the prims.
+    //
+    // https://graphics.pixar.com/usd/docs/api/usd_geom_page_front.html
+    // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second column of the fourth row.
+
+    // Cool doc on manipulators:
+    // http://ed.ilogues.com/2018/06/27/translate-rotate-and-scale-manipulators-in-3d-modelling-programs
+*/
+static constexpr GLfloat axisSize = 100.f;
+static constexpr const GLfloat axisPoints[] = {  0.f,   0.f,   0.f,
+                                0.f,   0.f, axisSize,
+                                0.f,   0.f,   0.f,
+                                0.f, axisSize,   0.f,
+                                0.f,   0.f,   0.f,
+                              axisSize,   0.f,   0.f};
+
+static constexpr const GLfloat axisColors[] = {  1.f, 0.f, 0.f, 1.f,
+                                1.f, 0.f, 0.f, 1.f,
+                                0.f, 1.f, 0.f, 1.f,
+                                0.f, 1.f, 0.f, 1.f,
+                                0.f, 0.f, 1.f, 1.f,
+                                0.f, 0.f, 1.f, 1.f};
+
+static constexpr const char *vertexShaderSrc =
+    "#version 330 core\n"
+    "layout (location = 0) in vec3 aPos;"
+    "layout (location = 1) in vec4 inColor;"
+    "uniform vec3 scale;"
+    "uniform mat4 modelView;"
+    "uniform mat4 projection;"
+    "uniform vec3 origin;"
+    "out vec4 color;"
+    "void main()"
+    "{"
+    "    vec3 bPos = aPos*scale;"
+    "    gl_Position = projection*modelView*vec4(bPos.x+origin.x, bPos.y+origin.y, bPos.z+origin.z, 1.0);"
+    "    color = inColor;"
+    "}";
+
+static constexpr const char *fragmentShaderSrc =
+    "#version 330 core\n"
+    "in vec4 color;"
+    "out vec4 FragColor;"
+    "void main()"
+    "{"
+    "    FragColor = color;"
+    "}";
+
 
 TranslationEditor::TranslationEditor()
-    : _origin(0.f, 0.f, 0.f), _selectedAxis(None) {
+    : _selectedAxis(None) {
 
     // Vertex array object
-    glGenVertexArrays(1, &vertexArrayObject);
-    glBindVertexArray(vertexArrayObject);
-    // Create the 3 lines buffer
-    const GLfloat axisPoints[] = {0.f, 0.f,   0.f, 0.f, 0.f, 100.f, 0.f,   0.f, 0.f,
-                                  0.f, 100.f, 0.f, 0.f, 0.f, 0.f,   100.f, 0.f, 0.f};
+    glGenVertexArrays(1, &_vertexArrayObject);
+    glBindVertexArray(_vertexArrayObject);
 
+    if(CompileShaders()) {
+        _scaleFactorUniform = glGetUniformLocation(_programShader, "scale");
+        _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
+        _projectionUniform = glGetUniformLocation(_programShader, "projection");
+        _originUniform = glGetUniformLocation(_programShader, "origin");
+
+        // We store points and colors in the same buffer
+        glGenBuffers(1, &_axisGLBuffers);
+        glBindBuffer(GL_ARRAY_BUFFER, _axisGLBuffers);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(axisPoints) + sizeof(axisColors), nullptr, GL_STATIC_DRAW);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(axisPoints), axisPoints);
+        glBufferSubData(GL_ARRAY_BUFFER, sizeof(axisPoints), sizeof(axisColors), axisColors);
+
+        GLint vertexAttr = glGetAttribLocation(_programShader, "aPos");
+        glVertexAttribPointer(vertexAttr, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)nullptr);
+        glEnableVertexAttribArray(vertexAttr);
+
+        GLint colorAttr = glGetAttribLocation(_programShader, "inColor");
+        glVertexAttribPointer(colorAttr, 4, GL_FLOAT, GL_TRUE, 0, (GLvoid *)sizeof(axisPoints));
+        glEnableVertexAttribArray(colorAttr);
+    }
+
+    glBindVertexArray(0);
+}
+
+TranslationEditor::~TranslationEditor() {
+    glDeleteBuffers(1, &_axisGLBuffers);
+}
+
+bool TranslationEditor::CompileShaders() {
+
+     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-
-    static const char *vertexShaderSrc = "#version 330 core\n"
-                                  "layout (location = 0) in vec3 aPos;"
-                                  "uniform mat4 modelView;"
-                                  "uniform mat4 projection;"
-                                  "uniform vec3 origin;"
-                                  "void main()"
-                                  "{"
-                                  "gl_Position = projection*modelView*vec4(aPos.x+origin.x, aPos.y+origin.y, aPos.z+origin.z, 1.0);"
-                                  "}";
-    static const char *fragmentShaderSrc = "#version 330 core\n"
-                                    "out vec4 FragColor;"
-                                    "void main()"
-                                    "{"
-                                    "FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);"
-                                    "}";
-
-    // Associate shader source with shader id
     glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
+
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSrc, nullptr);
 
+    // Compile shaders
+    int success = 0;
+    constexpr size_t logSize = 512;
+    char logStr[logSize];
     glCompileShader(vertexShader);
-    int success;
-    char infoLog[512];
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if (!success) {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cout << "Compilation failed" << infoLog << std::endl;
-    } else {
-        std::cout << "vertex shader compilation ok" << std::endl;
+        glGetShaderInfoLog(vertexShader, logSize, nullptr, logStr);
+        std::cout << "Compilation failed\n" << logStr << std::endl;
+        return false;
     }
     glCompileShader(fragmentShader);
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if (!success) {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cout << "Compilation failed" << infoLog << std::endl;
-    } else {
-        std::cout << "fragmentShader compilation ok" << std::endl;
+        glGetShaderInfoLog(fragmentShader, logSize, nullptr, logStr);
+        std::cout << "Compilation failed\n" << logStr << std::endl;
+        return false;
     }
-    programShader = glCreateProgram();
+    _programShader = glCreateProgram();
 
-    glAttachShader(programShader, vertexShader);
-    glAttachShader(programShader, fragmentShader);
-    glBindAttribLocation(programShader, 0, "aPos");
-    glLinkProgram(programShader);
-    glGetProgramiv(programShader, GL_LINK_STATUS, &success);
+    glAttachShader(_programShader, vertexShader);
+    glAttachShader(_programShader, fragmentShader);
+    glBindAttribLocation(_programShader, 0, "aPos");
+    glBindAttribLocation(_programShader, 1, "inColor");
+    glLinkProgram(_programShader);
+    glGetProgramiv(_programShader, GL_LINK_STATUS, &success);
     if (!success) {
-        glGetProgramInfoLog(programShader, 512, NULL, infoLog);
-        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+        glGetProgramInfoLog(_programShader, logSize, nullptr, logStr);
+        std::cout << "Program linking failed\n" << logStr << std::endl;
+        return false;
     }
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
-    modelViewUniform = glGetUniformLocation(programShader, "modelView");
-    projectionUniform = glGetUniformLocation(programShader, "projection");
-    originUniform = glGetUniformLocation(programShader, "origin");
-
-    // Create OpenGL buffers
-    glGenBuffers(1, &axisGLBuffers);
-    glBindBuffer(GL_ARRAY_BUFFER, axisGLBuffers);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(axisPoints), axisPoints, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)nullptr);
-    glEnableVertexAttribArray(0);
-    glBindVertexArray(0);
-
-    // view matrix
+    return true;
 }
 
-TranslationEditor::~TranslationEditor() {
-    // Delete OpenGL buffers
-    glDeleteBuffers(1, &axisGLBuffers);
-}
+
 
 bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
 
-    // Always store the mouse position as this is used
-    _mouseClickPosition = viewport.GetMousePosition();
-
     if(_xformable) {
-        auto timeCode = viewport.GetCurrentTimeCode();
-        const auto & camera = viewport.GetCurrentCamera();
-        auto mv = camera.GetFrustum().ComputeViewMatrix();
-        auto proj = camera.GetFrustum().ComputeProjectionMatrix();
+        const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+        auto mv = frustum.ComputeViewMatrix();
+        auto proj = frustum.ComputeProjectionMatrix();
 
-        //std::cout << _xformable.GetPath().GetString() << std::endl;
-        auto matrix = _xformable.ComputeLocalToWorldTransform(timeCode);
-        auto origin4d = GfVec4d(_origin[0], _origin[1], _origin[2], 1.0)* _xformable.ComputeLocalToWorldTransform(timeCode);
-        auto _origin3d = GfVec3d(origin4d[0], origin4d[1], origin4d[2]);
-        // TODO: store the axis as a unique array somewhere on this class
+        auto timeCode = GetTimeCode(viewport);
+        auto toWorld = _xformable.ComputeLocalToWorldTransform(timeCode);
+
+        // World position for origin
+        auto origin4d = GfVec4d(0, 0, 0, 1.0) * toWorld;
+        auto _origin3d = GfVec3d(origin4d.data());
+
+        // Axis are scaled to keep the same screen size
+        double scale = 1.0;
+        ComputeScaleFactor(viewport, origin4d, scale);
+
+        // Local
         GfVec3d origin3d(0.0, 0.0, 0.0);
-        GfVec3d xAxis3d(100.0, 0.0, 0.0);
-        GfVec3d yAxis3d(0.0, 100.0, 0.0);
-        GfVec3d zAxis3d(0.0, 0.0, 100.0);
+        GfVec3d xAxis3d(axisSize*scale, 0.0, 0.0);
+        GfVec3d yAxis3d(0.0, axisSize*scale, 0.0);
+        GfVec3d zAxis3d(0.0, 0.0, axisSize*scale);
 
         auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d + _origin3d);
         auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d + _origin3d);
@@ -126,25 +180,26 @@ bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
         auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d + _origin3d);
 
         auto pickBounds = viewport.GetPickingBoundarySize();
-        if (PickSegment(xAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+        auto mousePosition = viewport.GetMousePosition();
+        if (PickSegment(xAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = XAxis;
             return true;
         }
-        else if (PickSegment(yAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+        else if (PickSegment(yAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = YAxis;
             return true;
         }
-        else if (PickSegment(zAxisOnScreen, originOnScreen, _mouseClickPosition, pickBounds)) {
+        else if (PickSegment(zAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = ZAxis;
             return true;
         }
     }
     _selectedAxis = None;
     return false;
-
 }
 
 void TranslationEditor::OnSelectionChange(Viewport &viewport) {
+    // TODO: we should set here if the new selection will be editable or not
     auto &selection = viewport.GetSelection();
     auto primPath = GetSelectedPath(selection);
     _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
@@ -156,7 +211,7 @@ void TranslationEditor::OnSelectionChange(Viewport &viewport) {
         auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
         for (auto &xform : xforms) {
             if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate
-                && xform.GetBaseName() == "translate") {
+                && xform.GetBaseName() == "translate") { // is there another way to find the correct translate ?
                 _translateOp = xform;
                 return;
             }
@@ -167,49 +222,52 @@ void TranslationEditor::OnSelectionChange(Viewport &viewport) {
 void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformable) {
-        auto timeCode = viewport.GetCurrentTimeCode();
         const auto & camera = viewport.GetCurrentCamera();
         auto mv =  camera.GetFrustum().ComputeViewMatrix();
         auto proj = camera.GetFrustum().ComputeProjectionMatrix();
-        //std::cout << _xformable.GetPath().GetString() << std::endl;
-        auto matrix = _xformable.ComputeLocalToWorldTransform(timeCode);
-        auto _origind =  GfVec4d(_origin[0], _origin[1], _origin[2], 1.0)* _xformable.ComputeLocalToWorldTransform(timeCode);
-        // TODO: from the doc:
-        // If you need to compute the transform for multiple prims on a stage,
-        // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse sub-computations shared by the prims.
-        //
+        auto toWorld = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
+        GfVec4d pos = GfVec4d(0, 0, 0, 1.0) * toWorld;
 
-        // https://graphics.pixar.com/usd/docs/api/usd_geom_page_front.html
-        // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second column of the fourth row.
-        //std::cout << _origind[0] << " " << _origind[1] << " " << _origind[2] << std::endl;
-        //std::cout << matrix << std::endl;
+        double scale = 1.0;
+        ComputeScaleFactor(viewport, pos, scale);
 
         GLboolean depthTestStatus;
         glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
         if (depthTestStatus) glDisable(GL_DEPTH_TEST);
 
         glLineWidth(2);
-        glUseProgram(programShader);
+        glUseProgram(_programShader);
         GfMatrix4f mvp(mv);
         GfMatrix4f projp(proj);
-        glUniformMatrix4fv(modelViewUniform, 1, GL_FALSE, mvp.data());
-        glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projp.data());
-        glUniform3f(originUniform, _origind[0], _origind[1], _origind[2]);
-        glBindVertexArray(vertexArrayObject);
-        glDrawArrays(GL_LINES, 0, 18);
+        glUniformMatrix4fv(_modelViewUniform, 1, GL_FALSE, mvp.data());
+        glUniformMatrix4fv(_projectionUniform, 1, GL_FALSE, projp.data());
+        glUniform3f(_originUniform, pos[0], pos[1], pos[2]);
+        glUniform3f(_scaleFactorUniform, scale, scale, scale);
+        glBindVertexArray(_vertexArrayObject);
+        glDrawArrays(GL_LINES, 0, 6);
         glBindVertexArray(0);
         if (depthTestStatus) glEnable(GL_DEPTH_TEST);
     }
 
-    UsdGeomBoundable bounds(_xformable);
-    if (bounds) {
-        // draw bounding box
-
-    }
+    //UsdGeomBoundable bounds(_xformable);
+    //if (bounds) {
+    //    // draw bounding box ?? do we want that ?
+    //}
 }
 
+
+
 void TranslationEditor::OnBeginEdition(Viewport &viewport) {
-    _mouseClickPosition = viewport.GetMousePosition();
+
+    // Save translate values if there is already a translate
+    // We don't create the translate operator here as there was no value yet
+    if (_translateOp) {
+        // TODO: the values can be float, we should handle this case
+        _translateOp.GetAs<GfVec3d>(&_translate, GetTimeCode(viewport));
+    }
+
+    ProjectMouseOnAxis(viewport, _originMouseOnAxis);
+
     BeginEdition(viewport.GetCurrentStage());
 }
 
@@ -219,29 +277,23 @@ ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
         return viewport.GetEditor<MouseHoverEditor>();
     }
 
-    ImGuiIO &io = ImGui::GetIO();
-    GfVec3d translateValues(0);
-    if (!_translateOp){
+    auto currentTimeCode = GetTimeCode(viewport);
 
+    if (!_translateOp){
         _translateOp = _xformable.AddTranslateOp();
+        // TODO: check what happens if the operator wasn't created
+        _translateOp.Set<GfVec3d>(GfVec3d(0.0, 0.0, 0.0), currentTimeCode);
+        _translate = GfVec3d(0.0, 0.0, 0.0);
     }
+
     if (_translateOp) {
-        auto currentTimeCode = (_translateOp.MightBeTimeVarying() || io.KeysDown[GLFW_KEY_S])
-            ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default(); // or default if there is no key
-        _translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode);
-        // TODO project a ray to get the correct value
-        switch (_selectedAxis) {
-        case XAxis:
-            translateValues[0] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
-        case YAxis:
-            translateValues[1] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
-        case ZAxis:
-            translateValues[2] -= io.MouseDelta.x + io.MouseDelta.y;
-            break;
+        GfVec3d translateValues;
+        if(_translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode)){
+            GfVec3d mouseOnAxis = _originMouseOnAxis;
+            ProjectMouseOnAxis(viewport, mouseOnAxis);
+            translateValues[_selectedAxis] = _translate[_selectedAxis] + (mouseOnAxis-_originMouseOnAxis)[_selectedAxis];
+            _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
         }
-        _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
     }
     return this;
 };
@@ -250,3 +302,39 @@ ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
 void TranslationEditor::OnEndEdition(Viewport &) {
     EndEdition();
 };
+
+
+UsdTimeCode TranslationEditor::GetTimeCode(const Viewport &viewport) {
+    ImGuiIO &io = ImGui::GetIO();
+    return ((_translateOp && _translateOp.MightBeTimeVarying()) || io.KeysDown[GLFW_KEY_S])
+        ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
+}
+
+///
+void TranslationEditor::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint) {
+    if (_xformable && _selectedAxis<3) {
+        const GfMatrix4d objectTransform = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
+        const GfVec4d objectPosition4d = GfVec4d(0, 0, 0, 1) * objectTransform;
+        const GfVec3d objectPosition3d = GfVec3d(objectPosition4d[0], objectPosition4d[1], objectPosition4d[2]);
+
+        GfVec3d ptOnAxisLine; double a = 0; double b=0;
+        const GfVec4d axisValues = objectTransform.GetColumn(_selectedAxis);
+        const GfVec3d axisDirection(axisValues[0], axisValues[1], axisValues[2]);
+        const GfLine axisLine(objectPosition3d, axisDirection);
+        const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+        const auto mouseRay = frustum.ComputeRay(viewport.GetMousePosition());
+        GfFindClosestPoints(mouseRay, axisLine, &closestPoint, &ptOnAxisLine, &a, &b);
+    }
+}
+
+void TranslationEditor::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
+    // We want the manipulator to have the same projected size
+    const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+    auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
+    ray.FindClosestPoint(GfVec3d(objectPos.data()), &scale);
+    const float focalLength = viewport.GetCurrentCamera().GetFocalLength();
+    scale /= focalLength == 0 ? 1.f : focalLength;
+    scale /= axisSize;
+    scale *= 2;
+}
+

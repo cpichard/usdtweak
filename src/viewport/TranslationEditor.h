@@ -36,29 +36,35 @@ class TranslationEditor : public ViewportEditor {
     void OnSelectionChange(Viewport &); // Should that inherit ?
 
     typedef enum { // use class enum ??
-        XAxis,
+        XAxis = 0,
         YAxis,
         ZAxis,
         None,
     } SelectedAxis;
 
 private:
+
+    UsdTimeCode GetTimeCode(const Viewport &);
+    bool CompileShaders();
+    void ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint);
+    void ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale);
+
     SelectedAxis _selectedAxis;
     UsdGeomXformable _xformable;
     UsdGeomXformOp _translateOp;
 
-    GfMatrix4d _mat;
-
-    GfVec3f _origin;
-    GfVec2d _mouseClickPosition;
+    //GfMatrix4d _mat;
+    GfVec3d _originMouseOnAxis;
+    GfVec3d _translate; // RENAME
 
     // OpenGL stuff
-    unsigned int axisGLBuffers;
-    unsigned int vertexShader;
-    unsigned int fragmentShader;
-    unsigned int programShader;
-    unsigned int vertexArrayObject;
-    unsigned int modelViewUniform;
-    unsigned int projectionUniform;
-    unsigned int originUniform;
+    unsigned int _axisGLBuffers;
+    unsigned int _vertexShader;
+    unsigned int _fragmentShader;
+    unsigned int _programShader;
+    unsigned int _vertexArrayObject;
+    unsigned int _modelViewUniform;
+    unsigned int _projectionUniform;
+    unsigned int _originUniform;
+    unsigned int _scaleFactorUniform;
 };
