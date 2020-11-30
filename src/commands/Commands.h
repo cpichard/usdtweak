@@ -90,6 +90,18 @@ void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments
     DispatchCommand<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
+template<typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT&&... arguments) {
+    const auto path = att->GetPath();
+    const auto layer = att->GetLayer();
+    std::function<void()> usdApiFunc = [=]() {
+        auto primSpec = layer->GetPrimAtPath(path);
+        std::function<void()> attFunc = std::bind(func, get_pointer(att), arguments...);
+        attFunc();
+    };
+    DispatchCommand<UsdApiFunction>(layer, usdApiFunc);
+}
+
 
 /// Process the commands waiting. Only one command would be waiting at the moment
 void ProcessCommands();

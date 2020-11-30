@@ -363,8 +363,11 @@ void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec) {
 void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec) {
 
     ImGui::PushItemWidth(-1);
-    ImVec2 boxSize(0, -50); // TODO : move box
-    if (ImGui::ListBoxHeader("##compositionarcs", boxSize)) {
+    if (ImGui::Button("Add reference")) {
+        ImGui::OpenPopup("DrawPrimCompositionPopupMenu");
+    }
+    //ImVec2 boxSize(0, -10); // TODO : move box
+    if (ImGui::ListBoxHeader("##compositionarcs")) {
         DrawPrimCompositions(primSpec);
         const auto &pathStr = primSpec->GetPath().GetString();
         SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
@@ -378,18 +381,25 @@ void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec) {
         }
         ImGui::ListBoxFooter();
     }
-    if (ImGui::Button("Add composition")) {
-        ImGui::OpenPopup("DrawPrimCompositionPopupMenu");
-    }
+
     if (ImGui::BeginPopupContextItem("DrawPrimCompositionPopupMenu")) {
         DrawPrimCompositionPopupMenu(primSpec);
         ImGui::EndPopup();
     }
 }
 
+
+
 void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
+
+    // TODO: is there a more efficient code, and decorrelated from the function ???
+    int deleteButtonCounter = 0;
+    auto deleteButtonLabel = [&]() -> std::string {
+        return "D##" + std::to_string(deleteButtonCounter++);
+    };
+
     const auto &attributes = primSpec->GetAttributes();
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 1, tableFlags)) {
@@ -397,19 +407,38 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
         TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
             ImGui::TableNextRow();
+            if(ImGui::Button(deleteButtonLabel().c_str())) {
+                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec,
+                                    primSpec->GetPropertyAtPath((*attribute)->GetPath()));
+            }
+            ImGui::SameLine();
             if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
                 if ((*attribute)->HasDefaultValue()) {
                     ImGui::TableNextRow();
-                    std::string defaultValueLabel = (*attribute)->GetName() + " Default";
-                    DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
+                    if(ImGui::Button(deleteButtonLabel().c_str())) {
+                        ExecuteAfterDraw(&SdfAttributeSpec::ClearDefaultValue, (*attribute));
+                    }
+                    ImGui::SameLine();
+                    std::string defaultValueLabel = "Default";
+                    VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
+                    if (modified != VtValue()) {
+                        ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, *attribute, modified);
+                    }
                 }
 
                 SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
                 if (!timeSamples.empty()) {
                     TF_FOR_ALL(sample, timeSamples) {
                         ImGui::TableNextRow();
-                        std::string sampletValueLabel = (*attribute)->GetName() + " " + std::to_string(sample->first);
-                        DrawVtValue(sampletValueLabel, sample->second);
+                        if(ImGui::Button(deleteButtonLabel().c_str())) {
+                            ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first);
+                        }
+                        ImGui::SameLine();
+                        std::string sampleValueLabel = std::to_string(sample->first);
+                        VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
+                        if (modified!=VtValue()) {
+                            ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first, modified);
+                        }
                     }
                 }
                 ImGui::TreePop();
@@ -423,6 +452,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
+    ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
          if (ImGui::CollapsingHeader("Metadata")) {
