@@ -257,7 +257,7 @@ void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
 
 void Editor::CreateLayer(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");
-    _layers.emplace(SdfLayer::CreateNew(path, path));
+    _layers.emplace(SdfLayer::CreateNew(path));
     SetCurrentLayer(SdfLayer::FindOrOpen(path));
     _showTheater = true;
     _showLayerEditor = true;
@@ -292,8 +292,8 @@ void Editor::SaveCurrentLayerAs(const std::string &path) {
 
 void Editor::CreateStage(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");
-    auto layer = SdfLayer::New(usdaFormat, path, path);
-    _currentStage = UsdStage::Open(layer, layer);
+    auto layer = SdfLayer::New(usdaFormat, path);
+    _currentStage = UsdStage::Open(layer);
     _stageCache.Insert(_currentStage);
     _showTheater = true;
     _showViewport = true;

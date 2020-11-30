@@ -122,7 +122,7 @@ Viewport::~Viewport() {
     _drawTarget->Bind();
     for (auto &renderer : _renderers) {
         // Warning, InvalidateBuffers might be defered ... :S to check
-        renderer.second->InvalidateBuffers();
+        // removed in 20.11: renderer.second->InvalidateBuffers();
         delete renderer.second;
         renderer.second = nullptr;
     }
@@ -357,10 +357,10 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
 
     GfFrustum pixelFrustum = _currentCamera.GetFrustum().ComputeNarrowedFrustum(clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
     GfVec3d outHitPoint;
-
+    GfVec3d outHitNormal;
     return (_renderparams && _renderer &&
         _renderer->TestIntersection(_currentCamera.GetFrustum().ComputeViewMatrix(),
             pixelFrustum.ComputeProjectionMatrix(),
-            GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint,
+            GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint, &outHitNormal,
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
 }
