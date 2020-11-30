@@ -459,19 +459,13 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 
     if (!layer)
         return;
-
-    ImGui::BeginTabBar("theatertabbar");
-    if (ImGui::BeginTabItem("Prims tree")) {
-        DrawLayerPrimTree(layer, selectedPrim);
-        ImGui::EndTabItem();
+    if (ImGui::CollapsingHeader("Metadata")) {
+         DrawLayerMetadata(layer);
     }
-    if (ImGui::BeginTabItem("Sublayers")) {
-        DrawLayerSublayersPage(layer);
-        ImGui::EndTabItem();
+    if (ImGui::CollapsingHeader("Sublayers")) {
+         DrawLayerSublayersPage(layer);
     }
-    if (ImGui::BeginTabItem("Metadata")) {
-        DrawLayerMetadata(layer);
-        ImGui::EndTabItem();
+    if (ImGui::CollapsingHeader("Prims tree")) {
+         DrawLayerPrimTree(layer, selectedPrim);
     }
-    ImGui::EndTabBar();
 }

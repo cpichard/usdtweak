@@ -424,18 +424,8 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
-
-    ImGui::BeginTabBar("primspeceditortabbar");
-    if (ImGui::BeginTabItem("Attributes")) {
-        DrawPrimSpecAttributes(primSpec);
-        ImGui::EndTabItem();
-    }
-    if (ImGui::BeginTabItem("Compositions")) {
-        DrawPrimCompositionArcs(primSpec);
-        ImGui::EndTabItem();
-    }
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
-        if (ImGui::BeginTabItem("Metadata")) {
+         if (ImGui::CollapsingHeader("Metadata")) {
             DrawPrimSpecifierCombo(primSpec);
             DrawPrimName(primSpec);
             DrawPrimKind(primSpec);
@@ -443,11 +433,14 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
             DrawPrimInstanceable(primSpec);
             DrawPrimHidden(primSpec);
             DrawPrimActive(primSpec);
-            ImGui::EndTabItem();
         }
     }
 
+    if (ImGui::CollapsingHeader("References")) {
+        DrawPrimCompositionArcs(primSpec);
+    }
 
-
-    ImGui::EndTabBar();
+    if (ImGui::CollapsingHeader("Attributes")) {
+        DrawPrimSpecAttributes(primSpec);
+    }
 }
