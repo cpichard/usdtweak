@@ -2,13 +2,14 @@
 #include "Constants.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec3d.h"
+#include "pxr/base/vt/array.h"
 
 #include "Gui.h"
 
 #include <iostream>
 #include <sstream>
 /// Returns the new value if the value was edited, otherwise an empty VtValue
-VtValue DrawVtValue(const std::string &label, const VtValue &value) {
+VtValue DrawVtValue(const std::string &label, const VtValue &value, SdfValueTypeName typeName) {
     if (value.IsHolding<GfVec3f>()) {
         GfVec3f buffer(value.Get<GfVec3f>());
         ImGui::InputFloat3(label.c_str(), buffer.data(), DecimalPrecision);
@@ -51,8 +52,19 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         ImGui::Text("'%s': %s", label.c_str(), token.GetString().c_str());
     }
     else {
-        // This can be super slow when displaying a big geo
-        if (value.IsArrayValued() && value.GetArraySize() > 10) {
+        if (value.IsArrayValued() && value.GetArraySize() == 1) {
+            if (value.IsHolding<VtArray<float>>()){
+                VtArray<float> fltArray = value.Get<VtArray<float>>();
+                float fltValue = fltArray[0];
+                ImGui::InputFloat(label.c_str(), &fltValue);
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    fltArray[0] = fltValue;
+                    return VtValue(fltArray);
+                }
+            }
+        }
+         // This can be super slow when displaying a big geo
+        else if (value.IsArrayValued() && value.GetArraySize() > 10) {
             ImGui::Text("'%s': array with %d values", label.c_str(), value.GetArraySize());
          }
         else {
