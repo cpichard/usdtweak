@@ -447,7 +447,7 @@ void DrawLayerSublayersPage(SdfLayerRefPtr layer) {
     }
     ImGui::PushItemWidth(-1);
     // TODO: Mute and Unmute layers
-    if (ImGui::ListBoxHeader("##empty", 10, 10)) {
+    if (ImGui::ListBoxHeader("##DrawLayerSublayersPage", 10, 10)) {
         DrawLayerSublayerTree(layer);
         ImGui::ListBoxFooter();
     }
