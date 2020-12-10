@@ -164,17 +164,18 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
 }
 
 /// Draw a node in the primspec tree
-static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int &nodeId) {
+static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
     if (!primSpec)
         return;
+    bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
 
     ImGui::TableNextRow();
+    ImGui::PushID(nodeId);
+    nodeId=0;
 
     // Makes the row selectable
-    std::string label = "##DPSTN_" + std::to_string(nodeId);
-    nodeId++;
     bool selected = primSpec == selectedPrim;
-    if (ImGui::Selectable(label.c_str(), selected,
+    if (ImGui::Selectable("", selected,
         ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         selectedPrim = primSpec;
     }
@@ -185,24 +186,27 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
         childrenNames.empty() && ! primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf : ImGuiTreeNodeFlags_DefaultOpen;
     nodeFlags |= ImGuiTreeNodeFlags_OpenOnArrow;
 
-    // Draw the hierarchy
-    // Share the selection state by using the same label
-
-
+    // Draw the tree column
     std::string primSpecName;
-    if (primSpec->GetPath().IsPrimVariantSelectionPath()) {
+    if (primIsVariant) {
         auto variantSelection = primSpec->GetPath().GetVariantSelection();
         primSpecName = std::string("{") + variantSelection.first.c_str() + ":" + variantSelection.second.c_str() + "}";
-        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.5f));
     }
     else {
         primSpecName = primSpec->GetPath().GetName();
     }
+    // Style
+    if (primIsVariant){
+        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.5f));
+    }
 
-
-    auto unfolded = ImGui::TreeNodeEx((const void *)nodeId, nodeFlags, "%s", primSpecName.c_str() );
+    auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags);
     if (ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
+    }
+
+    if (primIsVariant) {
+        ImGui::PopStyleColor();
     }
 
     // Right click will open the quick edit popup menu
@@ -211,24 +215,19 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
         ImGui::EndPopup();
     }
 
+    // Draw the description column
     ImGui::TableNextCell();
-
     std::string description = primSpec->GetPath().IsPrimVariantSelectionPath() ? ""
         : TfEnum::GetDisplayName(primSpec->GetSpecifier()) + " " +
         primSpec->GetTypeName().GetString();
 
     ImGui::Text("%s", description.c_str());
 
-    if (primSpec->GetPath().IsPrimVariantSelectionPath()) {
-        ImGui::PopStyleColor();
-    }
-
     // Draw composition summary
     ImGui::TableNextCell();
     DrawPrimCompositionSummary(primSpec);
 
-    // TODO: draw variant details or hidden or active
-
+    // Draw children
     if (unfolded) {
         SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
         TF_FOR_ALL(varSetIt, variantSetMap) {
@@ -236,26 +235,29 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
             const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
             TF_FOR_ALL(varIt, variants) {
                 const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
-                DrawPrimSpecTreeNode(variantSpec, selectedPrim, nodeId);
+                DrawPrimSpecTreeNode(variantSpec, selectedPrim, nodeId++);
             }
         }
 
         for (int i = 0; i < childrenNames.size(); ++i) {
-            DrawPrimSpecTreeNode(childrenNames[i], selectedPrim, nodeId);
+            DrawPrimSpecTreeNode(childrenNames[i], selectedPrim, nodeId++);
         }
         ImGui::TreePop();
     }
+
+    ImGui::PopID();
 }
 
 void DrawPrimSpecTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
-    int nodeId = 0;
+
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
     if (ImGui::BeginTable("##DrawPrimSpecTree", 3, tableFlags)) {
         ImGui::TableSetupColumn("Hierarchy");
         ImGui::TableSetupColumn("Type");
         ImGui::TableSetupColumn("Arcs");
+        int nodeId = 0;
         for (const auto &child : layer->GetRootPrims()) {
-            DrawPrimSpecTreeNode(child, selectedPrim, nodeId);
+            DrawPrimSpecTreeNode(child, selectedPrim, nodeId++);
         }
         ImGui::EndTable();
     }

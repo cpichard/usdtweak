@@ -396,10 +396,6 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 
     // TODO: is there a more efficient code, and decorrelated from the function ???
     int deleteButtonCounter = 0;
-    auto deleteButtonLabel = [&]() -> std::string {
-        return "D##" + std::to_string(deleteButtonCounter++);
-    };
-
     const auto &attributes = primSpec->GetAttributes();
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 1, tableFlags)) {
@@ -407,17 +403,21 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
         TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
             ImGui::TableNextRow();
-            if(ImGui::Button(deleteButtonLabel().c_str())) {
+            ImGui::PushID(deleteButtonCounter++);
+            if(ImGui::Button("D")) { // This will be replaced by a "bin/trash" glyph
                 ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec,
                                     primSpec->GetPropertyAtPath((*attribute)->GetPath()));
             }
+            ImGui::PopID();
             ImGui::SameLine();
             if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
                 if ((*attribute)->HasDefaultValue()) {
                     ImGui::TableNextRow();
-                    if(ImGui::Button(deleteButtonLabel().c_str())) {
+                    ImGui::PushID(deleteButtonCounter++);
+                    if(ImGui::Button("D")) {
                         ExecuteAfterDraw(&SdfAttributeSpec::ClearDefaultValue, (*attribute));
                     }
+                    ImGui::PopID();
                     ImGui::SameLine();
                     std::string defaultValueLabel = "Default";
                     VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
@@ -430,9 +430,11 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                 if (!timeSamples.empty()) {
                     TF_FOR_ALL(sample, timeSamples) {
                         ImGui::TableNextRow();
-                        if(ImGui::Button(deleteButtonLabel().c_str())) {
+                        ImGui::PushID(deleteButtonCounter++);
+                        if(ImGui::Button("D")) {
                             ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first);
                         }
+                        ImGui::PopID();
                         ImGui::SameLine();
                         std::string sampleValueLabel = std::to_string(sample->first);
                         VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
