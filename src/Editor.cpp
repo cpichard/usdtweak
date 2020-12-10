@@ -36,8 +36,7 @@ struct CreateLayerModal : public ModalDialog {
 
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
-        }
-        else {
+        } else {
             ImGui::Text("Create: ");
         } // ... could add other messages like permission denied, or incorrect extension
         ImGui::Text("%s", filePath.c_str());
@@ -60,7 +59,7 @@ struct CreateLayerModal : public ModalDialog {
 
 struct CreateStageModal : public ModalDialog {
 
-    CreateStageModal(Editor &editor) : editor(editor) {};
+    CreateStageModal(Editor &editor) : editor(editor) { SetValidExtensions({}); };
 
     void Draw() override {
         DrawFileBrowser();
@@ -68,8 +67,7 @@ struct CreateStageModal : public ModalDialog {
 
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
-        }
-        else {
+        } else {
             ImGui::Text("Create: ");
         } // ... could add other messages like permission denied, or incorrect extension
         ImGui::Text("%s", filePath.c_str());
@@ -94,7 +92,7 @@ struct CreateStageModal : public ModalDialog {
 /// Modal dialog to open a layer
 struct OpenLayerModal : public ModalDialog {
 
-    OpenLayerModal(Editor &editor) : editor(editor) {};
+    OpenLayerModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".abc"}); };
     ~OpenLayerModal() override {}
     void Draw() override {
         DrawFileBrowser();
@@ -125,7 +123,7 @@ struct OpenLayerModal : public ModalDialog {
 
 struct OpenStageModal : public ModalDialog {
 
-    OpenStageModal(Editor &editor) : editor(editor) {};
+    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".abc"}); };
     ~OpenStageModal() override {}
     void Draw() override {
         DrawFileBrowser();

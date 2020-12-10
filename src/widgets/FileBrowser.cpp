@@ -1,6 +1,8 @@
 /// File browser
-/// This is a first rough implementation, it should be refactored to avoid using globals,
+/// This is a first quick implementation,
+/// it should be refactored to avoid using globals,
 /// split the ui and filesystem code, remove the timer, etc.
+
 #include <iostream>
 #include <functional>
 #include <chrono>
@@ -14,6 +16,7 @@
 #include <filesystem>
 namespace fs = std::filesystem;
 #else
+#define GHC_WITH_EXCEPTIONS 0
 #include <ghc/filesystem.hpp>
 namespace fs = ghc::filesystem;
 #endif
@@ -23,10 +26,16 @@ namespace clk = std::chrono;
 /// Browser returned file path, not thread safe
 static std::string filePath;
 static bool fileExists = false;
+static std::vector<std::string> validExts;
+
+
+void SetValidExtensions(const std::vector<std::string> &extensions) {
+    validExts = extensions;
+}
 
 // Using a timer to avoid querying the filesytem at every frame
 // TODO: a separate thread to read from the filesystem only once needed
-void EverySecond(std::function<void()> deferedFunction) {
+static void EverySecond(std::function<void()> deferedFunction) {
     static auto last = clk::steady_clock::now();
     auto now = clk::steady_clock::now();
     if ((now - last).count() > 1e9) {
@@ -72,6 +81,26 @@ static void DrawNavigationBar(fs::path &displayedDirectory, char *lineEditBuffer
     }
 }
 
+static bool ShouldBeDisplayed(const fs::directory_entry &p) {
+    const auto &filename = p.path().filename();
+    // TODO: startsWith doesn't seem to be in the standard c++17, this needs a refactor !
+    const auto startsWithDot = fs::detail::startsWith(p.path().filename(), ".");
+    bool endsWithValidExt = true;
+    if (!validExts.empty()) {
+        endsWithValidExt = false;
+        for (auto ext : validExts) { // we could stop the loop when the extension is found
+            endsWithValidExt |= filename.extension() == ext;
+        }
+    }
+
+    try {
+        const bool isDirectory = fs::is_directory(p);
+        return !startsWithDot && (isDirectory || endsWithValidExt);
+    }
+    catch (fs::filesystem_error &) {
+        return false;
+    }
+}
 
 // TODO check that there is a antislash/slash at the end of c:
 void DrawFileBrowser() {
@@ -84,13 +113,11 @@ void DrawFileBrowser() {
     auto path = fs::path(lineEditBuffer);
     EverySecond([&]() {
         // Process the line entered by the user
-        if (fs::exists(path) // TODO: not sure it need is_directory and exists
-            && fs::is_directory(path)) {
+        if (fs::is_directory(path)) {
             displayedDirectory = path;
             ClearPathBuffer(lineEditBuffer);
             displayedFileName = "";
-        } else if (fs::is_directory(path.parent_path())
-            && fs::exists(path.parent_path())) {
+        } else if (fs::is_directory(path.parent_path())) {
             displayedDirectory = path.parent_path();
             CopyToPathBuffer(path.filename().string(), lineEditBuffer);
             displayedFileName = path.filename();
@@ -114,8 +141,9 @@ void DrawFileBrowser() {
         fileExists = fs::exists(filePath);
         directoryContent.clear();
         for (auto &p : fs::directory_iterator(displayedDirectory)) {
-            if (!fs::detail::startsWith(p.path().filename(), ".")) {
-                directoryContent.push_back(p);} ;
+            if (ShouldBeDisplayed(p)) {
+                directoryContent.push_back(p);
+            };
         }
         std::sort(directoryContent.begin(), directoryContent.end());
     });
@@ -135,22 +163,29 @@ void DrawFileBrowser() {
             ImGui::TableSetupColumn(" Filename ", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableAutoHeaders();
             int i = 0;
+            ImGui::PushID("direntries");
             for (auto dirEntry : directoryContent) {
+                const bool isDirectory = dirEntry.is_directory();
                 ImGui::TableNextRow();
-                char label[32]; // TODO: is there a better/faster way to create label ?
-                sprintf(label, "##filestable_%04d", i++);
-                if (ImGui::Selectable(label, false,
-                    ImGuiSelectableFlags_SpanAllColumns |
-                    ImGuiSelectableFlags_AllowItemOverlap) ){
-                        CopyToPathBuffer(dirEntry.path().string(), lineEditBuffer);
+                ImGui::PushID(i++);
+                // makes the line selectable, and when selected copy the path
+                // to the line edit buffer
+                if (ImGui::Selectable("", false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+                    CopyToPathBuffer(dirEntry.path().string(), lineEditBuffer);
                 }
+                ImGui::PopID();
                 ImGui::SameLine();
-                ImGui::Text("%s", dirEntry.is_directory() ? "D " : "F ");
+                ImGui::Text("%s", isDirectory ? "D " : "F ");
                 ImGui::TableNextCell();
-                ImGui::Text("%s", dirEntry.path().filename().c_str());
+                if (isDirectory) {
+                    ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
+                } else {
+                    ImGui::TextColored(ImVec4(0.8, 1.0, 0.8, 1.0), "%s", dirEntry.path().filename().c_str());
+                }
                 ImGui::TableNextCell();
-                ImGui::Text("%ju", dirEntry.file_size());
+                if (!isDirectory) ImGui::Text("%ju KB", dirEntry.file_size()/1024);
             }
+            ImGui::PopID(); // direntries
             ImGui::EndTable();
         }
         ImGui::ListBoxFooter();
