@@ -66,12 +66,14 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
 }
 
 /// Draw the hierarchy of the stage
-void DrawStageOutliner(UsdStage &stage, Selection &selectedPaths) {
+void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
+    if (!stage)
+        return;
     constexpr unsigned int textBufferSize = 512;
     static char buf[textBufferSize];
     bool addprimclicked = false;
-    auto rootPrim = stage.GetPseudoRoot();
-    auto layer = stage.GetSessionLayer();
+    auto rootPrim = stage->GetPseudoRoot();
+    auto layer = stage->GetSessionLayer();
 
     ImGui::Columns(2); // Prim name | Type (Xform)
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;

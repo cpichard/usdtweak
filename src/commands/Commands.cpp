@@ -2,7 +2,6 @@
 #include "SdfCommandGroup.h"
 #include "SdfUndoRecorder.h"
 #include <functional>
-#include <iostream>
 #include <vector>
 #include "UndoLayerStateDelegate.h"
 
@@ -72,7 +71,7 @@ template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(Arg
 
 /// The ProcessCommands function is called after the frame is rendered and displayed and execute the
 /// last command.
-void _PushCommand(Command *cmd) {
+static void _PushCommand(Command *cmd) {
     if (undoStackPos != undoStack.size()) {
         undoStack.resize(undoStackPos);
     }
@@ -80,7 +79,7 @@ void _PushCommand(Command *cmd) {
     undoStackPos++;
 }
 
-void ProcessCommands() {
+void ExecuteCommands() {
     if (lastCmd) {
         if (lastCmd->DoIt()) {
             _PushCommand(lastCmd);
@@ -92,10 +91,8 @@ void ProcessCommands() {
     }
 }
 
-///
-/// TEST IN PROGRESS
-///
-
+/// A SdfUndoRedoRecorder creates an object on the stack which will start recording all the usd commands
+/// and stops when it is destroyed.
 class SdfUndoRedoRecorder final {
 public:
 
@@ -149,6 +146,7 @@ void BeginEdition(UsdStageRefPtr stage) {
 
 void BeginEdition(SdfLayerRefPtr layer) {
     if (layer) {
+        // TODO: check there is no undoRedoRecorder alive
         undoRedoRecorder = new SdfUndoRedoRecorder(layer);
         undoRedoRecorder->StartRecording();
     }

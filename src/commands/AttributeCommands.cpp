@@ -3,20 +3,22 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+/// Due to static_assert in the attribute.h file, the compiler is not able find the correct UsdAttribute::Set function
+/// so we had to create a specific command for this
+
 struct AttributeSet : public SdfLayerCommand {
 
-    AttributeSet(UsdStageWeakPtr stage, SdfPath attributePath, VtValue value, UsdTimeCode currentTime)
-        : _stage(stage), _attributePath(std::move(attributePath)), _value(std::move(value)), _timeCode(currentTime)
-    {}
+    AttributeSet(UsdAttribute attribute, VtValue value, UsdTimeCode currentTime)
+        : _stage(attribute.GetStage()), _path(attribute.GetPath()), _value(std::move(value)), _timeCode(currentTime) {}
 
     ~AttributeSet() override {}
 
     bool DoIt() override {
-        if (_stage){
+        if (_stage) {
             auto layer = _stage->GetEditTarget().GetLayer();
             if (layer) {
                 SdfUndoRecorder recorder(_undoCommands, layer);
-                const UsdAttribute &attribute = _stage->GetAttributeAtPath(_attributePath);
+                const UsdAttribute &attribute = _stage->GetAttributeAtPath(_path);
                 attribute.Set(_value, _timeCode);
                 return true;
             }
@@ -25,8 +27,8 @@ struct AttributeSet : public SdfLayerCommand {
     }
 
     UsdStageWeakPtr _stage;
-    SdfPath _attributePath;
+    SdfPath _path;
     VtValue _value;
     UsdTimeCode _timeCode;
 };
-template void ExecuteAfterDraw<AttributeSet>(UsdStageWeakPtr stage, SdfPath attributePath, VtValue value, UsdTimeCode currentTime);
+template void ExecuteAfterDraw<AttributeSet>(UsdAttribute attribute, VtValue value, UsdTimeCode currentTime);

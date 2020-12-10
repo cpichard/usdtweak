@@ -9,19 +9,17 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 ///
 /// Declarations of Command classes only.
+/// We create specific commands when the
 /// We want to have different implementations with or without undo/redo
 ///
 struct PrimNew;
 struct PrimRemove;
-struct PrimChangeName;
-struct PrimChangeSpecifier;
 struct PrimAddReference;
 
 struct EditorSelectPrimPath;
 struct EditorOpenStage;
 
 struct LayerRemoveSubLayer;
-struct LayerInsertSubLayer;
 struct LayerMoveSubLayer;
 
 struct UndoCommand;
@@ -32,23 +30,22 @@ struct AttributeSet;
 struct UsdApiFunction;
 
 /// Post a command to be executed after the editor frame is rendered.
+/// The commands are defined in Commands.cpp and its included file
 template<typename CommandClass, typename... ArgTypes>
 void ExecuteAfterDraw(ArgTypes... arguments);
 
-/// Convenience function to defer the execution of a function from the USD api after the editor frame is rendered.
-/// It will also record the changes made  on the layer by the function and store a command in the undo/redo.
-/// For the widget API ExecuteAfterRender might just be the call to the original function
+/// Convenience functions to avoid creating commands and directly call the USD api after the editor frame is rendered.
+/// It will also record the changes made on the layer by the function and store a command in the undo/redo.
 template<typename FuncT, typename... ArgsT>
-void ExecuteAfterDraw(FuncT &&func, SdfLayerRefPtr stageOrLayer, ArgsT&&... arguments) {
-    std::function<void()> usdApiFunc = std::bind(func, stageOrLayer, std::forward<ArgsT>(arguments)...);
-    ExecuteAfterDraw<UsdApiFunction>(stageOrLayer, usdApiFunc);
+void ExecuteAfterDraw(FuncT &&func, SdfLayerRefPtr layer, ArgsT&&... arguments) {
+    std::function<void()> usdApiFunc = std::bind(func, layer, std::forward<ArgsT>(arguments)...);
+    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
-// TODO: UsdStageRefPtr instead of pointer
 template<typename FuncT, typename... ArgsT>
-void ExecuteAfterDraw(FuncT &&func, UsdStage * &&stageOrLayer, ArgsT&&... arguments) {
-    std::function<void()> usdApiFunc = std::bind(func, stageOrLayer, std::forward<ArgsT>(arguments)...);
-    auto layer = TfCreateRefPtrFromProtectedWeakPtr(stageOrLayer->GetEditTarget().GetLayer());
+void ExecuteAfterDraw(FuncT &&func, UsdStageRefPtr stage, ArgsT&&... arguments) {
+    std::function<void()> usdApiFunc = std::bind(func, stage, std::forward<ArgsT>(arguments)...);
+    auto layer = TfCreateRefPtrFromProtectedWeakPtr(stage->GetEditTarget().GetLayer());
     ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
@@ -102,9 +99,8 @@ void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT&&... argum
     ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
-
-/// Process the commands waiting. Only one command would be waiting at the moment
-void ProcessCommands();
+/// Process the commands waiting in the queue. Only one command would be waiting at the moment
+void ExecuteCommands();
 
 ///
 /// Allows to record one command spanning multiple frames.

@@ -66,42 +66,6 @@ struct PrimRemove : public SdfLayerCommand {
     SdfPrimSpecHandle _primSpec;
 };
 
-struct PrimChangeName : public SdfLayerCommand {
-
-    PrimChangeName(SdfPrimSpecHandle primSpec, std::string newName)
-        : _primSpec(std::move(primSpec)), _newName(std::move(newName)) {}
-
-    ~PrimChangeName() override {}
-
-    bool DoIt() override {
-        SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
-        _primSpec->SetName(_newName);
-        return true;
-    }
-
-    SdfPrimSpecHandle _primSpec;
-    std::string _newName;
-};
-
-struct PrimChangeSpecifier : public SdfLayerCommand {
-    PrimChangeSpecifier(SdfPrimSpecHandle primSpec, SdfSpecifier newSpecifier)
-        : _primSpec(std::move(primSpec)), _newSpecifier(std::move(newSpecifier)) {}
-
-    ~PrimChangeSpecifier() override {}
-
-    bool DoIt() override {
-        if (_primSpec) {
-            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
-            _primSpec->SetSpecifier(_newSpecifier);
-            return true;
-        }
-        return false;
-    }
-
-    SdfPrimSpecHandle _primSpec;
-    SdfSpecifier _newSpecifier;
-};
-
 struct PrimAddReference : public SdfLayerCommand {
     PrimAddReference(SdfPrimSpecHandle primSpec, std::string reference)
         : _primSpec(std::move(primSpec)), _reference(std::move(reference)) {}
@@ -127,8 +91,6 @@ struct PrimAddReference : public SdfLayerCommand {
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
 template void ExecuteAfterDraw<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec);
-template void ExecuteAfterDraw<PrimChangeName>(SdfPrimSpecHandle primSpec, std::string newName);
-template void ExecuteAfterDraw<PrimChangeSpecifier>(SdfPrimSpecHandle primSpec, SdfSpecifier newSpec);
 template void ExecuteAfterDraw<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
 
 

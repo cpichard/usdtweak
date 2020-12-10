@@ -60,7 +60,7 @@ struct AddSublayer : public ModalDialog {
         ImGui::SameLine();
         if (ImGui::Button("Ok")) {
             if (!filePath.empty()) {
-                ExecuteAfterDraw<LayerInsertSubLayer>(layer, filePath);
+                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, filePath, -1);
             }
             CloseModal();
         }

@@ -139,7 +139,7 @@ void DrawPrimName(SdfPrimSpecHandle &primSpec) {
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         auto primName = std::string(const_cast<char *>(nameBuffer.data()));
         if (primSpec->CanSetName(primName, nullptr)) {
-            ExecuteAfterDraw<PrimChangeName>(primSpec, std::move(primName));
+            ExecuteAfterDraw(&SdfPrimSpec::SetName, primSpec, primName, true);
         }
     }
 }

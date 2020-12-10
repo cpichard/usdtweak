@@ -5,23 +5,6 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-struct LayerInsertSubLayer : public SdfLayerCommand {
-    LayerInsertSubLayer(SdfLayerRefPtr layer, std::string subLayerPath)
-        : _layer(layer), _subLayerPath(std::move(subLayerPath)) {}
-    ~LayerInsertSubLayer(){}
-    bool DoIt() override {
-        if (!_layer)
-            return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
-        _layer->InsertSubLayerPath(_subLayerPath);
-        return true;
-    }
-
-    SdfLayerRefPtr _layer;
-    std::string _subLayerPath;
-};
-template void ExecuteAfterDraw<LayerInsertSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
-
 struct LayerRemoveSubLayer : public SdfLayerCommand {
 
     // Removes a sublayer

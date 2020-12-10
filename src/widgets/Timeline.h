@@ -3,4 +3,4 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-void DrawTimeline(UsdStage &stage, UsdTimeCode &currentTimeCode);
+void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode);
