@@ -45,7 +45,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, Editor 
             if (editor) {
                 if (ImGui::BeginPopupContextItem()) {
                     if (ImGui::MenuItem("Open as Stage")) {
-                        DispatchCommand<EditorOpenStage>(editor, layer->GetRealPath());
+                        ExecuteAfterDraw<EditorOpenStage>(editor, layer->GetRealPath());
                     }
                     if (ImGui::MenuItem("Set edit target")) {
                         //DispatchCommand<EditorSetEditTarget>(editor, layer);

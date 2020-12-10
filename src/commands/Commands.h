@@ -33,7 +33,7 @@ struct UsdApiFunction;
 
 /// Post a command to be executed after the editor frame is rendered.
 template<typename CommandClass, typename... ArgTypes>
-void DispatchCommand(ArgTypes... arguments);
+void ExecuteAfterDraw(ArgTypes... arguments);
 
 /// Convenience function to defer the execution of a function from the USD api after the editor frame is rendered.
 /// It will also record the changes made  on the layer by the function and store a command in the undo/redo.
@@ -41,7 +41,7 @@ void DispatchCommand(ArgTypes... arguments);
 template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, SdfLayerRefPtr stageOrLayer, ArgsT&&... arguments) {
     std::function<void()> usdApiFunc = std::bind(func, stageOrLayer, std::forward<ArgsT>(arguments)...);
-    DispatchCommand<UsdApiFunction>(stageOrLayer, usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(stageOrLayer, usdApiFunc);
 }
 
 // TODO: UsdStageRefPtr instead of pointer
@@ -49,7 +49,7 @@ template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, UsdStage * &&stageOrLayer, ArgsT&&... arguments) {
     std::function<void()> usdApiFunc = std::bind(func, stageOrLayer, std::forward<ArgsT>(arguments)...);
     auto layer = TfCreateRefPtrFromProtectedWeakPtr(stageOrLayer->GetEditTarget().GetLayer());
-    DispatchCommand<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -63,7 +63,7 @@ void ExecuteAfterDraw(FuncT &&func, SdfPrimSpecHandle handle, ArgsT&&... argumen
         std::function<void()> primSpecFunc = std::bind(func, get_pointer(primSpec), arguments...);
         primSpecFunc();
     };
-    DispatchCommand<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -75,7 +75,7 @@ void ExecuteAfterDraw(FuncT &&func, const UsdPrim &prim, ArgsT&&... arguments) {
         std::function<void()> primFunc = std::bind(func, &prim, arguments...);
         primFunc();
     };
-    DispatchCommand<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -87,7 +87,7 @@ void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments
         std::function<void()> primFunc = std::bind(func, &geomPrim, arguments...);
         primFunc();
     };
-    DispatchCommand<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -99,7 +99,7 @@ void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT&&... argum
         std::function<void()> attFunc = std::bind(func, get_pointer(att), arguments...);
         attFunc();
     };
-    DispatchCommand<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
 }
 
 

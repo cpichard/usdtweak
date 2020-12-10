@@ -64,7 +64,7 @@ static Command *lastCmd = nullptr;
 
 
 /// Dispatching a command from the software will create a command but not Run it.
-template <typename CommandClass, typename... ArgTypes> void DispatchCommand(ArgTypes... arguments) {
+template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(ArgTypes... arguments) {
     if (!lastCmd) {
         lastCmd = new CommandClass(arguments...);
     }
@@ -154,7 +154,6 @@ void BeginEdition(SdfLayerRefPtr layer) {
     }
 }
 
-
 void EndEdition() {
     if (undoRedoRecorder) {
         undoRedoRecorder->StopRecording();
@@ -162,7 +161,6 @@ void EndEdition() {
         undoRedoRecorder = nullptr;
     }
 }
-
 
 
 // Include all the commands as cpp files to compile them with this unit as we want to have

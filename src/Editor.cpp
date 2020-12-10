@@ -348,10 +348,10 @@ void Editor::DrawMainMenuBar() {
         }
         if (ImGui::BeginMenu("Edit")) {
             if (ImGui::MenuItem("Undo", "CTRL+Z")) {
-                DispatchCommand<UndoCommand>();
+                ExecuteAfterDraw<UndoCommand>();
             }
             if (ImGui::MenuItem("Redo", "CTRL+Y")) {
-                DispatchCommand<RedoCommand>();
+                ExecuteAfterDraw<RedoCommand>();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Cut", "CTRL+X", false, false)) {
@@ -476,7 +476,7 @@ void Editor::Draw() {
     static bool UndoCommandpressedOnce = true;
     if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_Z]) {
         if (UndoCommandpressedOnce){
-            DispatchCommand<UndoCommand>();
+            ExecuteAfterDraw<UndoCommand>();
             UndoCommandpressedOnce = false;
         }
     } else {
@@ -485,7 +485,7 @@ void Editor::Draw() {
     static bool RedoCommandpressedOnce = true;
     if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_R]) {
         if (RedoCommandpressedOnce){
-            DispatchCommand<RedoCommand>();
+            ExecuteAfterDraw<RedoCommand>();
             RedoCommandpressedOnce = false;
         }
     }    else {

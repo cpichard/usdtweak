@@ -18,7 +18,7 @@ void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
     if (attribute.Get(&value, currentTime)) {
         VtValue modified = DrawVtValue(attributeName, value);
         if (!modified.IsEmpty()) {
-            DispatchCommand<AttributeSet>(attribute.GetStage(), attribute.GetPath(), modified, currentTime);
+            ExecuteAfterDraw<AttributeSet>(attribute.GetStage(), attribute.GetPath(), modified, currentTime);
         }
         auto attributeTypeName = attribute.GetTypeName();
         ImGui::SameLine();

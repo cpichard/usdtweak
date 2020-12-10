@@ -60,7 +60,7 @@ struct AddSublayer : public ModalDialog {
         ImGui::SameLine();
         if (ImGui::Button("Ok")) {
             if (!filePath.empty()) {
-                DispatchCommand<LayerInsertSubLayer>(layer, filePath);
+                ExecuteAfterDraw<LayerInsertSubLayer>(layer, filePath);
             }
             CloseModal();
         }
@@ -97,12 +97,12 @@ static std::string FindNextAvailablePrimName(std::string prefix) {
 void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
     if (!primSpec) return;
     if (ImGui::MenuItem("Add child prim")) {
-        DispatchCommand<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
+        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
     }
     auto parent = primSpec->GetNameParent();
     if (parent) {
         if (ImGui::MenuItem("Add sibling prim")) {
-            DispatchCommand<PrimNew>(parent, FindNextAvailablePrimName(primSpec->GetName()));
+            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailablePrimName(primSpec->GetName()));
         }
     }
 
@@ -113,7 +113,7 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
 
     if (ImGui::MenuItem("Remove")) {
         // TODO: simplify
-        DispatchCommand<UsdApiFunction>(primSpec->GetLayer(), std::function<void()> {
+        ExecuteAfterDraw<UsdApiFunction>(primSpec->GetLayer(), std::function<void()> {
             [=]() {
                 if (primSpec->GetNameParent()) {
                     primSpec->GetNameParent()->RemoveNameChild(primSpec);
@@ -138,9 +138,7 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
                 if (variantSetHandle) {
                     for (const auto &variant : variantSetHandle->GetVariants()) {
                         if (variant && ImGui::MenuItem(variant->GetName().c_str())) {
-                            // TODO: as a command
                             ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSet.first, variant->GetName());
-                            //primSpec->SetVariantSelection(variantSet.first, variant->GetName());
                         }
                     }
                     // TODO: highlight the one currently used
@@ -266,14 +264,14 @@ void DrawPrimSpecTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 
     if (ImGui::Button("Add root prim")) {
-        DispatchCommand<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
+        ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
     }
 
     ImGui::SameLine();
 
     if (ImGui::Button("Remove selected") && selectedPrim) {
         // TODO: simplify
-        DispatchCommand<UsdApiFunction>(layer, std::function<void()> {
+        ExecuteAfterDraw<UsdApiFunction>(layer, std::function<void()> {
             [=]() {
                 if (selectedPrim->GetNameParent()) {
                     selectedPrim->GetNameParent()->RemoveNameChild(selectedPrim);
@@ -428,13 +426,13 @@ void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth=0) {
         // TODO: having a selection and buttons would be better for user experience
         if (depth == 0 && ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Remove selected sublayer")) {
-                DispatchCommand<LayerRemoveSubLayer>(layer, sublayerpath);
+                ExecuteAfterDraw<LayerRemoveSubLayer>(layer, sublayerpath);
             }
             if (ImGui::MenuItem("Move up")) {
-                DispatchCommand<LayerMoveSubLayer>(layer, sublayerpath, true);
+                ExecuteAfterDraw<LayerMoveSubLayer>(layer, sublayerpath, true);
             }
             if (ImGui::MenuItem("Move down")) {
-                DispatchCommand<LayerMoveSubLayer>(layer, sublayerpath, false);
+                ExecuteAfterDraw<LayerMoveSubLayer>(layer, sublayerpath, false);
             }
             ImGui::EndPopup();
         }

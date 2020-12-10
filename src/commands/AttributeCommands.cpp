@@ -29,4 +29,4 @@ struct AttributeSet : public SdfLayerCommand {
     VtValue _value;
     UsdTimeCode _timeCode;
 };
-template void DispatchCommand<AttributeSet>(UsdStageWeakPtr stage, SdfPath attributePath, VtValue value, UsdTimeCode currentTime);
+template void ExecuteAfterDraw<AttributeSet>(UsdStageWeakPtr stage, SdfPath attributePath, VtValue value, UsdTimeCode currentTime);

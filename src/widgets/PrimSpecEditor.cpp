@@ -59,7 +59,7 @@ struct EditReferences : public ModalDialog {
 
         if (ImGui::Button("Ok")) {
             std::string reference = GetFileBrowserFilePath();
-            DispatchCommand<PrimAddReference>(primSpec, reference);
+            ExecuteAfterDraw<PrimAddReference>(primSpec, reference);
             CloseModal();
         }
     }
@@ -139,7 +139,7 @@ void DrawPrimName(SdfPrimSpecHandle &primSpec) {
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         auto primName = std::string(const_cast<char *>(nameBuffer.data()));
         if (primSpec->CanSetName(primName, nullptr)) {
-            DispatchCommand<PrimChangeName>(primSpec, std::move(primName));
+            ExecuteAfterDraw<PrimChangeName>(primSpec, std::move(primName));
         }
     }
 }
@@ -231,7 +231,7 @@ void DrawCompositionArcItems(const SdfPrimSpecHandle &primSpec, const char *oper
                 std::function<void()> deferedRemoveArc = [=] () {
                     PrimSpecRemoveArc(primSpec->GetLayer(), path, listFunc, itemsFunc, index);
                 };
-                DispatchCommand<UsdApiFunction>(primSpec->GetLayer(), deferedRemoveArc);
+                ExecuteAfterDraw<UsdApiFunction>(primSpec->GetLayer(), deferedRemoveArc);
              }
             //if (ImGui::MenuItem("Copy path")) {
             //    // TODO

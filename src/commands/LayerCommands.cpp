@@ -20,7 +20,7 @@ struct LayerInsertSubLayer : public SdfLayerCommand {
     SdfLayerRefPtr _layer;
     std::string _subLayerPath;
 };
-template void DispatchCommand<LayerInsertSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
+template void ExecuteAfterDraw<LayerInsertSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
 
 struct LayerRemoveSubLayer : public SdfLayerCommand {
 
@@ -45,7 +45,7 @@ struct LayerRemoveSubLayer : public SdfLayerCommand {
     SdfLayerRefPtr _layer;
     std::string _subLayerPath;
 };
-template void DispatchCommand<LayerRemoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
+template void ExecuteAfterDraw<LayerRemoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
 
 /// Change layer position in the layer stack, moivng up and down
 struct LayerMoveSubLayer : public SdfLayerCommand {
@@ -93,7 +93,7 @@ struct LayerMoveSubLayer : public SdfLayerCommand {
     std::string _subLayerPath;
     bool _movingUp; /// Template instead ?
 };
-template void DispatchCommand<LayerMoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp);
+template void ExecuteAfterDraw<LayerMoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp);
 
 
 

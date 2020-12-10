@@ -124,11 +124,11 @@ struct PrimAddReference : public SdfLayerCommand {
 
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
-template void DispatchCommand<PrimNew>(SdfLayerRefPtr layer, std::string newName);
-template void DispatchCommand<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
-template void DispatchCommand<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec);
-template void DispatchCommand<PrimChangeName>(SdfPrimSpecHandle primSpec, std::string newName);
-template void DispatchCommand<PrimChangeSpecifier>(SdfPrimSpecHandle primSpec, SdfSpecifier newSpec);
-template void DispatchCommand<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
+template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
+template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
+template void ExecuteAfterDraw<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec);
+template void ExecuteAfterDraw<PrimChangeName>(SdfPrimSpecHandle primSpec, std::string newName);
+template void ExecuteAfterDraw<PrimChangeSpecifier>(SdfPrimSpecHandle primSpec, SdfSpecifier newSpec);
+template void ExecuteAfterDraw<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
 
 

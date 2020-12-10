@@ -20,7 +20,7 @@ struct UndoCommand : public Command {
 
     bool UndoIt() override { return false; }
 };
-template void DispatchCommand<UndoCommand>();
+template void ExecuteAfterDraw<UndoCommand>();
 
 struct RedoCommand : public Command {
 
@@ -40,7 +40,7 @@ struct RedoCommand : public Command {
 
     bool UndoIt() override { return false; }
 };
-template void DispatchCommand<RedoCommand>();
+template void ExecuteAfterDraw<RedoCommand>();
 
 
 struct UsdApiFunction : public Command {
@@ -75,5 +75,5 @@ struct UsdApiFunction : public Command {
     std::function<void()> _func;
 };
 
-template void DispatchCommand<UsdApiFunction>(SdfLayerRefPtr layer, std::function<void()> func);
-template void DispatchCommand<UsdApiFunction>(SdfLayerHandle layer, std::function<void()> func);
+template void ExecuteAfterDraw<UsdApiFunction>(SdfLayerRefPtr layer, std::function<void()> func);
+template void ExecuteAfterDraw<UsdApiFunction>(SdfLayerHandle layer, std::function<void()> func);

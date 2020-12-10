@@ -28,7 +28,7 @@ struct EditorSelectPrimPath : public Command {
     SdfPath selectedPath;
 };
 
-template void DispatchCommand<EditorSelectPrimPath>(SdfPath *selectionObject, SdfPath selectedPath);
+template void ExecuteAfterDraw<EditorSelectPrimPath>(SdfPath *selectionObject, SdfPath selectedPath);
 
 
 struct EditorOpenStage : public Command {
@@ -45,4 +45,4 @@ struct EditorOpenStage : public Command {
     Editor *_editor; /// Warning: this may outlive the editor life
 };
 
-template void DispatchCommand<EditorOpenStage>(Editor *editor, std::string stagePath);
+template void ExecuteAfterDraw<EditorOpenStage>(Editor *editor, std::string stagePath);
