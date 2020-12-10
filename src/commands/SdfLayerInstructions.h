@@ -4,8 +4,6 @@
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/layerStateDelegate.h>
 
-#include <iostream>
-
 PXR_NAMESPACE_USING_DIRECTIVE
 
 struct UndoRedoSetField {
@@ -23,7 +21,6 @@ struct UndoRedoSetField {
 
     void UndoIt() {
         if (_layer && _layer->GetStateDelegate()){
-            std::cout << "Undoing Set Field" << _path.GetString() << " " << _fieldName.GetString() << " " << _previousValue << std::endl;
             _layer->GetStateDelegate()->SetField(_path, _fieldName, _previousValue);
         }
     }
@@ -45,14 +42,12 @@ struct UndoRedoSetFieldDictValueByKey {
 
     void DoIt() {
         if (_layer && _layer->GetStateDelegate()) {
-            std::cout << "Redo SetFieldDictValueByKey " << _path.GetString() << " " << _fieldName.GetString() << " " << _newValue << std::endl;
             _layer->GetStateDelegate()->SetFieldDictValueByKey(_path, _fieldName, _keyPath, _newValue);
         }
     }
 
     void UndoIt() {
         if (_layer && _layer->GetStateDelegate()){
-            std::cout << "Undo SetFieldDictValueByKey " << _path.GetString() << " " << _fieldName.GetString() << " " << _previousValue << std::endl;
             _layer->GetStateDelegate()->SetFieldDictValueByKey(_path, _fieldName, _keyPath, _previousValue);
         }
     }
@@ -79,7 +74,6 @@ struct UndoRedoSetTimeSample {
 
     void DoIt() {
         if (_layer && _layer->GetStateDelegate()) {
-            std::cout << "Redo SetTimeSample " << _path.GetString() << " " << _timeCode << " " << _newValue << std::endl;
             _layer->GetStateDelegate()->SetTimeSample(_path, _timeCode, _newValue);
         }
     }
