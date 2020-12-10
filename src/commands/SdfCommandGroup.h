@@ -4,7 +4,6 @@
 #include <memory>
 #include <iostream>
 
-//using SdfCommandFunction = std::function<void(bool)>;
 
 class InstructionWrapper {
 public:
@@ -74,14 +73,10 @@ public:
     void DoIt();
     void UndoIt();
 
-    //void AddFunction(SdfCommandFunction &&);
-
     template <typename InstructionT>
     void StoreInstruction(InstructionT);
 
 private:
-    //std::vector<SdfCommandFunction> _commands;
-
     std::vector<InstructionWrapper> _instructions;
 };
 

@@ -50,10 +50,6 @@ struct UsdApiFunction : public Command {
         : _layer(layer), _func(func)
     {}
 
-    //UsdApiFunction(SdfLayerHandle layer, std::function<void()> func)
-    //    : _layer(layer), _func(func)
-    //{}
-
     ~UsdApiFunction() override {}
 
     /// Undo the last command in the stack
