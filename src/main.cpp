@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
             glfwSwapBuffers(window);
 
             // Process edition commands
-            ProcessCommands();
+            ExecuteCommands();
         }
 
         glfwSetWindowUserPointer(window, nullptr);
