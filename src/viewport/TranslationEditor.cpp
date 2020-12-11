@@ -18,28 +18,22 @@
 
     // NOTES from the doc:
     // If you need to compute the transform for multiple prims on a stage,
-    // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse sub-computations shared by the prims.
+    // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse
+   sub-computations shared by the prims.
     //
     // https://graphics.pixar.com/usd/docs/api/usd_geom_page_front.html
-    // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second column of the fourth row.
+    // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second
+   column of the fourth row.
 
     // Cool doc on manipulators:
     // http://ed.ilogues.com/2018/06/27/translate-rotate-and-scale-manipulators-in-3d-modelling-programs
 */
 static constexpr GLfloat axisSize = 100.f;
-static constexpr const GLfloat axisPoints[] = {  0.f,   0.f,   0.f,
-                                0.f,   0.f, axisSize,
-                                0.f,   0.f,   0.f,
-                                0.f, axisSize,   0.f,
-                                0.f,   0.f,   0.f,
-                              axisSize,   0.f,   0.f};
+static constexpr const GLfloat axisPoints[] = {0.f, 0.f,      0.f, axisSize, 0.f, 0.f, 0.f, 0.f, 0.f,
+                                               0.f, axisSize, 0.f, 0.f,      0.f, 0.f, 0.f, 0.f, axisSize};
 
-static constexpr const GLfloat axisColors[] = {  1.f, 0.f, 0.f, 1.f,
-                                1.f, 0.f, 0.f, 1.f,
-                                0.f, 1.f, 0.f, 1.f,
-                                0.f, 1.f, 0.f, 1.f,
-                                0.f, 0.f, 1.f, 1.f,
-                                0.f, 0.f, 1.f, 1.f};
+static constexpr const GLfloat axisColors[] = {1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f,
+                                               0.f, 1.f, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 1.f};
 
 static constexpr const char *vertexShaderSrc =
     "#version 330 core\n"
@@ -57,24 +51,21 @@ static constexpr const char *vertexShaderSrc =
     "    color = inColor;"
     "}";
 
-static constexpr const char *fragmentShaderSrc =
-    "#version 330 core\n"
-    "in vec4 color;"
-    "out vec4 FragColor;"
-    "void main()"
-    "{"
-    "    FragColor = color;"
-    "}";
+static constexpr const char *fragmentShaderSrc = "#version 330 core\n"
+                                                 "in vec4 color;"
+                                                 "out vec4 FragColor;"
+                                                 "void main()"
+                                                 "{"
+                                                 "    FragColor = color;"
+                                                 "}";
 
-
-TranslationEditor::TranslationEditor()
-    : _selectedAxis(None) {
+TranslationEditor::TranslationEditor() : _selectedAxis(None) {
 
     // Vertex array object
     glGenVertexArrays(1, &_vertexArrayObject);
     glBindVertexArray(_vertexArrayObject);
 
-    if(CompileShaders()) {
+    if (CompileShaders()) {
         _scaleFactorUniform = glGetUniformLocation(_programShader, "scale");
         _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
         _projectionUniform = glGetUniformLocation(_programShader, "projection");
@@ -99,13 +90,11 @@ TranslationEditor::TranslationEditor()
     glBindVertexArray(0);
 }
 
-TranslationEditor::~TranslationEditor() {
-    glDeleteBuffers(1, &_axisGLBuffers);
-}
+TranslationEditor::~TranslationEditor() { glDeleteBuffers(1, &_axisGLBuffers); }
 
 bool TranslationEditor::CompileShaders() {
 
-     // Associate shader source with shader id
+    // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
 
@@ -149,12 +138,10 @@ bool TranslationEditor::CompileShaders() {
     return true;
 }
 
-
-
 bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
 
-    if(_xformable) {
-        const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+    if (_xformable) {
+        const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         auto mv = frustum.ComputeViewMatrix();
         auto proj = frustum.ComputeProjectionMatrix();
 
@@ -171,9 +158,9 @@ bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
 
         // Local
         GfVec3d origin3d(0.0, 0.0, 0.0);
-        GfVec3d xAxis3d(axisSize*scale, 0.0, 0.0);
-        GfVec3d yAxis3d(0.0, axisSize*scale, 0.0);
-        GfVec3d zAxis3d(0.0, 0.0, axisSize*scale);
+        GfVec3d xAxis3d(axisSize * scale, 0.0, 0.0);
+        GfVec3d yAxis3d(0.0, axisSize * scale, 0.0);
+        GfVec3d zAxis3d(0.0, 0.0, axisSize * scale);
 
         auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d + _origin3d);
         auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d + _origin3d);
@@ -185,12 +172,10 @@ bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
         if (PickSegment(xAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = XAxis;
             return true;
-        }
-        else if (PickSegment(yAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
+        } else if (PickSegment(yAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = YAxis;
             return true;
-        }
-        else if (PickSegment(zAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
+        } else if (PickSegment(zAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = ZAxis;
             return true;
         }
@@ -207,12 +192,12 @@ void TranslationEditor::OnSelectionChange(Viewport &viewport) {
     _translateOp = UsdGeomXformOp();
     // Look for the translate in the transform stack
     // Should that be called when entering the state ?
-    if(_xformable) {
+    if (_xformable) {
         bool resetsXformStack = false;
         auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
         for (auto &xform : xforms) {
-            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate
-                && xform.GetBaseName() == "translate") { // is there another way to find the correct translate ?
+            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate &&
+                xform.GetBaseName() == "translate") { // is there another way to find the correct translate ?
                 _translateOp = xform;
                 return;
             }
@@ -223,8 +208,8 @@ void TranslationEditor::OnSelectionChange(Viewport &viewport) {
 void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformable) {
-        const auto & camera = viewport.GetCurrentCamera();
-        auto mv =  camera.GetFrustum().ComputeViewMatrix();
+        const auto &camera = viewport.GetCurrentCamera();
+        auto mv = camera.GetFrustum().ComputeViewMatrix();
         auto proj = camera.GetFrustum().ComputeProjectionMatrix();
         auto toWorld = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
         GfVec4d pos = GfVec4d(0, 0, 0, 1.0) * toWorld;
@@ -234,7 +219,8 @@ void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
 
         GLboolean depthTestStatus;
         glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
-        if (depthTestStatus) glDisable(GL_DEPTH_TEST);
+        if (depthTestStatus)
+            glDisable(GL_DEPTH_TEST);
 
         glLineWidth(2);
         glUseProgram(_programShader);
@@ -247,16 +233,15 @@ void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
         glBindVertexArray(_vertexArrayObject);
         glDrawArrays(GL_LINES, 0, 6);
         glBindVertexArray(0);
-        if (depthTestStatus) glEnable(GL_DEPTH_TEST);
+        if (depthTestStatus)
+            glEnable(GL_DEPTH_TEST);
     }
 
-    //UsdGeomBoundable bounds(_xformable);
-    //if (bounds) {
+    // UsdGeomBoundable bounds(_xformable);
+    // if (bounds) {
     //    // draw bounding box ?? do we want that ?
     //}
 }
-
-
 
 void TranslationEditor::OnBeginEdition(Viewport &viewport) {
 
@@ -272,7 +257,7 @@ void TranslationEditor::OnBeginEdition(Viewport &viewport) {
     BeginEdition(viewport.GetCurrentStage());
 }
 
-ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
+ViewportEditor *TranslationEditor::OnUpdate(Viewport &viewport) {
 
     if (ImGui::IsMouseReleased(0)) {
         return viewport.GetEditor<MouseHoverEditor>();
@@ -280,7 +265,7 @@ ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
 
     auto currentTimeCode = GetTimeCode(viewport);
 
-    if (!_translateOp){
+    if (!_translateOp) {
         _translateOp = _xformable.AddTranslateOp();
         // TODO: check what happens if the operator wasn't created
         _translateOp.Set<GfVec3d>(GfVec3d(0.0, 0.0, 0.0), currentTimeCode);
@@ -289,40 +274,38 @@ ViewportEditor* TranslationEditor::OnUpdate(Viewport &viewport) {
 
     if (_translateOp) {
         GfVec3d translateValues;
-        if(_translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode)){
+        if (_translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode)) {
             GfVec3d mouseOnAxis = _originMouseOnAxis;
             ProjectMouseOnAxis(viewport, mouseOnAxis);
-            translateValues[_selectedAxis] = _translate[_selectedAxis] + (mouseOnAxis-_originMouseOnAxis)[_selectedAxis];
+            translateValues[_selectedAxis] = _translate[_selectedAxis] + (mouseOnAxis - _originMouseOnAxis)[_selectedAxis];
             _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
         }
     }
     return this;
 };
 
-
-void TranslationEditor::OnEndEdition(Viewport &) {
-    EndEdition();
-};
-
+void TranslationEditor::OnEndEdition(Viewport &) { EndEdition(); };
 
 UsdTimeCode TranslationEditor::GetTimeCode(const Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
-    return ((_translateOp && _translateOp.MightBeTimeVarying()) || io.KeysDown[GLFW_KEY_S])
-        ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
+    return ((_translateOp && _translateOp.MightBeTimeVarying()) || io.KeysDown[GLFW_KEY_S]) ? viewport.GetCurrentTimeCode()
+                                                                                            : UsdTimeCode::Default();
 }
 
 ///
 void TranslationEditor::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint) {
-    if (_xformable && _selectedAxis<3) {
+    if (_xformable && _selectedAxis < 3) {
         const GfMatrix4d objectTransform = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
         const GfVec4d objectPosition4d = GfVec4d(0, 0, 0, 1) * objectTransform;
         const GfVec3d objectPosition3d = GfVec3d(objectPosition4d[0], objectPosition4d[1], objectPosition4d[2]);
 
-        GfVec3d ptOnAxisLine; double a = 0; double b=0;
+        GfVec3d ptOnAxisLine;
+        double a = 0;
+        double b = 0;
         const GfVec4d axisValues = objectTransform.GetColumn(_selectedAxis);
         const GfVec3d axisDirection(axisValues[0], axisValues[1], axisValues[2]);
         const GfLine axisLine(objectPosition3d, axisDirection);
-        const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+        const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mouseRay = frustum.ComputeRay(viewport.GetMousePosition());
         GfFindClosestPoints(mouseRay, axisLine, &closestPoint, &ptOnAxisLine, &a, &b);
     }
@@ -330,7 +313,7 @@ void TranslationEditor::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &cl
 
 void TranslationEditor::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
     // We want the manipulator to have the same projected size
-    const auto & frustum = viewport.GetCurrentCamera().GetFrustum();
+    const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
     auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
     ray.FindClosestPoint(GfVec3d(objectPos.data()), &scale);
     const float focalLength = viewport.GetCurrentCamera().GetFocalLength();
@@ -338,4 +321,3 @@ void TranslationEditor::ComputeScaleFactor(const Viewport &viewport, const GfVec
     scale /= axisSize;
     scale *= 2;
 }
-
