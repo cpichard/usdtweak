@@ -5,7 +5,7 @@
 #include <GL/glew.h>
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
-#include "TranslationEditor.h"
+#include "PositionManipulator.h"
 #include "GeometricFunctions.h"
 #include "Viewport.h"
 #include "Gui.h"
@@ -59,7 +59,7 @@ static constexpr const char *fragmentShaderSrc = "#version 330 core\n"
                                                  "    FragColor = color;"
                                                  "}";
 
-TranslationEditor::TranslationEditor() : _selectedAxis(None) {
+PositionManipulator::PositionManipulator() : _selectedAxis(None) {
 
     // Vertex array object
     glGenVertexArrays(1, &_vertexArrayObject);
@@ -90,9 +90,9 @@ TranslationEditor::TranslationEditor() : _selectedAxis(None) {
     glBindVertexArray(0);
 }
 
-TranslationEditor::~TranslationEditor() { glDeleteBuffers(1, &_axisGLBuffers); }
+PositionManipulator::~PositionManipulator() { glDeleteBuffers(1, &_axisGLBuffers); }
 
-bool TranslationEditor::CompileShaders() {
+bool PositionManipulator::CompileShaders() {
 
     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -138,7 +138,7 @@ bool TranslationEditor::CompileShaders() {
     return true;
 }
 
-bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
+bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
 
     if (_xformable) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
@@ -184,7 +184,7 @@ bool TranslationEditor::IsMouseOver(const Viewport &viewport) {
     return false;
 }
 
-void TranslationEditor::OnSelectionChange(Viewport &viewport) {
+void PositionManipulator::OnSelectionChange(Viewport &viewport) {
     // TODO: we should set here if the new selection will be editable or not
     auto &selection = viewport.GetSelection();
     auto primPath = GetSelectedPath(selection);
@@ -205,7 +205,7 @@ void TranslationEditor::OnSelectionChange(Viewport &viewport) {
     }
 }
 
-void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
+void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformable) {
         const auto &camera = viewport.GetCurrentCamera();
@@ -243,7 +243,7 @@ void TranslationEditor::OnDrawFrame(const Viewport &viewport) {
     //}
 }
 
-void TranslationEditor::OnBeginEdition(Viewport &viewport) {
+void PositionManipulator::OnBeginEdition(Viewport &viewport) {
 
     // Save translate values if there is already a translate
     // We don't create the translate operator here as there was no value yet
@@ -257,7 +257,7 @@ void TranslationEditor::OnBeginEdition(Viewport &viewport) {
     BeginEdition(viewport.GetCurrentStage());
 }
 
-Manipulator *TranslationEditor::OnUpdate(Viewport &viewport) {
+Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
 
     if (ImGui::IsMouseReleased(0)) {
         return viewport.GetEditor<MouseHoverManipulator>();
@@ -284,16 +284,16 @@ Manipulator *TranslationEditor::OnUpdate(Viewport &viewport) {
     return this;
 };
 
-void TranslationEditor::OnEndEdition(Viewport &) { EndEdition(); };
+void PositionManipulator::OnEndEdition(Viewport &) { EndEdition(); };
 
-UsdTimeCode TranslationEditor::GetTimeCode(const Viewport &viewport) {
+UsdTimeCode PositionManipulator::GetTimeCode(const Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
     return ((_translateOp && _translateOp.MightBeTimeVarying()) || io.KeysDown[GLFW_KEY_S]) ? viewport.GetCurrentTimeCode()
                                                                                             : UsdTimeCode::Default();
 }
 
 ///
-void TranslationEditor::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint) {
+void PositionManipulator::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint) {
     if (_xformable && _selectedAxis < 3) {
         const GfMatrix4d objectTransform = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
         const GfVec4d objectPosition4d = GfVec4d(0, 0, 0, 1) * objectTransform;
@@ -311,7 +311,7 @@ void TranslationEditor::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &cl
     }
 }
 
-void TranslationEditor::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
+void PositionManipulator::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
     // We want the manipulator to have the same projected size
     const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
     auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis

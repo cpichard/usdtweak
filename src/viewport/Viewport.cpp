@@ -72,7 +72,7 @@ void DrawCameraList(Viewport &viewport) {
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection) : _stage(stage),
 _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
-_currentEditingState(new MouseHoverEditor()),
+_currentEditingState(new MouseHoverManipulator()),
 _selection(selection)
  {
     // Viewport draw target
@@ -248,7 +248,7 @@ void Viewport::HandleEvents() {
         /// This works like a Finite state machine
         /// where every manipulator/editor is a state
         if (!_currentEditingState){
-            _currentEditingState = GetEditor<MouseHoverEditor>();
+            _currentEditingState = GetEditor<MouseHoverManipulator>();
             _currentEditingState->OnBeginEdition(*this);
         }
 

@@ -7,7 +7,7 @@
 #include <map>
 #include "Manipulator.h"
 #include "CameraEditor.h"
-#include "TranslationEditor.h"
+#include "PositionManipulator.h"
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
 #include "Selection.h"
@@ -73,8 +73,8 @@ public:
     // TODO Test multiple viewport. A gizmo can be seen in multiple viewport
     // but only edited in one
 
-    TranslationEditor _translateManipulator;
-    TranslationEditor & GetActiveManipulator() { return _translateManipulator; }
+    PositionManipulator _positionManipulator;
+    PositionManipulator & GetActiveManipulator() { return _positionManipulator; }
 
     MouseHoverManipulator _mouseHover;
 
@@ -114,22 +114,7 @@ private:
 };
 
 
-template <>
-inline
-Manipulator * Viewport::GetEditor<TranslationEditor>() { return &_translateManipulator; }
-
-template <>
-inline
-Manipulator * Viewport::GetEditor<MouseHoverManipulator>() { return &_mouseHover; }
-
-template <>
-inline
-Manipulator * Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
-
-template <>
-inline
-Manipulator * Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }
-
-
-
-
+template <> inline Manipulator *Viewport::GetEditor<PositionManipulator>() { return &_positionManipulator; }
+template <> inline Manipulator *Viewport::GetEditor<MouseHoverManipulator>() { return &_mouseHover; }
+template <> inline Manipulator *Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
+template <> inline Manipulator *Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }

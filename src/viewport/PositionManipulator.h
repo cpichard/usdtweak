@@ -15,13 +15,11 @@ PXR_NAMESPACE_USING_DIRECTIVE
 // A Manipulator can be seen in multiple viewport, so it should not store a viewport
 // but only edited in one
 
-// Rename to PositionManipulator
-
-class TranslationEditor : public Manipulator {
+class PositionManipulator : public Manipulator {
 
   public:
-    TranslationEditor();
-    ~TranslationEditor();
+    PositionManipulator();
+    ~PositionManipulator();
 
     /// From ViewportEditor
     void OnBeginEdition(Viewport &) override;
