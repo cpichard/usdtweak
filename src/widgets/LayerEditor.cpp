@@ -1,5 +1,5 @@
 #include <iostream>
-#include <iomanip> // we are doomed
+#include <iomanip>
 #include <sstream>
 #include <array>
 #include <cctype>
@@ -21,22 +21,8 @@
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
 #include "LayerEditor.h"
-#include "PrimSpecEditor.h" // should really be PrimSpecWidgets.h
+#include "PrimSpecEditor.h"
 #include "Constants.h"
-
-// TODO:
-//  [*] select and remove a sublayer
-//  [.] find all prim spec types
-//  [*] prim tree extend size to the bottom of the window
-//  [*] set scene orientation
-//  [ ] add metadata comment
-//  [*] set prim is hidden
-//  [*] set prim is active
-//  [ ] manage variant sets
-//  [ ] manage references
-//  [ ] create all commands
-//  [*] use a menu for references and variants instead of a modal
-
 
 
 struct AddSublayer : public ModalDialog {

@@ -3,6 +3,8 @@
 class Viewport;
 
 /// Editing state -> this could be embedded in the manipulator ???
+/// TODO: the name of the base class for a manipulator/editor/gizmo is confusing, find a better name
+///        also it needs a bit of documentation now
 struct ViewportEditor {
     virtual ~ViewportEditor() {};
     virtual void OnBeginEdition(Viewport &) {}; // Enter State

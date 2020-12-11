@@ -150,7 +150,6 @@ void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
         for (auto kind: KindRegistry::GetAllKinds()){
             bool isSelected = primKind == kind;
             if (ImGui::Selectable(kind.GetString().c_str(), isSelected)) {
-                // todo set kind
                 ExecuteAfterDraw(&SdfPrimSpec::SetKind, primSpec, kind);
             }
         }
@@ -394,7 +393,6 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
-    // TODO: is there a more efficient code, and decorrelated from the function ???
     int deleteButtonCounter = 0;
     const auto &attributes = primSpec->GetAttributes();
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
