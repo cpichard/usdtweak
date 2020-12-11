@@ -8,7 +8,7 @@
 #include "Manipulator.h"
 #include "CameraEditor.h"
 #include "TranslationEditor.h"
-#include "MouseHoverEditor.h"
+#include "MouseHoverManipulator.h"
 #include "SelectionEditor.h"
 #include "Selection.h"
 #include "Grid.h"
@@ -76,7 +76,7 @@ public:
     TranslationEditor _translateManipulator;
     TranslationEditor & GetActiveManipulator() { return _translateManipulator; }
 
-    MouseHoverEditor _mouseHover;
+    MouseHoverManipulator _mouseHover;
 
 
     template <typename ViewportEditorT>
@@ -120,7 +120,7 @@ Manipulator * Viewport::GetEditor<TranslationEditor>() { return &_translateManip
 
 template <>
 inline
-Manipulator * Viewport::GetEditor<MouseHoverEditor>() { return &_mouseHover; }
+Manipulator * Viewport::GetEditor<MouseHoverManipulator>() { return &_mouseHover; }
 
 template <>
 inline

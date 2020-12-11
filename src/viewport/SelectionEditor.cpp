@@ -23,7 +23,7 @@ Manipulator *SelectionEditor::OnUpdate(Viewport &viewport) {
         /// TODO: manage selection
         ClearSelection(selection);
     }
-    return viewport.GetEditor<MouseHoverEditor>();
+    return viewport.GetEditor<MouseHoverManipulator>();
 }
 
 

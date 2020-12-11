@@ -19,7 +19,7 @@ add_executable(usdtweak
  src/viewport/SelectionEditor.cpp
  src/viewport/Viewport.cpp
  src/viewport/Manipulator.cpp
- src/viewport/MouseHoverEditor.cpp
+ src/viewport/MouseHoverManipulator.cpp
  src/widgets/ModalDialogs.cpp
  src/widgets/LayerEditor.cpp
  src/widgets/FileBrowser.cpp

@@ -1,10 +1,10 @@
-#include "MouseHoverEditor.h"
+#include "MouseHoverManipulator.h"
 #include "Viewport.h"
 #include "Gui.h"
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
-Manipulator * MouseHoverEditor::OnUpdate(Viewport &viewport) {
+Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
     if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {

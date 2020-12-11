@@ -260,7 +260,7 @@ void TranslationEditor::OnBeginEdition(Viewport &viewport) {
 Manipulator *TranslationEditor::OnUpdate(Viewport &viewport) {
 
     if (ImGui::IsMouseReleased(0)) {
-        return viewport.GetEditor<MouseHoverEditor>();
+        return viewport.GetEditor<MouseHoverManipulator>();
     }
 
     auto currentTimeCode = GetTimeCode(viewport);

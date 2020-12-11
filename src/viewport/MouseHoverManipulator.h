@@ -1,6 +1,6 @@
 #pragma once
 #include "Manipulator.h"
-class MouseHoverEditor : public Manipulator {
+class MouseHoverManipulator : public Manipulator {
 public:
     Manipulator * OnUpdate(Viewport &viewport);
 };
