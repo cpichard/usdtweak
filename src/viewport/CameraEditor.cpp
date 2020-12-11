@@ -7,7 +7,7 @@
 CameraEditor::CameraEditor(const GfVec2i &viewportSize, bool isZUp)
     : CameraManipulator(viewportSize, isZUp) {}
 
-ViewportEditor* CameraEditor::OnUpdate(Viewport &viewport) {
+Manipulator* CameraEditor::OnUpdate(Viewport &viewport) {
     auto & cameraManipulator = viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
 

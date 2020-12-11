@@ -8,14 +8,16 @@
 #ifdef _WIN32
 #include <GL/glew.h>
 #endif
-#include "ViewportEditor.h"
+#include "Manipulator.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
 // A Manipulator can be seen in multiple viewport, so it should not store a viewport
 // but only edited in one
 
-class TranslationEditor : public ViewportEditor {
+// Rename to PositionManipulator
+
+class TranslationEditor : public Manipulator {
 
   public:
     TranslationEditor();
@@ -23,7 +25,7 @@ class TranslationEditor : public ViewportEditor {
 
     /// From ViewportEditor
     void OnBeginEdition(Viewport &) override;
-    ViewportEditor* OnUpdate(Viewport &) override;
+    Manipulator* OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
 
     /// Return true if the mouse is over this manipulator for the viewport passed in argument

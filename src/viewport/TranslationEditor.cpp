@@ -257,7 +257,7 @@ void TranslationEditor::OnBeginEdition(Viewport &viewport) {
     BeginEdition(viewport.GetCurrentStage());
 }
 
-ViewportEditor *TranslationEditor::OnUpdate(Viewport &viewport) {
+Manipulator *TranslationEditor::OnUpdate(Viewport &viewport) {
 
     if (ImGui::IsMouseReleased(0)) {
         return viewport.GetEditor<MouseHoverEditor>();

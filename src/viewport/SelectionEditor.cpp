@@ -4,7 +4,7 @@
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
-ViewportEditor *SelectionEditor::OnUpdate(Viewport &viewport) {
+Manipulator *SelectionEditor::OnUpdate(Viewport &viewport) {
     Selection &selection = viewport.GetSelection();
     auto mousePosition = viewport.GetMousePosition();
     SdfPath outHitPrimPath;

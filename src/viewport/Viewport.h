@@ -5,12 +5,13 @@
 /// has grown too much and doing too many thing
 ///
 #include <map>
-#include "ViewportEditor.h"
+#include "Manipulator.h"
 #include "CameraEditor.h"
 #include "TranslationEditor.h"
 #include "MouseHoverEditor.h"
 #include "SelectionEditor.h"
 #include "Selection.h"
+#include "Grid.h"
 
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -80,7 +81,7 @@ public:
 
     template <typename ViewportEditorT>
     inline
-    ViewportEditor * GetEditor() { return nullptr; }; // This must be specialized
+    Manipulator * GetEditor() { return nullptr; }; // This must be specialized
 
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
@@ -106,27 +107,28 @@ public:
     void HandleEvents();
 
 private:
-    ViewportEditor * _currentEditingState;
+    Manipulator * _currentEditingState;
     Selection &_selection;
     GLuint _textureId = 0;
+    Grid    _grid;
 };
 
 
 template <>
 inline
-ViewportEditor * Viewport::GetEditor<TranslationEditor>() { return &_translateManipulator; }
+Manipulator * Viewport::GetEditor<TranslationEditor>() { return &_translateManipulator; }
 
 template <>
 inline
-ViewportEditor * Viewport::GetEditor<MouseHoverEditor>() { return &_mouseHover; }
+Manipulator * Viewport::GetEditor<MouseHoverEditor>() { return &_mouseHover; }
 
 template <>
 inline
-ViewportEditor * Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
+Manipulator * Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
 
 template <>
 inline
-ViewportEditor * Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }
+Manipulator * Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }
 
 
 

@@ -4,7 +4,7 @@
 #define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
-ViewportEditor * MouseHoverEditor::OnUpdate(Viewport &viewport) {
+Manipulator * MouseHoverEditor::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
     if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
