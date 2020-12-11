@@ -93,6 +93,14 @@ static std::string FindNextAvailablePrimName(std::string prefix) {
     return newName.str();
 }
 
+static void DeletePrimSpec(SdfPrimSpecHandle &prim) {
+    if (prim->GetNameParent()) {
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveNameChild, prim->GetNameParent(), prim);
+    } else {
+        ExecuteAfterDraw(&SdfLayer::RemoveRootPrim, prim->GetLayer(), prim);
+    }
+}
+
 /// Draw a popup to quickly edit a prim
 void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
     if (!primSpec) return;
@@ -106,27 +114,15 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
         }
     }
 
+    // TODO: this menu is too complex, change for "Add reference" which is more meaningful for artists
     if (ImGui::BeginMenu("Add composition arc")) {
         DrawPrimCompositionPopupMenu(primSpec);
         ImGui::EndMenu();
     }
 
     if (ImGui::MenuItem("Remove")) {
-        // TODO: simplify
-        ExecuteAfterDraw<UsdApiFunction>(primSpec->GetLayer(), std::function<void()> {
-            [=]() {
-                if (primSpec->GetNameParent()) {
-                    primSpec->GetNameParent()->RemoveNameChild(primSpec);
-                    return true;
-                }
-                else {
-                    primSpec->GetLayer()->RemoveRootPrim(primSpec);
-                    return true;
-                    }
-                }
-        });
+        DeletePrimSpec(primSpec);
     }
-
 
     // TODO a function DrawVariantsPopupMenu() instead of the following code ?
     auto variantSetNames = primSpec->GetVariantSets();
@@ -270,20 +266,7 @@ void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     ImGui::SameLine();
 
     if (ImGui::Button("Remove selected") && selectedPrim) {
-        // TODO: simplify
-        ExecuteAfterDraw<UsdApiFunction>(layer, std::function<void()> {
-            [=]() {
-                if (selectedPrim->GetNameParent()) {
-                    selectedPrim->GetNameParent()->RemoveNameChild(selectedPrim);
-                    return true;
-                }
-                else {
-                    layer->RemoveRootPrim(selectedPrim);
-                    return true;
-                    }
-                }
-        });
-
+        DeletePrimSpec(selectedPrim);
         selectedPrim = SdfPrimSpecHandle(); // resets selection
     }
     ImGui::PushItemWidth(-1);
@@ -317,15 +300,11 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
         }
 
         if (layer->GetDefaultPrim() != defautPrim) {
-            if (defautPrim != "")
-            {
+            if (defautPrim != "") {
                 ExecuteAfterDraw(&SdfLayer::SetDefaultPrim, layer, defautPrim);
-
-            }
-            else {
+            } else {
                 ExecuteAfterDraw(&SdfLayer::ClearDefaultPrim, layer);
             }
-
         }
 
         ImGui::EndCombo();
