@@ -418,7 +418,7 @@ void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth=0) {
     }
 }
 
-void DrawLayerSublayersPage(SdfLayerRefPtr layer) {
+void DrawLayerSublayers(SdfLayerRefPtr layer) {
     if (!layer)
         return;
     if (ImGui::Button("Add sublayer")) {
@@ -426,7 +426,7 @@ void DrawLayerSublayersPage(SdfLayerRefPtr layer) {
     }
     ImGui::PushItemWidth(-1);
     // TODO: Mute and Unmute layers
-    if (ImGui::ListBoxHeader("##DrawLayerSublayersPage", 10, 10)) {
+    if (ImGui::ListBoxHeader("##DrawLayerSublayers", 10, 10)) {
         DrawLayerSublayerTree(layer);
         ImGui::ListBoxFooter();
     }
@@ -442,7 +442,7 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
          DrawLayerMetadata(layer);
     }
     if (ImGui::CollapsingHeader("Sublayers")) {
-         DrawLayerSublayersPage(layer);
+         DrawLayerSublayers(layer);
     }
     if (ImGui::CollapsingHeader("Prims tree")) {
          DrawLayerPrimTree(layer, selectedPrim);
