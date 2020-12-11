@@ -9,7 +9,7 @@
 #include "CameraEditor.h"
 #include "TranslationEditor.h"
 #include "MouseHoverManipulator.h"
-#include "SelectionEditor.h"
+#include "SelectionManipulator.h"
 #include "Selection.h"
 #include "Grid.h"
 

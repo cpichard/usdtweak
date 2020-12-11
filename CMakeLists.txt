@@ -16,7 +16,7 @@ add_executable(usdtweak
  src/viewport/CameraManipulator.cpp
  src/viewport/CameraEditor.cpp
  src/viewport/TranslationEditor.cpp
- src/viewport/SelectionEditor.cpp
+ src/viewport/SelectionManipulator.cpp
  src/viewport/Viewport.cpp
  src/viewport/Manipulator.cpp
  src/viewport/MouseHoverManipulator.cpp
