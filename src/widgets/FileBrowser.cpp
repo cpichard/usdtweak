@@ -157,7 +157,7 @@ void DrawFileBrowser() {
     // Get window size
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: size of the window
-    if (ImGui::ListBoxHeader("##empty", sizeArg)) {
+    if (ImGui::ListBoxHeader("##FileList", sizeArg)) {
         if (ImGui::BeginTable("Files", 3, tableFlags)) {
             ImGui::TableSetupColumn(" Type ", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn(" Filename ", ImGuiTableColumnFlags_WidthStretch);
@@ -175,7 +175,7 @@ void DrawFileBrowser() {
                 }
                 ImGui::PopID();
                 ImGui::SameLine();
-                ImGui::Text("%s", isDirectory ? "D " : "F ");
+                ImGui::Text("%s ", isDirectory ? "D" : "F");
                 ImGui::TableNextCell();
                 if (isDirectory) {
                     ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
