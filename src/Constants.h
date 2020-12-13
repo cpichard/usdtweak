@@ -5,8 +5,8 @@
 ///
 
 /// Size of the main windows when it opens.
-constexpr int InitialWindowWidth = 640;
-constexpr int InitialWindowHeight = 480;
+constexpr int InitialWindowWidth = 1024;
+constexpr int InitialWindowHeight = 1024;
 
 /// Buffer size of a TextEdit widget,
 constexpr size_t TextEditBufferSize = 256;
