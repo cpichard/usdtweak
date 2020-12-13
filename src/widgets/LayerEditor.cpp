@@ -199,7 +199,7 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     ImGui::TableNextCell();
     std::string description = primSpec->GetPath().IsPrimVariantSelectionPath() ? ""
         : TfEnum::GetDisplayName(primSpec->GetSpecifier()) + " " +
-        primSpec->GetTypeName().GetString();
+        ((primSpec->GetTypeName() == SdfTokens->AnyTypeToken) ? std::string() : primSpec->GetTypeName().GetString());
 
     ImGui::Text("%s", description.c_str());
 

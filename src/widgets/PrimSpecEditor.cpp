@@ -174,7 +174,9 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec) {
     const char *classes[] = {"Scope",      "Xform",        "Cube",     "Sphere",         "Cylinder",
                              "Capsule",    "Cone",         "Camera",   "PointInstancer", "Mesh",
                              "GeomSubset", "DistantLight", "Material", "Shader", "BlendShape"};
-    const char *currentItem = primSpec->GetTypeName().GetString().c_str();
+
+    const TfToken &typeName = primSpec->GetTypeName() == SdfTokens->AnyTypeToken ? TfToken() : primSpec->GetTypeName();
+    const char *currentItem = typeName.GetString().c_str();
 
     if (ImGui::BeginCombo("Prim Type", currentItem)) {
         for (int n = 0; n < IM_ARRAYSIZE(classes); n++) {
@@ -187,7 +189,12 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec) {
         }
 
         if (currentItem && primSpec->GetTypeName() != currentItem) {
-            ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
+            if (currentItem=="") {
+                ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, SdfTokens->AnyTypeToken);
+            } else {
+                ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
+            }
+
         }
         ImGui::EndCombo();
     }
