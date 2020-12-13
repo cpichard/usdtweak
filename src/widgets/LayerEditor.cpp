@@ -408,7 +408,7 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
     if (!layer)
         return;
     if (ImGui::Button("Add sublayer")) {
-        TriggerOpenModal<AddSublayer>(layer);
+        DrawModalDialog<AddSublayer>(layer);
     }
     ImGui::PushItemWidth(-1);
     // TODO: Mute and Unmute layers

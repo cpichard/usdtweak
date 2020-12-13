@@ -312,19 +312,19 @@ void Editor::DrawMainMenuBar() {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::BeginMenu("New")) {
                 if (ImGui::MenuItem("Layer")) {
-                    TriggerOpenModal<CreateLayerModal>(*this);
+                    DrawModalDialog<CreateLayerModal>(*this);
                 }
                 if (ImGui::MenuItem("Stage")) {
-                    TriggerOpenModal<CreateStageModal>(*this);
+                    DrawModalDialog<CreateStageModal>(*this);
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Open")) {
                 if (ImGui::MenuItem("Layer")) {
-                    TriggerOpenModal<OpenLayerModal>(*this);
+                    DrawModalDialog<OpenLayerModal>(*this);
                 }
                 if (ImGui::MenuItem("Stage")) {
-                    TriggerOpenModal<OpenStageModal>(*this);
+                    DrawModalDialog<OpenStageModal>(*this);
                 }
                 ImGui::EndMenu();
             }
@@ -336,7 +336,7 @@ void Editor::DrawMainMenuBar() {
                 }
                 if (ImGui::MenuItem("Selected layer as")) {
                     if (GetCurrentLayer()) {
-                        TriggerOpenModal<SaveLayerAs>(*this);
+                        DrawModalDialog<SaveLayerAs>(*this);
                     }
                 }
                 ImGui::EndMenu();

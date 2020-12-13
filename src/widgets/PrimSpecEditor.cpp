@@ -332,7 +332,7 @@ void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec) {
         ImGui::MenuItem("Specialize");
         if (ImGui::MenuItem("Reference")) {
             // TODO  TriggerOpenModal<EditReferences>(primSpec, ArcAddChar, ArcPayload);
-            TriggerOpenModal<EditReferences>(primSpec);
+            DrawModalDialog<EditReferences>(primSpec);
         }
         ImGui::EndMenu();
     }

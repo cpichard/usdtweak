@@ -14,7 +14,7 @@ ModalDialog *GetCurrentModalDialog();
 void SetCurrentModalDialog(ModalDialog *);
 
 /// Trigger a modal dialog
-template <typename T, typename... ArgTypes> void TriggerOpenModal(ArgTypes &&... args) {
+template <typename T, typename... ArgTypes> void DrawModalDialog(ArgTypes &&... args) {
     modalOpenTriggered = true;
     if (!GetCurrentModalDialog()) {
         SetCurrentModalDialog(new T(args...));
