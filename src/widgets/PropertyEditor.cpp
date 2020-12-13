@@ -24,7 +24,7 @@ void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
         ImGui::SameLine();
         ImGui::Text("(%s)", attributeTypeName.GetAsToken().GetString().c_str());
     } else {
-        ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AuthoredAttributeColor) : ImVec4(UnauthoredAttributeColor);
+        ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
         ImGui::TextColored(attributeNameColor, "'%s'", attributeName.c_str());
         if (attribute.HasAuthoredConnections()) {
             SdfPathVector sources;
@@ -44,7 +44,7 @@ void DrawUsdRelationship(UsdRelationship &relationship) {
     std::string relationshipName = relationship.GetNamespace().GetString()
         + (relationship.GetNamespace() == TfToken() ? std::string() : std::string(":"))
         + relationship.GetBaseName().GetString();
-    ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AuthoredAttributeColor) : ImVec4(UnauthoredAttributeColor);
+    ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
     ImGui::TextColored(ImVec4(attributeNameColor), "'%s'", relationshipName.c_str());
     SdfPathVector targets;
     //relationship.GetTargets(&targets); TODO: what is the difference wiht GetForwardedTargets
