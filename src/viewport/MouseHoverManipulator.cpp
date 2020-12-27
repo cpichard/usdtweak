@@ -20,7 +20,12 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
         }
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
-        viewport.FrameSelection(viewport.GetSelection());
+        const Selection &selection = viewport.GetSelection();
+        if (selection) {
+            viewport.FrameSelection(viewport.GetSelection());
+        } else {
+            viewport.FrameRootPrim();
+        }
     }
     return this;
 }
