@@ -6,7 +6,7 @@
 ///
 #include <map>
 #include "Manipulator.h"
-#include "CameraEditor.h"
+#include "CameraManipulator.h"
 #include "PositionManipulator.h"
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
@@ -66,8 +66,8 @@ public:
     const GfCamera & GetCurrentCamera() const { return _currentCamera; }
 
     std::vector<std::pair<std::string, GfCamera>> _cameras;
-    CameraEditor _cameraManipulator;
-    CameraEditor & GetCameraManipulator() { return _cameraManipulator; }
+    CameraManipulator _cameraManipulator;
+    CameraManipulator & GetCameraManipulator() { return _cameraManipulator; }
 
     // Still testing how TranslationEditor should interacts with the viewport
     // TODO Test multiple viewport. A gizmo can be seen in multiple viewport
@@ -116,5 +116,5 @@ private:
 
 template <> inline Manipulator *Viewport::GetEditor<PositionManipulator>() { return &_positionManipulator; }
 template <> inline Manipulator *Viewport::GetEditor<MouseHoverManipulator>() { return &_mouseHover; }
-template <> inline Manipulator *Viewport::GetEditor<CameraEditor>() { return &_cameraManipulator; }
+template <> inline Manipulator *Viewport::GetEditor<CameraManipulator>() { return &_cameraManipulator; }
 template <> inline Manipulator *Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }

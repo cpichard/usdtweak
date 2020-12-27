@@ -14,7 +14,7 @@ add_executable(usdtweak
  src/commands/SdfCommandGroup.cpp
  src/commands/SdfLayerInstructions.cpp
  src/viewport/CameraRig.cpp
- src/viewport/CameraEditor.cpp
+ src/viewport/CameraManipulator.cpp
  src/viewport/PositionManipulator.cpp
  src/viewport/SelectionManipulator.cpp
  src/viewport/Viewport.cpp

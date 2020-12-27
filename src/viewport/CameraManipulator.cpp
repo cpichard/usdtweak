@@ -1,12 +1,12 @@
-#include "CameraEditor.h"
+#include "CameraManipulator.h"
 #include "Viewport.h"
 #include "Gui.h"
 #include <GLFW/glfw3.h>
 
-CameraEditor::CameraEditor(const GfVec2i &viewportSize, bool isZUp)
+CameraManipulator::CameraManipulator(const GfVec2i &viewportSize, bool isZUp)
     : CameraRig(viewportSize, isZUp) {}
 
-Manipulator* CameraEditor::OnUpdate(Viewport &viewport) {
+Manipulator* CameraManipulator::OnUpdate(Viewport &viewport) {
     auto & cameraManipulator = viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
 

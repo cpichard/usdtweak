@@ -8,7 +8,7 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
     if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        return viewport.GetEditor<CameraEditor>();
+        return viewport.GetEditor<CameraManipulator>();
     }
     else if (ImGui::IsMouseClicked(0)) {
         auto & manipulator = viewport.GetActiveManipulator();

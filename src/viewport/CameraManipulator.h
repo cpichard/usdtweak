@@ -4,10 +4,10 @@
 #include "Manipulator.h"
 
 
-class CameraEditor : public CameraRig, public Manipulator {
+class CameraManipulator : public CameraRig, public Manipulator {
 public:
 
-    CameraEditor(const GfVec2i &viewportSize, bool isZUp = false);
+    CameraManipulator(const GfVec2i &viewportSize, bool isZUp = false);
 
     Manipulator * OnUpdate(Viewport &viewport) override;
 };
