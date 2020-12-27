@@ -12,14 +12,14 @@ enum struct MovementType { None, Orbit, Truck, Dolly };
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-class CameraManipulator {
+class CameraRig {
   public:
-    CameraManipulator(const GfVec2i &viewportSize, bool isZUp = false);
-    ~CameraManipulator() = default;
+    CameraRig(const GfVec2i &viewportSize, bool isZUp = false);
+    ~CameraRig() = default;
 
     // No copy allowed
-    CameraManipulator(const CameraManipulator &) = delete;
-    CameraManipulator &operator=(const CameraManipulator &) = delete;
+    CameraRig(const CameraRig &) = delete;
+    CameraRig &operator=(const CameraRig &) = delete;
 
     /// Reset the camera position to the original position
     void ResetPosition(GfCamera &);

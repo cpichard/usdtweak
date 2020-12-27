@@ -4,7 +4,7 @@
 #include <GLFW/glfw3.h>
 
 CameraEditor::CameraEditor(const GfVec2i &viewportSize, bool isZUp)
-    : CameraManipulator(viewportSize, isZUp) {}
+    : CameraRig(viewportSize, isZUp) {}
 
 Manipulator* CameraEditor::OnUpdate(Viewport &viewport) {
     auto & cameraManipulator = viewport.GetCameraManipulator();

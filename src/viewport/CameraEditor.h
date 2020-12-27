@@ -1,10 +1,10 @@
 #pragma once
 
-#include "CameraManipulator.h"
+#include "CameraRig.h"
 #include "Manipulator.h"
 
 
-class CameraEditor : public CameraManipulator, public Manipulator {
+class CameraEditor : public CameraRig, public Manipulator {
 public:
 
     CameraEditor(const GfVec2i &viewportSize, bool isZUp = false);

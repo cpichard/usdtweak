@@ -1,4 +1,4 @@
-#include "CameraManipulator.h"
+#include "CameraRig.h"
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/transform.h>
 #include <pxr/base/gf/bbox3d.h>
@@ -17,16 +17,16 @@ PXR_NAMESPACE_USING_DIRECTIVE
 using DistT = decltype(GfCamera().GetFocusDistance());
 using RotationT = decltype(GfRotation().Decompose(GfVec3d::YAxis(), GfVec3d::XAxis(), GfVec3d::ZAxis()));
 
-CameraManipulator::CameraManipulator(const GfVec2i &viewportSize, bool isZUp)
+CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
     : _movementType(MovementType::None), _selectionSize(1.0), _viewportSize(viewportSize) {
     SetZIsUp(isZUp);
 }
 
-void CameraManipulator::ResetPosition(GfCamera &camera) {
+void CameraRig::ResetPosition(GfCamera &camera) {
     camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
     camera.SetFocusDistance(300.f);
 }
-void CameraManipulator::SetZIsUp(bool isZUp) {
+void CameraRig::SetZIsUp(bool isZUp) {
     _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0));
 }
 
@@ -67,7 +67,7 @@ static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, con
 }
 
 /// Frame a bounding box.
-void CameraManipulator::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
+void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
     DistT dist;
     RotationT rotation;
     GfVec3d center;
@@ -87,7 +87,7 @@ void CameraManipulator::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox)
 }
 
 // Updates a GfCamera, basically updating the transform matrix
-bool CameraManipulator::Move(GfCamera &camera, double deltaX, double deltaY) {
+bool CameraRig::Move(GfCamera &camera, double deltaX, double deltaY) {
     DistT dist;
     RotationT rotation;
     GfVec3d center;
