@@ -1,7 +1,7 @@
 #include "SelectionManipulator.h"
 #include "Gui.h"
 #include "Viewport.h"
-#define GLFW_INCLUDE_GLCOREARB
+//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
 Manipulator *SelectionEditor::OnUpdate(Viewport &viewport) {

@@ -5,7 +5,7 @@
 #include <pxr/imaging/glf/glew.h>
 #include <pxr/imaging/glf/simpleLight.h>
 #include <pxr/imaging/glf/diagnostic.h>
-#define GLFW_INCLUDE_GLCOREARB
+//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 #include "Gui.h"
 #include "Editor.h"

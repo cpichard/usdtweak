@@ -1,7 +1,6 @@
 #include "CameraEditor.h"
 #include "Viewport.h"
 #include "Gui.h"
-#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
 CameraEditor::CameraEditor(const GfVec2i &viewportSize, bool isZUp)

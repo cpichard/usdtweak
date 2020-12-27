@@ -3,7 +3,7 @@
 #include <pxr/base/gf/line.h>
 
 #include <GL/glew.h>
-#define GLFW_INCLUDE_GLCOREARB
+//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 #include "PositionManipulator.h"
 #include "GeometricFunctions.h"

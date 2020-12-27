@@ -1,7 +1,7 @@
 #include "MouseHoverManipulator.h"
 #include "Viewport.h"
 #include "Gui.h"
-#define GLFW_INCLUDE_GLCOREARB
+//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
 Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
