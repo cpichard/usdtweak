@@ -85,6 +85,8 @@ PositionManipulator::PositionManipulator() : _selectedAxis(None) {
         GLint colorAttr = glGetAttribLocation(_programShader, "inColor");
         glVertexAttribPointer(colorAttr, 4, GL_FLOAT, GL_TRUE, 0, (GLvoid *)sizeof(axisPoints));
         glEnableVertexAttribArray(colorAttr);
+    } else {
+        exit(ERROR_UNABLE_TO_COMPILE_SHADER);
     }
 
     glBindVertexArray(0);
