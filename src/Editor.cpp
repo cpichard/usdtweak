@@ -93,7 +93,11 @@ struct CreateStageModal : public ModalDialog {
 /// Modal dialog to open a layer
 struct OpenLayerModal : public ModalDialog {
 
-    OpenLayerModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".abc"}); };
+    OpenLayerModal(Editor &editor) : editor(editor) {
+        SetValidExtensions({".usda", ".usd", ".usdc",
+                            ".usdz"
+                            ".abc"});
+    };
     ~OpenLayerModal() override {}
     void Draw() override {
         DrawFileBrowser();
@@ -124,7 +128,7 @@ struct OpenLayerModal : public ModalDialog {
 
 struct OpenStageModal : public ModalDialog {
 
-    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".abc"}); };
+    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".usdz", ".abc"}); };
     ~OpenStageModal() override {}
     void Draw() override {
         DrawFileBrowser();
