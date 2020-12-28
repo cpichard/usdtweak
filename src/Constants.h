@@ -29,3 +29,6 @@ constexpr size_t DecimalPrecision = 5;
 
 /// Name
 constexpr const char * const DefaultPrimSpecName = "prim";
+
+/// Return error codes
+constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;

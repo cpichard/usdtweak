@@ -11,7 +11,7 @@
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
 #include "Selection.h"
-//#include "Grid.h"
+#include "Grid.h"
 
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -110,7 +110,7 @@ private:
     Manipulator * _currentEditingState;
     Selection &_selection;
     GLuint _textureId = 0;
-    //Grid    _grid;
+    Grid    _grid;
 };
 
 

@@ -308,7 +308,7 @@ void Viewport::Render() {
     }
 
     // Draw grid
-    //_grid.Render(*this);
+    _grid.Render(*this);
 
     // Draw active manipulator
     GetActiveManipulator().OnDrawFrame(*this);
@@ -329,10 +329,12 @@ void Viewport::Update() {
             }
             _renderers[GetCurrentStage()] = _renderer;
             _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         }
         else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
             _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
             //_selection =
         }
