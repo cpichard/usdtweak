@@ -11,17 +11,16 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
         return viewport.GetEditor<CameraManipulator>();
     }
     else if (ImGui::IsMouseClicked(0)) {
-        auto & manipulator = viewport.GetActiveManipulator();
+        auto &manipulator = viewport.GetActiveManipulator();
         if (manipulator.IsMouseOver(viewport)) {
             return &manipulator;
-        }
-        else {
+        } else {
             return viewport.GetEditor<SelectionEditor>();
         }
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
         const Selection &selection = viewport.GetSelection();
-        if (selection) {
+        if (selection && !selection->IsEmpty()) {
             viewport.FrameSelection(viewport.GetSelection());
         } else {
             viewport.FrameRootPrim();
