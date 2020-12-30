@@ -1,7 +1,6 @@
 #pragma once
-#include <array>
 ///
-/// Constants used in multiple files
+/// Constants used in the application
 ///
 
 /// PI
@@ -19,9 +18,8 @@ constexpr float ViewportBorderSize = 60.f;
 
 /// Max buffer size for file path, used in file browser
 constexpr size_t PathBufferSize = 1024;
-constexpr float AuthoredAttributeColor4[4] = { 1.0, 1.0, 1.0, 1.0 };
-constexpr std::array<float, 4> AuthoredAttributeColor2{ 1.0, 1.0, 1.0, 1.0 };
-///
+
+/// Predefined colors for the different widgets
 #define AttributeAuthoredColor {1.0, 1.0, 1.0, 1.0}
 #define AttributeUnauthoredColor {0.5, 0.5, 0.5, 1.0}
 #define AttributeRelationshipColor {0.5, 0.5, 0.9, 1.0}
@@ -30,8 +28,8 @@ constexpr std::array<float, 4> AuthoredAttributeColor2{ 1.0, 1.0, 1.0, 1.0 };
 /// Decimal Precision shown in the floating point values UI
 constexpr size_t DecimalPrecision = 5;
 
-/// Name
-constexpr const char * const DefaultPrimSpecName = "prim";
+/// Default name when creating a prim
+constexpr const char *const DefaultPrimSpecName = "prim";
 
 /// Return error codes
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
