@@ -4,7 +4,10 @@
 /// Constants used in multiple files
 ///
 
-/// Size of the main windows when it opens.
+/// PI
+constexpr float PI_F = 3.14159265;
+
+/// Size of the main window when it opens.
 constexpr int InitialWindowWidth = 1024;
 constexpr int InitialWindowHeight = 1024;
 

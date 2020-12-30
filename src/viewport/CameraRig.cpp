@@ -1,4 +1,5 @@
 #include "CameraRig.h"
+#include "Constants.h"
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/transform.h>
 #include <pxr/base/gf/bbox3d.h>
@@ -81,7 +82,7 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
     _selectionSize = std::max(rect[0], rect[1]) * 2; // This reset the selection size
     auto fov = camera.GetFieldOfView(GfCamera::FOVHorizontal);
     auto lengthToFit = _selectionSize * 0.5;
-    dist = lengthToFit / atan(fov * 0.5 * (3.14 / 180.f));
+    dist = lengthToFit / atan(fov * 0.5 * (PI_F / 180.f));
     // TODO: handle orthographic cameras
     ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
 }
