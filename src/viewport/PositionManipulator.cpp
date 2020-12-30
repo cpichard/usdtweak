@@ -10,13 +10,14 @@
 #include "Viewport.h"
 #include "Gui.h"
 #include "Commands.h"
+
 /*
-    TODO: this should really be using the ImGui API instead of native OpenGL code
-    as we ultimatelly want to use Vulkan / Metal. Have a look before going too deep into the OpenGL implementation
+    TODO:  we ultimatelly want to be compatible with Vulkan / Metal, the following code should really be using the ImGui API instead of native OpenGL code
+    . Have a look before going too deep into the OpenGL implementation
     Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
     implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
 
-    // NOTES from the doc:
+    // NOTES from the USD doc:
     // If you need to compute the transform for multiple prims on a stage,
     // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse
    sub-computations shared by the prims.
@@ -25,7 +26,7 @@
     // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second
    column of the fourth row.
 
-    // Cool doc on manipulators:
+    // Reference on manipulators:
     // http://ed.ilogues.com/2018/06/27/translate-rotate-and-scale-manipulators-in-3d-modelling-programs
 */
 static constexpr GLfloat axisSize = 100.f;
