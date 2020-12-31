@@ -35,7 +35,7 @@ void SetValidExtensions(const std::vector<std::string> &extensions) {
 
 // Using a timer to avoid querying the filesytem at every frame
 // TODO: a separate thread to read from the filesystem only once needed
-static void EverySecond(std::function<void()> deferedFunction) {
+static void EverySecond(const std::function<void()> &deferedFunction) {
     static auto last = clk::steady_clock::now();
     auto now = clk::steady_clock::now();
     if ((now - last).count() > 1e9) {
@@ -55,7 +55,7 @@ static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
     strncpy(&pathBuffer[0], src.c_str(), n);
 }
 
-static void DrawNavigationBar(fs::path &displayedDirectory, char *lineEditBuffer) {
+static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEditBuffer) {
     // Split the path navigator ??
     const std::string &directoryPath = displayedDirectory.string();
     std::string::size_type pos = 0;
