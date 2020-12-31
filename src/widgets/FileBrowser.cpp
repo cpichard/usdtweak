@@ -44,11 +44,14 @@ static void EverySecond(const std::function<void()> &deferedFunction) {
     }
 }
 
+
 static void ClearPathBuffer(char *pathBuffer){
     memset(pathBuffer, 0, PathBufferSize);
 }
 //
 /// Path buffer must have PathBufferSize
+///
+/// TODO: use imgui_stdlib instead of converting string to fixed char array
 static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
     const int n = std::min(PathBufferSize-1, src.size());
     ClearPathBuffer(pathBuffer);
@@ -83,7 +86,7 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
 
 static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     const auto &filename = p.path().filename();
-    // TODO: startsWith doesn't seem to be in the standard c++17, this needs a refactor !
+    // TODO: startsWith is defined in ghc/filesystem.hpp and won't compile with c++17
     const auto startsWithDot = fs::detail::startsWith(p.path().filename(), ".");
     bool endsWithValidExt = true;
     if (!validExts.empty()) {
@@ -102,7 +105,7 @@ static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     }
 }
 
-// TODO check that there is a antislash/slash at the end of c:
+// TODO check that there is a antislash/slash at the end of c
 void DrawFileBrowser() {
     static char lineEditBuffer[PathBufferSize];
     static fs::path displayedDirectory = fs::current_path();
