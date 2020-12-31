@@ -41,17 +41,11 @@ struct CreateLayerModal : public ModalDialog {
             ImGui::Text("Create: ");
         } // ... could add other messages like permission denied, or incorrect extension
         ImGui::Text("%s", filePath.c_str());
-
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
+        DrawOkCancelModal([&]() {
             if (!filePath.empty()) {
                 editor.CreateLayer(filePath);
             }
-            CloseModal();
-        }
+        });
     }
 
     const char *DialogId() const override { return "Create layer"; }
@@ -73,16 +67,11 @@ struct CreateStageModal : public ModalDialog {
         } // ... could add other messages like permission denied, or incorrect extension
         ImGui::Text("%s", filePath.c_str());
 
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
+        DrawOkCancelModal([&]() {
             if (!filePath.empty()) {
                 editor.CreateStage(filePath);
             }
-            CloseModal();
-        }
+        });
     }
 
     const char *DialogId() const override { return "Create stage"; }
@@ -101,25 +90,18 @@ struct OpenLayerModal : public ModalDialog {
     ~OpenLayerModal() override {}
     void Draw() override {
         DrawFileBrowser();
-        auto filePath = GetFileBrowserFilePath();
         if (FilePathExists()) {
             ImGui::Text("Open: ");
-        }
-        else {
+        } else {
             ImGui::Text("Not found: ");
         }
+        auto filePath = GetFileBrowserFilePath();
         ImGui::Text("%s", filePath.c_str());
-
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
+        DrawOkCancelModal([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 editor.ImportLayer(filePath);
             }
-            CloseModal();
-        }
+        });
     }
 
     const char *DialogId() const override { return "Open layer"; }
@@ -135,22 +117,15 @@ struct OpenStageModal : public ModalDialog {
         auto filePath = GetFileBrowserFilePath();
         if (FilePathExists()) {
             ImGui::Text("Open: ");
-        }
-        else {
+        } else {
             ImGui::Text("Not found: ");
         }
         ImGui::Text("%s", filePath.c_str());
-
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
+        DrawOkCancelModal([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 editor.ImportStage(filePath);
             }
-            CloseModal();
-        }
+        });
     }
 
     const char *DialogId() const override { return "Open stage"; }
@@ -159,29 +134,22 @@ struct OpenStageModal : public ModalDialog {
 
 struct SaveLayerAs : public ModalDialog {
 
-    SaveLayerAs(Editor &editor) : editor(editor) {};
+    SaveLayerAs(Editor &editor) : editor(editor){};
     ~SaveLayerAs() override {}
     void Draw() override {
         DrawFileBrowser();
         auto filePath = GetFileBrowserFilePath();
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
-        }
-        else {
+        } else {
             ImGui::Text("Save to: ");
         }
         ImGui::Text("%s", filePath.c_str());
-
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
+        DrawOkCancelModal([&]() { // On Ok ->
             if (!filePath.empty() && !FilePathExists()) {
                 editor.SaveCurrentLayerAs(filePath);
             }
-            CloseModal();
-        }
+        });
     }
 
     const char *DialogId() const override { return "Save layer as"; }

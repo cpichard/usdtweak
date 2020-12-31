@@ -45,3 +45,17 @@ void DrawCurrentModal() {
         ImGui::EndPopup();
     }
 }
+
+void DrawOkCancelModal(const std::function<void()> &onOk) {
+    // Align right
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetWindowWidth() - 3 * ImGui::CalcTextSize(" Cancel ").x -
+                         ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::Button(" Cancel ")) {
+        CloseModal();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("   Ok   ")) {
+        onOk();
+        CloseModal();
+    }
+}

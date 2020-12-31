@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 
 extern bool modalOpenTriggered;
 
@@ -23,6 +24,9 @@ template <typename T, typename... ArgTypes> void DrawModalDialog(ArgTypes &&... 
 
 /// Draw the current modal dialog if it has been triggered
 void DrawCurrentModal();
+
+/// Convenience function to draw an Ok and Cancel buttons in a Modal dialog
+void DrawOkCancelModal(const std::function<void()> &onOk);
 
 /// Close the modal
 void CloseModal();
