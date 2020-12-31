@@ -9,23 +9,40 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
+/// Select and draw the appropriate editor depending on the type, metada and so on.
+/// Returns the modified value or VtValue
+static VtValue DrawAttributeValue(const std::string &label, UsdAttribute &attribute, const VtValue &value) {
+    // If the attribute is a TfToken, it might have an "allowedTokens" metadata
+    // We assume that the attribute is a token if it has allowedToken, but that might not hold true
+    VtValue allowedTokens;
+    attribute.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
+    if (!allowedTokens.IsEmpty()) {
+        return DrawTfToken(label, value, allowedTokens);
+    }
+    //
+    if (attribute.GetRoleName() == TfToken("Color")) {
+        return DrawColorValue(label, value);
+    }
+    return DrawVtValue(label, value);
+}
 
-    std::string attributeName = attribute.GetNamespace().GetString()
-        + (attribute.GetNamespace() == TfToken() ? std::string() : std::string(":"))
-        + attribute.GetBaseName().GetString();
+void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
+    std::string attributeLabel = attribute.GetNamespace().GetString() +
+                                (attribute.GetNamespace() == TfToken() ? std::string() : std::string(":")) +
+                                attribute.GetBaseName().GetString();
     VtValue value;
     if (attribute.Get(&value, currentTime)) {
-        VtValue modified = DrawVtValue(attributeName, value);
+        VtValue modified = DrawAttributeValue(attributeLabel, attribute, value);
         if (!modified.IsEmpty()) {
             ExecuteAfterDraw<AttributeSet>(attribute, modified, currentTime);
         }
         auto attributeTypeName = attribute.GetTypeName();
+        auto attributeRoleName = attribute.GetRoleName();
         ImGui::SameLine();
-        ImGui::Text("(%s)", attributeTypeName.GetAsToken().GetString().c_str());
+        ImGui::Text("%s(%s)",  attributeRoleName.GetString().c_str(), attributeTypeName.GetAsToken().GetString().c_str());
     } else {
         ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
-        ImGui::TextColored(attributeNameColor, "'%s'", attributeName.c_str());
+        ImGui::TextColored(attributeNameColor, "'%s'", attributeLabel.c_str());
         if (attribute.HasAuthoredConnections()) {
             SdfPathVector sources;
             attribute.GetConnections(&sources);
