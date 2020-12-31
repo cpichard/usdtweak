@@ -248,7 +248,7 @@ void Viewport::HandleEvents() {
         /// This works like a Finite state machine
         /// where every manipulator/editor is a state
         if (!_currentEditingState){
-            _currentEditingState = GetEditor<MouseHoverManipulator>();
+            _currentEditingState = GetManipulator<MouseHoverManipulator>();
             _currentEditingState->OnBeginEdition(*this);
         }
 

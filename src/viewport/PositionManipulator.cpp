@@ -263,7 +263,7 @@ void PositionManipulator::OnBeginEdition(Viewport &viewport) {
 Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
 
     if (ImGui::IsMouseReleased(0)) {
-        return viewport.GetEditor<MouseHoverManipulator>();
+        return viewport.GetManipulator<MouseHoverManipulator>();
     }
 
     auto currentTimeCode = GetTimeCode(viewport);

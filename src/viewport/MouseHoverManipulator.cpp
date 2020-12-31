@@ -8,14 +8,14 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
     if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
-        return viewport.GetEditor<CameraManipulator>();
+        return viewport.GetManipulator<CameraManipulator>();
     }
     else if (ImGui::IsMouseClicked(0)) {
         auto &manipulator = viewport.GetActiveManipulator();
         if (manipulator.IsMouseOver(viewport)) {
             return &manipulator;
         } else {
-            return viewport.GetEditor<SelectionEditor>();
+            return viewport.GetManipulator<SelectionEditor>();
         }
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {

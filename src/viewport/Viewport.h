@@ -78,10 +78,10 @@ public:
 
     MouseHoverManipulator _mouseHover;
 
+    /// All the manipulators are currently stored in this class, this might change, but right now
+    /// GetManipulator is the function that will return the official manipulator based on its type ManipulatorT
+    template <typename ManipulatorT> inline Manipulator *GetManipulator();
 
-    template <typename ViewportEditorT>
-    inline
-    Manipulator * GetEditor() { return nullptr; }; // This must be specialized
 
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
@@ -114,7 +114,8 @@ private:
 };
 
 
-template <> inline Manipulator *Viewport::GetEditor<PositionManipulator>() { return &_positionManipulator; }
-template <> inline Manipulator *Viewport::GetEditor<MouseHoverManipulator>() { return &_mouseHover; }
-template <> inline Manipulator *Viewport::GetEditor<CameraManipulator>() { return &_cameraManipulator; }
-template <> inline Manipulator *Viewport::GetEditor<SelectionEditor>() { return &_selectionManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() { return &_rotationManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
+template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<SelectionEditor>() { return &_selectionManipulator; }
