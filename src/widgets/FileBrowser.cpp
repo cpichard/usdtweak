@@ -183,7 +183,7 @@ void DrawFileBrowser() {
                 if (isDirectory) {
                     ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
                 } else {
-                    ImGui::TextColored(ImVec4(0.8, 1.0, 0.8, 1.0), "%s", dirEntry.path().filename().c_str());
+                    ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().c_str());
                 }
                 ImGui::TableNextCell();
                 if (!isDirectory) ImGui::Text("%ju KB", dirEntry.file_size()/1024);
