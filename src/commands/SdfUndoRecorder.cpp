@@ -7,7 +7,6 @@ SdfUndoRecorder::SdfUndoRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr l
     if (_layer) {
         _previousDelegate = _layer->GetStateDelegate();
         if (undoCommands.IsEmpty()) { // No undo commands were previously recorded
-            std::cout << "Recording commands" << std::endl;
             _layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(undoCommands));
         }
     }
