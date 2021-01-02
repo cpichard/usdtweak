@@ -1,6 +1,5 @@
 #pragma once
 #include <pxr/base/gf/matrix4d.h>
-#include <pxr/base/gf/camera.h> // TODO GET RID
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec2d.h>
 #include <pxr/usd/usdGeom/gprim.h>
@@ -12,9 +11,6 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-// A Manipulator can be seen in multiple viewport, so it should not store a viewport
-// but only edited in one
-
 class PositionManipulator : public Manipulator {
 
   public:
@@ -22,6 +18,7 @@ class PositionManipulator : public Manipulator {
     ~PositionManipulator();
 
     /// From ViewportEditor
+    /// Note: a Manipulator does not store a viewport as it can be rendered in multiple viewport at the same time
     void OnBeginEdition(Viewport &) override;
     Manipulator* OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
@@ -33,7 +30,7 @@ class PositionManipulator : public Manipulator {
     void OnDrawFrame(const Viewport &) override;
 
     /// Called when the viewport changes its selection
-    void OnSelectionChange(Viewport &); // Should that inherit ?
+    void OnSelectionChange(Viewport &) override;
 
     typedef enum { // use class enum ??
         XAxis = 0,
@@ -53,11 +50,10 @@ private:
     UsdGeomXformable _xformable;
     UsdGeomXformOp _translateOp;
 
-    //GfMatrix4d _mat;
     GfVec3d _originMouseOnAxis;
     GfVec3d _translate; // RENAME
 
-    // OpenGL stuff
+    // OpenGL identifiers
     unsigned int _axisGLBuffers;
     unsigned int _vertexShader;
     unsigned int _fragmentShader;

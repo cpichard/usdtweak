@@ -3,7 +3,6 @@
 #include <pxr/base/gf/line.h>
 #include "Constants.h"
 #include <GL/glew.h>
-//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 #include "PositionManipulator.h"
 #include "GeometricFunctions.h"
@@ -239,11 +238,6 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
         if (depthTestStatus)
             glEnable(GL_DEPTH_TEST);
     }
-
-    // UsdGeomBoundable bounds(_xformable);
-    // if (bounds) {
-    //    // draw bounding box ?? do we want that ?
-    //}
 }
 
 void PositionManipulator::OnBeginEdition(Viewport &viewport) {
