@@ -87,8 +87,8 @@ private:
     /// Editor manages the windows states
     ///
     bool _showDebugWindow = false;
-    bool _showPropertyEditor = false;
-    bool _showOutliner = false;
+    bool _showPropertyEditor = true;
+    bool _showOutliner = true;
     bool _showTimeline = false;
     bool _showLayerEditor = false;
     bool _showTheater = false;
