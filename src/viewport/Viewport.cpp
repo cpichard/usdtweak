@@ -16,7 +16,6 @@
 #include "Constants.h"
 #include "RendererSettings.h"
 
-
 template <typename BasicShaderT>
 void DrawBasicShadingProperties(BasicShaderT &shader) {
     auto ambient = shader.GetAmbient();
@@ -66,9 +65,16 @@ void DrawCameraList(Viewport &viewport) {
         }
         ImGui::ListBoxFooter();
     }
+
+    // Draw focalLength
+    auto & camera = viewport.GetCurrentCamera();
+    float focal = camera.GetFocalLength();
+    ImGui::InputFloat("Focal length", &focal);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        camera.SetFocalLength(focal);
+    }
+
 }
-
-
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection) : _stage(stage),
 _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
