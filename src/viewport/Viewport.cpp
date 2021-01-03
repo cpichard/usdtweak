@@ -9,7 +9,6 @@
 #include <pxr/usd/usdGeom/imageable.h>
 
 #include <GLFW/glfw3.h>
-#define GLFW_INCLUDE_GLCOREARB
 #include "Gui.h"
 #include "Viewport.h"
 #include "Commands.h"
@@ -76,49 +75,47 @@ void DrawCameraList(Viewport &viewport) {
 
 }
 
-Viewport::Viewport(UsdStageRefPtr stage, Selection &selection) : _stage(stage),
-_cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
-_currentEditingState(new MouseHoverManipulator()),
-_selection(selection)
- {
-    // Viewport draw target
-    _cameraManipulator.ResetPosition(_currentCamera);
-    _drawTarget = GlfDrawTarget::New(GfVec2i(InitialWindowWidth, InitialWindowHeight), false);
-    _drawTarget->Bind();
-    _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-    _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-    auto color = _drawTarget->GetAttachment("color");
-    _textureId = color->GetGlTextureName();
-    _drawTarget->Unbind();
+Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
+     : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
+      _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection) {
+     // Viewport draw target
+     _cameraManipulator.ResetPosition(_currentCamera);
+     _drawTarget = GlfDrawTarget::New(GfVec2i(InitialWindowWidth, InitialWindowHeight), false);
+     _drawTarget->Bind();
+     _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
+     _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
+     auto color = _drawTarget->GetAttachment("color");
+     _textureId = color->GetGlTextureName();
+     _drawTarget->Unbind();
 
-    // USD render engine setup
-    _renderparams = new UsdImagingGLRenderParams;
-    _renderparams->frame = 1.0;
-    _renderparams->complexity = 1.0;
-    _renderparams->clearColor = GfVec4f(0.5, 0.5, 0.5, 1.0);
-    _renderparams->showRender = false;   // what is it used for ?
-    _renderparams->forceRefresh = false; // what is it used for ?
-    _renderparams->enableLighting = true;
-    _renderparams->enableSceneMaterials = true;
-    _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
-    _renderparams->highlight = true;
+     // USD render engine setup
+     _renderparams = new UsdImagingGLRenderParams;
+     _renderparams->frame = 1.0;
+     _renderparams->complexity = 1.0;
+     _renderparams->clearColor = GfVec4f(0.5, 0.5, 0.5, 1.0);
+     _renderparams->showRender = false;
+     _renderparams->forceRefresh = false;
+     _renderparams->enableLighting = true;
+     _renderparams->enableSceneMaterials = true;
+     _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
+     _renderparams->highlight = true;
 
-    // Lights
-    GlfSimpleLight simpleLight;
-    simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
-    simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-    simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
-    simpleLight.SetPosition({200, 200, 200, 1.0});
-    _lights.emplace_back(simpleLight);
+     // Lights
+     GlfSimpleLight simpleLight;
+     simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
+     simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+     simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
+     simpleLight.SetPosition({200, 200, 200, 1.0});
+     _lights.emplace_back(simpleLight);
 
-    // TODO: set color correction as well
+     // TODO: set color correction as well
 
-    // Default material
-    _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
-    _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-    _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
-    _ambient = {0.0, 0.0, 0.0, 0.0};
-}
+     // Default material
+     _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
+     _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+     _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
+     _ambient = {0.0, 0.0, 0.0, 0.0};
+ }
 
 Viewport::~Viewport() {
     if (_renderer) {
@@ -177,14 +174,34 @@ void Viewport::Draw() {
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Frame Stage")) {
-        FrameRootPrim();
+
+    /// Manipulator toolbar
+    if (ImGui::RadioButton("Translate", IsChosenManipulator<PositionManipulator>())) {
+        ChooseManipulator<PositionManipulator>();
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Rotate", IsChosenManipulator<RotationManipulator>())) {
+        ChooseManipulator<RotationManipulator>();
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Scale", false)) { // For later
+       FrameRootPrim();
     }
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
         ImGui::Image((ImTextureID)_textureId, ImVec2(wsize.x, wsize.y - ViewportBorderSize), ImVec2(0, 1), ImVec2(1, 0));
+        // TODO: it is possible to have a popup menu on top of the viewport.
+        // It should be created depending on the manipulator/editor state
+        //if (ImGui::BeginPopupContextItem()) {
+        //    ImGui::Button("ColorCorrection");
+        //    ImGui::Button("Deactivate");
+        //    ImGui::EndPopup();
+        //}
     }
+
+    _rotationManipulator.IsMouseOver(*this);
+
 }
 
 
@@ -283,26 +300,27 @@ void Viewport::Render() {
     /// Use the selected camera
     if (GetCurrentStage() && _renderparams && _selectedCameraPath != SdfPath::EmptyPath()) {
         auto selectedCameraPrim = UsdGeomCamera::Get(GetCurrentStage(), _selectedCameraPath);
-        // This overrides and destroy the freeCamera position,
+        // This overrides and destroy the current freeCamera position, in the future we might want another
+        // behavior
         _currentCamera = selectedCameraPrim.GetCamera(_renderparams->frame);
         // cameraManipulator.CopyCameraAtPath(freeCamera, selectedCameraPath);
     }
 
-    // Set camera and lighting state
     _drawTarget->Bind();
     glEnable(GL_DEPTH_TEST);
     glClearColor(_renderparams->clearColor[0], _renderparams->clearColor[1], _renderparams->clearColor[2],
         _renderparams->clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    if (_renderer && GetCurrentStage()) {
-        //
-        glViewport(0, 0, width, height);
-        _renderer->SetLightingState(_lights, _material, _ambient);
 
+    glViewport(0, 0, width, height);
+
+    if (_renderer && GetCurrentStage()) {
         // Render hydra
+        // Set camera and lighting state
+        _renderer->SetLightingState(_lights, _material, _ambient);
         _renderer->SetRenderViewport(GfVec4d(0, 0, width, height));
         _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
-        _renderparams->forceRefresh = true;
+        //_renderparams->forceRefresh = true;
 
         // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
         // else set camera state
@@ -355,7 +373,8 @@ void Viewport::Update() {
         _lastSelectionHash = currentSelectionHash;
 
         // Tell the manipulators the selection has changed
-        GetActiveManipulator().OnSelectionChange(*this);
+        _positionManipulator.OnSelectionChange(*this);
+        _rotationManipulator.OnSelectionChange(*this);
     }
 }
 

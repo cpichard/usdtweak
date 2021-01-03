@@ -10,6 +10,7 @@
 #include "PositionManipulator.h"
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
+#include "RotationManipulator.h"
 #include "Selection.h"
 #include "Grid.h"
 
@@ -61,28 +62,32 @@ public:
 
     // Camera --- TODO: should the additional cameras live on the stage session ??
     GfCamera _currentCamera;
-
     GfCamera & GetCurrentCamera() { return _currentCamera; }
     const GfCamera & GetCurrentCamera() const { return _currentCamera; }
+    //std::vector<std::pair<std::string, GfCamera>> _cameras;
 
-    std::vector<std::pair<std::string, GfCamera>> _cameras;
     CameraManipulator _cameraManipulator;
     CameraManipulator & GetCameraManipulator() { return _cameraManipulator; }
 
-    // Still testing how TranslationEditor should interacts with the viewport
-    // TODO Test multiple viewport. A gizmo can be seen in multiple viewport
-    // but only edited in one
-
     PositionManipulator _positionManipulator;
-    PositionManipulator & GetActiveManipulator() { return _positionManipulator; }
-
+    RotationManipulator _rotationManipulator;
     MouseHoverManipulator _mouseHover;
 
     /// All the manipulators are currently stored in this class, this might change, but right now
     /// GetManipulator is the function that will return the official manipulator based on its type ManipulatorT
     template <typename ManipulatorT> inline Manipulator *GetManipulator();
 
+    Manipulator *_activeManipulator;
+    Manipulator &GetActiveManipulator() { return *_activeManipulator; }
 
+    // The chosen manipulator is the one selected in the toolbar, Translate/Rotate/Scale/Select ...
+    // Manipulator *_chosenManipulator;
+    template <typename ManipulatorT> inline void ChooseManipulator() { _activeManipulator = GetManipulator<ManipulatorT>(); };
+    template <typename ManipulatorT> inline bool IsChosenManipulator() {
+        return _activeManipulator == GetManipulator<ManipulatorT>();
+    };
+
+ 
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
 
@@ -103,7 +108,8 @@ public:
     SelectionEditor _selectionManipulator;
     SelectionEditor & GetSelectionManipulator() {return _selectionManipulator;}
 
-    /// Handle events is implemented as a finite state machine using ViewportEditor
+    /// Handle events is implemented as a finite state machine.
+    /// The state are simply the current manipulator used.
     void HandleEvents();
 
 private:
@@ -119,3 +125,4 @@ template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() 
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
 template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<SelectionEditor>() { return &_selectionManipulator; }
+

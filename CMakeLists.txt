@@ -17,6 +17,7 @@ add_executable(usdtweak
  src/viewport/CameraManipulator.cpp
  src/viewport/Grid.cpp
  src/viewport/PositionManipulator.cpp
+ src/viewport/RotationManipulator.cpp
  src/viewport/SelectionManipulator.cpp
  src/viewport/Viewport.cpp
  src/viewport/Manipulator.cpp
