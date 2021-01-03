@@ -76,6 +76,18 @@ void ExecuteAfterDraw(FuncT &&func, const UsdPrim &prim, ArgsT&&... arguments) {
 }
 
 template<typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, const UsdAttribute &attribute, ArgsT&&... arguments) {
+    const auto &path = attribute.GetPath();
+    UsdStageWeakPtr stage =  attribute.GetStage();
+    std::function<void()> usdApiFunc = [=]() {
+        auto attribute = stage->GetAttributeAtPath(path);
+        std::function<void()> attributeFunc = std::bind(func, &attribute, arguments...);
+        attributeFunc();
+    };
+    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+}
+
+template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments) {
     const auto &path =  geom.GetPrim().GetPath();
     UsdStageWeakPtr stage =  geom.GetPrim().GetStage();
