@@ -41,6 +41,9 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
 
+    ImGui::Separator();
+    ImGui::Checkbox("Highlight selection", &renderparams.highlight);
+
     // Renderer
     ImGui::Separator();
     const auto currentPlugin = renderer.GetCurrentRendererId();
