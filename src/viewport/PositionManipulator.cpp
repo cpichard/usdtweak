@@ -284,9 +284,7 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
 void PositionManipulator::OnEndEdition(Viewport &) { EndEdition(); };
 
 UsdTimeCode PositionManipulator::GetTimeCode(const Viewport &viewport) {
-    ImGuiIO &io = ImGui::GetIO();
-    return ((_translateOp && _translateOp.MightBeTimeVarying()) || io.KeysDown[GLFW_KEY_S]) ? viewport.GetCurrentTimeCode()
-                                                                                            : UsdTimeCode::Default();
+    return (_xformable && _translateOp && _translateOp.GetNumTimeSamples()) ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
 }
 
 ///
