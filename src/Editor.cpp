@@ -266,6 +266,7 @@ void Editor::CreateStage(const std::string &path) {
     auto layer = SdfLayer::New(usdaFormat, path);
     _currentStage = UsdStage::Open(layer);
     _stageCache.Insert(_currentStage);
+    _viewport.SetCurrentStage(_currentStage);
     _showTheater = true;
     _showViewport = true;
 }
