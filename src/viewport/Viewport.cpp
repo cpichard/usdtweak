@@ -35,7 +35,7 @@ void DrawGLLights(GlfSimpleLightVector &lights) {
         // Light Position
         if (ImGui::TreeNode("Light")) {
             auto position = light.GetPosition();
-            ImGui::InputFloat4("position", position.data());
+            ImGui::DragFloat4("position", position.data());
             light.SetPosition(position);
             DrawBasicShadingProperties(light);
             ImGui::TreePop();
