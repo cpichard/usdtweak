@@ -105,6 +105,15 @@ static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     }
 }
 
+// Compare function for sorting directories before files
+static bool directoryThenFiles(const fs::directory_entry &a, const fs::directory_entry &b) {
+    if (fs::is_directory(a) == fs::is_directory(b)) {
+        return a < b;
+    } else {
+        return fs::is_directory(a) > fs::is_directory(b);
+    }
+}
+
 // TODO check that there is a antislash/slash at the end of c
 void DrawFileBrowser() {
     static char lineEditBuffer[PathBufferSize];
@@ -148,7 +157,7 @@ void DrawFileBrowser() {
                 directoryContent.push_back(p);
             };
         }
-        std::sort(directoryContent.begin(), directoryContent.end());
+        std::sort(directoryContent.begin(), directoryContent.end(), directoryThenFiles);
     });
 
     ImGui::PushItemWidth(-1); // List takes the full size
