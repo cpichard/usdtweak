@@ -153,13 +153,13 @@ void Viewport::Draw() {
     ImVec2 wsize = ImGui::GetWindowSize();
     ImGui::Button("Cameras");
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
-    if (ImGui::BeginPopupContextItem("Cameras", flags) && _renderer) {
+    if (_renderer && ImGui::BeginPopupContextItem("Cameras", flags)) {
         DrawCameraList(*this);
         ImGui::EndPopup();
     }
     ImGui::SameLine();
     ImGui::Button("Lighting");
-    if (ImGui::BeginPopupContextItem("Lighting", flags) && _renderer) {
+    if (_renderer && ImGui::BeginPopupContextItem("Lighting", flags)) {
         ImGui::BulletText("Default shader");
         DrawBasicShadingProperties(_material);
         ImGui::Separator();
@@ -174,7 +174,7 @@ void Viewport::Draw() {
     }
     ImGui::SameLine();
     ImGui::Button("Render settings");
-    if (ImGui::BeginPopupContextItem("Render settings", flags) && _renderer) {
+    if (_renderer && ImGui::BeginPopupContextItem("Render settings", flags)) {
         DrawRendererSettings(*_renderer, *_renderparams);
         ImGui::EndPopup();
     }
