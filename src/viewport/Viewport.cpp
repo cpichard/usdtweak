@@ -99,6 +99,11 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
      _renderparams->enableSceneMaterials = true;
      _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
      _renderparams->highlight = true;
+     _renderparams->gammaCorrectColors = false;
+     _renderparams->colorCorrectionMode = TfToken("sRGB");
+     _renderparams->showGuides = true;
+     _renderparams->showProxy = true;
+     _renderparams->showRender = false;
 
      // Lights
      GlfSimpleLight simpleLight;

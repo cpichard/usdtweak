@@ -44,6 +44,29 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams
     ImGui::Separator();
     ImGui::Checkbox("Highlight selection", &renderparams.highlight);
 
+    ImGui::Separator();
+    if (ImGui::BeginMenu("Show purpose")) {
+        ImGui::Checkbox("Show guides", &renderparams.showGuides);
+        ImGui::Checkbox("Show proxy", &renderparams.showProxy);
+        ImGui::Checkbox("Show render", &renderparams.showRender);
+        ImGui::EndMenu();
+    }
+
+    ImGui::Separator();
+    ImGui::Checkbox("Gamma correction", &renderparams.gammaCorrectColors);
+    if (ImGui::BeginCombo("Color correction mode", renderparams.colorCorrectionMode.GetText())) {
+        if (ImGui::Selectable("disabled")) {
+            renderparams.colorCorrectionMode = TfToken("disabled");
+        }
+        if (ImGui::Selectable("sRGB")) {
+            renderparams.colorCorrectionMode = TfToken("sRGB");
+        }
+        if (ImGui::Selectable("openColorIO")) {
+            renderparams.colorCorrectionMode = TfToken("openColorIO");
+        }
+        ImGui::EndCombo();
+    }
+
     // Renderer
     ImGui::Separator();
     const auto currentPlugin = renderer.GetCurrentRendererId();
