@@ -87,22 +87,22 @@ template <typename UsdPropertyT> const char *SmallButtonLabel();
 template <> const char *SmallButtonLabel<UsdAttribute>() { return "(a)"; };
 template <> const char *SmallButtonLabel<UsdRelationship>() { return "(r)"; };
 
-template <typename UsdPropertyT> void DrawClearAuthoredValuesMenu(UsdPropertyT &property){};
-template <> void DrawClearAuthoredValuesMenu(UsdAttribute &attribute) {
+template <typename UsdPropertyT> void DrawMenuClearAuthoredValues(UsdPropertyT &property){};
+template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
     if (ImGui::MenuItem("Clear Authored values")) {
         ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
     }
 }
 
-template <typename UsdPropertyT> void DrawRemovePropertyMenu(UsdPropertyT &property){};
-template <> void DrawRemovePropertyMenu(UsdAttribute &attribute) {
+template <typename UsdPropertyT> void DrawMenuRemoveProperty(UsdPropertyT &property){};
+template <> void DrawMenuRemoveProperty(UsdAttribute &attribute) {
     if (ImGui::MenuItem("Remove edit")) {
         ExecuteAfterDraw(&UsdPrim::RemoveProperty, attribute.GetPrim(), attribute.GetName());
     }
 }
 
-template <typename UsdPropertyT> void DrawSetKeyMenu(UsdPropertyT &property, UsdTimeCode currentTime){};
-template <> void DrawSetKeyMenu(UsdAttribute &attribute, UsdTimeCode currentTime) {
+template <typename UsdPropertyT> void DrawMenuSetKey(UsdPropertyT &property, UsdTimeCode currentTime){};
+template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime) {
     if (ImGui::MenuItem("Set key")) {
         VtValue value;
         attribute.Get(&value, currentTime);
@@ -110,6 +110,7 @@ template <> void DrawSetKeyMenu(UsdAttribute &attribute, UsdTimeCode currentTime
     }
 }
 
+// Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
     ImVec4 propertyColor = property.IsAuthoredAt(editTarget) ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
@@ -120,10 +121,10 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     ImGui::PopStyleColor();
     if (ImGui::BeginPopupContextItem()) {
         if (property.IsAuthoredAt(editTarget)) {
-            DrawClearAuthoredValuesMenu(property);
-            DrawRemovePropertyMenu(property);
+            DrawMenuClearAuthoredValues(property);
+            DrawMenuRemoveProperty(property);
         }
-        DrawSetKeyMenu(property, currentTime);
+        DrawMenuSetKey(property, currentTime);
         ImGui::EndPopup();
     }
 }
@@ -175,22 +176,22 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
         int miniButtonId = 0;
 
-        auto attributes = prim.GetAttributes();
-        for (auto &att : attributes) {
+        // Draw attributes
+        for (auto &attribute : prim.GetAttributes()) {
             ImGui::PushID(miniButtonId++);
-            DrawPropertyMiniButton(att, editTarget, currentTime);
+            DrawPropertyMiniButton(attribute, editTarget, currentTime);
             ImGui::PopID();
             ImGui::SameLine();
-            DrawUsdAttribute(att, currentTime);
+            DrawUsdAttribute(attribute, currentTime);
         }
 
-        auto relationships = prim.GetRelationships();
-        for (auto &rel : relationships) {
+        // Draw relations
+        for (auto &relation : prim.GetRelationships()) {
             ImGui::PushID(miniButtonId++);
-            DrawPropertyMiniButton(rel, editTarget, currentTime);
+            DrawPropertyMiniButton(relation, editTarget, currentTime);
             ImGui::PopID();
             ImGui::SameLine();
-            DrawUsdRelationship(rel);
+            DrawUsdRelationship(relation);
         }
     }
 }
