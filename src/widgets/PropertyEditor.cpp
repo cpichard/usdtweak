@@ -127,13 +127,50 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     }
 }
 
+void DrawVariantSetsCombos(const UsdPrim &prim) {
+    auto variantSets = prim.GetVariantSets();
+    for (auto variantSetName : variantSets.GetNames()) {
+        auto variantSet = variantSets.GetVariantSet(variantSetName);
+        ImVec4 variantColor =
+            variantSet.HasAuthoredVariantSelection() ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
+        ImGui::PushStyleColor(ImGuiCol_Text, variantColor);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+        ImGui::SmallButton("(v)");
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::MenuItem("Remove edit")) {
+                ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::BeginCombo(variantSetName.c_str(), variantSet.GetVariantSelection().c_str())) {
+            for (auto variant : variantSet.GetVariantNames()) {
+                if (ImGui::Selectable(variant.c_str(), false)) {
+                    ExecuteAfterDraw(&UsdVariantSet::SetVariantSelection, variantSet, variant);
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+}
+
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
         ImGui::Text("Edit target: %s", editTarget.GetLayer()->GetDisplayName().c_str());
         ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
 
-        // TODO: draw variants
+        // Draw variant sets
+        if (prim.HasVariantSets()) {
+            ImGui::Separator();
+            ImGui::Text("VariantSets selection");
+            DrawVariantSetsCombos(prim);
+        }
+        ImGui::Separator();
 
         int miniButtonId = 0;
 

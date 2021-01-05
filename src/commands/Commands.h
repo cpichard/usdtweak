@@ -87,6 +87,24 @@ void ExecuteAfterDraw(FuncT &&func, const UsdAttribute &attribute, ArgsT&&... ar
     ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
+template <typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...arguments) {
+    const auto &prim = variantSet.GetPrim();
+    const auto &variantName = variantSet.GetName();
+    const auto &path = prim.GetPath();
+    UsdStageWeakPtr stage = prim.GetStage();
+    std::function<void()> usdApiFunc = [=]() {
+        auto prim = stage->GetPrimAtPath(path);
+        if (prim.HasVariantSets()) {
+            auto variantSet = prim.GetVariantSet(variantName);
+            std::function<void()> variantSetFunc = std::bind(func, &variantSet, arguments...);
+            variantSetFunc();
+        }
+    };
+    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+}
+
+
 template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments) {
     const auto &path =  geom.GetPrim().GetPath();
