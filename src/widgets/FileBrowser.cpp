@@ -1,7 +1,7 @@
 /// File browser
-/// This is a first quick implementation,
-/// it should be refactored to avoid using globals,
-/// split the ui and filesystem code, remove the timer, etc.
+/// This is a first quick and dirty implementation,
+/// it should be improved to avoid using globals,
+/// split the ui and filesystem code, remove the polling timer, etc.
 
 #include <iostream>
 #include <functional>
@@ -34,7 +34,8 @@ void SetValidExtensions(const std::vector<std::string> &extensions) {
 }
 
 // Using a timer to avoid querying the filesytem at every frame
-// TODO: a separate thread to read from the filesystem only once needed
+// TODO: a separate thread to read from the filesystem only once needed as it might take
+// more than one second to return the list of files on network drives
 static void EverySecond(const std::function<void()> &deferedFunction) {
     static auto last = clk::steady_clock::now();
     auto now = clk::steady_clock::now();
@@ -116,7 +117,7 @@ static bool directoryThenFiles(const fs::directory_entry &a, const fs::directory
 
 // TODO check that there is a antislash/slash at the end of c
 void DrawFileBrowser() {
-    static char lineEditBuffer[PathBufferSize];
+    static char lineEditBuffer[PathBufferSize]; // TODO: check if it can be replaced by imgui_stdlib
     static fs::path displayedDirectory = fs::current_path();
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
