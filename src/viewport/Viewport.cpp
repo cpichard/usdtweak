@@ -204,9 +204,6 @@ void Viewport::Draw() {
         //    ImGui::EndPopup();
         //}
     }
-
-    _rotationManipulator.IsMouseOver(*this);
-
 }
 
 
