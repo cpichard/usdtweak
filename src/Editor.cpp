@@ -402,13 +402,13 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (GetCurrentStage() && _showOutliner) {
+    if (_showOutliner) {
         ImGui::Begin("Stage Outliner", &_showOutliner);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }
 
-    if (GetCurrentStage() && GetViewport()._renderparams && _showTimeline) {
+    if (GetViewport()._renderparams && _showTimeline) {
         ImGui::Begin("Timeline", &_showTimeline);
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
