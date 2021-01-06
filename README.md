@@ -1,36 +1,45 @@
-usdtweak
-=========
-A free and open source experimental usd editor eventually coming with a set of re-usable widgets. Still in early development.
 
-The UI is based on [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. It should be possible to integrate it easyly into any DCC or in-house projects using OpenGL. 
+# usdtweak
+
+A free and open source Pixar's Universal Scene Description editor, still in early development.
+
+The UI is built upon [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other OpenGL+USD projects.
 
 ![screenshot1](doc/screenshot1.jpg)
 
-Status
-------
-It started as a week-end hack to mess around with USD and ImGUI, and grew to the point it can be useful and shared. The editor is a prototype and should be seen as a sandbox to experiment USD UI workflows rather than a proper editing system yet. It is possible to edit multiple stages and layers at the same time, and do simple editions like adding or deleting prims in layers, add references, translates, etc. but most of the features are missing and the architectural work is still ongoing. Many widgets are in their enfancy, but feel free to clone the code and hack it !
+## Status
 
-Requirement
------------
+The editor is still an early prototype but allows to edit multiple stages and layers, add or delete prims in layers, add references, change values, translate objects in the viewport, etc. The original idea is to edit not only stages, but also layers, as you would with a text editor. The development is slow as this on of my side project outside of work and I spend very little time on it at the moment.
+
+## Building
+
+### Requirement
+
 The project is almost self contained and only needs:
- - cmake installed, with a C++14 compiler
- - A build of the latest [USD](https://github.com/PixarAnimationStudios/USD/releases/tag/v20.08) version
- - An installed version of [GLFW](https://www.glfw.org/)
 
-Building the code
------------------
-If you managed to build USD, building usdtweak should be straightforward.
+- cmake > 3.6 and a C++14 compiler installed
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v20.11) version 20.11
+- a build of [GLFW](https://www.glfw.org/), version 3.3.2 works
+
+### Compiling
+
+If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 2 variables:
+
+- __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
+- __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
+
+on linux it goes along the lines of:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake ..
+    cmake -Dpxr_DIR=/installs/usd-20.11 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
     make
 
-It compiles successfully on Windows10, Centos, MacOS Catalina. The Hydra viewport doesn't work on Catalina.
+It should compile successfully on Windows 10 with MSCV 19, Centos 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
 
-Contact
--------
+## Contact
+
 If you are interest by this project, want to know more or contribute, drop me an email: cpichard.github@gmail.com
