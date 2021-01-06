@@ -206,7 +206,9 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
 }
 
 
-Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {}
+Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {
+    ExecuteAfterDraw<EditorSetDataPointer>(this); // This will actually execute right now
+}
 
 Editor::~Editor(){}
 
@@ -225,6 +227,11 @@ void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
     _currentLayer = layer;
 }
 
+void Editor::SetCurrentEditTarget(SdfLayerHandle layer) {
+    if (GetCurrentStage()) {
+        GetCurrentStage()->SetEditTarget(UsdEditTarget(layer));
+    }
+}
 
 void Editor::CreateLayer(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");

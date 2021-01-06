@@ -35,6 +35,8 @@ public:
     UsdStageRefPtr GetCurrentStage() { return _currentStage; }
     void SetCurrentStage(UsdStageCache::Id current);
     void SetCurrentStage(UsdStageRefPtr stage);
+    void SetCurrentEditTarget(SdfLayerHandle layer);
+
 
     UsdStageCache & GetStageCache() { return _stageCache; }
 

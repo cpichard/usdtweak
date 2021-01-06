@@ -9,15 +9,16 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 ///
 /// Declarations of Command classes only.
-/// We create specific commands when the
-/// We want to have different implementations with or without undo/redo
+/// The implementation should depend on the application
 ///
 struct PrimNew;
 struct PrimRemove;
 struct PrimAddReference;
 
+struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
 struct EditorOpenStage;
+struct EditorSetEditTarget;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

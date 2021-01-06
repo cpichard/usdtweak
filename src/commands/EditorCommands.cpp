@@ -11,7 +11,27 @@
 #include "Commands.h"
 #include "Editor.h"
 
-struct EditorSelectPrimPath : public Command {
+///
+/// Base class for an editor command, contains only a pointer of the editor
+///
+struct EditorCommand : public Command {
+    static Editor *_editor;
+};
+Editor *EditorCommand::_editor = nullptr;
+
+/// The editor commands need a pointer to the data
+/// Other client can use this function to pass a handle to their data structure
+struct EditorSetDataPointer : public EditorCommand {
+    EditorSetDataPointer(Editor *editor) {
+        if (!_editor)
+            _editor = editor;
+    }
+    bool DoIt() override { return false; }
+};
+template void ExecuteAfterDraw<EditorSetDataPointer>(Editor *editor);
+
+
+struct EditorSelectPrimPath : public EditorCommand {
 
     EditorSelectPrimPath(SdfPath *selectionObject, SdfPath selectedPath)
         : selectionObject(selectionObject), selectedPath(std::move(selectedPath)) {}
@@ -27,22 +47,41 @@ struct EditorSelectPrimPath : public Command {
     SdfPath *selectionObject;
     SdfPath selectedPath;
 };
-
 template void ExecuteAfterDraw<EditorSelectPrimPath>(SdfPath *selectionObject, SdfPath selectedPath);
 
+struct EditorOpenStage : public EditorCommand {
 
-struct EditorOpenStage : public Command {
-
-    EditorOpenStage(Editor *editor, std::string stagePath) : _editor(editor), _stagePath(std::move(stagePath)) {}
+    EditorOpenStage(std::string stagePath) : _stagePath(std::move(stagePath)) {}
     ~EditorOpenStage() override {}
 
     bool DoIt() override {
-        _editor->ImportStage(_stagePath);
-        return true;
+        if (_editor) {
+            // TODO: we should check if the stage is already imported ?
+            _editor->ImportStage(_stagePath);
+        }
+
+        return false;
     }
 
     std::string _stagePath;
-    Editor *_editor; /// Warning: this may outlive the editor life
 };
+template void ExecuteAfterDraw<EditorOpenStage>(std::string stagePath);
 
-template void ExecuteAfterDraw<EditorOpenStage>(Editor *editor, std::string stagePath);
+struct EditorSetEditTarget : public EditorCommand {
+
+    EditorSetEditTarget(SdfLayerHandle layer) : _layer(layer) {}
+    ~EditorSetEditTarget() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            // TODO: we should check if the stage is already imported ?
+            _editor->SetCurrentEditTarget(_layer);
+        }
+
+        return false;
+    }
+    SdfLayerHandle _layer;
+};
+template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
+
+

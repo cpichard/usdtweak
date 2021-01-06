@@ -18,13 +18,16 @@ void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nul
                 if (selectedStage)
                     *selectedStage = cache.GetId(stage);
             }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(stage->GetRootLayer()->GetRealPath().c_str());
+            }
         }
         ImGui::ListBoxFooter();
     }
 }
 
 template <typename SdfLayerSetT>
-void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, Editor *editor, const ImVec2 &listSize = ImVec2(0, -10)) {
+void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const ImVec2 &listSize = ImVec2(0, -10)) {
     ImGui::PushItemWidth(-1);
 
     // Sort the layer set
@@ -42,16 +45,18 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, Editor 
                 if (selectedLayer)
                     *selectedLayer = layer;
             }
-            if (editor) {
-                if (ImGui::BeginPopupContextItem()) {
-                    if (ImGui::MenuItem("Open as Stage")) {
-                        ExecuteAfterDraw<EditorOpenStage>(editor, layer->GetRealPath());
-                    }
-                    if (ImGui::MenuItem("Set edit target")) {
-                        //DispatchCommand<EditorSetEditTarget>(editor, layer);
-                    }
-                    ImGui::EndPopup();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(layer->GetRealPath().c_str());
+            }
+
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Open as Stage")) {
+                    ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
                 }
+                if (ImGui::MenuItem("Set edit target")) {
+                    ExecuteAfterDraw<EditorSetEditTarget>(layer);
+                }
+                ImGui::EndPopup();
             }
         }
         ImGui::ListBoxFooter();
@@ -73,7 +78,7 @@ void DrawTheater(Editor &editor) {
     if (ImGui::BeginTabItem("Layers")) {
         SdfLayerHandle selected(editor.GetCurrentLayer());
         auto layers = SdfLayer::GetLoadedLayers();
-        DrawLayerSet(layers, &selected, &editor);
+        DrawLayerSet(layers, &selected);
         if (selected != editor.GetCurrentLayer()) {
             editor.SetCurrentLayer(selected);
         }
