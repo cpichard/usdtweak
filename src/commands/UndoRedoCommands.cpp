@@ -43,18 +43,18 @@ struct RedoCommand : public Command {
 template void ExecuteAfterDraw<RedoCommand>();
 
 
-struct UsdApiFunction : public Command {
+struct UsdFunctionCall : public Command {
 
     template <typename LayerT>
-    UsdApiFunction(LayerT layer, std::function<void()> func)
+    UsdFunctionCall(LayerT layer, std::function<void()> func)
         : _layer(layer), _func(func)
     {}
 
-    ~UsdApiFunction() override {}
+    ~UsdFunctionCall() override {}
 
     /// Undo the last command in the stack
     bool DoIt() override {
-        auto command = new SdfUndoRedoCommand();
+        SdfUndoRedoCommand *command = new SdfUndoRedoCommand();
         {
             SdfUndoRecorder recorder(command->_instructions, _layer);
             _func();
@@ -71,5 +71,5 @@ struct UsdApiFunction : public Command {
     std::function<void()> _func;
 };
 
-template void ExecuteAfterDraw<UsdApiFunction>(SdfLayerRefPtr layer, std::function<void()> func);
-template void ExecuteAfterDraw<UsdApiFunction>(SdfLayerHandle layer, std::function<void()> func);
+template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerRefPtr layer, std::function<void()> func);
+template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerHandle layer, std::function<void()> func);

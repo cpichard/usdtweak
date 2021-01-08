@@ -28,7 +28,7 @@ struct RedoCommand;
 
 struct AttributeSet;
 
-struct UsdApiFunction;
+struct UsdFunctionCall;
 
 /// Post a command to be executed after the editor frame is rendered.
 /// The commands are defined in Commands.cpp and its included file
@@ -40,14 +40,14 @@ void ExecuteAfterDraw(ArgTypes... arguments);
 template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, SdfLayerRefPtr layer, ArgsT&&... arguments) {
     std::function<void()> usdApiFunc = std::bind(func, layer, std::forward<ArgsT>(arguments)...);
-    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, UsdStageRefPtr stage, ArgsT&&... arguments) {
     std::function<void()> usdApiFunc = std::bind(func, stage, std::forward<ArgsT>(arguments)...);
     auto layer = TfCreateRefPtrFromProtectedWeakPtr(stage->GetEditTarget().GetLayer());
-    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -61,7 +61,7 @@ void ExecuteAfterDraw(FuncT &&func, SdfPrimSpecHandle handle, ArgsT&&... argumen
         std::function<void()> primSpecFunc = std::bind(func, get_pointer(primSpec), arguments...);
         primSpecFunc();
     };
-    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -73,7 +73,7 @@ void ExecuteAfterDraw(FuncT &&func, const UsdPrim &prim, ArgsT&&... arguments) {
         std::function<void()> primFunc = std::bind(func, &prim, arguments...);
         primFunc();
     };
-    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -85,7 +85,7 @@ void ExecuteAfterDraw(FuncT &&func, const UsdAttribute &attribute, ArgsT&&... ar
         std::function<void()> attributeFunc = std::bind(func, &attribute, arguments...);
         attributeFunc();
     };
-    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 template <typename FuncT, typename... ArgsT>
@@ -102,7 +102,7 @@ void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...
             variantSetFunc();
         }
     };
-    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 
@@ -115,7 +115,7 @@ void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT&&... arguments
         std::function<void()> primFunc = std::bind(func, &geomPrim, arguments...);
         primFunc();
     };
-    ExecuteAfterDraw<UsdApiFunction>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
 template<typename FuncT, typename... ArgsT>
@@ -127,7 +127,7 @@ void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT&&... argum
         std::function<void()> attFunc = std::bind(func, get_pointer(att), arguments...);
         attFunc();
     };
-    ExecuteAfterDraw<UsdApiFunction>(layer, usdApiFunc);
+    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
 }
 
 /// Process the commands waiting in the queue. Only one command would be waiting at the moment
