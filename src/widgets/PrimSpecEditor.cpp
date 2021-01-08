@@ -237,7 +237,7 @@ void DrawCompositionArcItems(const SdfPrimSpecHandle &primSpec, const char *oper
                 std::function<void()> deferedRemoveArc = [=] () {
                     PrimSpecRemoveArc(primSpec->GetLayer(), path, listFunc, itemsFunc, index);
                 };
-                ExecuteAfterDraw<UsdApiFunction>(primSpec->GetLayer(), deferedRemoveArc);
+                ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), deferedRemoveArc);
              }
             //if (ImGui::MenuItem("Copy path")) {
             //    // TODO
