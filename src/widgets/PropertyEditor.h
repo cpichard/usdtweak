@@ -6,3 +6,4 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime = UsdTimeCode::Default());
 void DrawUsdPrimProperties(UsdPrim &obj, UsdTimeCode currentTime = UsdTimeCode::Default());
+void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime = UsdTimeCode::Default());

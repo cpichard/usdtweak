@@ -174,6 +174,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         }
         ImGui::Separator();
 
+        DrawXformsCommon(prim, currentTime);
+
         int miniButtonId = 0;
 
         // Draw attributes
@@ -193,5 +195,50 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::SameLine();
             DrawUsdRelationship(relation);
         }
+    }
+}
+
+void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
+    UsdGeomXformCommonAPI xformAPI(prim);
+
+    if (xformAPI) {
+        // For testing
+        if (ImGui::Button("Create transform")) {
+            auto ops = xformAPI.CreateXformOps(UsdGeomXformCommonAPI::OpTranslate, UsdGeomXformCommonAPI::OpRotate,
+                                    UsdGeomXformCommonAPI::OpPivot, UsdGeomXformCommonAPI::OpScale);
+            ops.translateOp.Set(GfVec3d(0.0, 0.0, 0.0));
+            ops.scaleOp.Set(GfVec3d(1.0, 1.0, 1.0));
+        }
+
+        GfVec3d translation;
+        GfVec3f scalev;
+        GfVec3f pivot;
+        GfVec3f rotation;
+        UsdGeomXformCommonAPI::RotationOrder rotOrder;
+        xformAPI.GetXformVectors(&translation, &rotation, &scalev, &pivot, &rotOrder, currentTime);
+
+        ImGui::Text("Transform API");
+
+        GfVec3f translationf(translation[0], translation[1], translation[2]);
+        ImGui::InputFloat3("Translation", translationf.data(), DecimalPrecision);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            translation[0] = translationf[0]; // TODO: InputDouble3 instead, we don't want to loose values
+            translation[1] = translationf[1];
+            translation[2] = translationf[2];
+            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translation, currentTime);
+        }
+        ImGui::InputFloat3("Rotation", rotation.data(), DecimalPrecision);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotation, rotOrder, currentTime);
+        }
+        ImGui::InputFloat3("Scale", scalev.data(), DecimalPrecision);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scalev, currentTime);
+        }
+        ImGui::InputFloat3("Pivot", pivot.data(), DecimalPrecision);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
+        }
+
     }
 }
