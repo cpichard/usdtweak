@@ -1,5 +1,6 @@
 #pragma once
 #include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/matrix4f.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec2d.h>
 #include <pxr/usd/usdGeom/gprim.h>
@@ -20,7 +21,7 @@ class RotationManipulator : public Manipulator {
 
     /// From ViewportEditor
     void OnBeginEdition(Viewport &) override;
-    Manipulator* OnUpdate(Viewport &) override;
+    Manipulator *OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
 
     /// Return true if the mouse is over this manipulator for the viewport passed in argument
@@ -39,21 +40,19 @@ class RotationManipulator : public Manipulator {
         None,
     } SelectedAxis;
 
-private:
-
+  private:
     UsdTimeCode GetTimeCode(const Viewport &);
     bool CompileShaders();
     void ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale);
+    GfVec3d ComputeRotationVector(Viewport &viewport);
 
+    GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
     SelectedAxis _selectedAxis;
 
-    // TODO: usd UsdGeomXformCommonAPI instead of _xformable
-    UsdGeomXformCommonAPI _xform;
-    UsdGeomXformable _xformable;
-    UsdGeomXformOp _rotateOp;
+    UsdGeomXformCommonAPI _xformAPI;
 
-    GfVec3d _originMouseOnManipulator;
-    GfVec3f _rotate;
+    GfVec3d _rotateFrom;
+    GfVec3f _rotateValues;
 
     // OpenGL stuff
     unsigned int _arrayBuffer;
@@ -63,7 +62,8 @@ private:
     unsigned int _vertexArrayObject;
     unsigned int _modelViewUniform;
     unsigned int _projectionUniform;
-    unsigned int _originUniform;
+    unsigned int _pivotUniform;
     unsigned int _scaleFactorUniform;
     unsigned int _objectMatrixUniform;
+    unsigned int _highlightUniform;
 };
