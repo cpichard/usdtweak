@@ -47,3 +47,5 @@ target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_D
  src/viewport 
  src/3rdparty/imgui 
  src/3rdparty/filesystem)
+
+target_compile_options(usdtweak PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/MP>)
