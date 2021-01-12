@@ -25,6 +25,9 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
         } else {
             viewport.FrameRootPrim();
         }
+    } else {
+        auto &manipulator = viewport.GetActiveManipulator();
+        manipulator.IsMouseOver(viewport);
     }
     return this;
 }
