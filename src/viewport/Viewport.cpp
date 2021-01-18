@@ -253,6 +253,19 @@ GfVec2d Viewport::GetPickingBoundarySize() const {
     return GfVec2d(20.0 / width, 20.0 / height);
 }
 
+//
+double Viewport::ComputeScaleFactor(const GfVec3d& objectPos, const double multiplier) const {
+    double scale = 1.0;
+    const auto &frustum = GetCurrentCamera().GetFrustum();
+    auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
+    ray.FindClosestPoint(objectPos, &scale);
+    const float focalLength = GetCurrentCamera().GetFocalLength();
+    scale /= focalLength == 0 ? 1.f : focalLength;
+    scale /= multiplier;
+    scale *= 2;
+    return scale;
+}
+
 void Viewport::HandleEvents() {
 
     ImGuiContext *g = ImGui::GetCurrentContext();
@@ -263,10 +276,10 @@ void Viewport::HandleEvents() {
     if (ImGui::IsItemHovered()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
         if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0) return;
-        _mouseX = 2.0 * (static_cast<double>(io.MousePos.x - (window->DC.LastItemRect.Min.x)) /
+        _mousePosition[0] = 2.0 * (static_cast<double>(io.MousePos.x - (window->DC.LastItemRect.Min.x)) /
             static_cast<double>(drawTargetSize[0])) -
             1.0;
-        _mouseY = -2.0 * (static_cast<double>(io.MousePos.y - (window->DC.LastItemRect.Min.y)) /
+        _mousePosition[1] = -2.0 * (static_cast<double>(io.MousePos.y - (window->DC.LastItemRect.Min.y)) /
             static_cast<double>(drawTargetSize[1])) +
             1.0;
 

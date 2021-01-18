@@ -19,15 +19,14 @@
 #include <pxr/usdImaging/usdImagingGL/renderParams.h>
 #include <pxr/imaging/glf/simpleLight.h>
 
-
-class Viewport {
-public:
+class Viewport final {
+  public:
     Viewport(UsdStageRefPtr stage, Selection &);
     ~Viewport();
 
     // Delete copy
     Viewport(const Viewport &) = delete;
-    Viewport & operator = (const Viewport &) = delete;
+    Viewport &operator=(const Viewport &) = delete;
 
     /// Render hydra
     void Render();
@@ -42,7 +41,7 @@ public:
     void Draw();
 
     UsdTimeCode GetCurrentTimeCode() const { return _renderparams ? _renderparams->frame : UsdTimeCode::Default(); }
-    void SetCurrentTimeCode(const UsdTimeCode &tc) { _renderparams->frame = tc; }
+    void SetCurrentTimeCode(const UsdTimeCode &tc) { if (_renderparams) _renderparams->frame = tc; }
 
     /// Camera framing
     void FrameSelection(const Selection &);
@@ -55,6 +54,8 @@ public:
     bool TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex);
     GfVec2d GetPickingBoundarySize() const;
 
+    double ComputeScaleFactor(const GfVec3d &objectPosition, double multiplier = 1.0) const;
+
     // GL Lights
     GlfSimpleLightVector _lights;
     GlfSimpleMaterial _material;
@@ -62,12 +63,12 @@ public:
 
     // Camera --- TODO: should the additional cameras live on the stage session ??
     GfCamera _currentCamera;
-    GfCamera & GetCurrentCamera() { return _currentCamera; }
-    const GfCamera & GetCurrentCamera() const { return _currentCamera; }
-    //std::vector<std::pair<std::string, GfCamera>> _cameras;
+    GfCamera &GetCurrentCamera() { return _currentCamera; }
+    const GfCamera &GetCurrentCamera() const { return _currentCamera; }
+    // std::vector<std::pair<std::string, GfCamera>> _cameras;
 
     CameraManipulator _cameraManipulator;
-    CameraManipulator & GetCameraManipulator() { return _cameraManipulator; }
+    CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
 
     PositionManipulator _positionManipulator;
     RotationManipulator _rotationManipulator;
@@ -87,14 +88,13 @@ public:
         return _activeManipulator == GetManipulator<ManipulatorT>();
     };
 
- 
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
 
     // Position of the mouse in the viewport in normalized unit
-    double _mouseX = 0.0;
-    double _mouseY = 0.0;
-    GfVec2d GetMousePosition() const { return { _mouseX, _mouseY }; }
+    // This is computed in HandleEvents 
+    GfVec2d _mousePosition;
+    GfVec2d GetMousePosition() const { return _mousePosition; }
 
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
 
@@ -102,27 +102,24 @@ public:
     UsdStageRefPtr GetCurrentStage() { return _stage; }
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
-
-    Selection & GetSelection() { return _selection; }
+    Selection &GetSelection() { return _selection; }
     SelectionHash _lastSelectionHash = 0;
     SelectionEditor _selectionManipulator;
-    SelectionEditor & GetSelectionManipulator() {return _selectionManipulator;}
+    SelectionEditor &GetSelectionManipulator() { return _selectionManipulator; }
 
     /// Handle events is implemented as a finite state machine.
     /// The state are simply the current manipulator used.
     void HandleEvents();
 
-private:
-    Manipulator * _currentEditingState;
+  private:
+    Manipulator *_currentEditingState;
     Selection &_selection;
     GLuint _textureId = 0;
-    Grid    _grid;
+    Grid _grid;
 };
-
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() { return &_rotationManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
 template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<SelectionEditor>() { return &_selectionManipulator; }
-

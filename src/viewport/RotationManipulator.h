@@ -24,7 +24,7 @@ class RotationManipulator : public Manipulator {
     Manipulator *OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
 
-    /// Return true if the mouse is over this manipulator for the viewport passed in argument
+    /// Return true if the mouse is over this manipulator in the viewport passed in argument
     bool IsMouseOver(const Viewport &) override;
 
     /// Draw the translate manipulator as seen in the viewport
@@ -41,10 +41,11 @@ class RotationManipulator : public Manipulator {
     } SelectedAxis;
 
   private:
-    UsdTimeCode GetTimeCode(const Viewport &);
+    UsdTimeCode GetEditionTimeCode(const Viewport &);
+    UsdTimeCode GetViewportTimeCode(const Viewport &);
+
     bool CompileShaders();
-    void ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale);
-    GfVec3d ComputeRotationVector(Viewport &viewport);
+    GfVec3d ComputeClockHand(Viewport &viewport);
 
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
     SelectedAxis _selectedAxis;
@@ -53,6 +54,10 @@ class RotationManipulator : public Manipulator {
 
     GfVec3d _rotateFrom;
     GfVec3f _rotateValues;
+    GfVec3f _rotateValuesOnBegin;
+
+    GfVec3d _planeOrigin3d;
+    GfVec3d _planeNormal3d;
 
     // OpenGL stuff
     unsigned int _arrayBuffer;
@@ -62,7 +67,6 @@ class RotationManipulator : public Manipulator {
     unsigned int _vertexArrayObject;
     unsigned int _modelViewUniform;
     unsigned int _projectionUniform;
-    unsigned int _pivotUniform;
     unsigned int _scaleFactorUniform;
     unsigned int _objectMatrixUniform;
     unsigned int _highlightUniform;

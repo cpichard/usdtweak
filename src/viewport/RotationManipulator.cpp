@@ -43,7 +43,6 @@ static constexpr const char *vertexShaderSrc = "#version 330 core\n"
                                                "uniform vec3 scale;"
                                                "uniform mat4 modelView;"
                                                "uniform mat4 projection;"
-                                               "uniform vec3 pivot;"
                                                "uniform mat4 objectMatrix;"
                                                "out vec4 color;"
                                                "out vec2 uv;"
@@ -55,24 +54,24 @@ static constexpr const char *vertexShaderSrc = "#version 330 core\n"
                                                "    uv = inUv;"
                                                "}";
 
-// This is a test with drawing circles on planes using fragment shader.
-// TODO: change to drawing lines as this does not look nice
-// TODO: find another method to display the selected axis, it doesn't work with antialiasing
-static constexpr const char *fragmentShaderSrc = "#version 330 core\n"
-                                                 "in vec4 color;"
-                                                 "in vec2 uv;"
-                                                 "uniform vec3 highlight;"
-                                                 "out vec4 FragColor;"
-                                                 "void main()"
-                                                 "{"
-                                                 "    float alpha = abs(1.f-sqrt(uv.x*uv.x+uv.y*uv.y));"
-                                                 "    float derivative = length(fwidth(uv));"
-                                                 "    if (derivative > 0.1) discard;"
-                                                 "    alpha = smoothstep(2.0*derivative, 0.0, alpha);"
-                                                 "    if (alpha < 0.2) discard;"
-                                                 "    if (highlight==color.xyz) { FragColor = vec4(1.0, 1.0, 1.0, alpha);}"
-                                                 "    else {FragColor = vec4(color.xyz, alpha);}"
-                                                 "}";
+// First approach was to draw circles on a quad using fragment shader, fun, but not the best solution
+// TODO: change to drawing lines as this really doesn't look nice
+static constexpr const char *fragmentShaderSrc =
+    "#version 330 core\n"
+    "in vec4 color;"
+    "in vec2 uv;"
+    "uniform vec3 highlight;"
+    "out vec4 FragColor;"
+    "void main()"
+    "{"
+    "    float alpha = abs(1.f-sqrt(uv.x*uv.x+uv.y*uv.y));"
+    "    float derivative = length(fwidth(uv));"
+    "    if (derivative > 0.1) discard;"
+    "    alpha = smoothstep(2.0*derivative, 0.0, alpha);"
+    "    if (alpha < 0.2) discard;"
+    "    if (dot(highlight,color.xyz) >0.9) { FragColor = vec4(1.0, 1.0, 0.2, alpha);}"
+    "    else {FragColor = vec4(color.xyz, alpha);}"
+    "}";
 
 RotationManipulator::RotationManipulator() : _selectedAxis(None) {
 
@@ -85,7 +84,6 @@ RotationManipulator::RotationManipulator() : _selectedAxis(None) {
         _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
         _projectionUniform = glGetUniformLocation(_programShader, "projection");
         _objectMatrixUniform = glGetUniformLocation(_programShader, "objectMatrix");
-        _pivotUniform = glGetUniformLocation(_programShader, "pivot");
         _highlightUniform = glGetUniformLocation(_programShader, "highlight");
 
         // We store points and colors in the same buffer
@@ -166,11 +164,10 @@ bool RotationManipulator::CompileShaders() {
     return true;
 }
 
-static bool IntersectsUnitCircle(const GfVec4d &axis, const GfVec3d &planeOrigin3d, const GfRay &ray, float scale) {
+static bool IntersectsUnitCircle(const GfVec3d &planeNormal3d, const GfVec3d &planeOrigin3d, const GfRay &ray, float scale) {
     if (scale == 0)
         return false;
 
-    GfVec3d planeNormal3d(axis[0], axis[1], axis[2]);
     GfPlane plane(planeNormal3d, planeOrigin3d);
     double distance = 0.0;
     constexpr float limit = 0.1; // TODO: this should be computed relative to the apparent width of the circle lines
@@ -185,27 +182,21 @@ static bool IntersectsUnitCircle(const GfVec4d &axis, const GfVec3d &planeOrigin
     return false;
 }
 
-static bool IntersectsUnitCircle(const GfVec4d &axis, const GfVec4d &planeOrigin, const GfRay &ray, float scale) {
-    GfVec3d planeOrigin3d(planeOrigin.data());
-    IntersectsUnitCircle(axis, planeOrigin, ray, scale);
-}
-
 bool RotationManipulator::IsMouseOver(const Viewport &viewport) {
 
     if (_xformAPI) {
-
-        GfVec2d mousePosition = viewport.GetMousePosition();
+        const GfVec2d mousePosition = viewport.GetMousePosition();
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
-        GfRay ray = frustum.ComputeRay(mousePosition);
-        auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
-        auto origin = manipulatorCoordinates.ExtractTranslation();
+        const GfRay ray = frustum.ComputeRay(mousePosition);
+        const auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
+        const GfVec3d &xAxis = manipulatorCoordinates.GetRow3(0);
+        const GfVec3d &yAxis = manipulatorCoordinates.GetRow3(1);
+        const GfVec3d &zAxis = manipulatorCoordinates.GetRow3(2);
+        const GfVec3d &origin = manipulatorCoordinates.GetRow3(3);
 
         // Circles are scaled to keep the same screen size
-        double scale = 1.0;
-        ComputeScaleFactor(viewport, GfVec4d(origin[0], origin[1], origin[2], 0.0), scale);
-        const GfVec4d xAxis = GfVec4d::XAxis() * manipulatorCoordinates;
-        const GfVec4d yAxis = GfVec4d::YAxis() * manipulatorCoordinates;
-        const GfVec4d zAxis = GfVec4d::ZAxis() * manipulatorCoordinates;
+        double scale = viewport.ComputeScaleFactor(origin, axisSize);
+
         if (IntersectsUnitCircle(xAxis, origin, ray, scale)) {
             _selectedAxis = XAxis;
             return true;
@@ -230,30 +221,16 @@ void RotationManipulator::OnSelectionChange(Viewport &viewport) {
 
 GfMatrix4d RotationManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
     if (_xformAPI) {
-        const auto currentTime = GetTimeCode(viewport);
+        const auto currentTime = GetViewportTimeCode(viewport);
         GfVec3d translation;
         GfVec3f scale;
         GfVec3f pivot;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
         _xformAPI.GetXformVectors(&translation, &_rotateValues, &scale, &pivot, &rotOrder, currentTime);
-        const GfMatrix3d xRot(GfRotation(GfVec3d::XAxis(), _rotateValues[0]));
-        const GfMatrix3d yRot(GfRotation(GfVec3d::YAxis(), _rotateValues[1]));
-        const GfMatrix3d zRot(GfRotation(GfVec3d::ZAxis(), _rotateValues[2]));
-        GfMatrix3d rotationMat(1.);
-        switch (rotOrder) {
-        case UsdGeomXformCommonAPI::RotationOrder::RotationOrderXYZ:
-            rotationMat = xRot * yRot * zRot;
-            break;
-        case UsdGeomXformCommonAPI::RotationOrder::RotationOrderYXZ:
-            // rotationMat = yRot * xRot * zRot;
-            break;
-        case UsdGeomXformCommonAPI::RotationOrder::RotationOrderYZX:
-            // rotationMat = yRot * zRot * xRot;
-            break;
-            // TODO finish switch
-        }
 
-        const auto rotMat = GfMatrix4d(1.0).SetRotate(rotationMat);
+        GfMatrix4d rotMat =
+            UsdGeomXformOp::GetOpTransform(UsdGeomXformCommonAPI::ConvertRotationOrderToOpType(rotOrder), VtValue(_rotateValues));
+
         const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
         const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
         const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
@@ -276,8 +253,7 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         auto origin = manipulatorCoordinates.ExtractTranslation();
 
         // Circles are scaled to keep the same screen size
-        double scale = 1.0;
-        ComputeScaleFactor(viewport, GfVec4d(origin[0], origin[1], origin[2], 0.0), scale);
+        double scale = viewport.ComputeScaleFactor(origin, axisSize);
 
         float toWorldf[16];
         for (int i = 0; i < 16; ++i) {
@@ -292,8 +268,6 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         glUniformMatrix4fv(_modelViewUniform, 1, GL_FALSE, mvp.data());
         glUniformMatrix4fv(_projectionUniform, 1, GL_FALSE, projp.data());
         glUniformMatrix4fv(_objectMatrixUniform, 1, GL_FALSE, toWorldf);
-        // glUniform3f(_pivotUniform, pivot[0], pivot[1], pivot[2]);
-        glUniform3f(_pivotUniform, 0.0, 0.0, 0.0);
         glUniform3f(_scaleFactorUniform, scale, scale, scale);
         if (_selectedAxis == XAxis)
             glUniform3f(_highlightUniform, 1.0, 0.0, 0.0);
@@ -310,33 +284,18 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
     }
 }
 
-GfVec3d RotationManipulator::ComputeRotationVector(Viewport &viewport) {
+// TODO: find a more meaningful function name
+GfVec3d RotationManipulator::ComputeClockHand(Viewport &viewport) {
 
-    auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
-    auto origin = manipulatorCoordinates.ExtractTranslation();
-
-    GfVec4d axis;
-    if (_selectedAxis == XAxis) {
-        axis = GfVec4d::XAxis() * manipulatorCoordinates;
-    } else if (_selectedAxis == YAxis) {
-        axis = GfVec4d::YAxis() * manipulatorCoordinates;
-    } else if (_selectedAxis == ZAxis) {
-        axis = GfVec4d::ZAxis() * manipulatorCoordinates;
-    } else {
-        return GfVec3d();
-    }
-
-    GfVec3d planeOrigin3d(origin.data());
-    GfVec3d planeNormal3d(axis[0], axis[1], axis[2]);
-    GfPlane plane(planeNormal3d, planeOrigin3d);
+    const GfPlane plane(_planeNormal3d, _planeOrigin3d);
     double distance = 0.0;
 
-    GfVec2d mousePosition = viewport.GetMousePosition();
+    const GfVec2d mousePosition = viewport.GetMousePosition();
     const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
-    GfRay ray = frustum.ComputeRay(mousePosition);
+    const GfRay ray = frustum.ComputeRay(mousePosition);
     if (ray.Intersect(plane, &distance)) {
         const auto intersection = ray.GetPoint(distance);
-        return planeOrigin3d - intersection;
+        return _planeOrigin3d - intersection;
     }
 
     return GfVec3d();
@@ -344,12 +303,28 @@ GfVec3d RotationManipulator::ComputeRotationVector(Viewport &viewport) {
 
 void RotationManipulator::OnBeginEdition(Viewport &viewport) {
     if (_xformAPI) {
-        _rotateFrom = ComputeRotationVector(viewport);
-        // GfVec3d translation;
-        // GfVec3f scale;
-        // GfVec3f pivot;
-        // UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        //_xformAPI.GetXformVectors(&translation, &_rotateValues, &scale, &pivot, &rotOrder, GetTimeCode(viewport));
+
+        const auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
+        _planeOrigin3d = manipulatorCoordinates.ExtractTranslation();
+
+        GfVec4d rotationAxisOnBegin;
+        if (_selectedAxis == XAxis) {
+            rotationAxisOnBegin = GfVec4d::XAxis() * manipulatorCoordinates;
+        } else if (_selectedAxis == YAxis) {
+            rotationAxisOnBegin = GfVec4d::YAxis() * manipulatorCoordinates;
+        } else if (_selectedAxis == ZAxis) {
+            rotationAxisOnBegin = GfVec4d::ZAxis() * manipulatorCoordinates;
+        } else {
+            // ERROR ???
+        }
+        _planeNormal3d = GfVec3d(rotationAxisOnBegin.data());
+        _rotateFrom = ComputeClockHand(viewport);
+
+        GfVec3d translation;
+        GfVec3f scale;
+        GfVec3f pivot;
+        UsdGeomXformCommonAPI::RotationOrder rotOrder;
+        _xformAPI.GetXformVectors(&translation, &_rotateValuesOnBegin, &scale, &pivot, &rotOrder, GetViewportTimeCode(viewport));
     }
     BeginEdition(viewport.GetCurrentStage());
 }
@@ -358,33 +333,47 @@ Manipulator *RotationManipulator::OnUpdate(Viewport &viewport) {
     if (ImGui::IsMouseReleased(0)) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
+
     if (_xformAPI && _selectedAxis != None) {
 
-        const GfVec3d rotateTo = ComputeRotationVector(viewport);
-        const GfRotation rotation(_rotateFrom, rotateTo);
-        auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
+        const GfVec3d rotateTo = ComputeClockHand(viewport);
+        const GfRotation angle(_rotateFrom, rotateTo);
+        // We use the plane normal as the rotation between _rotateFrom and rotateTo might not land exactly on the rotation axis
+        const auto axisSign = _planeNormal3d * angle.GetAxis() > 0 ? 1.0 : -1.0;
+        const GfRotation deltaRotation(_planeNormal3d * axisSign, angle.GetAngle());
 
-        // TODO fix the update values, THIS IS INCORRECT due to the gimbal lock
-        // We need to fix the rotation axis, and decompose the values depending on the rotation order.
-        // the api does not seem to have functions ready for that purpose.
-        const GfVec4d xAxis = GfVec4d::XAxis() * manipulatorCoordinates;
-        const GfVec4d yAxis = GfVec4d::YAxis() * manipulatorCoordinates;
-        const GfVec4d zAxis = GfVec4d::ZAxis() * manipulatorCoordinates;
+        // TODO Could be computed once and stored in OnBegin
+        const GfMatrix4d rotationOnBegin =
+            UsdGeomXformOp::GetOpTransform(UsdGeomXformOp::TypeRotateXYZ, VtValue(_rotateValuesOnBegin));
+        const GfMatrix4d resultingRotation =
+            GfMatrix4d(1.0).SetRotate(rotationOnBegin.ExtractRotationQuat() * deltaRotation.GetQuat());
 
-        GfVec3d rotDelta = rotation.Decompose(GfVec3d(xAxis.data()), GfVec3d(yAxis.data()), GfVec3d(zAxis.data()));
+        // LOCAL rotation
+        const GfVec4d xAxis = GfVec4d::XAxis() * rotationOnBegin;
+        const GfVec4d yAxis = GfVec4d::YAxis() * rotationOnBegin;
+        const GfVec4d zAxis = GfVec4d::ZAxis() * rotationOnBegin;
 
-        _rotateValues += GfVec3f(rotDelta[0], rotDelta[1], rotDelta[2]);
+        // Get latest rotation values to give a hint to the decompose function
+        GfVec3d translation__;
+        GfVec3f scale__;
+        GfVec3f pivot__;
+        UsdGeomXformCommonAPI::RotationOrder rotOrder__;
+        _xformAPI.GetXformVectors(&translation__, &_rotateValues, &scale__, &pivot__, &rotOrder__, GetViewportTimeCode(viewport));
 
-        std::vector<double> timeSamples; // TODO: is there a faster way to know it the xformable has timesamples ?
-        const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
-        xformable.GetTimeSamples(&timeSamples);
-        if (timeSamples.empty()) {
-            _xformAPI.SetRotate(_rotateValues);
-        } else {
-            const auto currentTimeCode = GetTimeCode(viewport);
-            _xformAPI.SetRotate(_rotateValues, UsdGeomXformCommonAPI::RotationOrder(), currentTimeCode);
-        }
-        _rotateFrom = rotateTo;
+        double thetaTw = GfDegreesToRadians(_rotateValues[0]);
+        double thetaFB = GfDegreesToRadians(_rotateValues[1]);
+        double thetaLR = GfDegreesToRadians(_rotateValues[2]);
+
+        // GLOBAL rotation
+        // GfRotation::DecomposeRotation(resultingRotation, GfVec3d::XAxis(), GfVec3d::YAxis(), GfVec3d::ZAxis(), 1.0, &thetaTw,
+        //                              &thetaFB, &thetaLR, nullptr, true);
+        // LOCAL rotation
+        GfRotation::DecomposeRotation(resultingRotation, GfVec3d(xAxis.data()), GfVec3d(yAxis.data()), GfVec3d(zAxis.data()), 1.0,
+                                      &thetaTw, &thetaFB, &thetaLR, nullptr, true);
+
+        auto newRotationValues = GfVec3f(GfRadiansToDegrees(thetaTw), GfRadiansToDegrees(thetaFB), GfRadiansToDegrees(thetaLR));
+
+        _xformAPI.SetRotate(newRotationValues, rotOrder__, GetEditionTimeCode(viewport));
     }
 
     return this;
@@ -393,20 +382,20 @@ Manipulator *RotationManipulator::OnUpdate(Viewport &viewport) {
 void RotationManipulator::OnEndEdition(Viewport &) { EndEdition(); }
 
 // TODO code should be shared with position manipulator
-UsdTimeCode RotationManipulator::GetTimeCode(const Viewport &viewport) {
-    // return (_xformable && _rotateOp && _rotateOp.GetNumTimeSamples()) ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
+UsdTimeCode RotationManipulator::GetEditionTimeCode(const Viewport &viewport) {
+    std::vector<double> timeSamples; // TODO: is there a faster way to know it the xformable has timesamples ?
+    const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
+    xformable.GetTimeSamples(&timeSamples);
+    if (timeSamples.empty()) {
+        return UsdTimeCode::Default();
+    } else {
+        return GetViewportTimeCode(viewport);
+    }
+}
+
+UsdTimeCode RotationManipulator::GetViewportTimeCode(const Viewport &viewport) {
     return viewport.GetCurrentTimeCode();
 }
 
-// TODO: share this code with PositionManipulator
-void RotationManipulator::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
 
-    // We want the manipulator to have the same projected size
-    const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
-    auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
-    ray.FindClosestPoint(GfVec3d(objectPos.data()), &scale);
-    const float focalLength = viewport.GetCurrentCamera().GetFocalLength();
-    scale /= focalLength == 0 ? 1.f : focalLength;
-    scale /= axisSize;
-    scale *= 2;
-}
+
