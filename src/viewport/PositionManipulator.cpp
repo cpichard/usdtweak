@@ -1,6 +1,6 @@
 #include <iostream>
 #include <pxr/base/gf/matrix4f.h>
-#include <pxr/base/gf/line.h>
+
 #include "Constants.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -11,19 +11,19 @@
 #include "Commands.h"
 
 /*
-    TODO:  we ultimatelly want to be compatible with Vulkan / Metal, the following code should really be using the ImGui API instead of native OpenGL code
-    . Have a look before going too deep into the OpenGL implementation
-    Also, it might be better to avoid developing a "parallel to imgui" event handling system because the gizmos are not
-    implemented inside USD (may be they could ? couldn't they ?) or implemented in ImGui
+    TODO:  we ultimately want to be compatible with Vulkan / Metal, the following opengl/glsl code should really be using the
+   ImGui API instead of native OpenGL code. Have a look before writing too much OpenGL code Also, it might be better to avoid
+   developing a "parallel to imgui" event handling system because the gizmos are not implemented inside USD (may be they could ?
+   couldn't they ?) or implemented in ImGui
 
     // NOTES from the USD doc:
     // If you need to compute the transform for multiple prims on a stage,
     // it will be much, much more efficient to instantiate a UsdGeomXformCache and query it directly; doing so will reuse
-   sub-computations shared by the prims.
+    // sub-computations shared by the prims.
     //
     // https://graphics.pixar.com/usd/docs/api/usd_geom_page_front.html
     // Matrices are laid out and indexed in row-major order, such that, given a GfMatrix4d datum mat, mat[3][1] denotes the second
-   column of the fourth row.
+    // column of the fourth row.
 
     // Reference on manipulators:
     // http://ed.ilogues.com/2018/06/27/translate-rotate-and-scale-manipulators-in-3d-modelling-programs
@@ -35,28 +35,30 @@ static constexpr const GLfloat axisPoints[] = {0.f, 0.f,      0.f, axisSize, 0.f
 static constexpr const GLfloat axisColors[] = {1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f,
                                                0.f, 1.f, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 1.f};
 
-static constexpr const char *vertexShaderSrc =
-    "#version 330 core\n"
-    "layout (location = 0) in vec3 aPos;"
-    "layout (location = 1) in vec4 inColor;"
-    "uniform vec3 scale;"
-    "uniform mat4 modelView;"
-    "uniform mat4 projection;"
-    "uniform vec3 origin;"
-    "out vec4 color;"
-    "void main()"
-    "{"
-    "    vec3 bPos = aPos*scale;"
-    "    gl_Position = projection*modelView*vec4(bPos.x+origin.x, bPos.y+origin.y, bPos.z+origin.z, 1.0);"
-    "    color = inColor;"
-    "}";
+static constexpr const char *vertexShaderSrc = "#version 330 core\n"
+                                               "layout (location = 0) in vec3 aPos;"
+                                               "layout (location = 1) in vec4 inColor;"
+                                               "uniform vec3 scale;"
+                                               "uniform mat4 modelView;"
+                                               "uniform mat4 projection;"
+                                               "uniform mat4 objectMatrix;"
+                                               "out vec4 color;"
+                                               "void main()"
+                                               "{"
+                                               "    vec4 bPos = objectMatrix*vec4(aPos*scale, 1.0);"
+                                               "    gl_Position = projection*modelView*bPos;"
+                                               "    color = inColor;"
+                                               "}";
 
 static constexpr const char *fragmentShaderSrc = "#version 330 core\n"
                                                  "in vec4 color;"
                                                  "out vec4 FragColor;"
+                                                 "uniform vec3 highlight;"
                                                  "void main()"
                                                  "{"
-                                                 "    FragColor = color;"
+                                                 "    if (dot(highlight, color.xyz) >0.9) "
+                                                 "       { FragColor = vec4(1.0, 1.0, 0.2, 1.0);}"
+                                                 "  else {  FragColor = color; }"
                                                  "}";
 
 PositionManipulator::PositionManipulator() : _selectedAxis(None) {
@@ -69,7 +71,8 @@ PositionManipulator::PositionManipulator() : _selectedAxis(None) {
         _scaleFactorUniform = glGetUniformLocation(_programShader, "scale");
         _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
         _projectionUniform = glGetUniformLocation(_programShader, "projection");
-        _originUniform = glGetUniformLocation(_programShader, "origin");
+        _objectMatrixUniform = glGetUniformLocation(_programShader, "objectMatrix");
+        _highlightUniform = glGetUniformLocation(_programShader, "highlight");
 
         // We store points and colors in the same buffer
         glGenBuffers(1, &_axisGLBuffers);
@@ -142,42 +145,42 @@ bool PositionManipulator::CompileShaders() {
 
 bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
 
-    if (_xformable) {
+    if (_xformAPI) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
-        auto mv = frustum.ComputeViewMatrix();
-        auto proj = frustum.ComputeProjectionMatrix();
+        const auto mv = frustum.ComputeViewMatrix();
+        const auto proj = frustum.ComputeProjectionMatrix();
 
-        auto timeCode = GetTimeCode(viewport);
-        auto toWorld = _xformable.ComputeLocalToWorldTransform(timeCode);
+        const auto timeCode = viewport.GetCurrentTimeCode();
+        const auto toWorld = ComputeManipulatorToWorldTransform(viewport);
 
-        // World position for origin
-        auto origin4d = GfVec4d(0, 0, 0, 1.0) * toWorld;
-        auto _origin3d = GfVec3d(origin4d.data());
+        // World position for origin is the pivot
+        const auto pivot = toWorld.ExtractTranslation();
 
         // Axis are scaled to keep the same screen size
-        double scale = 1.0;
-        ComputeScaleFactor(viewport, origin4d, scale);
+        const double axisLength = axisSize * viewport.ComputeScaleFactor(pivot, axisSize);
 
-        // Local
-        GfVec3d origin3d(0.0, 0.0, 0.0);
-        GfVec3d xAxis3d(axisSize * scale, 0.0, 0.0);
-        GfVec3d yAxis3d(0.0, axisSize * scale, 0.0);
-        GfVec3d zAxis3d(0.0, 0.0, axisSize * scale);
+        // Local axis as draw in opengl
+        // TODO: fix, this is incorrect
+        const GfVec3d xAxis3d = GfVec3d(axisLength, 0.0, 0.0) + pivot;
+        const GfVec3d yAxis3d = GfVec3d(0.0, axisLength, 0.0) + pivot;
+        const GfVec3d zAxis3d = GfVec3d(0.0, 0.0, axisLength) + pivot;
 
-        auto originOnScreen = ProjectToNormalizedScreen(mv, proj, origin3d + _origin3d);
-        auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d + _origin3d);
-        auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d + _origin3d);
-        auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d + _origin3d);
+        const auto originOnScreen = ProjectToNormalizedScreen(mv, proj, pivot);
+        const auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d);
+        const auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d);
+        const auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d);
 
-        auto pickBounds = viewport.GetPickingBoundarySize();
-        auto mousePosition = viewport.GetMousePosition();
-        if (PickSegment(xAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
+        const auto pickBounds = viewport.GetPickingBoundarySize();
+        const auto mousePosition = viewport.GetMousePosition();
+
+        // TODO: it looks like USD has function to compute segment, have a look !
+        if (IntersectsSegment(xAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = XAxis;
             return true;
-        } else if (PickSegment(yAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
+        } else if (IntersectsSegment(yAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = YAxis;
             return true;
-        } else if (PickSegment(zAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
+        } else if (IntersectsSegment(zAxisOnScreen, originOnScreen, mousePosition, pickBounds)) {
             _selectedAxis = ZAxis;
             return true;
         }
@@ -186,38 +189,49 @@ bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
     return false;
 }
 
+// Same as rotation manipulator now -- TODO : share in a common class
 void PositionManipulator::OnSelectionChange(Viewport &viewport) {
-    // TODO: we should set here if the new selection will be editable or not
     auto &selection = viewport.GetSelection();
     auto primPath = GetSelectedPath(selection);
-    _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
-    _translateOp = UsdGeomXformOp();
-    // Look for the translate in the transform stack
-    // Should that be called when entering the state ?
-    if (_xformable) {
-        bool resetsXformStack = false;
-        auto xforms = _xformable.GetOrderedXformOps(&resetsXformStack);
-        for (auto &xform : xforms) {
-            if (xform.GetOpType() == UsdGeomXformOp::TypeTranslate &&
-                xform.GetBaseName() == "translate") { // is there another way to find the correct translate ?
-                _translateOp = xform;
-                return;
-            }
-        }
-    }
+    _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 }
 
+GfMatrix4d PositionManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
+    if (_xformAPI) {
+        const auto currentTime = viewport.GetCurrentTimeCode();
+        GfVec3d translation;
+        GfVec3f scale;
+        GfVec3f pivot;
+        GfVec3f rotation;
+        UsdGeomXformCommonAPI::RotationOrder rotOrder;
+        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+        const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
+        const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
+        const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
+        const auto parentToWorld = xformable.ComputeParentToWorldTransform(currentTime);
+
+        // We are just interested in the pivot position and the orientation
+        const GfMatrix4d toManipulator = pivotMat * transMat * parentToWorld;
+        return toManipulator.GetOrthonormalized();
+    }
+    return GfMatrix4d();
+}
+
+// TODO: same as rotation manipulator, share in a base class
 void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 
-    if (_xformable) {
+    if (_xformAPI) {
         const auto &camera = viewport.GetCurrentCamera();
-        auto mv = camera.GetFrustum().ComputeViewMatrix();
-        auto proj = camera.GetFrustum().ComputeProjectionMatrix();
-        auto toWorld = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
-        GfVec4d pos = GfVec4d(0, 0, 0, 1.0) * toWorld;
+        const auto mv = camera.GetFrustum().ComputeViewMatrix();
+        const auto proj = camera.GetFrustum().ComputeProjectionMatrix();
+        const auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
+        const auto origin = manipulatorCoordinates.ExtractTranslation();
+        const double scale = viewport.ComputeScaleFactor(origin, axisSize);
 
-        double scale = 1.0;
-        ComputeScaleFactor(viewport, pos, scale);
+        float toWorldf[16];
+        for (int i = 0; i < 16; ++i) {
+            toWorldf[i] = static_cast<float>(manipulatorCoordinates.data()[i]);
+        }
 
         GLboolean depthTestStatus;
         glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
@@ -230,8 +244,16 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
         GfMatrix4f projp(proj);
         glUniformMatrix4fv(_modelViewUniform, 1, GL_FALSE, mvp.data());
         glUniformMatrix4fv(_projectionUniform, 1, GL_FALSE, projp.data());
-        glUniform3f(_originUniform, pos[0], pos[1], pos[2]);
+        glUniformMatrix4fv(_objectMatrixUniform, 1, GL_FALSE, toWorldf);
         glUniform3f(_scaleFactorUniform, scale, scale, scale);
+        if (_selectedAxis == XAxis)
+            glUniform3f(_highlightUniform, 1.0, 0.0, 0.0);
+        else if (_selectedAxis == YAxis)
+            glUniform3f(_highlightUniform, 0.0, 1.0, 0.0);
+        else if (_selectedAxis == ZAxis)
+            glUniform3f(_highlightUniform, 0.0, 0.0, 1.0);
+        else
+            glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
         glBindVertexArray(_vertexArrayObject);
         glDrawArrays(GL_LINES, 0, 6);
         glBindVertexArray(0);
@@ -241,14 +263,16 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 }
 
 void PositionManipulator::OnBeginEdition(Viewport &viewport) {
+    // Save original translation values
+    GfVec3f scale;
+    GfVec3f pivot;
+    GfVec3f rotation;
+    UsdGeomXformCommonAPI::RotationOrder rotOrder;
+    _xformAPI.GetXformVectors(&_translationOnBegin, &rotation, &scale, &pivot, &rotOrder, viewport.GetCurrentTimeCode());
 
-    // Save translate values if there is already a translate
-    // We don't create the translate operator here as there was no value yet
-    if (_translateOp) {
-        // TODO: the values can be float, we should handle this case
-        _translateOp.GetAs<GfVec3d>(&_translate, GetTimeCode(viewport));
-    }
-
+    // Save mouse position on selected axis
+    const GfMatrix4d objectTransform = ComputeManipulatorToWorldTransform(viewport);
+    _axisLine = GfLine(objectTransform.ExtractTranslation(), objectTransform.GetRow3(_selectedAxis));
     ProjectMouseOnAxis(viewport, _originMouseOnAxis);
 
     BeginEdition(viewport.GetCurrentStage());
@@ -260,59 +284,46 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
 
-    auto currentTimeCode = GetTimeCode(viewport);
+    if (_xformAPI && _selectedAxis < 3) {
+        GfVec3d mouseOnAxis;
+        ProjectMouseOnAxis(viewport, mouseOnAxis);
 
-    if (!_translateOp) {
-        _translateOp = _xformable.AddTranslateOp();
-        // TODO: check what happens if the operator wasn't created
-        _translateOp.Set<GfVec3d>(GfVec3d(0.0, 0.0, 0.0), currentTimeCode);
-        _translate = GfVec3d(0.0, 0.0, 0.0);
-    }
+        // Get the sign
+        double ori; // = _axisLine.GetDirection()*_originMouseOnAxis;
+        double cur; // = _axisLine.GetDirection()*mouseOnAxis;
+        _axisLine.FindClosestPoint(_originMouseOnAxis, &ori);
+        _axisLine.FindClosestPoint(mouseOnAxis, &cur);
+        double sign = cur > ori ? 1.0 : -1.0;
 
-    if (_translateOp) {
-        GfVec3d translateValues;
-        if (_translateOp.GetAs<GfVec3d>(&translateValues, currentTimeCode)) {
-            GfVec3d mouseOnAxis = _originMouseOnAxis;
-            ProjectMouseOnAxis(viewport, mouseOnAxis);
-            translateValues[_selectedAxis] = _translate[_selectedAxis] + (mouseOnAxis - _originMouseOnAxis)[_selectedAxis];
-            _translateOp.Set<GfVec3d>(translateValues, currentTimeCode);
-        }
+        GfVec3d translation = _translationOnBegin;
+        translation[_selectedAxis] += sign * (_originMouseOnAxis - mouseOnAxis).GetLength();
+
+        _xformAPI.SetTranslate(translation, GetEditionTimeCode(viewport));
     }
     return this;
 };
 
 void PositionManipulator::OnEndEdition(Viewport &) { EndEdition(); };
 
-UsdTimeCode PositionManipulator::GetTimeCode(const Viewport &viewport) {
-    return (_xformable && _translateOp && _translateOp.GetNumTimeSamples()) ? viewport.GetCurrentTimeCode() : UsdTimeCode::Default();
-}
-
 ///
-void PositionManipulator::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint) {
-    if (_xformable && _selectedAxis < 3) {
-        const GfMatrix4d objectTransform = _xformable.ComputeLocalToWorldTransform(GetTimeCode(viewport));
-        const GfVec4d objectPosition4d = GfVec4d(0, 0, 0, 1) * objectTransform;
-        const GfVec3d objectPosition3d = GfVec3d(objectPosition4d[0], objectPosition4d[1], objectPosition4d[2]);
-
-        GfVec3d ptOnAxisLine;
+void PositionManipulator::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &linePoint) {
+    if (_xformAPI && _selectedAxis < 3) {
+        GfVec3d rayPoint;
         double a = 0;
         double b = 0;
-        const GfVec4d axisValues = objectTransform.GetColumn(_selectedAxis);
-        const GfVec3d axisDirection(axisValues[0], axisValues[1], axisValues[2]);
-        const GfLine axisLine(objectPosition3d, axisDirection);
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mouseRay = frustum.ComputeRay(viewport.GetMousePosition());
-        GfFindClosestPoints(mouseRay, axisLine, &closestPoint, &ptOnAxisLine, &a, &b);
+        GfFindClosestPoints(mouseRay, _axisLine, &rayPoint, &linePoint, &a, &b);
     }
 }
 
-void PositionManipulator::ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale) {
-    // We want the manipulator to have the same projected size
-    const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
-    auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
-    ray.FindClosestPoint(GfVec3d(objectPos.data()), &scale);
-    const float focalLength = viewport.GetCurrentCamera().GetFocalLength();
-    scale /= focalLength == 0 ? 1.f : focalLength;
-    scale /= axisSize;
-    scale *= 2;
+UsdTimeCode PositionManipulator::GetEditionTimeCode(const Viewport &viewport) {
+    std::vector<double> timeSamples; // TODO: is there a faster way to know it the xformable has timesamples ?
+    const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
+    xformable.GetTimeSamples(&timeSamples);
+    if (timeSamples.empty()) {
+        return UsdTimeCode::Default();
+    } else {
+        return viewport.GetCurrentTimeCode();
+    }
 }

@@ -2,7 +2,9 @@
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec2d.h>
+#include <pxr/base/gf/line.h>
 #include <pxr/usd/usdGeom/gprim.h>
+#include <pxr/usd/usdGeom/xformCommonAPI.h>
 
 #ifdef _WIN32
 #include <GL/glew.h>
@@ -20,7 +22,7 @@ class PositionManipulator : public Manipulator {
     /// From ViewportEditor
     /// Note: a Manipulator does not store a viewport as it can be rendered in multiple viewport at the same time
     void OnBeginEdition(Viewport &) override;
-    Manipulator* OnUpdate(Viewport &) override;
+    Manipulator *OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
 
     /// Return true if the mouse is over this manipulator for the viewport passed in argument
@@ -39,19 +41,21 @@ class PositionManipulator : public Manipulator {
         None,
     } SelectedAxis;
 
-private:
-
-    UsdTimeCode GetTimeCode(const Viewport &);
+  private:
     bool CompileShaders();
+
     void ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint);
-    void ComputeScaleFactor(const Viewport &viewport, const GfVec4d &objectPos, double &scale);
+    GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
+
+    UsdTimeCode GetEditionTimeCode(const Viewport &viewport);
 
     SelectedAxis _selectedAxis;
-    UsdGeomXformable _xformable;
-    UsdGeomXformOp _translateOp;
 
     GfVec3d _originMouseOnAxis;
-    GfVec3d _translate; // RENAME
+    GfVec3d _translationOnBegin;
+    GfLine _axisLine;
+
+    UsdGeomXformCommonAPI _xformAPI;
 
     // OpenGL identifiers
     unsigned int _axisGLBuffers;
@@ -61,6 +65,7 @@ private:
     unsigned int _vertexArrayObject;
     unsigned int _modelViewUniform;
     unsigned int _projectionUniform;
-    unsigned int _originUniform;
     unsigned int _scaleFactorUniform;
+    unsigned int _objectMatrixUniform;
+    unsigned int _highlightUniform;
 };

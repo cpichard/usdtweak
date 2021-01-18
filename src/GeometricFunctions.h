@@ -9,7 +9,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 inline bool SameSign(const GfVec2d &v1, const GfVec2d &v2) { return v1[0] * v2[0] >= 0.0 && v1[1] * v2[1] >= 0.0; }
 
 /// Given the segment defined by 2 points p1 and p2, check if point is within boundaries from the segment
-inline bool PickSegment(const GfVec2d &p1, const GfVec2d &p2, const GfVec2d &point, const GfVec2d &limits) {
+inline bool IntersectsSegment(const GfVec2d &p1, const GfVec2d &p2, const GfVec2d &point, const GfVec2d &limits) {
     // Line vector
     const GfVec2d segment(p1 - p2);
 
