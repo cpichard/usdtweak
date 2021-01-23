@@ -9,9 +9,7 @@
 // https://github.com/martin-pr/possumwood/wiki/Infinite-ground-plane-using-GLSL-shaders
 //
 
-#ifdef _WIN32
 #include <GL/glew.h>
-#endif
 #include "Grid.h"
 #include <iostream>
 #include <pxr/base/gf/matrix4f.h>
