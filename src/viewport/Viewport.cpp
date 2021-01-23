@@ -184,6 +184,10 @@ void Viewport::Draw() {
     ImGui::SameLine();
 
     /// Manipulator toolbar
+    if (ImGui::RadioButton("Selection", IsChosenManipulator<MouseHoverManipulator>())) {
+        ChooseManipulator<MouseHoverManipulator>();
+    }
+    ImGui::SameLine();
     if (ImGui::RadioButton("Translate", IsChosenManipulator<PositionManipulator>())) {
         ChooseManipulator<PositionManipulator>();
     }
