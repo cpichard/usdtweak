@@ -116,6 +116,7 @@ class Viewport final {
     Selection &_selection;
     GLuint _textureId = 0;
     Grid _grid;
+    GfVec2i _viewportSize;
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }

@@ -376,10 +376,8 @@ void Editor::Draw() {
     if (_showViewport) {
         ImGui::Begin("Viewport", &_showViewport);
         ImVec2 wsize = ImGui::GetWindowSize();
-        GetViewport().Draw();
-
-        GetViewport().HandleEvents(); // TODO: handle events should be in this file, not in the viewport
         GetViewport().SetSize(wsize.x, wsize.y - ViewportBorderSize); // for the next render
+        GetViewport().Draw();
         ImGui::End();
     }
 

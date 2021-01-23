@@ -76,51 +76,54 @@ void DrawCameraList(Viewport &viewport) {
 }
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
-     : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
-      _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection) {
-     // Viewport draw target
-     _cameraManipulator.ResetPosition(_currentCamera);
-     _drawTarget = GlfDrawTarget::New(GfVec2i(InitialWindowWidth, InitialWindowHeight), false);
-     _drawTarget->Bind();
-     _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-     _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-     auto color = _drawTarget->GetAttachment("color");
-     _textureId = color->GetGlTextureName();
-     _drawTarget->Unbind();
+    : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
+      _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
+      _viewportSize(InitialWindowWidth, InitialWindowHeight) {
 
-     // USD render engine setup
-     _renderparams = new UsdImagingGLRenderParams;
-     _renderparams->frame = 1.0;
-     _renderparams->complexity = 1.0;
-     _renderparams->clearColor = GfVec4f(0.5, 0.5, 0.5, 1.0);
-     _renderparams->showRender = false;
-     _renderparams->forceRefresh = false;
-     _renderparams->enableLighting = true;
-     _renderparams->enableSceneMaterials = true;
-     _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
-     _renderparams->highlight = true;
-     _renderparams->gammaCorrectColors = false;
-     _renderparams->colorCorrectionMode = TfToken("sRGB");
-     _renderparams->showGuides = true;
-     _renderparams->showProxy = true;
-     _renderparams->showRender = false;
+    // Viewport draw target
+    _cameraManipulator.ResetPosition(_currentCamera);
 
-     // Lights
-     GlfSimpleLight simpleLight;
-     simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
-     simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-     simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
-     simpleLight.SetPosition({200, 200, 200, 1.0});
-     _lights.emplace_back(simpleLight);
+    _drawTarget = GlfDrawTarget::New(_viewportSize, false);
+    _drawTarget->Bind();
+    _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
+    _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
+    auto color = _drawTarget->GetAttachment("color");
+    _textureId = color->GetGlTextureName();
+    _drawTarget->Unbind();
 
-     // TODO: set color correction as well
+    // USD render engine setup
+    _renderparams = new UsdImagingGLRenderParams;
+    _renderparams->frame = 1.0;
+    _renderparams->complexity = 1.0;
+    _renderparams->clearColor = GfVec4f(0.5, 0.5, 0.5, 1.0);
+    _renderparams->showRender = false;
+    _renderparams->forceRefresh = false;
+    _renderparams->enableLighting = true;
+    _renderparams->enableSceneMaterials = true;
+    _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
+    _renderparams->highlight = true;
+    _renderparams->gammaCorrectColors = false;
+    _renderparams->colorCorrectionMode = TfToken("sRGB");
+    _renderparams->showGuides = true;
+    _renderparams->showProxy = true;
+    _renderparams->showRender = false;
 
-     // Default material
-     _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
-     _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-     _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
-     _ambient = {0.0, 0.0, 0.0, 0.0};
- }
+    // Lights
+    GlfSimpleLight simpleLight;
+    simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
+    simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+    simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
+    simpleLight.SetPosition({200, 200, 200, 1.0});
+    _lights.emplace_back(simpleLight);
+
+    // TODO: set color correction as well
+
+    // Default material
+    _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
+    _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+    _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
+    _ambient = {0.0, 0.0, 0.0, 0.0};
+}
 
 Viewport::~Viewport() {
     if (_renderer) {
@@ -203,20 +206,14 @@ void Viewport::Draw() {
         //    ImGui::Button("Deactivate");
         //    ImGui::EndPopup();
         //}
+        HandleEvents();
     }
 }
 
 
 /// Resize the Hydra viewport/render panel
 void Viewport::SetSize(int width, int height) {
-    const GfVec2i &currentSize = _drawTarget->GetSize();
-    if (currentSize != GfVec2i(width, height)) {
-        _drawTarget->Bind();
-        _drawTarget->SetSize(GfVec2i(width, height));
-        _drawTarget->Unbind();
-        _currentCamera.SetPerspectiveFromAspectRatioAndFieldOfView(double(width) / double(height), 60,
-                                                                  GfCamera::FOVHorizontal);
-    }
+    _viewportSize = GfVec2i(width, height);
 }
 
 /// Frane the viewport using the bounding box of the selection
@@ -377,6 +374,15 @@ void Viewport::Update() {
             // TODO: the selection is also different per stage
             //_selection =
         }
+    }
+
+    const GfVec2i &currentSize = _drawTarget->GetSize();
+    if (currentSize != _viewportSize) {
+        _drawTarget->Bind();
+        _drawTarget->SetSize(_viewportSize);
+        _drawTarget->Unbind();
+        _currentCamera.SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]), 60,
+                                                                   GfCamera::FOVHorizontal);
     }
 
     /// Note that the following will have terrible performances when selecting thousands of paths
