@@ -150,7 +150,6 @@ bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
         const auto mv = frustum.ComputeViewMatrix();
         const auto proj = frustum.ComputeProjectionMatrix();
 
-        const auto timeCode = viewport.GetCurrentTimeCode();
         const auto toWorld = ComputeManipulatorToWorldTransform(viewport);
 
         // World position for origin is the pivot
@@ -160,15 +159,14 @@ bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
         const double axisLength = axisSize * viewport.ComputeScaleFactor(pivot, axisSize);
 
         // Local axis as draw in opengl
-        // TODO: fix, this is incorrect
-        const GfVec3d xAxis3d = GfVec3d(axisLength, 0.0, 0.0) + pivot;
-        const GfVec3d yAxis3d = GfVec3d(0.0, axisLength, 0.0) + pivot;
-        const GfVec3d zAxis3d = GfVec3d(0.0, 0.0, axisLength) + pivot;
+        const GfVec4d xAxis3d = GfVec4d(axisLength, 0.0, 0.0, 1.0) * toWorld;
+        const GfVec4d yAxis3d = GfVec4d(0.0, axisLength, 0.0, 1.0) * toWorld;
+        const GfVec4d zAxis3d = GfVec4d(0.0, 0.0, axisLength, 1.0) * toWorld;
 
         const auto originOnScreen = ProjectToNormalizedScreen(mv, proj, pivot);
-        const auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, xAxis3d);
-        const auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, yAxis3d);
-        const auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, zAxis3d);
+        const auto xAxisOnScreen = ProjectToNormalizedScreen(mv, proj, GfVec3d(xAxis3d.data()));
+        const auto yAxisOnScreen = ProjectToNormalizedScreen(mv, proj, GfVec3d(yAxis3d.data()));
+        const auto zAxisOnScreen = ProjectToNormalizedScreen(mv, proj, GfVec3d(zAxis3d.data()));
 
         const auto pickBounds = viewport.GetPickingBoundarySize();
         const auto mousePosition = viewport.GetMousePosition();
