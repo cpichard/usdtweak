@@ -45,7 +45,7 @@ class RotationManipulator : public Manipulator {
     UsdTimeCode GetViewportTimeCode(const Viewport &);
 
     bool CompileShaders();
-    GfVec3d ComputeClockHand(Viewport &viewport);
+    GfVec3d ComputeClockHandVector(Viewport &viewport);
 
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
     SelectedAxis _selectedAxis;
@@ -53,11 +53,11 @@ class RotationManipulator : public Manipulator {
     UsdGeomXformCommonAPI _xformAPI;
 
     GfVec3d _rotateFrom;
-    GfVec3f _rotateValues;
-    GfVec3f _rotateValuesOnBegin;
+    GfMatrix4d _rotateMatrixOnBegin;
 
-    GfVec3d _planeOrigin3d;
-    GfVec3d _planeNormal3d;
+    GfVec3d _planeOrigin3d; // Global
+    GfVec3d _planeNormal3d; // TODO rename global
+    GfVec3d _localPlaneNormal; // Local
 
     // OpenGL stuff
     unsigned int _arrayBuffer;
