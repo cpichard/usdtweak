@@ -46,8 +46,9 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
 
     const std::string displayName = GetDisplayName(attribute);
 
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(displayName.c_str()).x -
-                         ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
+    // Right align
+    //ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(displayName.c_str()).x -
+    //                     ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
 
     ImGui::Text("%s", displayName.c_str());
 }
