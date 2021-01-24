@@ -80,7 +80,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
 void DrawUsdRelationshipDisplayName(const UsdRelationship& relationship) {
     std::string relationshipName = GetDisplayName(relationship);
     ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
-    ImGui::TextColored(ImVec4(attributeNameColor), "'%s'", relationshipName.c_str());
+    ImGui::TextColored(ImVec4(attributeNameColor), "%s", relationshipName.c_str());
 }
 
 
