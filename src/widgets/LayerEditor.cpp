@@ -87,6 +87,24 @@ static void DeletePrimSpec(SdfPrimSpecHandle &prim) {
     }
 }
 
+void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec){
+    if (!primSpec) return;
+    DrawPrimName(primSpec);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Add child")) {
+        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
+    }
+    auto parent = primSpec->GetNameParent();
+    if (parent) {
+        if (ImGui::MenuItem("Add sibling")) {
+            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailablePrimName(primSpec->GetName()));
+        }
+    }
+
+    if (ImGui::MenuItem("Remove")) {
+        DeletePrimSpec(primSpec);
+    }
+}
 /// Draw a popup to quickly edit a prim
 void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
     if (!primSpec) return;
@@ -144,7 +162,7 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
 }
 
 /// Draw a node in the primspec tree
-static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
+static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
     if (!primSpec)
         return;
     bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
@@ -178,6 +196,7 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     else {
         primSpecName = primSpec->GetPath().GetName();
     }
+
     // Style
     if (primIsVariant){
         ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.5f));
@@ -194,18 +213,26 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
 
     // Right click will open the quick edit popup menu
     if (ImGui::BeginPopupContextItem()) {
-        DrawPrimQuickEdit(primSpec);
+        DrawTreeNodePopup(primSpec);
+        //DrawPrimName(primSpec);
+        //DrawPrimQuickEdit(primSpec);
         ImGui::EndPopup();
     }
 
+    // We want transparent combos
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 0.0));
+
     // Draw the description column
     ImGui::TableSetColumnIndex(1);
-    std::string description = primSpec->GetPath().IsPrimVariantSelectionPath() ? ""
-        : TfEnum::GetDisplayName(primSpec->GetSpecifier()) + " " +
-        ((primSpec->GetTypeName() == SdfTokens->AnyTypeToken) ? std::string() : primSpec->GetTypeName().GetString());
+    ImGui::PushItemWidth(-FLT_MIN); // removes the combo label. The col needs to have a fixed size
+    DrawPrimSpecifierCombo(primSpec, ImGuiComboFlags_NoArrowButton);
 
-    ImGui::Text("%s", description.c_str());
     ImGui::TableSetColumnIndex(2);
+    ImGui::PushItemWidth(-FLT_MIN); // removes the combo label. The col needs to have a fixed size
+    DrawPrimType(primSpec, ImGuiComboFlags_NoArrowButton);
+
+    // End of transparent combos
+    ImGui::PopStyleColor();
 
     // Draw composition summary
     ImGui::TableSetColumnIndex(3);
@@ -219,12 +246,12 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
             const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
             TF_FOR_ALL(varIt, variants) {
                 const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
-                DrawPrimSpecTreeNode(variantSpec, selectedPrim, nodeId++);
+                DrawPrimSpecRow(variantSpec, selectedPrim, nodeId++);
             }
         }
 
         for (int i = 0; i < childrenNames.size(); ++i) {
-            DrawPrimSpecTreeNode(childrenNames[i], selectedPrim, nodeId++);
+            DrawPrimSpecRow(childrenNames[i], selectedPrim, nodeId++);
         }
         ImGui::TreePop();
     }
@@ -232,22 +259,24 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     ImGui::PopID();
 }
 
-void DrawPrimSpecTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+void DrawPrimSpecTable(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 
-    static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
-    if (ImGui::BeginTable("##DrawPrimSpecTree", 3, tableFlags)) {
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg;
+    if (ImGui::BeginTable("##DrawPrimSpecTree", 4, tableFlags)) {
         ImGui::TableSetupColumn("Hierarchy");
-        ImGui::TableSetupColumn("Type");
-        ImGui::TableSetupColumn("Arcs");
+        ImGui::TableSetupColumn("Spec", ImGuiTableColumnFlags_WidthFixed, 40);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80);
+        ImGui::TableSetupColumn("References");
+        ImGui::TableHeadersRow();
         int nodeId = 0;
         for (const auto &child : layer->GetRootPrims()) {
-            DrawPrimSpecTreeNode(child, selectedPrim, nodeId++);
+            DrawPrimSpecRow(child, selectedPrim, nodeId++);
         }
         ImGui::EndTable();
     }
 }
 
-void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 
     if (ImGui::Button("Add root prim")) {
         ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
@@ -262,10 +291,10 @@ void DrawLayerPrimTree(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     ImGui::PushItemWidth(-1);
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 100); // TODO: size of the window
-    if (ImGui::ListBoxHeader("##empty", sizeArg)) {
-        DrawPrimSpecTree(layer, selectedPrim);
-        ImGui::ListBoxFooter();
-    }
+    //if (ImGui::ListBoxHeader("##empty", sizeArg)) {
+        DrawPrimSpecTable(layer, selectedPrim);
+    //    ImGui::ListBoxFooter();
+    //}
     ImGui::PushItemWidth(0);
 }
 
@@ -435,6 +464,20 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
          DrawLayerSublayers(layer);
     }
     if (ImGui::CollapsingHeader("Prims tree")) {
-         DrawLayerPrimTree(layer, selectedPrim);
+         DrawLayerPrimHierarchy(layer, selectedPrim);
+    }
+}
+
+
+void DrawLayerMenuItems(SdfLayerHandle layer) {
+    if (!layer) return;
+    if (ImGui::MenuItem("Open as Stage")) {
+        ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
+    }
+    if (ImGui::MenuItem("Set edit target")) {
+        ExecuteAfterDraw<EditorSetEditTarget>(layer);
+    }
+    if (ImGui::MenuItem("Copy layer path")) {
+        ImGui::SetClipboardText(layer->GetRealPath().c_str());
     }
 }

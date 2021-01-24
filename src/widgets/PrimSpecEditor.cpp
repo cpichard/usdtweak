@@ -70,12 +70,12 @@ struct EditReferences : public ModalDialog {
     int composition;
 };
 
-void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     const SdfSpecifier current = primSpec->GetSpecifier();
     SdfSpecifier selected = current;
     const std::string specifierName = TfEnum::GetDisplayName(current);
-    if (ImGui::BeginCombo("Specifier", specifierName.c_str())) {
+    if (ImGui::BeginCombo("Specifier", specifierName.c_str(), comboFlags)) {
         for (int n = SdfSpecifierDef; n < SdfNumSpecifiers; n++) {
             const SdfSpecifier displayed = static_cast<SdfSpecifier>(n);
             const bool isSelected = (current == displayed);
@@ -164,7 +164,7 @@ void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
 }
 
 /// Draw a prim type name combo
-void DrawPrimType(SdfPrimSpecHandle &primSpec) {
+void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     /// TODO reset to none as well
     /// TODO: look at: https://github.com/ocornut/imgui/issues/282
@@ -178,7 +178,7 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec) {
     const TfToken &typeName = primSpec->GetTypeName() == SdfTokens->AnyTypeToken ? TfToken() : primSpec->GetTypeName();
     const char *currentItem = typeName.GetString().c_str();
 
-    if (ImGui::BeginCombo("Prim Type", currentItem)) {
+    if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
         for (int n = 0; n < IM_ARRAYSIZE(classes); n++) {
             bool isSelected = strcmp(currentItem, classes[n]) == 0;
             if (ImGui::Selectable(classes[n], isSelected)) {
