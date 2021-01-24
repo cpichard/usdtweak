@@ -1,6 +1,7 @@
 #pragma once
 
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
