@@ -192,8 +192,7 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     if (primIsVariant) {
         auto variantSelection = primSpec->GetPath().GetVariantSelection();
         primSpecName = std::string("{") + variantSelection.first.c_str() + ":" + variantSelection.second.c_str() + "}";
-    }
-    else {
+    } else {
         primSpecName = primSpec->GetPath().GetName();
     }
 
@@ -203,9 +202,11 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     }
 
     auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags);
+
     if (ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
     }
+
 
     if (primIsVariant) {
         ImGui::PopStyleColor();
@@ -214,8 +215,6 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     // Right click will open the quick edit popup menu
     if (ImGui::BeginPopupContextItem()) {
         DrawTreeNodePopup(primSpec);
-        //DrawPrimName(primSpec);
-        //DrawPrimQuickEdit(primSpec);
         ImGui::EndPopup();
     }
 
@@ -281,21 +280,13 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
     if (ImGui::Button("Add root prim")) {
         ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
     }
-
     ImGui::SameLine();
-
     if (ImGui::Button("Remove selected") && selectedPrim) {
         DeletePrimSpec(selectedPrim);
         selectedPrim = SdfPrimSpecHandle(); // resets selection
     }
-    ImGui::PushItemWidth(-1);
-    ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
-    ImVec2 sizeArg(0, currentWindow->Size[1] - 100); // TODO: size of the window
-    //if (ImGui::ListBoxHeader("##empty", sizeArg)) {
-        DrawPrimSpecTable(layer, selectedPrim);
-    //    ImGui::ListBoxFooter();
-    //}
-    ImGui::PushItemWidth(0);
+
+    DrawPrimSpecTable(layer, selectedPrim);
 }
 
 void DrawDefaultPrim(SdfLayerRefPtr layer) {
@@ -357,7 +348,6 @@ void DrawUpAxis(SdfLayerRefPtr layer) {
 
 
 void DrawLayerMetadata(SdfLayerRefPtr layer) {
-
     if (!layer)
         return;
 
@@ -400,7 +390,7 @@ void DrawLayerPrimEdit(SdfLayerRefPtr layer, SdfPrimSpecHandle &primSpec) {
     // DrawPrimComposition(primSpec);
 }
 
-void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth=0) {
+void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth = 0) {
     // Tree node doc:
     // https://github.com/ocornut/imgui/issues/581
 
@@ -417,11 +407,12 @@ void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth=0) {
             nodeflags |= ImGuiTreeNodeFlags_Leaf;
         }
         if (sublayer && ImGui::TreeNodeEx(sublayer->GetDisplayName().c_str(), nodeflags)) {
-            DrawLayerSublayerTree(sublayer, depth+1);
+            DrawLayerSublayerTree(sublayer, depth + 1);
             ImGui::TreePop();
         }
         // Right click will open the quick edit popup menu only for sublayers of the current layer
         // TODO: having a selection and buttons would be better for user experience
+
         if (depth == 0 && ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Remove selected sublayer")) {
                 ExecuteAfterDraw<LayerRemoveSubLayer>(layer, sublayerpath);
@@ -432,6 +423,14 @@ void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth=0) {
             if (ImGui::MenuItem("Move down")) {
                 ExecuteAfterDraw<LayerMoveSubLayer>(layer, sublayerpath, false);
             }
+            // TODO: Mute and Unmute layers
+            if (layer->IsMuted() && ImGui::MenuItem("Unmute")) {
+                // TODO ExecuteAfterDraw<LayerUnMute>(layer, sublayerpath, false);
+            }
+            if (!layer->IsMuted() && ImGui::MenuItem("Mute")) {
+                // TODO ExecuteAfterDraw<LayerMute>(layer, sublayerpath, false);
+            }
+
             ImGui::EndPopup();
         }
     }
@@ -443,13 +442,7 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
     if (ImGui::Button("Add sublayer")) {
         DrawModalDialog<AddSublayer>(layer);
     }
-    ImGui::PushItemWidth(-1);
-    // TODO: Mute and Unmute layers
-    if (ImGui::ListBoxHeader("##DrawLayerSublayers", 10, 10)) {
-        DrawLayerSublayerTree(layer);
-        ImGui::ListBoxFooter();
-    }
-    ImGui::PushItemWidth(0);
+    DrawLayerSublayerTree(layer);
 }
 
 /// Draw a SdfLayer in place editor
@@ -468,9 +461,9 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     }
 }
 
-
 void DrawLayerMenuItems(SdfLayerHandle layer) {
-    if (!layer) return;
+    if (!layer)
+        return;
     if (ImGui::MenuItem("Open as Stage")) {
         ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
     }
