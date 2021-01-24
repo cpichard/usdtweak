@@ -195,8 +195,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
         ImGui::Separator();
 
-        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_Resizable|ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("");
+        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Value");
             ImGui::TableHeadersRow();
