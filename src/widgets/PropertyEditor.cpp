@@ -64,16 +64,13 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
     } else {
         // No values, what do we display ??
         ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
-        // ImGui::TextColored(attributeNameColor, "'%s'", attributeLabel.c_str());
         if (attribute.HasAuthoredConnections()) {
             SdfPathVector sources;
             attribute.GetConnections(&sources);
             for (auto &connection : sources) {
-                ImGui::SameLine();
                 ImGui::TextColored(ImVec4(AttributeConnectionColor), "-> %s", connection.GetString().c_str());
             }
         } else {
-            ImGui::SameLine();
             ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
         }
     }
