@@ -54,7 +54,7 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
 }
 
 void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
-    std::string attributeLabel = std::string("##") + GetDisplayName(attribute);
+    std::string attributeLabel =  GetDisplayName(attribute);
     VtValue value;
     if (attribute.Get(&value, currentTime)) {
         VtValue modified = DrawAttributeValue(attributeLabel, attribute, value);
@@ -215,6 +215,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
                 DrawAttributeDisplayName(attribute);
 
                 ImGui::TableSetColumnIndex(2);
+                ImGui::PushItemWidth(-FLT_MIN); // Right align and get rid of widget label
                 DrawAttributeValueAtTime(attribute, currentTime);
 
                 // TODO: in the hint ???
