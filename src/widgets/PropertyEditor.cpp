@@ -183,17 +183,17 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         ImGui::Text("Edit target: %s", editTarget.GetLayer()->GetDisplayName().c_str());
         ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
 
+        ImGui::Separator();
         // Draw variant sets
         if (prim.HasVariantSets()) {
-            ImGui::Separator();
             ImGui::Text("VariantSets selection");
             DrawVariantSetsCombos(prim);
+            ImGui::Separator();
         }
-        ImGui::Separator();
 
-        DrawXformsCommon(prim, currentTime);
-
-        ImGui::Separator();
+        if (DrawXformsCommon(prim, currentTime)) {
+            ImGui::Separator();
+        }
 
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -243,7 +243,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     }
 }
 
-void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
+bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
 
     UsdGeomXformCommonAPI xformAPI(prim);
 
@@ -275,5 +275,8 @@ void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
         }
         // TODO rotation order
+
+        return true;
     }
+    return false;
 }
