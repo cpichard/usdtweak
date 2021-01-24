@@ -42,14 +42,14 @@ void DrawAttributeTypeInfo(const UsdAttribute &attribute) {
     ImGui::Text("%s(%s)", attributeRoleName.GetString().c_str(), attributeTypeName.GetAsToken().GetString().c_str());
 }
 
+// Right align is not used at the moment, but keeping the code as this is useful for quick layout testing
+inline void RightAlignNextItem(const char *str) {
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(str).x -
+                         ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
+}
+
 void DrawAttributeDisplayName(const UsdAttribute &attribute) {
-
     const std::string displayName = GetDisplayName(attribute);
-
-    // Right align
-    //ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(displayName.c_str()).x -
-    //                     ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
-
     ImGui::Text("%s", displayName.c_str());
 }
 
