@@ -6,8 +6,6 @@
 #include <iostream>
 #include <functional>
 #include <chrono>
-#include <vector>
-#include <string>
 #include "Gui.h"
 #include "FileBrowser.h"
 #include "Constants.h"
@@ -26,10 +24,10 @@ namespace clk = std::chrono;
 /// Browser returned file path, not thread safe
 static std::string filePath;
 static bool fileExists = false;
-static std::vector<std::string> validExts;
+static std::set<std::string> validExts;
 
 
-void SetValidExtensions(const std::vector<std::string> &extensions) {
+void SetValidExtensions(const std::set<std::string> &extensions) {
     validExts = extensions;
 }
 

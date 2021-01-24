@@ -1,5 +1,6 @@
 #include <string>
 #include <vector>
+#include <set>
 
 /// Draw the file browser ui this can be used anywhere, except that there is only one instance of the FileBrowser. Also, there is
 /// no OK/Cancel button, or options, this is the responsibility of the caller to draw them.
@@ -12,4 +13,4 @@ std::string GetFileBrowserFilePath();
 bool FilePathExists();
 
 /// Sets the valid extensions. The file browser will filter out any files with an invalid extension.
-void SetValidExtensions(const std::vector<std::string> &extensions);
+void SetValidExtensions(const std::set<std::string> &extensions);
