@@ -195,7 +195,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
         ImGui::Separator();
 
-        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_Resizable)) {
+        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_Resizable|ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("");
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Value");
