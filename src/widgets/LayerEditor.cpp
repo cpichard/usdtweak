@@ -176,7 +176,7 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
 
     // Makes the row selectable
     bool selected = primSpec == selectedPrim;
-    if (ImGui::Selectable("", selected,
+    if (ImGui::Selectable("##selectRow", selected,
         ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         selectedPrim = primSpec;
     }
