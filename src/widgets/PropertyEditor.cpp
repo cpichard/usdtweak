@@ -2,6 +2,7 @@
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usdGeom/gprim.h>
+#include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include "Gui.h"
 #include "PropertyEditor.h"
 #include "ValueEditor.h"
@@ -30,27 +31,40 @@ static VtValue DrawAttributeValue(const std::string &label, UsdAttribute &attrib
     return DrawVtValue(label, value);
 }
 
-void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
-    std::string attributeLabel = attribute.GetNamespace().GetString() +
-                                 (attribute.GetNamespace() == TfToken() ? std::string() : std::string(":")) +
-                                 attribute.GetBaseName().GetString();
+template <typename PropertyT> static std::string GetDisplayName(const PropertyT &property) {
+    return property.GetNamespace().GetString() + (property.GetNamespace() == TfToken() ? std::string() : std::string(":")) +
+           property.GetBaseName().GetString();
+}
+
+void DrawAttributeTypeInfo(const UsdAttribute &attribute) {
+    auto attributeTypeName = attribute.GetTypeName();
+    auto attributeRoleName = attribute.GetRoleName();
+    ImGui::Text("%s(%s)", attributeRoleName.GetString().c_str(), attributeTypeName.GetAsToken().GetString().c_str());
+}
+
+void DrawAttributeDisplayName(const UsdAttribute &attribute) {
+
+    const std::string displayName = GetDisplayName(attribute);
+
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(displayName.c_str()).x -
+                         ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
+
+    ImGui::Text("%s", displayName.c_str());
+}
+
+void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
+    std::string attributeLabel = std::string("##") + GetDisplayName(attribute);
     VtValue value;
     if (attribute.Get(&value, currentTime)) {
-        // TODO: have a decent layout. It looks like PushItemWidth can be useful to that end
-        // ImGui::PushItemWidth(ImGui::GetWindowWidth()/2.f);
-        // ImGui::SetNextItemWidth(ImGui::GetWindowWidth()/3.f);
         VtValue modified = DrawAttributeValue(attributeLabel, attribute, value);
         if (!modified.IsEmpty()) {
             ExecuteAfterDraw<AttributeSet>(attribute, modified,
                                            attribute.GetNumTimeSamples() ? currentTime : UsdTimeCode::Default());
         }
-        auto attributeTypeName = attribute.GetTypeName();
-        auto attributeRoleName = attribute.GetRoleName();
-        ImGui::SameLine();
-        ImGui::Text("%s(%s)", attributeRoleName.GetString().c_str(), attributeTypeName.GetAsToken().GetString().c_str());
     } else {
+        // No values, what do we display ??
         ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
-        ImGui::TextColored(attributeNameColor, "'%s'", attributeLabel.c_str());
+        // ImGui::TextColored(attributeNameColor, "'%s'", attributeLabel.c_str());
         if (attribute.HasAuthoredConnections()) {
             SdfPathVector sources;
             attribute.GetConnections(&sources);
@@ -65,12 +79,15 @@ void DrawUsdAttribute(UsdAttribute &attribute, UsdTimeCode currentTime) {
     }
 }
 
-void DrawUsdRelationship(UsdRelationship &relationship) {
-    std::string relationshipName = relationship.GetNamespace().GetString() +
-                                   (relationship.GetNamespace() == TfToken() ? std::string() : std::string(":")) +
-                                   relationship.GetBaseName().GetString();
+void DrawUsdRelationshipDisplayName(const UsdRelationship& relationship) {
+    std::string relationshipName = GetDisplayName(relationship);
     ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
     ImGui::TextColored(ImVec4(attributeNameColor), "'%s'", relationshipName.c_str());
+}
+
+
+void DrawUsdRelationshipList(const UsdRelationship &relationship) {
+    // TODO: if <= to one then draw the relation ship else a button to open the list
     SdfPathVector targets;
     // relationship.GetTargets(&targets); TODO: what is the difference wiht GetForwardedTargets
     relationship.GetForwardedTargets(&targets);
@@ -119,7 +136,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     ImGui::SmallButton(SmallButtonLabel<UsdPropertyT>());
     ImGui::PopStyleColor();
     ImGui::PopStyleColor();
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         if (property.IsAuthoredAt(editTarget)) {
             DrawMenuClearAuthoredValues(property);
             DrawMenuRemoveProperty(property);
@@ -132,6 +149,8 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
 void DrawVariantSetsCombos(const UsdPrim &prim) {
     auto variantSets = prim.GetVariantSets();
     for (auto variantSetName : variantSets.GetNames()) {
+
+        // Variant set mini button --- todo extract from this function
         auto variantSet = variantSets.GetVariantSet(variantSetName);
         ImVec4 variantColor =
             variantSet.HasAuthoredVariantSelection() ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
@@ -176,49 +195,66 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
         DrawXformsCommon(prim, currentTime);
 
-        int miniButtonId = 0;
+        ImGui::Separator();
 
-        // Draw attributes
-        for (auto &attribute : prim.GetAttributes()) {
-            ImGui::PushID(miniButtonId++);
-            DrawPropertyMiniButton(attribute, editTarget, currentTime);
-            ImGui::PopID();
-            ImGui::SameLine();
-            DrawUsdAttribute(attribute, currentTime);
-        }
+        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("");
+            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Value");
+            ImGui::TableHeadersRow();
 
-        // Draw relations
-        for (auto &relation : prim.GetRelationships()) {
-            ImGui::PushID(miniButtonId++);
-            DrawPropertyMiniButton(relation, editTarget, currentTime);
-            ImGui::PopID();
-            ImGui::SameLine();
-            DrawUsdRelationship(relation);
+            int miniButtonId = 0;
+
+            // Draw attributes
+            for (auto &attribute : prim.GetAttributes()) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::PushID(miniButtonId++);
+                DrawPropertyMiniButton(attribute, editTarget, currentTime);
+                ImGui::PopID();
+
+                ImGui::TableSetColumnIndex(1);
+                DrawAttributeDisplayName(attribute);
+
+                ImGui::TableSetColumnIndex(2);
+                DrawAttributeValueAtTime(attribute, currentTime);
+
+                // TODO: in the hint ???
+                // DrawAttributeTypeInfo(attribute);
+            }
+
+            // Draw relations
+            for (auto &relationship : prim.GetRelationships()) {
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::PushID(miniButtonId++);
+                DrawPropertyMiniButton(relationship, editTarget, currentTime);
+                ImGui::PopID();
+
+                ImGui::TableSetColumnIndex(1);
+                DrawUsdRelationshipDisplayName(relationship);
+
+                ImGui::TableSetColumnIndex(2);
+                DrawUsdRelationshipList(relationship);
+            }
+
+            ImGui::EndTable();
         }
     }
 }
 
 void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
+
     UsdGeomXformCommonAPI xformAPI(prim);
 
     if (xformAPI) {
-        // For testing
-        if (ImGui::Button("Create transform")) {
-            auto ops = xformAPI.CreateXformOps(UsdGeomXformCommonAPI::OpTranslate, UsdGeomXformCommonAPI::OpRotate,
-                                    UsdGeomXformCommonAPI::OpPivot, UsdGeomXformCommonAPI::OpScale);
-            ops.translateOp.Set(GfVec3d(0.0, 0.0, 0.0));
-            ops.scaleOp.Set(GfVec3d(1.0, 1.0, 1.0));
-        }
-
         GfVec3d translation;
         GfVec3f scalev;
         GfVec3f pivot;
         GfVec3f rotation;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
         xformAPI.GetXformVectors(&translation, &rotation, &scalev, &pivot, &rotOrder, currentTime);
-
-        ImGui::Text("Transform API");
-
         GfVec3f translationf(translation[0], translation[1], translation[2]);
         ImGui::InputFloat3("Translation", translationf.data(), DecimalPrecision);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -239,6 +275,6 @@ void DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
         }
-
+        // TODO rotation order
     }
 }

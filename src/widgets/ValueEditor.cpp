@@ -97,11 +97,11 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
             return VtValue(fltArray);
         }
     } else if (value.IsArrayValued() && value.GetArraySize() > 5) {
-        ImGui::Text("'%s': array with %d values", label.c_str(), value.GetArraySize());
+        ImGui::Text("array with %d values", value.GetArraySize());
     } else {
         std::stringstream ss;
         ss << value;
-        ImGui::Text("'%s': %s", label.c_str(), ss.str().c_str());
+        ImGui::Text("%s", ss.str().c_str());
     }
     return VtValue();
 }

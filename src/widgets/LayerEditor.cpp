@@ -150,6 +150,9 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
 
     ImGui::TableNextRow();
+
+    ImGui::TableSetColumnIndex(0);
+
     ImGui::PushID(nodeId);
     nodeId=0;
 
@@ -196,15 +199,16 @@ static void DrawPrimSpecTreeNode(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &
     }
 
     // Draw the description column
-    ImGui::TableNextCell();
+    ImGui::TableSetColumnIndex(1);
     std::string description = primSpec->GetPath().IsPrimVariantSelectionPath() ? ""
         : TfEnum::GetDisplayName(primSpec->GetSpecifier()) + " " +
         ((primSpec->GetTypeName() == SdfTokens->AnyTypeToken) ? std::string() : primSpec->GetTypeName().GetString());
 
     ImGui::Text("%s", description.c_str());
+    ImGui::TableSetColumnIndex(2);
 
     // Draw composition summary
-    ImGui::TableNextCell();
+    ImGui::TableSetColumnIndex(3);
     DrawPrimCompositionSummary(primSpec);
 
     // Draw children

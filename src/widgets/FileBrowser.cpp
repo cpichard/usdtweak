@@ -174,12 +174,14 @@ void DrawFileBrowser() {
         if (ImGui::BeginTable("Files", 3, tableFlags)) {
             ImGui::TableSetupColumn(" Type ", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn(" Filename ", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableAutoHeaders();
+            ImGui::TableSetupColumn(" Size ", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
             int i = 0;
             ImGui::PushID("direntries");
             for (auto dirEntry : directoryContent) {
                 const bool isDirectory = dirEntry.is_directory();
                 ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i++);
                 // makes the line selectable, and when selected copy the path
                 // to the line edit buffer
@@ -189,13 +191,13 @@ void DrawFileBrowser() {
                 ImGui::PopID();
                 ImGui::SameLine();
                 ImGui::Text("%s ", isDirectory ? "D" : "F");
-                ImGui::TableNextCell();
+                ImGui::TableSetColumnIndex(1);
                 if (isDirectory) {
                     ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
                 } else {
                     ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().c_str());
                 }
-                ImGui::TableNextCell();
+                ImGui::TableSetColumnIndex(2);
                 if (!isDirectory) ImGui::Text("%ju KB", dirEntry.file_size()/1024);
             }
             ImGui::PopID(); // direntries

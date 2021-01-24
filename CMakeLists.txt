@@ -36,6 +36,7 @@ add_executable(usdtweak
  src/3rdparty/imgui/imgui_draw.cpp
  src/3rdparty/imgui/imgui_impl_glfw.cpp
  src/3rdparty/imgui/imgui_widgets.cpp
+ src/3rdparty/imgui/imgui_tables.cpp
  src/3rdparty/imgui/imgui_impl_opengl3.cpp
  src/3rdparty/imgui/imgui_stdlib.cpp)
 target_compile_definitions(usdtweak PRIVATE NOMINMAX)

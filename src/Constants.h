@@ -26,7 +26,7 @@ constexpr size_t PathBufferSize = 1024;
 #define AttributeConnectionColor {0.5, 0.5, 0.9, 1.0}
 
 /// Decimal Precision shown in the floating point values UI
-constexpr size_t DecimalPrecision = 5;
+constexpr const char * DecimalPrecision = "%.5f";
 
 /// Default name when creating a prim
 constexpr const char *const DefaultPrimSpecName = "prim";
