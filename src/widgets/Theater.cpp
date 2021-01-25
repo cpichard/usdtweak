@@ -3,6 +3,7 @@
 #include <pxr/usd/usd/stage.h>
 #include "Gui.h"
 #include "Theater.h"
+#include "LayerEditor.h" // for DrawLayerMenuItems
 #include "Commands.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -55,15 +56,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                 }
 
                 if (ImGui::BeginPopupContextItem()) {
-                    if (ImGui::MenuItem("Open as Stage")) {
-                        ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
-                    }
-                    if (ImGui::MenuItem("Set edit target")) {
-                        ExecuteAfterDraw<EditorSetEditTarget>(layer);
-                    }
-                    if (ImGui::MenuItem("Copy layer path")) {
-                       ImGui::SetClipboardText(layer->GetRealPath().c_str());
-                    }
+                    DrawLayerMenuItems(layer);
                     ImGui::EndPopup();
                 }
                 ImGui::PopID();
