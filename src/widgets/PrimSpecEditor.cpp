@@ -409,6 +409,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
         TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
             ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
             ImGui::PushID(deleteButtonCounter++);
             if(ImGui::Button("D")) { // This will be replaced by a "bin/trash" glyph
                 ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec,
