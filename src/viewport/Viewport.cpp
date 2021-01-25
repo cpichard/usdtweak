@@ -208,7 +208,7 @@ void Viewport::Draw() {
         //    ImGui::Button("Deactivate");
         //    ImGui::EndPopup();
         //}
-        HandleEvents();
+        HandleManipulationEvents();
     }
 }
 
@@ -265,7 +265,7 @@ double Viewport::ComputeScaleFactor(const GfVec3d& objectPos, const double multi
     return scale;
 }
 
-void Viewport::HandleEvents() {
+void Viewport::HandleManipulationEvents() {
 
     ImGuiContext *g = ImGui::GetCurrentContext();
     ImGuiWindow *window = g->CurrentWindow;

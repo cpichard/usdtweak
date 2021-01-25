@@ -109,7 +109,7 @@ class Viewport final {
 
     /// Handle events is implemented as a finite state machine.
     /// The state are simply the current manipulator used.
-    void HandleEvents();
+    void HandleManipulationEvents();
 
   private:
     Manipulator *_currentEditingState;
