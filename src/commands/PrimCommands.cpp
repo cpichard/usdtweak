@@ -5,7 +5,9 @@
 
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/reference.h>
+#include <pxr/usd/sdf/namespaceEdit.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -86,11 +88,37 @@ struct PrimAddReference : public SdfLayerCommand {
     std::string _reference;
 };
 
+// Rename to PrimReparent ??
+struct PrimReparent : public SdfLayerCommand {
+    PrimReparent(SdfLayerHandle layer, SdfPath source, SdfPath destination)
+        : _layer(std::move(layer)), _source(source), _destination(destination) {}
+
+    ~PrimReparent() override {}
+
+    bool DoIt() override {
+        if (!_layer)
+            return false;
+        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfNamespaceEdit reparentEdit = SdfNamespaceEdit::Reparent(_source, _destination, 0);
+        SdfBatchNamespaceEdit batchEdit;
+        batchEdit.Add(reparentEdit);
+        if (_layer->CanApply(batchEdit)) {
+            _layer->Apply(batchEdit);
+            return true;
+        }
+        return false;
+    }
+
+    SdfLayerHandle _layer;
+    SdfPath _source;
+    SdfPath _destination;
+};
+
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
 template void ExecuteAfterDraw<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec);
 template void ExecuteAfterDraw<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
-
+template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
 

@@ -16,6 +16,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 struct PrimNew;
 struct PrimRemove;
 struct PrimAddReference;
+struct PrimReparent;
 
 struct EditorSetDataPointer;
 struct EditorSelectPrimPath;

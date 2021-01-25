@@ -163,6 +163,7 @@ void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
 
 /// Draw a node in the primspec tree
 static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
+    static SdfPath payload;
     if (!primSpec)
         return;
     bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
@@ -176,10 +177,35 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
 
     // Makes the row selectable
     bool selected = primSpec == selectedPrim;
-    if (ImGui::Selectable("##selectRow", selected,
-        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+    if (ImGui::Selectable("##selectRow", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         selectedPrim = primSpec;
     }
+    ImGuiDragDropFlags srcFlags = 0;
+    srcFlags |= ImGuiDragDropFlags_SourceNoDisableHover;     // Keep the source displayed as hovered
+    srcFlags |= ImGuiDragDropFlags_SourceNoHoldToOpenOthers; // Because our dragging is local, we disable the feature of opening
+                                                              // foreign treenodes/tabs while dragging
+    // src_flags |= ImGuiDragDropFlags_SourceNoPreviewTooltip; // Hide the tooltip
+    if (ImGui::BeginDragDropSource(srcFlags)) {
+        if (!(srcFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
+            ImGui::Text("Moving %s", primSpec->GetPath().GetString().c_str());
+        std::cout << "allocating payload" << std::endl;
+        payload = SdfPath(primSpec->GetPath());
+        ImGui::SetDragDropPayload("DND", &payload, sizeof(SdfPath), ImGuiCond_Once);
+        ImGui::EndDragDropSource();
+    }
+
+    if (ImGui::BeginDragDropTarget()) {
+        ImGuiDragDropFlags targetFlags = 0;
+        // target_flags |= ImGuiDragDropFlags_AcceptBeforeDelivery;    // Don't wait until the delivery (release mouse button on a
+        // target) to do something target_flags |= ImGuiDragDropFlags_AcceptNoDrawDefaultRect; // Don't display the yellow
+        // rectangle
+        if (const ImGuiPayload *pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
+            SdfPath source(*(SdfPath *)pl->Data);
+            ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
+        }
+        ImGui::EndDragDropTarget();
+    }
+
     ImGui::SameLine();
 
     auto childrenNames = primSpec->GetNameChildren();
