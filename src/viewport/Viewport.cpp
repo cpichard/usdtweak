@@ -169,10 +169,8 @@ void Viewport::Draw() {
         ImGui::BulletText("Ambient light");
         ImGui::InputFloat4("Ambient", _ambient.data());
         ImGui::Separator();
-        if (ImGui::TreeNode("Lights")) {
-            DrawGLLights(_lights);
-            ImGui::TreePop();
-        }
+        DrawGLLights(_lights);
+
         ImGui::EndPopup();
     }
     ImGui::SameLine();
