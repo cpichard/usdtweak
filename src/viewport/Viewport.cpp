@@ -75,6 +75,7 @@ void DrawCameraList(Viewport &viewport) {
 
 }
 
+
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
@@ -179,27 +180,10 @@ void Viewport::Draw() {
         DrawRendererSettings(*_renderer, *_renderparams);
         ImGui::EndPopup();
     }
-    ImGui::SameLine();
-
-    /// Manipulator toolbar
-    if (ImGui::RadioButton("Selection", IsChosenManipulator<MouseHoverManipulator>())) {
-        ChooseManipulator<MouseHoverManipulator>();
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Translate", IsChosenManipulator<PositionManipulator>())) {
-        ChooseManipulator<PositionManipulator>();
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Rotate", IsChosenManipulator<RotationManipulator>())) {
-        ChooseManipulator<RotationManipulator>();
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Scale", false)) { // For later
-       FrameRootPrim();
-    }
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
+        auto cursorPos = ImGui::GetCursorPos();
         ImGui::Image((ImTextureID)_textureId, ImVec2(wsize.x, wsize.y - ViewportBorderSize), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
@@ -209,9 +193,44 @@ void Viewport::Draw() {
         //    ImGui::EndPopup();
         //}
         HandleManipulationEvents();
+
+        DrawManipulatorToolbox(cursorPos);
     }
 }
 
+// Poor man manipulator toolbox
+void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
+    const ImVec2 buttonSize(40, 40); // Button size
+    const ImVec2 toolBoxPos(20, 20); // Alignment
+    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
+    const ImVec4 selectedColor(0.2, 0.2, 0.2, 0.7);
+
+    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
+    ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    if (ImGui::Button("P", buttonSize)) {
+        ChooseManipulator<MouseHoverManipulator>();
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<PositionManipulator>() ? selectedColor : defaultColor);
+    ImGui::SetCursorPosX(20 + cursorPos.x);
+    if (ImGui::Button("T", buttonSize)) {
+        ChooseManipulator<PositionManipulator>();
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<RotationManipulator>() ? selectedColor : defaultColor);
+    ImGui::SetCursorPosX(20 + cursorPos.x);
+    if (ImGui::Button("R", buttonSize)) {
+        ChooseManipulator<RotationManipulator>();
+    }
+    ImGui::PopStyleColor();
+
+    // ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
+    // ImGui::SetCursorPosX(20 + cursorPos.x);
+    // ImGui::Button("S", buttonSize);
+    // ImGui::PopStyleColor();
+}
 
 /// Resize the Hydra viewport/render panel
 void Viewport::SetSize(int width, int height) {

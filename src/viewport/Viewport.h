@@ -111,6 +111,8 @@ class Viewport final {
     /// The state are simply the current manipulator used.
     void HandleManipulationEvents();
 
+    void DrawManipulatorToolbox(const struct ImVec2 &origin);
+
   private:
     Manipulator *_currentEditingState;
     Selection &_selection;
