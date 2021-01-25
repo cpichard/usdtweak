@@ -454,7 +454,7 @@ void Editor::Draw() {
     ImGuiIO &io = ImGui::GetIO();
     static bool UndoCommandpressedOnce = true;
     if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_Z]) {
-        if (UndoCommandpressedOnce){
+        if (UndoCommandpressedOnce) {
             ExecuteAfterDraw<UndoCommand>();
             UndoCommandpressedOnce = false;
         }
@@ -463,14 +463,43 @@ void Editor::Draw() {
     }
     static bool RedoCommandpressedOnce = true;
     if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_R]) {
-        if (RedoCommandpressedOnce){
+        if (RedoCommandpressedOnce) {
             ExecuteAfterDraw<RedoCommand>();
             RedoCommandpressedOnce = false;
         }
-    }    else {
+    } else {
         RedoCommandpressedOnce = true;
     }
 
+    static bool SelectionManipulatorPressedOnce = true;
+    if (io.KeysDown[GLFW_KEY_Q]) {
+        if (SelectionManipulatorPressedOnce) {
+            _viewport.ChooseManipulator<MouseHoverManipulator>();
+            SelectionManipulatorPressedOnce = false;
+        }
+    } else {
+        SelectionManipulatorPressedOnce = true;
+    }
+
+    static bool PositionManipulatorPressedOnce = true;
+    if (io.KeysDown[GLFW_KEY_W]) {
+        if (PositionManipulatorPressedOnce) {
+            _viewport.ChooseManipulator<PositionManipulator>();
+            PositionManipulatorPressedOnce = false;
+        }
+    } else {
+        PositionManipulatorPressedOnce = true;
+    }
+
+    static bool RotationManipulatorPressedOnce = true;
+    if (io.KeysDown[GLFW_KEY_E]) {
+        if (RotationManipulatorPressedOnce) {
+            _viewport.ChooseManipulator<RotationManipulator>();
+            RotationManipulatorPressedOnce = false;
+        }
+    } else {
+        RotationManipulatorPressedOnce = true;
+    }
     /////////////////
 
     EndBackgroundDock();
