@@ -22,6 +22,7 @@ struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
 struct EditorOpenStage;
 struct EditorSetEditTarget;
+struct EditorSetCurrentLayer;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

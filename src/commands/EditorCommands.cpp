@@ -84,4 +84,20 @@ struct EditorSetEditTarget : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 
+struct EditorSetCurrentLayer : public EditorCommand {
+
+    EditorSetCurrentLayer(SdfLayerHandle layer) : _layer(layer) {}
+    ~EditorSetCurrentLayer() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->SetCurrentLayer(_layer);
+        }
+
+        return false;
+    }
+    SdfLayerHandle _layer;
+};
+template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
+
 

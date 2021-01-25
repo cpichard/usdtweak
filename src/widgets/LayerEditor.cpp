@@ -457,6 +457,9 @@ void DrawLayerSublayerTree(SdfLayerRefPtr layer, int depth = 0) {
                 // TODO ExecuteAfterDraw<LayerMute>(layer, sublayerpath, false);
             }
 
+            ImGui::Separator();
+            DrawLayerMenuItems(sublayer);
+
             ImGui::EndPopup();
         }
     }
@@ -493,7 +496,11 @@ void DrawLayerMenuItems(SdfLayerHandle layer) {
     if (ImGui::MenuItem("Open as Stage")) {
         ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
     }
-    if (ImGui::MenuItem("Set edit target")) {
+    if (ImGui::MenuItem("Edit layer")) {
+        ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
+    }
+    // TODO: check if this is possible to set this layer as edit target of the stage
+    if (ImGui::MenuItem("Set Edit target")) {
         ExecuteAfterDraw<EditorSetEditTarget>(layer);
     }
     if (ImGui::MenuItem("Copy layer path")) {

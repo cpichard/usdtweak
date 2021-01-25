@@ -22,6 +22,7 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "ValueEditor.h"
+#include "LayerEditor.h"
 
 //
 static const char *ArcAppendChar = "Append";
