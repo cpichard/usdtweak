@@ -144,6 +144,16 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     }
 }
 
+void DrawPropertyMiniButton() {
+    ImVec4 propertyColor = ImVec4({0.0, 0.7, 0.0, 1.0});
+    ImGui::PushStyleColor(ImGuiCol_Text, propertyColor);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+    ImGui::SmallButton("(x)");
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+}
+
+
 void DrawVariantSetsCombos(const UsdPrim &prim) {
     auto variantSets = prim.GetVariantSets();
     for (auto variantSetName : variantSets.GetNames()) {
@@ -191,13 +201,11 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::Separator();
         }
 
-        if (DrawXformsCommon(prim, currentTime)) {
-            ImGui::Separator();
-        }
+        DrawXformsCommon(prim, currentTime);
 
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Property name");
             ImGui::TableSetupColumn("Value");
             ImGui::TableHeadersRow();
 
@@ -243,6 +251,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     }
 }
 
+// Draw a xform common api in a table
+// I am not sure this is really useful
 bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
 
     UsdGeomXformCommonAPI xformAPI(prim);
@@ -255,27 +265,73 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
         xformAPI.GetXformVectors(&translation, &rotation, &scalev, &pivot, &rotOrder, currentTime);
         GfVec3f translationf(translation[0], translation[1], translation[2]);
-        ImGui::InputFloat3("Translation", translationf.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            translation[0] = translationf[0]; // TODO: InputDouble3 instead, we don't want to loose values
-            translation[1] = translationf[1];
-            translation[2] = translationf[2];
-            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translation, currentTime);
-        }
-        ImGui::InputFloat3("Rotation", rotation.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotation, rotOrder, currentTime);
-        }
-        ImGui::InputFloat3("Scale", scalev.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scalev, currentTime);
-        }
-        ImGui::InputFloat3("Pivot", pivot.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
-        }
-        // TODO rotation order
+        if (ImGui::BeginTable("##DrawXformsCommon", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+            ImGui::TableSetupColumn("Transform");
+            ImGui::TableSetupColumn("Value");
 
+            ImGui::TableHeadersRow();
+            // Translate
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            DrawPropertyMiniButton();
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("translation");
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
+            ImGui::InputFloat3("Translation", translationf.data(), DecimalPrecision);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                translation[0] = translationf[0]; // TODO: InputDouble3 instead, we don't want to loose values
+                translation[1] = translationf[1];
+                translation[2] = translationf[2];
+                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translation, currentTime);
+            }
+            // Rotation
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            DrawPropertyMiniButton();
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("rotation");
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
+            ImGui::InputFloat3("Rotation", rotation.data(), DecimalPrecision);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotation, rotOrder, currentTime);
+            }
+            // Scale
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            DrawPropertyMiniButton();
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("scale");
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
+            ImGui::InputFloat3("Scale", scalev.data(), DecimalPrecision);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scalev, currentTime);
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            DrawPropertyMiniButton();
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("pivot");
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::InputFloat3("Pivot", pivot.data(), DecimalPrecision);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
+            }
+            // TODO rotation order
+            ImGui::EndTable();
+        }
         return true;
     }
     return false;
