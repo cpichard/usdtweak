@@ -41,7 +41,9 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     }
 
     ImGui::NextColumn();
-    ImGui::Text("%s %s", prim.IsHidden() ? " " : "V", prim.GetTypeName().GetText());
+
+    // TODO: IsHidden() is not what we want, it should be the visibility
+    ImGui::Text("%s %s", prim.IsHidden() ? "\xef\x81\xb0" : "\xef\x81\xae", prim.GetTypeName().GetText());
 
     if (!prim.IsActive()) {
         ImGui::PopStyleColor();
