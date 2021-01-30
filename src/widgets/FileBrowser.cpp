@@ -24,10 +24,10 @@ namespace clk = std::chrono;
 /// Browser returned file path, not thread safe
 static std::string filePath;
 static bool fileExists = false;
-static std::set<std::string> validExts;
+static std::vector<std::string> validExts;
 
 
-void SetValidExtensions(const std::set<std::string> &extensions) {
+void SetValidExtensions(const std::vector<std::string> &extensions) {
     validExts = extensions;
 }
 

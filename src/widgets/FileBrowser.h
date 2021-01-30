@@ -13,4 +13,4 @@ std::string GetFileBrowserFilePath();
 bool FilePathExists();
 
 /// Sets the valid extensions. The file browser will filter out any files with an invalid extension.
-void SetValidExtensions(const std::set<std::string> &extensions);
+void SetValidExtensions(const std::vector<std::string> &extensions);
