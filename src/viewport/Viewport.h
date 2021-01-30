@@ -103,9 +103,8 @@ class Viewport final {
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
     Selection &GetSelection() { return _selection; }
-    SelectionHash _lastSelectionHash = 0;
-    SelectionEditor _selectionManipulator;
-    SelectionEditor &GetSelectionManipulator() { return _selectionManipulator; }
+
+    SelectionManipulator &GetSelectionManipulator() { return _selectionManipulator; }
 
     /// Handle events is implemented as a finite state machine.
     /// The state are simply the current manipulator used.
@@ -115,9 +114,11 @@ class Viewport final {
 
   private:
     Manipulator *_currentEditingState;
+    SelectionManipulator _selectionManipulator; // TODO: rename to SelectionManipulator
     Selection &_selection;
     GLuint _textureId = 0;
     Grid _grid;
+    SelectionHash _lastSelectionHash = 0;
     GfVec2i _viewportSize;
 };
 
@@ -125,4 +126,4 @@ template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() 
 template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() { return &_rotationManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
 template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
-template <> inline Manipulator *Viewport::GetManipulator<SelectionEditor>() { return &_selectionManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<SelectionManipulator>() { return &_selectionManipulator; }

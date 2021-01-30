@@ -7,10 +7,10 @@ PXR_NAMESPACE_USING_DIRECTIVE
 #include "Manipulator.h"
 
 /// The selection manipulator will help selecting a region of the viewport, drawing a rectangle.
-class SelectionEditor : public Manipulator {
+class SelectionManipulator : public Manipulator {
     public:
-        SelectionEditor() = default;
-        ~SelectionEditor() = default;
+        SelectionManipulator() = default;
+        ~SelectionManipulator() = default;
 
         void OnDrawFrame(const Viewport &) override;
 

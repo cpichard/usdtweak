@@ -4,7 +4,7 @@
 //#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 
-Manipulator *SelectionEditor::OnUpdate(Viewport &viewport) {
+Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
     Selection &selection = viewport.GetSelection();
     auto mousePosition = viewport.GetMousePosition();
     SdfPath outHitPrimPath;
@@ -27,6 +27,6 @@ Manipulator *SelectionEditor::OnUpdate(Viewport &viewport) {
 }
 
 
-void SelectionEditor::OnDrawFrame(const Viewport &) {
+void SelectionManipulator::OnDrawFrame(const Viewport &) {
     // Draw a rectangle for the selection
 }

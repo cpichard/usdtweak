@@ -15,7 +15,7 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
         if (manipulator.IsMouseOver(viewport)) {
             return &manipulator;
         } else {
-            return viewport.GetManipulator<SelectionEditor>();
+            return viewport.GetManipulator<SelectionManipulator>();
         }
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
