@@ -101,3 +101,21 @@ struct EditorSetCurrentLayer : public EditorCommand {
 template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
 
 
+struct EditorOpenLayer : public EditorCommand {
+
+    EditorOpenLayer(std::string layerPath) : _layerPath(std::move(layerPath)) {}
+    ~EditorOpenLayer() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->ImportLayer(_layerPath);
+        }
+
+        return false;
+    }
+    std::string _layerPath;
+};
+template void ExecuteAfterDraw<EditorOpenLayer>(std::string layerPath);
+
+
+

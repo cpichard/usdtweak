@@ -21,6 +21,7 @@ struct PrimReparent;
 struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
 struct EditorOpenStage;
+struct EditorOpenLayer;
 struct EditorSetEditTarget;
 struct EditorSetCurrentLayer;
 
