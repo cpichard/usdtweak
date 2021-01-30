@@ -66,7 +66,6 @@ int main(int argc, char **argv) {
     ImGuiIO &io = ImGui::GetIO();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
-    auto font_default = io.Fonts->AddFontDefault();
 
     // Dock with shift key
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
