@@ -223,9 +223,13 @@ void Editor::SetCurrentStage(UsdStageCache::Id current) {
 
 void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     _currentStage = stage;
-    // TODO viewport management
+    // NOTE: We set the default layer to the current stage root
+    // this might have side effects
+    if (!_currentLayer && _currentStage) {
+        SetCurrentLayer(_currentStage->GetRootLayer());
+    }
+    // TODO multiple viewport management
     _viewport.SetCurrentStage(stage);
-
 }
 
 void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
@@ -238,49 +242,60 @@ void Editor::SetCurrentEditTarget(SdfLayerHandle layer) {
     }
 }
 
+void Editor::UseLayer(SdfLayerRefPtr layer) {
+    if (layer) {
+        if (_layers.find(layer) == _layers.end()) {
+            _layers.emplace(layer);
+        }
+        SetCurrentLayer(layer);
+        _showTheater = true;
+        _showLayerEditor = true;
+    }
+}
+
+
 void Editor::CreateLayer(const std::string &path) {
-    auto usdaFormat = SdfFileFormat::FindByExtension("usda");
-    _layers.emplace(SdfLayer::CreateNew(path));
-    SetCurrentLayer(SdfLayer::FindOrOpen(path));
-    _showTheater = true;
-    _showLayerEditor = true;
+    auto newLayer = SdfLayer::CreateNew(path);
+    UseLayer(newLayer);
 }
 
 void Editor::ImportLayer(const std::string &path) {
-    auto usdaFormat = SdfFileFormat::FindByExtension("usda");
-    _layers.emplace(SdfLayer::FindOrOpen(path));
-    SetCurrentLayer(SdfLayer::FindOrOpen(path));
-    _showTheater = true;
-    _showLayerEditor = true;
+    auto newLayer = SdfLayer::FindOrOpen(path);
+    UseLayer(newLayer);
 }
+
 //
 void Editor::ImportStage(const std::string &path) {
-    _currentStage = UsdStage::Open(path);
-    _stageCache.Insert(_currentStage);
-    _viewport.SetCurrentStage(_currentStage);
-    if (!_currentLayer && _currentStage){
-        SetCurrentLayer(_currentStage->GetRootLayer());
+    auto newStage = UsdStage::Open(path);
+    if (newStage) {
+        _stageCache.Insert(newStage);
+        SetCurrentStage(newStage);
+        _showTheater = true;
+        _showViewport = true;
     }
-    _showTheater = true;
-    _showViewport = true;
 }
 
 void Editor::SaveCurrentLayerAs(const std::string &path) {
     auto newLayer = SdfLayer::CreateNew(path);
-    newLayer->TransferContent(GetCurrentLayer());
-    newLayer->Save();
-    _layers.emplace(newLayer);
-    SetCurrentLayer(newLayer);
+    if (newLayer && GetCurrentLayer()) {
+        newLayer->TransferContent(GetCurrentLayer());
+        newLayer->Save();
+        UseLayer(newLayer);
+    }
 }
 
 void Editor::CreateStage(const std::string &path) {
     auto usdaFormat = SdfFileFormat::FindByExtension("usda");
     auto layer = SdfLayer::New(usdaFormat, path);
-    _currentStage = UsdStage::Open(layer);
-    _stageCache.Insert(_currentStage);
-    _viewport.SetCurrentStage(_currentStage);
-    _showTheater = true;
-    _showViewport = true;
+    if (layer) {
+        auto newStage = UsdStage::Open(layer);
+        if (newStage) {
+            _stageCache.Insert(newStage);
+            SetCurrentStage(newStage);
+            _showTheater = true;
+            _showViewport = true;
+        }
+    }
 }
 
 Viewport & Editor::GetViewport() {

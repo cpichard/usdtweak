@@ -72,6 +72,10 @@ public:
 
 private:
 
+    /// Make sure the layer is correctly in the list of layers,
+    /// makes it current and show the appropriate windows
+    void UseLayer(SdfLayerRefPtr layer);
+
     /// Using a stage cache to store the stages, seems to work well
     UsdStageCache _stageCache;
 
