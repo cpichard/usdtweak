@@ -363,9 +363,6 @@ void Editor::Draw() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    ImFont *font_current = ImGui::GetFont();
-
-    ImGui::PushFont(font_current);
 
     // Dock
     BeginBackgoundDock();
@@ -503,6 +500,5 @@ void Editor::Draw() {
     /////////////////
 
     EndBackgroundDock();
-    ImGui::PopFont();
     ImGui::Render();
 }
