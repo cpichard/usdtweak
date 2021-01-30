@@ -202,6 +202,7 @@ void Viewport::Draw() {
         //    ImGui::EndPopup();
         //}
         HandleManipulationEvents();
+        HandleKeyboardShortcut();
 
         DrawManipulatorToolbox(cursorPos);
     }
@@ -292,6 +293,52 @@ double Viewport::ComputeScaleFactor(const GfVec3d& objectPos, const double multi
     scale *= 2;
     return scale;
 }
+
+void Viewport::HandleKeyboardShortcut() {
+    if (ImGui::IsItemHovered()) {
+        ImGuiIO &io = ImGui::GetIO();
+        static bool SelectionManipulatorPressedOnce = true;
+        if (io.KeysDown[GLFW_KEY_Q]) {
+            if (SelectionManipulatorPressedOnce) {
+                ChooseManipulator<MouseHoverManipulator>();
+                SelectionManipulatorPressedOnce = false;
+            }
+        } else {
+            SelectionManipulatorPressedOnce = true;
+        }
+
+        static bool PositionManipulatorPressedOnce = true;
+        if (io.KeysDown[GLFW_KEY_W]) {
+            if (PositionManipulatorPressedOnce) {
+                ChooseManipulator<PositionManipulator>();
+                PositionManipulatorPressedOnce = false;
+            }
+        } else {
+            PositionManipulatorPressedOnce = true;
+        }
+
+        static bool RotationManipulatorPressedOnce = true;
+        if (io.KeysDown[GLFW_KEY_E]) {
+            if (RotationManipulatorPressedOnce) {
+                ChooseManipulator<RotationManipulator>();
+                RotationManipulatorPressedOnce = false;
+            }
+        } else {
+            RotationManipulatorPressedOnce = true;
+        }
+
+        static bool ScaleManipulatorPressedOnce = true;
+        if (io.KeysDown[GLFW_KEY_R]) {
+            if (ScaleManipulatorPressedOnce) {
+                ChooseManipulator<ScaleManipulator>();
+                ScaleManipulatorPressedOnce = false;
+            }
+        } else {
+            ScaleManipulatorPressedOnce = true;
+        }
+    }
+}
+
 
 void Viewport::HandleManipulationEvents() {
 

@@ -111,6 +111,7 @@ class Viewport final {
     void HandleManipulationEvents();
 
     void DrawManipulatorToolbox(const struct ImVec2 &origin);
+    void HandleKeyboardShortcut();
 
   private:
     Manipulator *_currentEditingState;

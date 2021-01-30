@@ -488,35 +488,6 @@ void Editor::Draw() {
         RedoCommandpressedOnce = true;
     }
 
-    static bool SelectionManipulatorPressedOnce = true;
-    if (io.KeysDown[GLFW_KEY_Q]) {
-        if (SelectionManipulatorPressedOnce) {
-            _viewport.ChooseManipulator<MouseHoverManipulator>();
-            SelectionManipulatorPressedOnce = false;
-        }
-    } else {
-        SelectionManipulatorPressedOnce = true;
-    }
-
-    static bool PositionManipulatorPressedOnce = true;
-    if (io.KeysDown[GLFW_KEY_W]) {
-        if (PositionManipulatorPressedOnce) {
-            _viewport.ChooseManipulator<PositionManipulator>();
-            PositionManipulatorPressedOnce = false;
-        }
-    } else {
-        PositionManipulatorPressedOnce = true;
-    }
-
-    static bool RotationManipulatorPressedOnce = true;
-    if (io.KeysDown[GLFW_KEY_E]) {
-        if (RotationManipulatorPressedOnce) {
-            _viewport.ChooseManipulator<RotationManipulator>();
-            RotationManipulatorPressedOnce = false;
-        }
-    } else {
-        RotationManipulatorPressedOnce = true;
-    }
     /////////////////
 
     EndBackgroundDock();
