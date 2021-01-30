@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     std::cout << "Hydra enabled : " << UsdImagingGLEngine::IsHydraEnabled() << std::endl;
     // GlfRegisterDefaultDebugOutputMessageCallback();
 
-    // Create a
+    // Create a context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
