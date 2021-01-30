@@ -223,23 +223,25 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<PositionManipulator>() ? selectedColor : defaultColor);
-    ImGui::SetCursorPosX(20 + cursorPos.x);
+    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
     if (ImGui::Button("T", buttonSize)) {
         ChooseManipulator<PositionManipulator>();
     }
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<RotationManipulator>() ? selectedColor : defaultColor);
-    ImGui::SetCursorPosX(20 + cursorPos.x);
+    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
     if (ImGui::Button("R", buttonSize)) {
         ChooseManipulator<RotationManipulator>();
     }
     ImGui::PopStyleColor();
 
-    // ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
-    // ImGui::SetCursorPosX(20 + cursorPos.x);
-    // ImGui::Button("S", buttonSize);
-    // ImGui::PopStyleColor();
+     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
+     ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
+    if (ImGui::Button("S", buttonSize)) {
+        ChooseManipulator<ScaleManipulator>();
+    }
+     ImGui::PopStyleColor();
 }
 
 /// Resize the Hydra viewport/render panel
@@ -473,6 +475,7 @@ void Viewport::Update() {
         // Tell the manipulators the selection has changed
         _positionManipulator.OnSelectionChange(*this);
         _rotationManipulator.OnSelectionChange(*this);
+        _scaleManipulator.OnSelectionChange(*this);
     }
 }
 

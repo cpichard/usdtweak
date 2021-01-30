@@ -11,6 +11,7 @@
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
 #include "RotationManipulator.h"
+#include "ScaleManipulator.h"
 #include "Selection.h"
 #include "Grid.h"
 
@@ -115,6 +116,7 @@ class Viewport final {
 
   private:
     Manipulator *_currentEditingState;
+    ScaleManipulator _scaleManipulator;
     SelectionManipulator _selectionManipulator; // TODO: rename to SelectionManipulator
     Selection &_selection;
     GLuint _textureId = 0;
@@ -128,3 +130,4 @@ template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() 
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
 template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<SelectionManipulator>() { return &_selectionManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<ScaleManipulator>() { return &_scaleManipulator; }
