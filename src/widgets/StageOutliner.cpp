@@ -12,15 +12,6 @@ static void DrawUsdPrimEdit(const UsdPrim &prim) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
     }
-    UsdGeomImageable geomPrim(prim);
-    if (geomPrim) {
-        if (ImGui::MenuItem("Make visible")) {
-            ExecuteAfterDraw(&UsdGeomImageable::MakeVisible, geomPrim, UsdTimeCode::Default());
-        }
-        if (ImGui::MenuItem("Make invisible")) {
-            ExecuteAfterDraw(&UsdGeomImageable::MakeInvisible, geomPrim, UsdTimeCode::Default());
-        }
-    }
 }
 
 
