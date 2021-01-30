@@ -12,6 +12,9 @@ static void DrawUsdPrimEdit(const UsdPrim &prim) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
     }
+    if (ImGui::MenuItem("Copy prim path")) {
+        ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
+    }
 }
 
 
