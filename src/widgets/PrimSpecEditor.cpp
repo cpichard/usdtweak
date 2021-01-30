@@ -17,6 +17,7 @@
 
 #include "Gui.h"
 #include "PrimSpecEditor.h"
+#include "ReferenceEditor.h"
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
 #include "Commands.h"
@@ -24,13 +25,7 @@
 #include "ValueEditor.h"
 #include "LayerEditor.h"
 
-//
-static const char *ArcAppendChar = "Append";
-static const char *ArcAddChar = "Add";
-static const char *ArcPrependChar = "Prepend";
-static const char *ArcDeleteChar = "Delete";
-static const char *ArcExplicitChar = "Explicit";
-static const char *ArcOrderedChar = "Ordered";
+
 
 /// Should that move in Common.h ???
 std::array<char, TextEditBufferSize> CreateEditBufferFor(const std::string &str) {
@@ -40,36 +35,7 @@ std::array<char, TextEditBufferSize> CreateEditBufferFor(const std::string &str)
     return buffer; // Should construct in place with copy ellision
 }
 
-// TODO: add all the composition arcs
-struct EditReferences : public ModalDialog {
 
-    EditReferences(SdfPrimSpecHandle &primSpec) : primSpec(primSpec), operation(0), composition(0){};
-
-    ~EditReferences() override {}
-
-    void Draw() override {
-        if (!primSpec) {
-            CloseModal();
-            return;
-        }
-        ImGui::Text("Select file");
-        DrawFileBrowser();
-        if (ImGui::Button("Close")) {
-            CloseModal();
-        }
-
-        if (ImGui::Button("Ok")) {
-            std::string reference = GetFileBrowserFilePath();
-            ExecuteAfterDraw<PrimAddReference>(primSpec, reference);
-            CloseModal();
-        }
-    }
-
-    const char *DialogId() const override { return "Edit Prim References"; }
-    SdfPrimSpecHandle primSpec;
-    int operation;
-    int composition;
-};
 
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
@@ -95,18 +61,38 @@ void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFl
     }
 }
 
+
+// TODO Share code as we want to share the style of the button, but not necessarily the behaviour
+// DrawMiniButton ?? in a specific file ? OptionButton ??? OptionMenuButton ??
+static void DrawPropertyMiniButton(const char *btnStr, int rowId, const ImVec4 &btnColor = ImVec4({0.0, 0.7, 0.0, 1.0})) {
+    ImGui::PushID(rowId);
+    ImGui::PushStyleColor(ImGuiCol_Text, btnColor);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+    ImGui::SmallButton(btnStr);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopID();
+}
+
+void DrawPrimInstanceableActionButton(SdfPrimSpecHandle &primSpec, int buttonId) {
+
+    DrawPropertyMiniButton("(m)", buttonId);
+    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        if (primSpec->HasInstanceable()) {
+            if (ImGui::Button("Reset to default")) {
+                ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
+            }
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     bool isInstanceable = primSpec->GetInstanceable();
     if (ImGui::Checkbox("Instanceable", &isInstanceable)) {
         ExecuteAfterDraw(&SdfPrimSpec::SetInstanceable, primSpec, isInstanceable);
-    }
-    if (primSpec->HasInstanceable()) {
-        ImGui::SameLine();
-        if (ImGui::Button("Clear")) {
-            ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
-        }
     }
 }
 
@@ -126,6 +112,7 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
     if (ImGui::Checkbox("Active", &isActive)) {
         ExecuteAfterDraw(&SdfPrimSpec::SetActive, primSpec, isActive);
     }
+    // TODO Move the clear button into a menu item :Reset to default
     if (primSpec->HasActive()) {
         ImGui::SameLine();
         if (ImGui::Button("Clear")) {
@@ -169,10 +156,11 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     /// TODO reset to none as well
     /// TODO: look at: https://github.com/ocornut/imgui/issues/282
-    // TODO: get all types, ATM the function GetAllTypes is not resolved at link time
-    // auto allTypes = primSpec->GetSchema().GetAllTypes();
+    // TODO: get all types, ATM the function GetAllTypes is not exposed by the api, missing SDF_API
+    //auto allTypes = primSpec->GetSchema().GetAllTypes();
+    //auto allTypes = SdfSchema::GetInstance().GetAllTypes();
     // They are also registered in "registry.usda"
-    const char *classes[] = {"Scope",      "Xform",        "Cube",     "Sphere",         "Cylinder",
+    const char *classes[] = {"", "Scope",      "Xform",        "Cube",     "Sphere",         "Cylinder",
                              "Capsule",    "Cone",         "Camera",   "PointInstancer", "Mesh",
                              "GeomSubset", "DistantLight", "Material", "Shader", "BlendShape"};
 
@@ -195,203 +183,8 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
             } else {
                 ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
             }
-
         }
         ImGui::EndCombo();
-    }
-}
-
-static inline const char *GetPathFrom(const SdfPath &value) { return value.GetString().c_str(); }
-static inline const char *GetPathFrom(const SdfReference &value) { return value.GetAssetPath().c_str(); }
-static inline const char *GetPathFrom(const SdfPayload &value) { return value.GetAssetPath().c_str(); }
-
-// NOTE: there might be a better way of removing reference, not keeping the index but a copy of value_type
-template <typename GetListFuncT, typename GetItemsFuncT>
-void PrimSpecRemoveArc(SdfLayerHandle layer, SdfPath primSpecPath, GetListFuncT listFunc, GetItemsFuncT itemsFunc, size_t index) {
-    if (layer) {
-        auto primSpec = layer->GetPrimAtPath(primSpecPath);
-        auto arcList = std::bind(listFunc, get_pointer(primSpec))();
-        auto items = std::bind(itemsFunc, &arcList)();
-        if (index<items.size()){
-            arcList.RemoveItemEdits(items[index]);
-        }
-    }
-}
-
-template <typename GetListFuncT, typename GetItemsFuncT>
-void DrawCompositionArcItems(const SdfPrimSpecHandle &primSpec, const char *operation,
-                             const char *compositionType, GetListFuncT listFunc, GetItemsFuncT itemsFunc) {
-    auto path = primSpec->GetPath();
-    auto arcList = std::bind(listFunc, get_pointer(primSpec))();
-    auto items = std::bind(itemsFunc,  &arcList)();
-    size_t index = 0;
-    for (const auto &ref : items) {
-        // TODO: check if the variant code below would be still useful
-        auto variantSelection = path.GetVariantSelection();
-        ImGui::Text("%s %s", variantSelection.first.c_str(), variantSelection.second.c_str());
-        ImGui::SameLine();
-        ImGui::Text("%s %s", operation, compositionType);
-        ImGui::SameLine();
-        ImGui::TextUnformatted(GetPathFrom(ref));
-        if (ImGui::BeginPopupContextItem(GetPathFrom(ref))) {
-            if (ImGui::MenuItem("Remove reference")) {
-                std::function<void()> deferedRemoveArc = [=] () {
-                    PrimSpecRemoveArc(primSpec->GetLayer(), path, listFunc, itemsFunc, index);
-                };
-                ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), deferedRemoveArc);
-             }
-            //if (ImGui::MenuItem("Copy path")) {
-            //    // TODO
-            // }
-            //if (ImGui::MenuItem("Open as stage")) {
-            //    // TODO
-            // }
-            ImGui::EndPopup();
-        }
-
-        // TODO popup menu with JumpTo, Delete, Replace, etc
-        index++;
-    }
-}
-
-template <typename GetListFuncT>
-void DrawCompositionArcOperations(const SdfPrimSpecHandle &primSpec, GetListFuncT listFunc,
-                                  const char *compositionType) {
-    using SdfListT = decltype(std::bind(listFunc, get_pointer(primSpec))());
-    DrawCompositionArcItems(primSpec, ArcAppendChar, compositionType, listFunc, &SdfListT::GetAppendedItems);
-    DrawCompositionArcItems(primSpec, ArcAddChar, compositionType, listFunc, &SdfListT::GetAddedItems);
-    DrawCompositionArcItems(primSpec, ArcPrependChar, compositionType, listFunc, &SdfListT::GetPrependedItems);
-    DrawCompositionArcItems(primSpec, ArcDeleteChar, compositionType, listFunc, &SdfListT::GetDeletedItems);
-    DrawCompositionArcItems(primSpec, ArcExplicitChar, compositionType, listFunc, &SdfListT::GetExplicitItems);
-    DrawCompositionArcItems(primSpec, ArcOrderedChar, compositionType, listFunc, &SdfListT::GetOrderedItems);
-}
-
-/// Draw all compositions in one big list
-void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
-    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetPayloadList, "Payload");
-    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetInheritPathList, "Inherit");
-    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetSpecializesList, "Specialize");
-    DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetReferenceList, "Reference");
-}
-
-void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
-    if (PrimHasComposition(primSpec)) {
-        DrawPrimCompositions(primSpec);
-        const auto &pathStr = primSpec->GetPath().GetString();
-        SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
-        TF_FOR_ALL(varSetIt, variantSetMap) {
-            const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
-            const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
-            TF_FOR_ALL(varIt, variants) {
-                const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
-                DrawPrimCompositions(variantSpec);
-            }
-        }
-    }
-}
-
-static bool HasComposition(const SdfPrimSpecHandle &primSpec) {
-    return primSpec->HasReferences()
-        || primSpec->HasPayloads()
-        || primSpec->HasInheritPaths()
-        || primSpec->HasSpecializes();
-}
-
-/// Returns if the prim has references, checking the variants
-bool PrimHasComposition(const SdfPrimSpecHandle &primSpec, bool checkVariants) {
-
-    if (HasComposition(primSpec)){
-        return true;
-    }
-
-    if (checkVariants) {
-        SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
-        TF_FOR_ALL(varSetIt, variantSetMap) {
-            const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
-            const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
-            TF_FOR_ALL(varIt, variants) {
-                return PrimHasComposition((*varIt)->GetPrimSpec());
-            }
-        }
-    }
-    return false;
-}
-
-
-void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec) {
-
-    if (ImGui::BeginMenu(ArcAppendChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        ImGui::MenuItem("Reference");
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(ArcPrependChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        ImGui::MenuItem("Reference");
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(ArcAddChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        if (ImGui::MenuItem("Reference")) {
-            // TODO  TriggerOpenModal<EditReferences>(primSpec, ArcAddChar, ArcPayload);
-            DrawModalDialog<EditReferences>(primSpec);
-        }
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(ArcDeleteChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        ImGui::MenuItem("Reference");
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(ArcExplicitChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        ImGui::MenuItem("Reference");
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu(ArcOrderedChar)) {
-        ImGui::MenuItem("Payload");
-        ImGui::MenuItem("Inherit");
-        ImGui::MenuItem("Specialize");
-        ImGui::MenuItem("Reference");
-        ImGui::EndMenu();
-    }
-}
-
-void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec) {
-
-    ImGui::PushItemWidth(-1);
-    if (ImGui::Button("Add reference")) {
-        ImGui::OpenPopup("DrawPrimCompositionPopupMenu");
-    }
-    //ImVec2 boxSize(0, -10); // TODO : move box
-    if (ImGui::ListBoxHeader("##compositionarcs")) {
-        DrawPrimCompositions(primSpec);
-        const auto &pathStr = primSpec->GetPath().GetString();
-        SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
-        TF_FOR_ALL(varSetIt, variantSetMap) {
-            const SdfVariantSetSpecHandle &varSetSpec = varSetIt->second;
-            const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
-            TF_FOR_ALL(varIt, variants) {
-                const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
-                DrawPrimCompositions(variantSpec);
-            }
-        }
-        ImGui::ListBoxFooter();
-    }
-
-    if (ImGui::BeginPopupContextItem("DrawPrimCompositionPopupMenu")) {
-        DrawPrimCompositionPopupMenu(primSpec);
-        ImGui::EndPopup();
     }
 }
 
@@ -401,14 +194,32 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
+    //// TESTING adding an attribute
+    //if (ImGui::Button("Add attribute")) {
+    //// SdfValueTypeName typeName = SdfSchemaBase::FindType	(	const TfToken & 	typeName	)	const
+    //    SdfValueTypeName typeName = primSpec->GetSchema().FindType("float");
+    //    SdfAttributeSpecHandle test = SdfAttributeSpec::New(primSpec, "Test", typeName);
+    //   // ExecuteCommandAfterDraw<SdfPrimSpecNewAttribute>(primSpec, "Test", typeName);
+    //}
+
     int deleteButtonCounter = 0;
     const auto &attributes = primSpec->GetAttributes();
-    static ImGuiTableFlags tableFlags = ImGuiTableFlags_Resizable;
-    if (ImGui::BeginTable("##DrawPrimSpecAttributes", 1, tableFlags)) {
+    static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
+    if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
         ImGui::TableSetupColumn("Attribute");
+        ImGui::TableSetupColumn("Time");
+        ImGui::TableSetupColumn("Value");
+
+        ImGui::TableHeadersRow();
+
         TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
+            // TODO: nodeFlags depends on the timeSamples
+
             ImGui::TableNextRow();
+
+            // MiniButton
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(deleteButtonCounter++);
             if(ImGui::Button("D")) { // This will be replaced by a "bin/trash" glyph
@@ -416,34 +227,29 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                                     primSpec->GetPropertyAtPath((*attribute)->GetPath()));
             }
             ImGui::PopID();
-            ImGui::SameLine();
-            if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
-                if ((*attribute)->HasDefaultValue()) {
-                    ImGui::TableNextRow();
-                    ImGui::PushID(deleteButtonCounter++);
-                    if(ImGui::Button("D")) {
-                        ExecuteAfterDraw(&SdfAttributeSpec::ClearDefaultValue, (*attribute));
-                    }
-                    ImGui::PopID();
-                    ImGui::SameLine();
-                    std::string defaultValueLabel = "Default";
-                    VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
-                    if (modified != VtValue()) {
-                        ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, *attribute, modified);
-                    }
-                }
 
+            // Name of the parameter
+            ImGui::TableSetColumnIndex(1);
+            if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
+                // Samples
                 SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
                 if (!timeSamples.empty()) {
                     TF_FOR_ALL(sample, timeSamples) {
                         ImGui::TableNextRow();
+                        // Mini button
+                        ImGui::TableSetColumnIndex(1);
                         ImGui::PushID(deleteButtonCounter++);
                         if(ImGui::Button("D")) {
                             ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first);
                         }
                         ImGui::PopID();
-                        ImGui::SameLine();
+                        // Time: TODO edit time ?
+                        ImGui::TableSetColumnIndex(2);
                         std::string sampleValueLabel = std::to_string(sample->first);
+                        ImGui::Text("%s", sampleValueLabel.c_str());
+                        // Value
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::PushItemWidth(-FLT_MIN);
                         VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
                         if (modified!=VtValue()) {
                             ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first, modified);
@@ -451,35 +257,113 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                     }
                 }
                 ImGui::TreePop();
+            } else // If closed show the default value
+            if ((*attribute)->HasDefaultValue()) {
+                ImGui::TableSetColumnIndex(2);
+                std::string defaultValueLabel = "Default";
+                ImGui::Text("%s", defaultValueLabel.c_str());
+                ImGui::TableSetColumnIndex(3);
+                ImGui::PushItemWidth(-FLT_MIN);
+                VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
+                if (modified != VtValue()) {
+                    ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, *attribute, modified);
+                }
             }
         }
         ImGui::EndTable();
     }
 }
 
+/// Using templates to factor the code in DrawPrimSpecMetadata
+template <typename MetadataField> const char *NameForMetadataField();
+template <typename MetadataField> void DrawMetadataFieldValue(SdfPrimSpecHandle &primSpec);
+template <typename MetadataField> void DrawMetadataFieldButton(SdfPrimSpecHandle& primSpec, int rowId) { DrawPropertyMiniButton("(m)", rowId); }
+
+/// Draw one row of the metadata field
+template <typename MetadataField> void DrawMetadataRow(SdfPrimSpecHandle &primSpec, int rowId) {
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    DrawMetadataFieldButton<MetadataField>(primSpec, rowId);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("%s", NameForMetadataField<MetadataField>());
+    ImGui::TableSetColumnIndex(2);
+    ImGui::PushItemWidth(-FLT_MIN);
+    DrawMetadataFieldValue<MetadataField>(primSpec);
+}
+
+// Definitions for Metadata field
+struct PrimName {};
+template <> const char *NameForMetadataField<PrimName>() { return "Name"; }
+template <> void DrawMetadataFieldValue<PrimName>(SdfPrimSpecHandle &primSpec) { DrawPrimName(primSpec); }
+
+struct Specifier {};
+template <> const char *NameForMetadataField<Specifier>() { return "Specifier"; }
+template <> void DrawMetadataFieldValue<Specifier>(SdfPrimSpecHandle &primSpec) { DrawPrimSpecifierCombo(primSpec); }
+
+struct PrimType {};
+template <> const char *NameForMetadataField<PrimType>() { return "Type"; }
+template <> void DrawMetadataFieldValue<PrimType>(SdfPrimSpecHandle &primSpec) { DrawPrimType(primSpec); }
+
+struct PrimKind {};
+template <> const char *NameForMetadataField<PrimKind>() { return "Kind"; }
+template <> void DrawMetadataFieldValue<PrimKind>(SdfPrimSpecHandle &primSpec) { DrawPrimKind(primSpec); }
+
+struct PrimActive {};
+template <> const char *NameForMetadataField<PrimActive>() { return "Active"; }
+template <> void DrawMetadataFieldValue<PrimActive>(SdfPrimSpecHandle &primSpec) { DrawPrimActive(primSpec); }
+
+struct Instanceable {};
+template <> const char *NameForMetadataField<Instanceable>() { return "Instanceable"; }
+template <> void DrawMetadataFieldValue<Instanceable>(SdfPrimSpecHandle &primSpec) { DrawPrimInstanceable(primSpec); }
+
+struct PrimHidden {};
+template <> const char *NameForMetadataField<PrimHidden>() { return "Hidden"; }
+template <> void DrawMetadataFieldValue<PrimHidden>(SdfPrimSpecHandle &primSpec) { DrawPrimHidden(primSpec); }
+
+
+
+void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
+    if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
+
+        int rowId = 0;
+
+        if (ImGui::BeginTable("##DrawPrimSpecMetadata", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+            ImGui::TableSetupColumn("Metadata");
+            ImGui::TableSetupColumn("Value");
+            ImGui::TableHeadersRow();
+
+            DrawMetadataRow<Specifier>(primSpec, rowId++);
+            DrawMetadataRow<PrimType>(primSpec, rowId++);
+            DrawMetadataRow<PrimName>(primSpec, rowId++);
+            DrawMetadataRow<PrimKind>(primSpec, rowId++);
+            DrawMetadataRow<PrimActive>(primSpec, rowId++);
+            DrawMetadataRow<Instanceable>(primSpec, rowId++);
+            DrawMetadataRow<PrimHidden>(primSpec, rowId++);
+
+            ImGui::EndTable();
+
+            ImGui::Separator();
+        }
+    }
+}
 
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
+    if (ImGui::Button("Add reference")) {
+        DrawPrimAddReferenceModalDialog(primSpec);
+    }
     ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
-    if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
-         if (ImGui::CollapsingHeader("Metadata")) {
-            DrawPrimSpecifierCombo(primSpec);
-            DrawPrimName(primSpec);
-            DrawPrimKind(primSpec);
-            DrawPrimType(primSpec);
-            DrawPrimInstanceable(primSpec);
-            DrawPrimHidden(primSpec);
-            DrawPrimActive(primSpec);
-        }
-    }
 
-    if (ImGui::CollapsingHeader("References")) {
+    DrawPrimSpecMetadata(primSpec);
+
+    //if (ImGui::CollapsingHeader("References")) {
         DrawPrimCompositionArcs(primSpec);
-    }
+    //}
 
-    if (ImGui::CollapsingHeader("Attributes")) {
+    //if (ImGui::CollapsingHeader("Attributes")) {
         DrawPrimSpecAttributes(primSpec);
-    }
+    //}
 }
