@@ -37,6 +37,9 @@ int main(int argc, char **argv) {
     /* Create a windowed mode window and its OpenGL context */
     int width = InitialWindowWidth;
     int height = InitialWindowHeight;
+#ifdef DISABLE_DOUBLE_BUFFER
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
+#endif
     GLFWwindow *window = glfwCreateWindow(width, height, "USD Tweak", NULL, NULL);
     if (!window) {
         std::cerr << "unable to create a window, exiting" << std::endl;
@@ -93,9 +96,12 @@ int main(int argc, char **argv) {
             editor.Draw();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+#ifndef DISABLE_DOUBLE_BUFFER
             // Swap front and back buffers
             glfwSwapBuffers(window);
-
+#else
+            glFlush();
+#endif
             // Process edition commands
             ExecuteCommands();
         }
