@@ -331,7 +331,7 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Undo", "CTRL+Z")) {
                 ExecuteAfterDraw<UndoCommand>();
             }
-            if (ImGui::MenuItem("Redo", "CTRL+Y")) {
+            if (ImGui::MenuItem("Redo", "CTRL+R")) {
                 ExecuteAfterDraw<RedoCommand>();
             }
             ImGui::Separator();
