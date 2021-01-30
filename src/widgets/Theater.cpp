@@ -56,7 +56,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                 }
 
                 if (ImGui::BeginPopupContextItem()) {
-                    DrawLayerMenuItems(layer);
+                    DrawLayerActionPopupMenu(layer);
                     ImGui::EndPopup();
                 }
                 ImGui::PopID();

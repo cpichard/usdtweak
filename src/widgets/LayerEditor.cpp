@@ -490,7 +490,8 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     }
 }
 
-void DrawLayerMenuItems(SdfLayerHandle layer) {
+/// Draw a popup menu with the possible action on a layer
+void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (!layer)
         return;
     if (ImGui::MenuItem("Open as Stage")) {
