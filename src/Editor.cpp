@@ -30,7 +30,7 @@
 static std::vector<std::string> GetUsdValidExtensions() {
     const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
     std::vector<std::string> validExtensions;
-    auto addDot = [](const std::string& str) {return "." + str; };
+    auto addDot = [](const std::string &str) { return "." + str; };
     std::transform(usdExtensions.cbegin(), usdExtensions.cend(), std::back_inserter(validExtensions), addDot);
     return std::move(validExtensions);
 }
@@ -212,7 +212,7 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
 
 
 Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {
-    ExecuteAfterDraw<EditorSetDataPointer>(this); // This will actually execute right now
+    ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
 }
 
 Editor::~Editor(){}
