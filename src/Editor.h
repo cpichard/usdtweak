@@ -6,7 +6,7 @@
 #include <Selection.h>
 #include <Viewport.h>
 
-class GLFWwindow;
+struct GLFWwindow;
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
