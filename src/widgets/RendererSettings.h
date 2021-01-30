@@ -5,3 +5,4 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 ///
 void DrawRendererSettings(UsdImagingGLEngine &, UsdImagingGLRenderParams &);
+void DrawOpenGLSettings(UsdImagingGLEngine &, UsdImagingGLRenderParams &);

@@ -155,29 +155,38 @@ Viewport::~Viewport() {
 /// Draw the viewport widget
 void Viewport::Draw() {
     ImVec2 wsize = ImGui::GetWindowSize();
-    ImGui::Button("Cameras");
+    ImGui::Button("\xef\x80\xb0 Cameras");
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
-    if (_renderer && ImGui::BeginPopupContextItem("Cameras", flags)) {
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawCameraList(*this);
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    ImGui::Button("Lighting");
-    if (_renderer && ImGui::BeginPopupContextItem("Lighting", flags)) {
-        ImGui::BulletText("Default shader");
-        DrawBasicShadingProperties(_material);
-        ImGui::Separator();
+    ImGui::Button("\xef\x83\xab Lighting");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         ImGui::BulletText("Ambient light");
         ImGui::InputFloat4("Ambient", _ambient.data());
         ImGui::Separator();
         DrawGLLights(_lights);
-
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    ImGui::Button("Render settings");
-    if (_renderer && ImGui::BeginPopupContextItem("Render settings", flags)) {
+    ImGui::Button("\xef\x87\xbc Shading");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
+        ImGui::BulletText("Default shader");
+        DrawBasicShadingProperties(_material);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Button("\xef\x93\xbe Renderer");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawRendererSettings(*_renderer, *_renderparams);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Button("\xef\x89\xac Viewport");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
+        DrawOpenGLSettings(*_renderer, *_renderparams);
         ImGui::EndPopup();
     }
 
