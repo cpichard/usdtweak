@@ -46,46 +46,52 @@ struct PrimNew : public SdfLayerCommand {
 
 struct PrimRemove : public SdfLayerCommand {
 
-    PrimRemove(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec)
-        :  _primSpec(std::move(primSpec)), _layer(std::move(layer)) {}
+    PrimRemove(SdfPrimSpecHandle primSpec)
+        :  _primSpec(std::move(primSpec)){}
 
     ~PrimRemove() override {}
 
     bool DoIt() override {
         if (!_primSpec)
             return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        auto layer = _primSpec->GetLayer();
+        SdfUndoRecorder recorder(_undoCommands, layer);
         if (_primSpec->GetNameParent()) {
             _primSpec->GetNameParent()->RemoveNameChild(_primSpec);
             return true;
         } else {
-            _layer->RemoveRootPrim(_primSpec);
+            layer->RemoveRootPrim(_primSpec);
             return true;
         }
     }
 
-    SdfLayerRefPtr _layer;
     SdfPrimSpecHandle _primSpec;
 };
 
-struct PrimAddReference : public SdfLayerCommand {
-    PrimAddReference(SdfPrimSpecHandle primSpec, std::string reference)
-        : _primSpec(std::move(primSpec)), _reference(std::move(reference)) {}
+#include "ReferenceEditor.h"
 
-    ~PrimAddReference() override {}
+struct PrimCreateCompositionArc : public SdfLayerCommand {
+    PrimCreateCompositionArc(SdfPrimSpecHandle primSpec, CompositionOperation operation, CompositionList composition,
+                             std::string referencePath, SdfPath targetPrimPath)
+        : _primSpec(std::move(primSpec)), _referencePath(std::move(referencePath)), _operation(operation),
+          _composition(composition), _targetPrimPath(targetPrimPath) {}
+
+    ~PrimCreateCompositionArc() override {}
 
     bool DoIt() override {
         if (_primSpec) {
             SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
-            auto references = _primSpec->GetReferenceList();
-            references.Add(SdfReference(_reference));
+            ApplyOperationOnCompositionList(_primSpec, _operation, _composition, _referencePath, _targetPrimPath);
             return true;
         }
         return false;
     }
 
+    CompositionOperation _operation;
+    CompositionList _composition;
     SdfPrimSpecHandle _primSpec;
-    std::string _reference;
+    std::string _referencePath;
+    SdfPath _targetPrimPath;
 };
 
 // Rename to PrimReparent ??
@@ -118,7 +124,7 @@ struct PrimReparent : public SdfLayerCommand {
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
-template void ExecuteAfterDraw<PrimRemove>(SdfLayerRefPtr layer, SdfPrimSpecHandle primSpec);
-template void ExecuteAfterDraw<PrimAddReference>(SdfPrimSpecHandle primSpec, std::string reference);
+template void ExecuteAfterDraw<PrimRemove>(SdfPrimSpecHandle primSpec);
+template void ExecuteAfterDraw<PrimCreateCompositionArc>(SdfPrimSpecHandle primSpec, CompositionOperation operation, CompositionList composition,
+                                                 std::string reference, SdfPath targetPrimPath);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
-
