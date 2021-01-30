@@ -12,6 +12,7 @@
 #include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
+#include "ResourcesLoader.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -70,6 +71,7 @@ int main(int argc, char **argv) {
 
     { // Scope as the editor should be deleted before imgui and glfw, to release correctly the memory
         Editor editor;
+        ResourcesLoader resources;
         glfwSetWindowUserPointer(window, &editor);
         glfwSetDropCallback(window, Editor::DropCallback);
 
