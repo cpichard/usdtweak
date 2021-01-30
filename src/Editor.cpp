@@ -400,26 +400,17 @@ void Editor::Draw() {
 
     if (_showDebugWindow) {
         ImGui::Begin("Debug window", &_showDebugWindow);
-        //DrawDebugInfo();
-
-        ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        // DrawDebugInfo();
+        ImGui::Text("\xee\x81\x99" " %.3f ms/frame  (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
     }
 
     if (_showPropertyEditor) {
-        ImGui::Begin("Property editor", &_showPropertyEditor);
+        ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
+        ImGui::Begin("Property editor", &_showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
-            // TODO: could set a different target here, try if this is possible
-            ImGui::Text("Edit target: %s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
-            // TODO: time management should live outside the viewport, probably somewhere in the editor
-            // and per stage, layer ??
-            if (GetViewport()._renderparams){
-                DrawUsdPrimProperties(prim, GetViewport()._renderparams->frame);
-            }
-            else {
-                DrawUsdPrimProperties(prim);
-            }
+            DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();
     }
@@ -430,7 +421,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (GetViewport()._renderparams && _showTimeline) {
+    if (_showTimeline) {
         ImGui::Begin("Timeline", &_showTimeline);
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
@@ -446,7 +437,8 @@ void Editor::Draw() {
             + (rootLayer->IsDirty() ? "*" : "")
             + "###Layer Editor");
         ImGui::Begin(title.c_str(), &_showLayerEditor);
-        ImGui::Text("%s", rootLayer->GetRealPath().c_str());
+
+
         DrawLayerEditor(rootLayer, _selectedPrimSpec);
         ImGui::End();
     }
