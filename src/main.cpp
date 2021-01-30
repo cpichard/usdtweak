@@ -19,9 +19,10 @@ PXR_NAMESPACE_USING_DIRECTIVE
 int main(int argc, char **argv) {
 
     // Initialize python
-    // TODO: look for folder and hooks
+#ifdef WANTS_PYTHON
     Py_SetProgramName(argv[0]);
     Py_Initialize();
+#endif
 
     // Initialize glfw
     if (!glfwInit())
@@ -110,6 +111,10 @@ int main(int argc, char **argv) {
     // Shutdown glfw
     glfwDestroyWindow(window);
     glfwTerminate();
+
+#ifdef WANTS_PYTHON
     Py_Finalize();
+#endif
+
     return 0;
 }
