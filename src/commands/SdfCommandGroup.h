@@ -45,13 +45,7 @@ public:
             _data.UndoIt();
         }
 
-        void ShowIt() override {
-            //std::cout << "InstructionWrapper contains: " << _data._path.GetString()
-            //<< " " << _data._fieldName.GetString()
-            //<< " " << _data._previousValue
-            //<< " " << _data._newValue
-            //<< std::endl;
-        }
+        void ShowIt() override { }
 
         InstructionT _data;
     };
