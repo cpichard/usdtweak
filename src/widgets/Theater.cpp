@@ -44,7 +44,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
             if (!layer)
                 continue;
             bool selected = selectedLayer && *selectedLayer == layer;
-            std::string layerName = std::string(layer->IsDirty() ? "*" : " ") + layer->GetDisplayName();
+            std::string layerName = std::string(layer->IsDirty() ? "\xef\x83\x87 " : "  ") + layer->GetDisplayName();
             if (filter.PassFilter(layerName.c_str())) {
                 ImGui::PushID(layer->GetUniqueIdentifier());
                 if (ImGui::Selectable(layerName.c_str(), selected)) {
