@@ -26,6 +26,15 @@
 #include "Constants.h"
 #include "Commands.h"
 
+// Get usd known file format extensions and returns then prefixed with a dot and in a vector
+static std::vector<std::string> GetUsdValidExtensions() {
+    const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
+    std::vector<std::string> validExtensions;
+    auto addDot = [](const std::string& str) {return "." + str; };
+    std::transform(usdExtensions.cbegin(), usdExtensions.cend(), std::back_inserter(validExtensions), addDot);
+    return std::move(validExtensions);
+}
+
 /// Modal dialog used to create a new layer
 struct CreateLayerModal : public ModalDialog {
 
@@ -54,7 +63,7 @@ struct CreateLayerModal : public ModalDialog {
 
 struct CreateStageModal : public ModalDialog {
 
-    CreateStageModal(Editor &editor) : editor(editor) { SetValidExtensions({}); };
+    CreateStageModal(Editor& editor) : editor(editor) { SetValidExtensions({}); };
 
     void Draw() override {
         DrawFileBrowser();
@@ -82,11 +91,7 @@ struct CreateStageModal : public ModalDialog {
 /// Modal dialog to open a layer
 struct OpenLayerModal : public ModalDialog {
 
-    OpenLayerModal(Editor &editor) : editor(editor) {
-        SetValidExtensions({".usda", ".usd", ".usdc",
-                            ".usdz"
-                            ".abc"});
-    };
+    OpenLayerModal(Editor &editor) : editor(editor) { SetValidExtensions(GetUsdValidExtensions()); };
     ~OpenLayerModal() override {}
     void Draw() override {
         DrawFileBrowser();
@@ -110,7 +115,7 @@ struct OpenLayerModal : public ModalDialog {
 
 struct OpenStageModal : public ModalDialog {
 
-    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions({".usda", ".usd", ".usdc", ".usdz", ".abc"}); };
+    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions(GetUsdValidExtensions()); };
     ~OpenStageModal() override {}
     void Draw() override {
         DrawFileBrowser();
