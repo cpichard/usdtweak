@@ -69,7 +69,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
             SdfPathVector sources;
             attribute.GetConnections(&sources);
             for (auto &connection : sources) {
-                ImGui::TextColored(ImVec4(AttributeConnectionColor), "-> %s", connection.GetString().c_str());
+                ImGui::TextColored(ImVec4(AttributeConnectionColor), "%s", connection.GetString().c_str());
             }
         } else {
             ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
@@ -83,17 +83,15 @@ void DrawUsdRelationshipDisplayName(const UsdRelationship& relationship) {
     ImGui::TextColored(ImVec4(attributeNameColor), "%s", relationshipName.c_str());
 }
 
-
 void DrawUsdRelationshipList(const UsdRelationship &relationship) {
-    // TODO: if <= to one then draw the relation ship else a button to open the list
     SdfPathVector targets;
-    // relationship.GetTargets(&targets); TODO: what is the difference wiht GetForwardedTargets
-    relationship.GetForwardedTargets(&targets);
-    if (targets.size()) {
-        ImGui::SameLine();
-        for (const auto &path : targets) {
-            ImGui::TextColored(ImVec4(AttributeRelationshipColor), "-> %s", path.GetString().c_str());
-        }
+    //relationship.GetForwardedTargets(&targets);
+    //for (const auto &path : targets) {
+    //    ImGui::TextColored(ImVec4(AttributeRelationshipColor), "%s", path.GetString().c_str());
+    //}
+    relationship.GetTargets(&targets);
+    for (const auto &path : targets) {
+        ImGui::TextColored(ImVec4(AttributeRelationshipColor), "%s", path.GetString().c_str());
     }
 }
 
@@ -125,15 +123,20 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
     }
 }
 
+// TODO Share the code,
+static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4({0.0, 0.7, 0.0, 1.0})) {
+    ImGui::PushStyleColor(ImGuiCol_Text, btnColor);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+    ImGui::SmallButton(btnStr);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+}
+
 // Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
     ImVec4 propertyColor = property.IsAuthoredAt(editTarget) ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
-    ImGui::PushStyleColor(ImGuiCol_Text, propertyColor);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
-    ImGui::SmallButton(SmallButtonLabel<UsdPropertyT>());
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
+    DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         if (property.IsAuthoredAt(editTarget)) {
             DrawMenuClearAuthoredValues(property);
@@ -144,64 +147,143 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     }
 }
 
-void DrawPropertyMiniButton() {
-    ImVec4 propertyColor = ImVec4({0.0, 0.7, 0.0, 1.0});
-    ImGui::PushStyleColor(ImGuiCol_Text, propertyColor);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
-    ImGui::SmallButton("(x)");
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
+bool DrawVariantSetsCombos(UsdPrim &prim) {
+
+    if (!prim.HasVariantSets()) return false;
+    auto variantSets = prim.GetVariantSets();
+
+    if (ImGui::BeginTable("##DrawVariantSetsCombos", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+        ImGui::TableSetupColumn("VariantSet");
+        ImGui::TableSetupColumn("");
+
+        ImGui::TableHeadersRow();
+
+        for (auto variantSetName : variantSets.GetNames()) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+
+            // Variant set mini button --- TODO move code from this function
+            auto variantSet = variantSets.GetVariantSet(variantSetName);
+            ImVec4 variantColor =
+                variantSet.HasAuthoredVariantSelection() ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
+            DrawPropertyMiniButton("(v)", variantColor);
+            if (ImGui::BeginPopupContextItem(), ImGuiPopupFlags_MouseButtonLeft) {
+                if (ImGui::MenuItem("Remove edit")) {
+                    ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
+                }
+                ImGui::EndPopup();
+            }
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", variantSetName.c_str());
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
+            if (ImGui::BeginCombo(variantSetName.c_str(), variantSet.GetVariantSelection().c_str())) {
+                for (auto variant : variantSet.GetVariantNames()) {
+                    if (ImGui::Selectable(variant.c_str(), false)) {
+                        ExecuteAfterDraw(&UsdVariantSet::SetVariantSelection, variantSet, variant);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::EndTable();
+    }
+    return true;
 }
 
+bool DrawAssetInfo(UsdPrim &prim) {
+    auto assetInfo = prim.GetAssetInfo();
+    if (assetInfo.empty())
+        return false;
 
-void DrawVariantSetsCombos(const UsdPrim &prim) {
-    auto variantSets = prim.GetVariantSets();
-    for (auto variantSetName : variantSets.GetNames()) {
+    if (ImGui::BeginTable("##DrawAssetInfo", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+        ImGui::TableSetupColumn("Asset info");
+        ImGui::TableSetupColumn("");
 
-        // Variant set mini button --- todo extract from this function
-        auto variantSet = variantSets.GetVariantSet(variantSetName);
-        ImVec4 variantColor =
-            variantSet.HasAuthoredVariantSelection() ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
-        ImGui::PushStyleColor(ImGuiCol_Text, variantColor);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
-        ImGui::SmallButton("(v)");
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        if (ImGui::BeginPopupContextItem()) {
-            if (ImGui::MenuItem("Remove edit")) {
-                ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
+        ImGui::TableHeadersRow();
+
+        TF_FOR_ALL(keyValue, assetInfo) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            DrawPropertyMiniButton("(x)");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", keyValue->first.c_str());
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
+            VtValue modified = DrawVtValue(keyValue->first, keyValue->second);
+            if (!modified.IsEmpty()) {
+                ExecuteAfterDraw(&UsdPrim::SetAssetInfoByKey, prim, TfToken(keyValue->first), modified);
             }
-            ImGui::EndPopup();
         }
+        ImGui::EndTable();
+    }
+    return true;
+}
 
-        ImGui::SameLine();
+// WIP
+bool IsMetadataShown(int options) { return true; }
+bool IsTransformShown(int options) { return false; }
 
-        if (ImGui::BeginCombo(variantSetName.c_str(), variantSet.GetVariantSelection().c_str())) {
-            for (auto variant : variantSet.GetVariantNames()) {
-                if (ImGui::Selectable(variant.c_str(), false)) {
-                    ExecuteAfterDraw(&UsdVariantSet::SetVariantSelection, variantSet, variant);
-                }
+
+void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
+
+     if (ImGui::BeginMenuBar()) {
+        if (prim && ImGui::BeginMenu("+")) {
+
+            // TODO: list all the attribute missing or incomplete
+            if (ImGui::MenuItem("Attribute", nullptr)) {
             }
-            ImGui::EndCombo();
+            if (ImGui::MenuItem("Reference", nullptr)) {
+            }
+            if (ImGui::MenuItem("Relation", nullptr)) {
+            }
+
+            ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Show")) {
+            if (ImGui::MenuItem("Metadata", nullptr, IsMetadataShown(options))) {
+            }
+            if (ImGui::MenuItem("Transform", nullptr, IsTransformShown(options))) {
+            }
+            if (ImGui::MenuItem("Attributes", nullptr, false)) {
+            }
+            if (ImGui::MenuItem("Relations", nullptr, false)) {
+            }
+            if (ImGui::MenuItem("Composition", nullptr, false)) {
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
     }
 }
 
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
+
+    DrawPropertyEditorMenuBar(prim, 0);
+
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
         ImGui::Text("Edit target: %s", editTarget.GetLayer()->GetDisplayName().c_str());
         ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
 
         ImGui::Separator();
-        // Draw variant sets
-        if (prim.HasVariantSets()) {
-            ImGui::Text("VariantSets selection");
-            DrawVariantSetsCombos(prim);
+        if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
 
-        DrawXformsCommon(prim, currentTime);
+        // Draw variant sets
+        if (DrawVariantSetsCombos(prim)) {
+            ImGui::Separator();
+        }
+
+        // Transforms
+        if (DrawXformsCommon(prim, currentTime)) {
+            ImGui::Separator();
+        }
 
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -251,6 +333,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     }
 }
 
+
+
 // Draw a xform common api in a table
 // I am not sure this is really useful
 bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
@@ -259,11 +343,11 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (xformAPI) {
         GfVec3d translation;
-        GfVec3f scalev;
+        GfVec3f scale;
         GfVec3f pivot;
         GfVec3f rotation;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        xformAPI.GetXformVectors(&translation, &rotation, &scalev, &pivot, &rotOrder, currentTime);
+        xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
         GfVec3f translationf(translation[0], translation[1], translation[2]);
         if (ImGui::BeginTable("##DrawXformsCommon", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -274,7 +358,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             // Translate
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton();
+            DrawPropertyMiniButton("(x)");
 
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("translation");
@@ -291,7 +375,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             // Rotation
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton();
+            DrawPropertyMiniButton("(x)");
 
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("rotation");
@@ -305,21 +389,21 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             // Scale
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton();
+            DrawPropertyMiniButton("(x)");
 
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("scale");
 
             ImGui::TableSetColumnIndex(2);
             ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::InputFloat3("Scale", scalev.data(), DecimalPrecision);
+            ImGui::InputFloat3("Scale", scale.data(), DecimalPrecision);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
-                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scalev, currentTime);
+                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scale, currentTime);
             }
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton();
+            DrawPropertyMiniButton("(x)");
 
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("pivot");
