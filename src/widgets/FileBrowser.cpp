@@ -63,6 +63,7 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
     len = directoryPath.find(fs::path::preferred_separator, pos);
+
     while (len != std::string::npos) {
         if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
             if (len) {
@@ -81,6 +82,7 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
     if (ImGui::Button(directoryPath.substr(pos, len-pos).c_str())) {
         CopyToPathBuffer(directoryPath.substr(0, len), lineEditBuffer);
     }
+
 }
 
 static bool ShouldBeDisplayed(const fs::directory_entry &p) {
@@ -105,7 +107,7 @@ static bool ShouldBeDisplayed(const fs::directory_entry &p) {
 }
 
 // Compare function for sorting directories before files
-static bool directoryThenFiles(const fs::directory_entry &a, const fs::directory_entry &b) {
+static bool directoryThenFile(const fs::directory_entry &a, const fs::directory_entry &b) {
     if (fs::is_directory(a) == fs::is_directory(b)) {
         return a < b;
     } else {
@@ -156,7 +158,7 @@ void DrawFileBrowser() {
                 directoryContent.push_back(p);
             };
         }
-        std::sort(directoryContent.begin(), directoryContent.end(), directoryThenFiles);
+        std::sort(directoryContent.begin(), directoryContent.end(), directoryThenFile);
     });
 
     ImGui::PushItemWidth(-1); // List takes the full size
