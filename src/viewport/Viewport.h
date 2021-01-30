@@ -41,45 +41,35 @@ class Viewport final {
     /// Draw the full widget
     void Draw();
 
+    /// Returns the time code of this viewport
     UsdTimeCode GetCurrentTimeCode() const { return _renderparams ? _renderparams->frame : UsdTimeCode::Default(); }
-    void SetCurrentTimeCode(const UsdTimeCode &tc) { if (_renderparams) _renderparams->frame = tc; }
+    void SetCurrentTimeCode(const UsdTimeCode &tc) {
+        if (_renderparams)
+            _renderparams->frame = tc;
+    }
 
     /// Camera framing
     void FrameSelection(const Selection &);
     void FrameRootPrim();
 
-    // Renderer
-    UsdImagingGLEngine *_renderer = nullptr;
-    UsdImagingGLRenderParams *_renderparams = nullptr;
-    GlfDrawTargetRefPtr _drawTarget;
-    bool TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex);
-    GfVec2d GetPickingBoundarySize() const;
-
-    double ComputeScaleFactor(const GfVec3d &objectPosition, double multiplier = 1.0) const;
-
-    // GL Lights
-    GlfSimpleLightVector _lights;
-    GlfSimpleMaterial _material;
-    GfVec4f _ambient;
-
     // Camera --- TODO: should the additional cameras live on the stage session ??
-    GfCamera _currentCamera;
     GfCamera &GetCurrentCamera() { return _currentCamera; }
     const GfCamera &GetCurrentCamera() const { return _currentCamera; }
     // std::vector<std::pair<std::string, GfCamera>> _cameras;
 
-    CameraManipulator _cameraManipulator;
     CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
 
-    PositionManipulator _positionManipulator;
-    RotationManipulator _rotationManipulator;
-    MouseHoverManipulator _mouseHover;
+    // Picking
+    bool TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex);
+    GfVec2d GetPickingBoundarySize() const;
+
+    // Utility function for compute a scale for the manipulators. It uses the distance between the camera
+    // and objectPosition. TODO: remove multiplier, not useful anymore
+    double ComputeScaleFactor(const GfVec3d &objectPosition, double multiplier = 1.0) const;
 
     /// All the manipulators are currently stored in this class, this might change, but right now
     /// GetManipulator is the function that will return the official manipulator based on its type ManipulatorT
     template <typename ManipulatorT> inline Manipulator *GetManipulator();
-
-    Manipulator *_activeManipulator;
     Manipulator &GetActiveManipulator() { return *_activeManipulator; }
 
     // The chosen manipulator is the one selected in the toolbar, Translate/Rotate/Scale/Select ...
@@ -89,17 +79,17 @@ class Viewport final {
         return _activeManipulator == GetManipulator<ManipulatorT>();
     };
 
+    /// Draw manipulator toolbox, to select translate, rotate, scale
+    void DrawManipulatorToolbox(const struct ImVec2 &origin);
+
     /// Should be store the selected camera as
     SdfPath _selectedCameraPath; // => activeCameraPath
 
     // Position of the mouse in the viewport in normalized unit
-    // This is computed in HandleEvents 
-    GfVec2d _mousePosition;
+    // This is computed in HandleEvents
+
     GfVec2d GetMousePosition() const { return _mousePosition; }
 
-    std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
-
-    UsdStageRefPtr _stage;
     UsdStageRefPtr GetCurrentStage() { return _stage; }
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
@@ -110,19 +100,41 @@ class Viewport final {
     /// Handle events is implemented as a finite state machine.
     /// The state are simply the current manipulator used.
     void HandleManipulationEvents();
-
-    void DrawManipulatorToolbox(const struct ImVec2 &origin);
     void HandleKeyboardShortcut();
 
   private:
-    Manipulator *_currentEditingState;
+    // GL Lights
+    GlfSimpleLightVector _lights;
+    GlfSimpleMaterial _material;
+    GfVec4f _ambient;
+
+    // Manipulators
+    Manipulator *_currentEditingState; // Manipulator currently used by the FSM
+    Manipulator *_activeManipulator;   // Manipulator chosen by the user
+    CameraManipulator _cameraManipulator;
+    PositionManipulator _positionManipulator;
+    RotationManipulator _rotationManipulator;
+    MouseHoverManipulator _mouseHover;
     ScaleManipulator _scaleManipulator;
     SelectionManipulator _selectionManipulator; // TODO: rename to SelectionManipulator
+
+
     Selection &_selection;
-    GLuint _textureId = 0;
-    Grid _grid;
     SelectionHash _lastSelectionHash = 0;
+
+    GfCamera _currentCamera;
     GfVec2i _viewportSize;
+    GfVec2d _mousePosition;
+    Grid _grid;
+
+    UsdStageRefPtr _stage;
+
+    // Renderer
+    GLuint _textureId = 0;
+    std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
+    UsdImagingGLEngine *_renderer = nullptr;
+    UsdImagingGLRenderParams *_renderparams = nullptr;
+    GlfDrawTargetRefPtr _drawTarget;
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }
