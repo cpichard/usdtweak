@@ -162,7 +162,6 @@ void DrawFileBrowser() {
     ImGui::PushItemWidth(-1); // List takes the full size
 
     DrawNavigationBar(displayedDirectory, lineEditBuffer);
-    ImGui::Text(" ");
 
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;
     // Get window size
@@ -170,9 +169,9 @@ void DrawFileBrowser() {
     ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: size of the window
     if (ImGui::ListBoxHeader("##FileList", sizeArg)) {
         if (ImGui::BeginTable("Files", 3, tableFlags)) {
-            ImGui::TableSetupColumn(" Type ", ImGuiTableColumnFlags_WidthFixed);
-            ImGui::TableSetupColumn(" Filename ", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn(" Size ", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+            ImGui::TableSetupColumn("Filename", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
             int i = 0;
             ImGui::PushID("direntries");
@@ -188,15 +187,17 @@ void DrawFileBrowser() {
                 }
                 ImGui::PopID();
                 ImGui::SameLine();
-                ImGui::Text("%s ", isDirectory ? "D" : "F");
-                ImGui::TableSetColumnIndex(1);
                 if (isDirectory) {
+                    ImGui::TextColored(ImVec4(1.0, 1.0, 0.0, 1.0), "%s ", ICON_FA_FOLDER);
+                    ImGui::TableSetColumnIndex(1);
                     ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
                 } else {
+                    ImGui::TextColored(ImVec4(0.9, 0.9, 0.9, 1.0), "%s ", ICON_FA_FILE);
+                    ImGui::TableSetColumnIndex(1);
                     ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().c_str());
                 }
                 ImGui::TableSetColumnIndex(2);
-                if (!isDirectory) ImGui::Text("%ju KB", dirEntry.file_size()/1024);
+                ImGui::Text("%ju KB", dirEntry.file_size() / 1024);
             }
             ImGui::PopID(); // direntries
             ImGui::EndTable();
