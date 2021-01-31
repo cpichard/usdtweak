@@ -10,6 +10,21 @@
 #include "Commands.h"
 #include "Constants.h"
 
+//
+// TODO: this is a first version, it doesn't really show differences between specialize/inherit/payload
+// The code put every composition in the same box and try to make a generic ui from it, but it's
+// wrong and not user friendly.
+// -> REFACTOR
+// Also looking at the usd code base there are 4 list editor types:
+// 
+//SdfPathEditorProxy -> inherit, specialize
+//SdfPayloadEditorProxy ; 
+//SdfReferenceEditorProxy ;
+//SdfNameEditorProxy
+//
+// Using those types should help with the code mess below
+//
+// Also look at the UsdReferences api
 
 
 static const char *ArcAppendChar = "Append";
@@ -89,10 +104,12 @@ void ApplyOperationOnCompositionList(SdfPrimSpecHandle &primSpec, CompositionOpe
     }
 }
 
-// TODO:
-// There is a UsdReferences api that should probably be easier than the following code
 
-// TODO: add all the composition arcs
+// NOTE: this should really be
+// AddComposition<SdfPathEditorProxy> : ModalDialog
+// AddComposition<SdfReferenceEditorProxy> : ModalDialog
+// etc.
+// as the UI should be specialized with the type manipulated
 struct AddReference : public ModalDialog {
 
     AddReference(SdfPrimSpecHandle &primSpec) : primSpec(primSpec){};
