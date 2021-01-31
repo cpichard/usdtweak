@@ -342,7 +342,7 @@ bool PrimHasComposition(const SdfPrimSpecHandle &primSpec, bool checkVariants) {
 
 void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec, bool showVariant) {
 
-    if (ImGui::BeginTable("##DrawVariantSetsCombos", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+    if (ImGui::BeginTable("##DrawVariantSetsCombos", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
         ImGui::TableSetupColumn("Compositions");
         ImGui::TableSetupColumn("Identifier");
