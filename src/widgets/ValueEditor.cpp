@@ -23,7 +23,11 @@ VtValue DrawTfToken(const std::string &label, const TfToken &token, const VtValu
             ImGui::EndCombo();
         }
     } else {
-        ImGui::Text("'%s': %s", label.c_str(), token.GetString().c_str());
+        std::string tokenAsString = token.GetString();
+        ImGui::InputText(label.c_str(), &tokenAsString);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            newToken = TfToken(tokenAsString);
+        }
     }
     return newToken;
 }
