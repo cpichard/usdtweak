@@ -16,6 +16,7 @@
 #include "Grid.h"
 
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
 #include <pxr/usdImaging/usdImagingGL/renderParams.h>
 #include <pxr/imaging/glf/simpleLight.h>
@@ -43,19 +44,22 @@ class Viewport final {
 
     /// Returns the time code of this viewport
     UsdTimeCode GetCurrentTimeCode() const { return _renderparams ? _renderparams->frame : UsdTimeCode::Default(); }
-    void SetCurrentTimeCode(const UsdTimeCode &tc) {
-        if (_renderparams)
-            _renderparams->frame = tc;
-    }
+    void SetCurrentTimeCode(const UsdTimeCode &tc);
 
     /// Camera framing
     void FrameSelection(const Selection &);
     void FrameRootPrim();
 
-    // Camera --- TODO: should the additional cameras live on the stage session ??
-    GfCamera &GetCurrentCamera() { return _currentCamera; }
-    const GfCamera &GetCurrentCamera() const { return _currentCamera; }
-    // std::vector<std::pair<std::string, GfCamera>> _cameras;
+    // Cameras
+    /// Return the camera used to render the viewport
+    GfCamera &GetCurrentCamera();
+    const GfCamera &GetCurrentCamera() const;
+
+    // Set the camera path
+    void SetCameraPath(const SdfPath &cameraPath);
+    const SdfPath &GetCameraPath() { return _selectedCameraPath; }
+    // Returns a UsdGeom camera if the selected camera is in the stage
+    UsdGeomCamera GetUsdGeomCamera();
 
     CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
 
@@ -82,8 +86,7 @@ class Viewport final {
     /// Draw manipulator toolbox, to select translate, rotate, scale
     void DrawManipulatorToolbox(const struct ImVec2 &origin);
 
-    /// Should be store the selected camera as
-    SdfPath _selectedCameraPath; // => activeCameraPath
+
 
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents
@@ -91,6 +94,8 @@ class Viewport final {
     GfVec2d GetMousePosition() const { return _mousePosition; }
 
     UsdStageRefPtr GetCurrentStage() { return _stage; }
+    const UsdStageRefPtr GetCurrentStage() const { return _stage; };
+
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
     Selection &GetSelection() { return _selection; }
@@ -116,13 +121,19 @@ class Viewport final {
     RotationManipulator _rotationManipulator;
     MouseHoverManipulator _mouseHover;
     ScaleManipulator _scaleManipulator;
-    SelectionManipulator _selectionManipulator; // TODO: rename to SelectionManipulator
-
+    SelectionManipulator _selectionManipulator;
 
     Selection &_selection;
     SelectionHash _lastSelectionHash = 0;
 
-    GfCamera _currentCamera;
+    /// Cameras
+    SdfPath _selectedCameraPath;
+    GfCamera *_renderCamera; // Points to a valid camera, stage or perspective
+    GfCamera _stageCamera;
+    // TODO: if we want to have multiple viewport, the persp camera shouldn't belong to the viewport but
+    // another shared object, CameraList or similar
+    GfCamera _perspectiveCamera; // opengl
+
     GfVec2i _viewportSize;
     GfVec2d _mousePosition;
     Grid _grid;
