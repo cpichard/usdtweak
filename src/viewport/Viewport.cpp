@@ -399,8 +399,7 @@ void Viewport::SetCameraPath(const SdfPath &cameraPath) {
             _stageCamera = selectedCameraPrim.GetCamera(_renderparams->frame);
         }
     }
-    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]), 60,
-                                                                   GfCamera::FOVHorizontal);
+
 }
 
 
@@ -486,10 +485,10 @@ void Viewport::Update() {
         _drawTarget->Bind();
         _drawTarget->SetSize(_viewportSize);
         _drawTarget->Unbind();
-        GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]), 60,
-                                                                   GfCamera::FOVHorizontal);
     }
-
+    // This is useful when a different camera is selected, when the focal length is changed
+    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]), _renderCamera->GetFieldOfView( GfCamera::FOVHorizontal),
+                                                        GfCamera::FOVHorizontal);
     /// Note that the following will have terrible performances when selecting thousands of paths
     /// this is a way to check if the selection has changed since the previous frame, not the most efficient way.
     SelectionHash currentSelectionHash = GetSelectionHash(_selection);
