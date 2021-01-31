@@ -144,7 +144,6 @@ struct AddReference : public ModalDialog {
                 ExecuteAfterDraw<PrimCreateCompositionArc>(primSpec, operation, composition, referenceFilePath, SdfPath(targetPrimPath));
             });
         }
-        ImGui::EndPopup();
     }
 
     const char *DialogId() const override { return "Add reference"; }
