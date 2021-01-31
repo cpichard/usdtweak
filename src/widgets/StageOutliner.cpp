@@ -6,6 +6,11 @@
 #include "StageOutliner.h"
 #include "Commands.h"
 #include "ValueEditor.h"
+#include "Constants.h"
+
+///
+/// Note: ImGuiListClipper can be useful if the hierarchy is huge
+///
 
 static void DrawUsdPrimEdit(const UsdPrim &prim) {
     if (ImGui::MenuItem("Toggle active")) {
@@ -28,7 +33,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
     if (!prim.IsActive()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(PrimInactiveColor));
     }
 
     auto unfolded = ImGui::TreeNodeEx(prim.GetName().GetText(), flags);
@@ -42,8 +47,17 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
 
     ImGui::NextColumn();
 
-    // TODO: IsHidden() is not what we want, it should be the visibility
-    ImGui::Text("%s %s", prim.IsHidden() ? "\xef\x81\xb0" : "\xef\x81\xae", prim.GetTypeName().GetText());
+    // Get visibility parameter.
+    // Is it really useful ???
+    UsdGeomImageable imageable(prim);
+    char *icon = "";
+    if (imageable) {
+        VtValue visible;
+        imageable.GetVisibilityAttr().Get(&visible);
+        icon = visible == TfToken("invisible") ? ICON_FA_EYE_SLASH : ICON_FA_EYE;
+    }
+
+    ImGui::Text("%s %s", icon, prim.GetTypeName().GetText());
 
     if (!prim.IsActive()) {
         ImGui::PopStyleColor();

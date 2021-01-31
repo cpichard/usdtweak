@@ -223,7 +223,7 @@ void DrawReferencePopupContextItem(const SdfPrimSpecHandle &primSpec, const SdfP
         if (ImGui::MenuItem("Open as Stage")) {
             ExecuteAfterDraw<EditorOpenStage>(std::string(pathFromRef));
         }
-        if (ImGui::MenuItem("Edit")) {
+        if (ImGui::MenuItem("Inspect")) {
             ExecuteAfterDraw<EditorOpenLayer>(std::string(pathFromRef));
         }
         if (ImGui::MenuItem("Copy path")) {
@@ -245,7 +245,7 @@ void DrawCompositionArcItems(const SdfPrimSpecHandle &primSpec, const char *oper
         //auto variantSelection = path.GetVariantSelection();
         //ImGui::Text("%s %s", variantSelection.first.c_str(), variantSelection.second.c_str());
         //ImGui::SameLine();
-        ImGui::Text(ICON_FA_ARROW_RIGHT " %s %s" , operation, compositionType);
+        ImGui::Text(ICON_FA_EXTERNAL_LINK_ALT " %s %s" , operation, compositionType);
         ImGui::SameLine();
         ImGui::Text("%s %s", GetDisplayNameFrom(ref).c_str(), GetTargetNameFrom(ref));
         DrawReferencePopupContextItem(primSpec, path, listFunc, itemsFunc, index, GetPathFrom(ref));

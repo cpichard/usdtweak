@@ -69,7 +69,8 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
             SdfPathVector sources;
             attribute.GetConnections(&sources);
             for (auto &connection : sources) {
-                ImGui::TextColored(ImVec4(AttributeConnectionColor), "%s", connection.GetString().c_str());
+                // TODO: edit connection
+                ImGui::TextColored(ImVec4(AttributeConnectionColor), ICON_FA_LINK " %s", connection.GetString().c_str());
             }
         } else {
             ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
@@ -102,21 +103,21 @@ template <> const char *SmallButtonLabel<UsdRelationship>() { return "(r)"; };
 
 template <typename UsdPropertyT> void DrawMenuClearAuthoredValues(UsdPropertyT &property){};
 template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
-    if (ImGui::MenuItem("Clear Authored values")) {
+    if (ImGui::MenuItem(ICON_FA_EJECT " Clear")) {
         ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
     }
 }
 
 template <typename UsdPropertyT> void DrawMenuRemoveProperty(UsdPropertyT &property){};
 template <> void DrawMenuRemoveProperty(UsdAttribute &attribute) {
-    if (ImGui::MenuItem("Remove edit")) {
+    if (ImGui::MenuItem(ICON_FA_TRASH" Remove property")) {
         ExecuteAfterDraw(&UsdPrim::RemoveProperty, attribute.GetPrim(), attribute.GetName());
     }
 }
 
 template <typename UsdPropertyT> void DrawMenuSetKey(UsdPropertyT &property, UsdTimeCode currentTime){};
 template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime) {
-    if (ImGui::MenuItem("Set key")) {
+    if (attribute.GetVariability() == SdfVariabilityVarying && attribute.HasValue() && ImGui::MenuItem(ICON_FA_KEY " Set key")) {
         VtValue value;
         attribute.Get(&value, currentTime);
         ExecuteAfterDraw<AttributeSet>(attribute, value, currentTime);
@@ -124,9 +125,9 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
 }
 
 // TODO Share the code,
-static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4({0.0, 0.7, 0.0, 1.0})) {
+static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(MiniButtonUnauthoredColor)) {
     ImGui::PushStyleColor(ImGuiCol_Text, btnColor);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(TransparentColor));
     ImGui::SmallButton(btnStr);
     ImGui::PopStyleColor();
     ImGui::PopStyleColor();
@@ -135,14 +136,17 @@ static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = 
 // Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
-    ImVec4 propertyColor = property.IsAuthoredAt(editTarget) ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
+    ImVec4 propertyColor = property.IsAuthoredAt(editTarget) ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
     DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        DrawMenuSetKey(property, currentTime);
         if (property.IsAuthoredAt(editTarget)) {
             DrawMenuClearAuthoredValues(property);
             DrawMenuRemoveProperty(property);
         }
-        DrawMenuSetKey(property, currentTime);
+        if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
+            ImGui::SetClipboardText(property.GetPath().GetString().c_str());
+        }
         ImGui::EndPopup();
     }
 }
@@ -166,10 +170,10 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
             // Variant set mini button --- TODO move code from this function
             auto variantSet = variantSets.GetVariantSet(variantSetName);
             ImVec4 variantColor =
-                variantSet.HasAuthoredVariantSelection() ? ImVec4({0.0, 1.0, 0.0, 1.0}) : ImVec4({0.0, 0.7, 0.0, 1.0});
+                variantSet.HasAuthoredVariantSelection() ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
             DrawPropertyMiniButton("(v)", variantColor);
             if (ImGui::BeginPopupContextItem(), ImGuiPopupFlags_MouseButtonLeft) {
-                if (ImGui::MenuItem("Remove edit")) {
+                if (ImGui::MenuItem("Clear variant selection")) {
                     ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
                 }
                 ImGui::EndPopup();
@@ -267,7 +271,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
-        ImGui::Text("Edit target: %s", editTarget.GetLayer()->GetDisplayName().c_str());
+        ImGui::Text(ICON_FA_PEN " %s", editTarget.GetLayer()->GetDisplayName().c_str());
         ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
 
         ImGui::Separator();

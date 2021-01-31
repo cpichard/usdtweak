@@ -215,14 +215,13 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 
         TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-            // TODO: nodeFlags depends on the timeSamples
 
             ImGui::TableNextRow();
 
             // MiniButton
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(deleteButtonCounter++);
-            if(ImGui::Button("D")) { // This will be replaced by a "bin/trash" glyph
+            if(ImGui::Button(ICON_FA_TRASH)) {
                 ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec,
                                     primSpec->GetPropertyAtPath((*attribute)->GetPath()));
             }
@@ -230,30 +229,32 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 
             // Name of the parameter
             ImGui::TableSetColumnIndex(1);
+            SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
+            if (timeSamples.empty())
+                nodeFlags |= ImGuiTreeNodeFlags_Leaf;
             if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
                 // Samples
-                SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
-                if (!timeSamples.empty()) {
-                    TF_FOR_ALL(sample, timeSamples) {
-                        ImGui::TableNextRow();
-                        // Mini button
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::PushID(deleteButtonCounter++);
-                        if(ImGui::Button("D")) {
-                            ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first);
-                        }
-                        ImGui::PopID();
-                        // Time: TODO edit time ?
-                        ImGui::TableSetColumnIndex(2);
-                        std::string sampleValueLabel = std::to_string(sample->first);
-                        ImGui::Text("%s", sampleValueLabel.c_str());
-                        // Value
-                        ImGui::TableSetColumnIndex(3);
-                        ImGui::PushItemWidth(-FLT_MIN);
-                        VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
-                        if (modified!=VtValue()) {
-                            ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(), sample->first, modified);
-                        }
+                TF_FOR_ALL(sample, timeSamples) {
+                    ImGui::TableNextRow();
+                    // Mini button
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::PushID(deleteButtonCounter++);
+                    if (ImGui::Button(ICON_FA_TRASH)) {
+                        ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(),
+                                         sample->first);
+                    }
+                    ImGui::PopID();
+                    // Time: TODO edit time ?
+                    ImGui::TableSetColumnIndex(2);
+                    std::string sampleValueLabel = std::to_string(sample->first);
+                    ImGui::Text("%s", sampleValueLabel.c_str());
+                    // Value
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::PushItemWidth(-FLT_MIN);
+                    VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
+                    if (modified != VtValue()) {
+                        ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(),
+                                         sample->first, modified);
                     }
                 }
                 ImGui::TreePop();
