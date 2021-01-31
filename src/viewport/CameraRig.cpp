@@ -92,7 +92,7 @@ bool CameraRig::Move(GfCamera &camera, double deltaX, double deltaY) {
     DistT dist;
     RotationT rotation;
     GfVec3d center;
-
+    if (deltaX == 0 && deltaY == 0) return false;
     FromCameraTransform(camera, _zUpMatrix, center, rotation, dist);
 
     if (_movementType == MovementType::Orbit) { // TUMBLE
