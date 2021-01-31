@@ -9,7 +9,7 @@ enum class CompositionList { Reference = 0, Payload, Inherit, Specialize };
 enum class CompositionOperation { Add = 0, Prepend, Append, Remove, Erase }; //
 
 void ApplyOperationOnCompositionList(SdfPrimSpecHandle &primSpec, CompositionOperation operation, CompositionList compositionList,
-                                     const std::string &identifier, SdfPath &targetPrim);
+                                     const std::string &identifier, const SdfPath &targetPrim);
 
 void DrawPrimCompositionArcs(SdfPrimSpecHandle &primSpec, bool showVariant=false);
 

@@ -40,7 +40,7 @@ const char *GetCompositionListName(IndexT index) {
 }
 
 template <typename CompositionT, typename ArgDefault, typename... ArgTypes>
-void ApplyOperation(CompositionT &arcList, CompositionOperation operation, ArgDefault arg, ArgTypes... others) {
+void ApplyOperation(CompositionT arcList, CompositionOperation operation, ArgDefault arg, ArgTypes... others) {
     switch (operation) {
     case CompositionOperation::Add:
         arcList.Add({arg, others...});
@@ -81,7 +81,7 @@ void ApplyOperationOnCompositionListTpl(SdfPrimSpecHandle &primSpec, Composition
     }
 }
 void ApplyOperationOnCompositionList(SdfPrimSpecHandle &primSpec, CompositionOperation operation, CompositionList compositionList,
-                                     const std::string &identifier, SdfPath &targetPrim) {
+                                     const std::string &identifier, const SdfPath &targetPrim) {
     if (targetPrim.IsEmpty()) {
         ApplyOperationOnCompositionListTpl(primSpec, operation, compositionList, identifier);
     } else {
