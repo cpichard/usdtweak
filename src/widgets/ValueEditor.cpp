@@ -3,6 +3,7 @@
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec3d.h"
 #include "pxr/base/vt/array.h"
+#include "pxr/usd/sdf/assetPath.h"
 
 #include "Gui.h"
 
@@ -91,8 +92,15 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(stringValue);
         }
-        // TODO: Array values should be handled outside DrawVtValue
-    } else if (value.IsArrayValued() && value.GetArraySize() == 1 && value.IsHolding<VtArray<float>>()) {
+    } else if (value.IsHolding<SdfAssetPath>()) {
+        SdfAssetPath sdfAssetPath = value.Get<SdfAssetPath>();
+        std::string assetPath = sdfAssetPath.GetAssetPath();
+        ImGui::InputText(label.c_str(), &assetPath);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(assetPath);
+        }
+    } // TODO: Array values should be handled outside DrawVtValue
+    else if (value.IsArrayValued() && value.GetArraySize() == 1 && value.IsHolding<VtArray<float>>()) {
         VtArray<float> fltArray = value.Get<VtArray<float>>();
         float fltValue = fltArray[0];
         ImGui::InputFloat(label.c_str(), &fltValue);
@@ -127,7 +135,7 @@ VtValue DrawColorValue(const std::string &label, const VtValue &value) {
     } else {
         std::stringstream ss;
         ss << value;
-        ImGui::Text("'%s': %s", label.c_str(), ss.str().c_str());
+        ImGui::Text("%s", ss.str().c_str());
     }
     return VtValue();
 }
