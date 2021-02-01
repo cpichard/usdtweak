@@ -32,6 +32,7 @@ struct UndoCommand;
 struct RedoCommand;
 
 struct AttributeSet;
+struct AttributeCreateDefaultValue;
 
 struct UsdFunctionCall;
 

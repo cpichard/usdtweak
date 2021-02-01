@@ -32,3 +32,39 @@ struct AttributeSet : public SdfLayerCommand {
     UsdTimeCode _timeCode;
 };
 template void ExecuteAfterDraw<AttributeSet>(UsdAttribute attribute, VtValue value, UsdTimeCode currentTime);
+
+
+struct AttributeCreateDefaultValue : public SdfLayerCommand {
+
+    AttributeCreateDefaultValue(UsdAttribute attribute)
+        : _stage(attribute.GetStage()), _path(attribute.GetPath()) {}
+
+    ~AttributeCreateDefaultValue() override {}
+
+    bool DoIt() override {
+        if (_stage) {
+            auto layer = _stage->GetEditTarget().GetLayer();
+            if (layer) {
+                SdfUndoRecorder recorder(_undoCommands, layer);
+                const UsdAttribute &attribute = _stage->GetAttributeAtPath(_path);
+                if (attribute) {
+                    VtValue value = attribute.GetTypeName().GetDefaultValue();
+                    if (value.IsHolding<VtArray<GfVec3f>>() && attribute.GetRoleName() == TfToken("Color"))
+                        value = VtArray<GfVec3f>{ {0.0,0.0,0.0} };
+                    if (value!=VtValue()) {
+                        // This will override the default value if there is one already
+                        attribute.Set(value, UsdTimeCode::Default());
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    UsdStageWeakPtr _stage;
+    SdfPath _path;
+};
+template void ExecuteAfterDraw<AttributeCreateDefaultValue>(UsdAttribute attribute);
+
+
