@@ -54,7 +54,7 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
 }
 
 void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
-    std::string attributeLabel =  GetDisplayName(attribute);
+    std::string attributeLabel = GetDisplayName(attribute);
     VtValue value;
     if (attribute.Get(&value, currentTime)) {
         VtValue modified = DrawAttributeValue(attributeLabel, attribute, value);
@@ -64,6 +64,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
         }
     } else {
         // No values, what do we display ??
+        // TODO: we should always display the connections
         ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
         if (attribute.HasAuthoredConnections()) {
             SdfPathVector sources;
@@ -91,8 +92,18 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
     //    ImGui::TextColored(ImVec4(AttributeRelationshipColor), "%s", path.GetString().c_str());
     //}
     relationship.GetTargets(&targets);
-    for (const auto &path : targets) {
-        ImGui::TextColored(ImVec4(AttributeRelationshipColor), "%s", path.GetString().c_str());
+    if (!targets.empty()) {
+        if (ImGui::ListBoxHeader("##Relationship", ImVec2(-FLT_MIN, targets.size() * 25))) {
+            for (const auto& path : targets) {
+                if (ImGui::Button(ICON_FA_TRASH)) {
+                    ExecuteAfterDraw(&UsdRelationship::RemoveTarget, relationship, path);
+                } // Trash
+                ImGui::SameLine();
+                std::string buffer = path.GetString();
+                ImGui::InputText("##EditRelation", &buffer);
+            }
+            ImGui::ListBoxFooter();
+        }
     }
 }
 
@@ -103,14 +114,16 @@ template <> const char *SmallButtonLabel<UsdRelationship>() { return "(r)"; };
 
 template <typename UsdPropertyT> void DrawMenuClearAuthoredValues(UsdPropertyT &property){};
 template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
-    if (ImGui::MenuItem(ICON_FA_EJECT " Clear")) {
-        ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
+    if (attribute.IsAuthored()) {
+        if (ImGui::MenuItem(ICON_FA_EJECT " Clear")) {
+            ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
+        }
     }
 }
 
 template <typename UsdPropertyT> void DrawMenuRemoveProperty(UsdPropertyT &property){};
 template <> void DrawMenuRemoveProperty(UsdAttribute &attribute) {
-    if (ImGui::MenuItem(ICON_FA_TRASH" Remove property")) {
+    if (ImGui::MenuItem(ICON_FA_TRASH " Remove property")) {
         ExecuteAfterDraw(&UsdPrim::RemoveProperty, attribute.GetPrim(), attribute.GetName());
     }
 }
@@ -133,6 +146,21 @@ static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = 
     ImGui::PopStyleColor();
 }
 
+// TODO: relationship
+template <typename UsdPropertyT>
+void DrawMenuCreateValue(UsdPropertyT& property) {};
+
+template<>
+void DrawMenuCreateValue(UsdAttribute& attribute) {
+    if (!attribute.HasValue()) {
+        if (ImGui::MenuItem(ICON_FA_DONATE " Create value")) {
+            ExecuteAfterDraw<AttributeCreateDefaultValue>(attribute);
+        }
+    }
+}
+
+
+
 // Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
@@ -140,10 +168,9 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
     DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         DrawMenuSetKey(property, currentTime);
-        if (property.IsAuthoredAt(editTarget)) {
-            DrawMenuClearAuthoredValues(property);
-            DrawMenuRemoveProperty(property);
-        }
+        DrawMenuCreateValue(property);
+        DrawMenuClearAuthoredValues(property);
+        DrawMenuRemoveProperty(property);
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
         }
@@ -236,7 +263,7 @@ bool IsTransformShown(int options) { return false; }
 void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
      if (ImGui::BeginMenuBar()) {
-        if (prim && ImGui::BeginMenu("+")) {
+        if (prim && ImGui::BeginMenu(ICON_FA_PLUS)) {
 
             // TODO: list all the attribute missing or incomplete
             if (ImGui::MenuItem("Attribute", nullptr)) {
@@ -299,7 +326,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
             // Draw attributes
             for (auto &attribute : prim.GetAttributes()) {
-                ImGui::TableNextRow();
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(miniButtonId++);
                 DrawPropertyMiniButton(attribute, editTarget, currentTime);

@@ -90,6 +90,18 @@ void ExecuteAfterDraw(FuncT &&func, const UsdAttribute &attribute, ArgsT &&...ar
 }
 
 template <typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, const UsdRelationship &relationship, ArgsT &&...arguments) {
+    const auto &path = relationship.GetPath();
+    UsdStageWeakPtr stage = relationship.GetStage();
+    std::function<void()> usdApiFunc = [=]() {
+        auto relationship = stage->GetRelationshipAtPath(path);
+        std::function<void()> relationshipFunc = std::bind(func, &relationship, arguments...);
+        relationshipFunc();
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
+}
+
+template <typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...arguments) {
     const auto &prim = variantSet.GetPrim();
     const auto &variantName = variantSet.GetName();
