@@ -429,16 +429,14 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (GetCurrentLayer() && _showLayerEditor) {
+    if (_showLayerEditor) {
         auto rootLayer = GetCurrentLayer();
-        const std::string title("Layer Editor - "
-            + rootLayer->GetDisplayName()
-            + " "
-            + (rootLayer->IsDirty() ? "*" : "")
-            + "###Layer Editor");
+
+        const std::string title(
+            "Layer Editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
+            "###Layer Editor");
+
         ImGui::Begin(title.c_str(), &_showLayerEditor);
-
-
         DrawLayerEditor(rootLayer, _selectedPrimSpec);
         ImGui::End();
     }
