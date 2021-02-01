@@ -50,7 +50,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     // Get visibility parameter.
     // Is it really useful ???
     UsdGeomImageable imageable(prim);
-    char *icon = "";
+    const char *icon = "";
     if (imageable) {
         VtValue visible;
         imageable.GetVisibilityAttr().Get(&visible);
