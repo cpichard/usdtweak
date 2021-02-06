@@ -6,3 +6,5 @@ PXR_NAMESPACE_USING_DIRECTIVE
 ///
 void DrawRendererSettings(UsdImagingGLEngine &, UsdImagingGLRenderParams &);
 void DrawOpenGLSettings(UsdImagingGLEngine &, UsdImagingGLRenderParams &);
+TfToken DrawAovSettings(UsdImagingGLEngine &, TfToken selectedAOV);
+void DrawColorCorrection(UsdImagingGLEngine &, UsdImagingGLRenderParams &);

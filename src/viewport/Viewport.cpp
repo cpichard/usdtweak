@@ -185,6 +185,14 @@ void Viewport::Draw() {
     ImGui::Button("\xef\x93\xbe Renderer");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawRendererSettings(*_renderer, *_renderparams);
+        TfToken newSelectedAov = DrawAovSettings(*_renderer, _selectedAOV[GetCurrentStage()]);
+        if (newSelectedAov != TfToken()) {
+            _renderer->SetRendererAov(newSelectedAov);
+            _selectedAOV[GetCurrentStage()] = newSelectedAov;
+        }
+        if (_selectedAOV[GetCurrentStage()] == HdAovTokens->color) {
+            DrawColorCorrection(*_renderer, *_renderparams);
+        }
         ImGui::EndPopup();
     }
     ImGui::SameLine();
@@ -460,6 +468,9 @@ void Viewport::Update() {
             _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
             if (_renderers.empty()) {
                 FrameRootPrim();
+                // Assuming that there is always color aov
+                _selectedAOV[GetCurrentStage()] = TfToken("color");
+                _renderer->SetRendererAov(TfToken("color"));
             }
             _renderers[GetCurrentStage()] = _renderer;
             _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");

@@ -143,6 +143,7 @@ class Viewport final {
     // Renderer
     GLuint _textureId = 0;
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
+    std::map<UsdStageRefPtr, TfToken> _selectedAOV;
     UsdImagingGLEngine *_renderer = nullptr;
     UsdImagingGLRenderParams *_renderparams = nullptr;
     GlfDrawTargetRefPtr _drawTarget;

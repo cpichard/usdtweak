@@ -51,8 +51,7 @@ void DrawOpenGLSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
 }
 
-void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
-
+void DrawRendererSettings(UsdImagingGLEngine& renderer, UsdImagingGLRenderParams& renderparams) {
     // Renderer
     const auto currentPlugin = renderer.GetCurrentRendererId();
     if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
@@ -78,22 +77,7 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams
             renderer.SetRendererSetting(setting.key, newValue);
         }
     }
-    if (renderer.IsColorCorrectionCapable()) {
-        ImGui::Separator();
-        ImGui::Checkbox("Gamma correction", &renderparams.gammaCorrectColors);
-        if (ImGui::BeginCombo("Color correction mode", renderparams.colorCorrectionMode.GetText())) {
-            if (ImGui::Selectable("disabled")) {
-                renderparams.colorCorrectionMode = TfToken("disabled");
-            }
-            if (ImGui::Selectable("sRGB")) {
-                renderparams.colorCorrectionMode = TfToken("sRGB");
-            }
-            if (ImGui::Selectable("openColorIO")) {
-                renderparams.colorCorrectionMode = TfToken("openColorIO");
-            }
-            ImGui::EndCombo();
-        }
-    }
+
     if (renderer.IsPauseRendererSupported()) {
         ImGui::Separator();
         if (ImGui::Button("Pause")) {
@@ -113,4 +97,39 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams
             renderer.RestartRenderer();
         }
     }
+}
+
+void DrawColorCorrection(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
+
+    if (renderer.IsColorCorrectionCapable()) {
+        ImGui::Separator();
+        // Gamma correction is not implemented yet in usd
+        //ImGui::Checkbox("Gamma correction", &renderparams.gammaCorrectColors);
+        if (ImGui::BeginCombo("Color correction mode", renderparams.colorCorrectionMode.GetText())) {
+            if (ImGui::Selectable("disabled")) {
+                renderparams.colorCorrectionMode = TfToken("disabled");
+            }
+            if (ImGui::Selectable("sRGB")) {
+                renderparams.colorCorrectionMode = TfToken("sRGB");
+            }
+            if (ImGui::Selectable("openColorIO")) {
+                renderparams.colorCorrectionMode = TfToken("openColorIO");
+            }
+            ImGui::EndCombo();
+        }
+        // TODO: opencolorIO configuration
+    }
+}
+
+TfToken DrawAovSettings(UsdImagingGLEngine&renderer, TfToken selectedAOV) {
+    TfToken newSelection;
+    if (ImGui::BeginCombo("AOV", selectedAOV.GetString().c_str())) {
+        for (auto &aov : renderer.GetRendererAovs()) {
+            if (ImGui::Selectable(aov.GetString().c_str())) {
+                newSelection = aov;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return newSelection;
 }
