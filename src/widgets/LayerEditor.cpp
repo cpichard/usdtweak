@@ -103,6 +103,11 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
         DrawPrimAddReferenceModalDialog(primSpec);
     }
 
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy prim path")) {
+        ImGui::SetClipboardText(primSpec->GetPath().GetString().c_str());
+    }
+
 }
 ///// Draw a popup to quickly edit a prim
 //void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
