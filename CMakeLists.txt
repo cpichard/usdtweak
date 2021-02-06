@@ -15,6 +15,7 @@ add_executable(usdtweak
  src/Editor.cpp
  src/Editor.h
  src/Gui.h
+ src/ProxyHelpers.h
  src/Selection.cpp
  src/Selection.h
  src/commands/Commands.cpp
