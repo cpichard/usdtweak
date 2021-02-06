@@ -5,6 +5,8 @@
 
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/namespaceEdit.h>
@@ -57,8 +59,24 @@ struct PrimRemove : public SdfLayerCommand {
         auto layer = _primSpec->GetLayer();
         SdfUndoRecorder recorder(_undoCommands, layer);
         if (_primSpec->GetNameParent()) {
-            _primSpec->GetNameParent()->RemoveNameChild(_primSpec);
-            return true;
+            // Case where the prim is a variant
+            // I am not 100% sure this it the way to do it
+            if (_primSpec->GetPath().IsPrimVariantSelectionPath()) {
+                auto selection = _primSpec->GetPath().GetVariantSelection();
+                TF_FOR_ALL(variantSet, _primSpec->GetNameParent()->GetVariantSets()) {
+                    if (variantSet->first == selection.first) {
+                        SdfVariantSetSpecHandle variantSetSpec = variantSet->second;
+                        SdfVariantSpecHandle variantSpec = variantSetSpec->GetVariants().get(selection.second);
+                        if (variantSpec) {
+                            variantSetSpec->RemoveVariant(variantSpec);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            } else {
+                return _primSpec->GetNameParent()->RemoveNameChild(_primSpec);
+            }
         } else {
             layer->RemoveRootPrim(_primSpec);
             return true;

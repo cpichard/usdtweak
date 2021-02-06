@@ -57,6 +57,57 @@ struct AddSublayer : public ModalDialog {
     SdfLayerRefPtr layer;
 };
 
+struct AddVariantModalDialog : public ModalDialog {
+
+    AddVariantModalDialog(SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
+
+    ~AddVariantModalDialog() override {}
+
+    void Draw() override {
+        if (!_primSpec) {
+            CloseModal();
+            return;
+        }
+        bool isVariant = _primSpec->GetPath().IsPrimVariantSelectionPath();
+        ImGui::InputText("VariantSet name", &_variantSet);
+        ImGui::InputText("Variant name", &_variant);
+        if (isVariant) {
+            ImGui::Checkbox("Add to variant edit list", &_addToEditList);
+        }
+        //
+        if (ImGui::Button("Add")) {
+            // TODO The call might not be safe as _primSpec is copied, so create an actual command instead
+            std::function<void()> func = [=]() {
+                SdfCreateVariantInLayer(_primSpec->GetLayer(), _primSpec->GetPath(), _variantSet, _variant);
+                if (isVariant && _addToEditList) {
+                    auto ownerPath = _primSpec->GetPath().StripAllVariantSelections();
+                    // This won't work on doubly nested variants,
+                    // when there is a Prim between the variants
+                    auto ownerPrim = _primSpec->GetPrimAtPath(ownerPath);
+                    if (ownerPrim) {
+                        auto nameList = ownerPrim->GetVariantSetNameList();
+                        if (!nameList.ContainsItemEdit(_variantSet)) {
+                            ownerPrim->GetVariantSetNameList().Add(_variantSet);
+                        }
+                    }
+                }
+            };
+            ExecuteAfterDraw<UsdFunctionCall>(_primSpec->GetLayer(), func);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) {
+            CloseModal();
+        }
+    }
+
+    const char *DialogId() const override { return "Add variant"; }
+    SdfPrimSpecHandle _primSpec;
+    std::string _variantSet;
+    std::string _variant;
+    bool _addToEditList;
+};
+
+
 // Look for a new name. If prefix ends with a number, it will increase its value until
 // a valid name/token is found
 static std::string FindNextAvailablePrimName(std::string prefix) {
@@ -101,6 +152,11 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
     if (ImGui::MenuItem("Add reference")) {
         DrawPrimAddReferenceModalDialog(primSpec);
     }
+
+    if (ImGui::MenuItem("Add variant")) {
+        DrawModalDialog<AddVariantModalDialog>(primSpec);
+    }
+
 
     ImGui::Separator();
     if (ImGui::MenuItem("Copy prim path")) {
