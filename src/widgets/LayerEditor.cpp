@@ -82,8 +82,7 @@ static std::string FindNextAvailablePrimName(std::string prefix) {
 
 void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
     if (!primSpec) return;
-    DrawPrimName(primSpec);
-    ImGui::Separator();
+
     if (ImGui::MenuItem("Add child")) {
         ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
     }
@@ -168,6 +167,7 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
 /// Draw a node in the primspec tree
 static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
     static SdfPath payload;
+    static SdfPrimSpecHandle editNamePrim;
     if (!primSpec)
         return;
     bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
@@ -184,6 +184,7 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     if (ImGui::Selectable("##selectRow", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         selectedPrim = primSpec;
     }
+    // Drag and drop
     ImGuiDragDropFlags srcFlags = 0;
     srcFlags |= ImGuiDragDropFlags_SourceNoDisableHover;     // Keep the source displayed as hovered
     srcFlags |= ImGuiDragDropFlags_SourceNoHoldToOpenOthers; // Because our dragging is local, we disable the feature of opening
@@ -230,11 +231,28 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     if (primIsVariant){
         ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.8f));
     }
-
-    auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags);
+    auto cursor = ImGui::GetCursorPos();
+    auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags|ImGuiTreeNodeFlags_AllowItemOverlap);
 
     if (ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
+        if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != selectedPrim) {
+            editNamePrim = SdfPrimSpecHandle();
+        }
+        if (ImGui::IsMouseDoubleClicked(0)) {
+            editNamePrim = primSpec;
+        }
+    }
+
+    if (primSpec == editNamePrim) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 1.0));
+        ImGui::SetCursorPos(cursor);
+        DrawPrimName(primSpec);
+        if (ImGui::IsItemDeactivatedAfterEdit()||!ImGui::IsItemFocused()) {
+            editNamePrim = SdfPrimSpecHandle();
+        }
+
+        ImGui::PopStyleColor();
     }
 
     if (primIsVariant) {
