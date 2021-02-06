@@ -101,6 +101,10 @@ int main(int argc, char **argv) {
 #else
             glFlush();
 #endif
+            // This forces to wait for the gpu commands to finish.
+            // Normally not required but it fixes a pcoip driver issue
+            glFinish();
+
             // Process edition commands
             ExecuteCommands();
         }
