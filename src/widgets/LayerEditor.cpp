@@ -546,7 +546,7 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (ImGui::MenuItem("Open as Stage")) {
         ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
     }
-    if (ImGui::MenuItem("Edit layer")) {
+    if (ImGui::MenuItem("Inspect")) {
         ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
     }
     // TODO: check if this is possible to set this layer as edit target of the stage
