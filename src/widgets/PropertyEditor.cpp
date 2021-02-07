@@ -1,8 +1,10 @@
 #include <iostream>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/variantSets.h>
+#include <pxr/usd/usd/primCompositionQuery.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
+#include <pxr/usd/pcp/node.h>
 #include "Gui.h"
 #include "PropertyEditor.h"
 #include "ValueEditor.h"

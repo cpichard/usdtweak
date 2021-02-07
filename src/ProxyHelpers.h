@@ -6,7 +6,7 @@
 // ExtraArgsT is used to pass additional arguments as the function passed as visitor
 // might need more than the operation and the item
 template <typename PolicyT, typename FuncT, typename ...ExtraArgsT>
-static void IterateListEditorItems(SdfListEditorProxy<PolicyT> &listEditor, const FuncT &call, ExtraArgsT... args ) {
+static void IterateListEditorItems(const SdfListEditorProxy<PolicyT> &listEditor, const FuncT &call, ExtraArgsT... args ) {
     // TODO: should we check if the list is already all explicit ??
     for (const typename PolicyT::value_type &item : listEditor.GetExplicitItems()) {
         call("explicit", item, args...);
@@ -36,7 +36,7 @@ inline const char *GetListEditorOperationName(int index) {
 }
 
 template <typename PolicyT>
-void CreateListEditorOperation(SdfListEditorProxy<PolicyT> &listEditor, int operation,
+void CreateListEditorOperation(SdfListEditorProxy<PolicyT> &&listEditor, int operation,
                                 typename SdfListEditorProxy<PolicyT>::value_type item) {
     switch (operation) {
     case 0:
