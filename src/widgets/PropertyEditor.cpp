@@ -302,9 +302,39 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
-        ImGui::Text(ICON_FA_PEN " %s", editTarget.GetLayer()->GetDisplayName().c_str());
+        const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
         ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
+        ImGui::Text(ICON_FA_PEN " %s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
 
+        // TODO: Edit in variant context, under a variant
+        // This is a test.
+        // Notes from the USD forum:
+        // The new UsdPrimCompositionQuery API, which should land in the dev branch soon, will allow you to find any reference,
+        // and give you exactly what you need to construct an UsdEditTarget to edit the reference, no matter where it was
+        // authored. You and the user still need to decide and agree whether you’re only allowing “root layerStack” i.e.
+        // non-destructive edits, or whether all referenced layers are game for editing. The Query API can restrict its search to
+        // the root layerStack, if you desire. As described at the top of UsdPrimCompositionQueryArc, once you find the inherits
+        // (or specializes) arc that "introduces" the class, use that Arc's GetTargetNode() as the PcpNodeRef for a UsdEditTarget,
+        // and rummage through its LayerStack's layers to see the layers in which you can edit.
+        UsdPrimCompositionQuery arc(prim);
+        auto compositionArcs = arc.GetCompositionArcs();
+        if (ImGui::ListBoxHeader("arcs")) {
+            for (auto a : compositionArcs) {
+                if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
+                    a.GetIntroducingLayer()->GetDisplayName();
+                    std::string arcName =
+                        a.GetIntroducingLayer()->GetDisplayName() + " " + a.GetIntroducingPrimPath().GetString();
+                    if (ImGui::Button(arcName.c_str())) {
+                        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
+                                         UsdEditTarget(editTarget.GetLayer(), a.GetTargetNode()));
+                    }
+                }
+            }
+            if (ImGui::Button("Reset")) {
+                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(editTarget.GetLayer()));
+            }
+            ImGui::ListBoxFooter();
+        }
         ImGui::Separator();
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
