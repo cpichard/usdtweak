@@ -337,7 +337,8 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
 
-        bool unfolded = ImGui::TreeNodeEx(layer->GetDisplayName().c_str(), treeNodeFlags);
+        std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
+        bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
 
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Add root prim")) {
