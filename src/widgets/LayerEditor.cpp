@@ -174,61 +174,6 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
     }
 
 }
-///// Draw a popup to quickly edit a prim
-//void DrawPrimQuickEdit(SdfPrimSpecHandle &primSpec) {
-//    if (!primSpec) return;
-//    if (ImGui::MenuItem("Add child prim")) {
-//        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
-//    }
-//    auto parent = primSpec->GetNameParent();
-//    if (parent) {
-//        if (ImGui::MenuItem("Add sibling prim")) {
-//            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailablePrimName(primSpec->GetName()));
-//        }
-//    }
-//
-//    // TODO: this menu is too complex, change for "Add reference" which is more meaningful for artists
-//    if (ImGui::BeginMenu("Add reference")) {
-//       // TODO DrawPrimCompositionPopupMenu(primSpec);
-//        ImGui::EndMenu();
-//    }
-//
-//    if (ImGui::MenuItem("Remove")) {
-//       ExecuteAfterDraw<PrimRemove>(primSpec);
-//    }
-//
-//    // TODO a function DrawVariantsPopupMenu() instead of the following code ?
-//    auto variantSetNames = primSpec->GetVariantSets();
-//    if (!variantSetNames.empty()) {
-//        ImGui::Separator();
-//        for (const auto &variantSet : variantSetNames) {
-//            if (ImGui::BeginMenu(variantSet.first.c_str())) {
-//                SdfVariantSetSpecHandle variantSetHandle = variantSet.second;
-//                if (variantSetHandle) {
-//                    for (const auto &variant : variantSetHandle->GetVariants()) {
-//                        if (variant && ImGui::MenuItem(variant->GetName().c_str())) {
-//                            ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSet.first, variant->GetName());
-//                        }
-//                    }
-//                    // TODO: highlight the one currently used
-//                }
-//                ImGui::EndMenu();
-//            }
-//        }
-//    }
-//
-//    ImGui::Separator();
-//    DrawPrimSpecifierCombo(primSpec);
-//    DrawPrimName(primSpec);
-//    // Kind: component/assembly, etc add a combo
-//    // DrawPrimKind(primSpec);
-//    // ImGui::Text("%s", primSpec->GetKind().GetString().c_str());
-//    DrawPrimType(primSpec);
-//
-//    DrawPrimInstanceable(primSpec);
-//    DrawPrimHidden(primSpec);
-//    DrawPrimActive(primSpec);
-//}
 
 /// Draw a node in the primspec tree
 static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
