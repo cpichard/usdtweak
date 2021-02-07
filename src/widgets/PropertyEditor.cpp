@@ -179,7 +179,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
 }
 
 bool DrawVariantSetsCombos(UsdPrim &prim) {
-
+    int buttonID = 0;
     if (!prim.HasVariantSets()) return false;
     auto variantSets = prim.GetVariantSets();
 
@@ -196,10 +196,14 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
 
             // Variant set mini button --- TODO move code from this function
             auto variantSet = variantSets.GetVariantSet(variantSetName);
+            // TODO: how do we figure out if the variant set has been edited in this edit target ?
+            // Otherwise after a "Clear variant selection" the button remains green and it visually looks like it did nothing
             ImVec4 variantColor =
                 variantSet.HasAuthoredVariantSelection() ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
+            ImGui::PushID(buttonID++);
             DrawPropertyMiniButton("(v)", variantColor);
-            if (ImGui::BeginPopupContextItem(), ImGuiPopupFlags_MouseButtonLeft) {
+            ImGui::PopID();
+            if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft) ){
                 if (ImGui::MenuItem("Clear variant selection")) {
                     ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
                 }
