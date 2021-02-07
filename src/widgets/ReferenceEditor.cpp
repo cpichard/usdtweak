@@ -43,7 +43,7 @@ template <> constexpr int enumSize<CompositionOperation>() { return 5; }
 template <> constexpr int enumSize<CompositionList>() { return 4; }
 
 template <typename IndexT> // int or ListOperation
-const char *GetOperationName(IndexT index) {
+static const char *GetOperationName(IndexT index) {
     static const char *names[enumSize<CompositionOperation>()] = {"Add", "Prepend", "Append", "Remove", "Erase"};
     return names[static_cast<int>(index)];
 }
@@ -297,7 +297,7 @@ void DrawCompositionArcOperationsRows(const SdfPrimSpecHandle &primSpec, GetList
 }
 
 /// Draw all compositions in one big list
-void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
+void DrawPrimCompositionsItem(const SdfPrimSpecHandle &primSpec) {
     DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetPayloadList, "Payload");
     DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetInheritPathList, "Inherit");
     DrawCompositionArcOperations(primSpec, &SdfPrimSpec::GetSpecializesList, "Specialize");
@@ -313,7 +313,7 @@ void DrawPrimCompositionsRows(const SdfPrimSpecHandle &primSpec) {
 
 void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec, bool showVariants) {
     if (PrimHasComposition(primSpec)) {
-        DrawPrimCompositions(primSpec);
+        DrawPrimCompositionsItem(primSpec);
         if (showVariants) {
             const auto &pathStr = primSpec->GetPath().GetString();
             SdfVariantSetsProxy variantSetMap = primSpec->GetVariantSets();
@@ -322,7 +322,7 @@ void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec, bool showVariants) 
                 const SdfVariantSpecHandleVector &variants = varSetSpec->GetVariantList();
                 TF_FOR_ALL(varIt, variants) {
                     const SdfPrimSpecHandle &variantSpec = (*varIt)->GetPrimSpec();
-                    DrawPrimCompositions(variantSpec);
+                    DrawPrimCompositionsItem(variantSpec);
                 }
             }
         }
