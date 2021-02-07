@@ -106,7 +106,7 @@ struct AddVariantModalDialog : public ModalDialog {
     SdfPrimSpecHandle _primSpec;
     std::string _variantSet;
     std::string _variant;
-    bool _addToEditList;
+    bool _addToEditList=false;
 };
 
 
