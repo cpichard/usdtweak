@@ -175,26 +175,8 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
 
 }
 
-/// Draw a node in the primspec tree
-static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
-    static SdfPath payload;
-    static SdfPrimSpecHandle editNamePrim;
-    if (!primSpec)
-        return;
-    bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
-
-    ImGui::TableNextRow();
-
-    ImGui::TableSetColumnIndex(0);
-
-    ImGui::PushID(nodeId);
-    nodeId=0; //reset the counter
-
-    // Makes the row selectable
-    bool selected = primSpec == selectedPrim;
-    if (ImGui::Selectable("##selectRow", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
-        selectedPrim = primSpec;
-    }
+static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
+     static SdfPath payload;
     // Drag and drop
     ImGuiDragDropFlags srcFlags = 0;
     srcFlags |= ImGuiDragDropFlags_SourceNoDisableHover;     // Keep the source displayed as hovered
@@ -222,7 +204,29 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
         ImGui::EndDragDropTarget();
     }
 
-    ImGui::SameLine();
+}
+/// Draw a node in the primspec tree
+static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
+
+    static SdfPrimSpecHandle editNamePrim;
+    if (!primSpec)
+        return;
+    bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
+
+    ImGui::TableNextRow();
+
+    ImGui::TableSetColumnIndex(0);
+
+    ImGui::PushID(nodeId);
+    nodeId=0; //reset the counter
+
+    // Makes the row selectable
+    bool selected = primSpec == selectedPrim;
+    if (ImGui::Selectable("##selectRow", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+        selectedPrim = primSpec;
+    }
+    // Drag and drop on Selectable
+    HandleDragAndDrop(primSpec);
 
     auto childrenNames = primSpec->GetNameChildren();
     ImGuiTreeNodeFlags nodeFlags =
@@ -242,7 +246,8 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     if (primIsVariant){
         ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.8f));
     }
-    auto cursor = ImGui::GetCursorPos();
+    ImGui::SameLine();
+    auto cursor = ImGui::GetCursorPos(); // Store position for the InputText
     auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags|ImGuiTreeNodeFlags_AllowItemOverlap);
 
     if (ImGui::IsItemClicked()) {
@@ -254,7 +259,6 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
             editNamePrim = primSpec;
         }
     }
-
     if (primSpec == editNamePrim) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 1.0));
         ImGui::SetCursorPos(cursor);
