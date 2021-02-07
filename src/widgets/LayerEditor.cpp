@@ -508,15 +508,14 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
 
 /// Draw a SdfLayer in place editor
 void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
-
-    if (!layer)
-        return;
     ImGui::Button(ICON_FA_HOME);
     ImGui::SameLine();
     ImGui::Button(ICON_FA_ARROW_LEFT);
     ImGui::SameLine();
     ImGui::Button(ICON_FA_ARROW_RIGHT);
     ImGui::SameLine();
+    if (!layer)
+        return;
     if (ImGui::Button("Add root prim")) {
         ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
     }
