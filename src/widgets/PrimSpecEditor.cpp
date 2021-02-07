@@ -18,6 +18,7 @@
 #include "Gui.h"
 #include "PrimSpecEditor.h"
 #include "ReferenceEditor.h"
+#include "CompositionEditor.h"
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
 #include "Commands.h"
@@ -25,6 +26,7 @@
 #include "ValueEditor.h"
 #include "LayerEditor.h"
 
+#include "ProxyHelpers.h"
 
 
 /// Should that move in Common.h ???
@@ -361,7 +363,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     DrawPrimSpecMetadata(primSpec);
 
     //if (ImGui::CollapsingHeader("References")) {
-        DrawPrimCompositionArcs(primSpec);
+        DrawPrimCompositions(primSpec);
     //}
 
     //if (ImGui::CollapsingHeader("Attributes")) {

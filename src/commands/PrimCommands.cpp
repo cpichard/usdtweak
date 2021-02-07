@@ -16,8 +16,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 struct PrimNew : public SdfLayerCommand {
 
     // Create a root prim
-    PrimNew(SdfLayerRefPtr layer, std::string primName)
-        : _primSpec(), _layer(layer), _primName(std::move(primName)) {}
+    PrimNew(SdfLayerRefPtr layer, std::string primName) : _primSpec(), _layer(layer), _primName(std::move(primName)) {}
 
     // Create a child prim
     PrimNew(SdfPrimSpecHandle primSpec, std::string primName)
@@ -48,8 +47,7 @@ struct PrimNew : public SdfLayerCommand {
 
 struct PrimRemove : public SdfLayerCommand {
 
-    PrimRemove(SdfPrimSpecHandle primSpec)
-        :  _primSpec(std::move(primSpec)){}
+    PrimRemove(SdfPrimSpecHandle primSpec) : _primSpec(std::move(primSpec)) {}
 
     ~PrimRemove() override {}
 
@@ -86,6 +84,52 @@ struct PrimRemove : public SdfLayerCommand {
     SdfPrimSpecHandle _primSpec;
 };
 
+#include "ProxyHelpers.h"
+
+template <typename ItemType> struct PrimCreateListEditorOperation : SdfLayerCommand {
+    PrimCreateListEditorOperation(SdfPrimSpecHandle primSpec, int operation, typename ItemType::value_type item)
+        : _primSpec(primSpec), _operation(operation), _item(std::move(item)) {}
+    ~PrimCreateListEditorOperation() override {}
+
+    bool DoIt() override {
+        if (_primSpec) {
+            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
+            CreateListEditorOperation(GetListEditor(), _operation, _item);
+            return true;
+        }
+        return false;
+    }
+
+    // Forced to inherit as the Specialize and Inherit arcs have the same type
+    virtual SdfListEditorProxy<ItemType> GetListEditor() = 0;
+
+    SdfPrimSpecHandle _primSpec;
+    int _operation;
+    typename ItemType::value_type _item;
+};
+
+struct PrimCreateReference : public PrimCreateListEditorOperation<SdfReferenceTypePolicy> {
+    using PrimCreateListEditorOperation<SdfReferenceTypePolicy>::PrimCreateListEditorOperation;
+    SdfReferencesProxy GetListEditor() override { return _primSpec->GetReferenceList(); }
+};
+
+struct PrimCreatePayload : public PrimCreateListEditorOperation<SdfPayloadTypePolicy> {
+    using PrimCreateListEditorOperation<SdfPayloadTypePolicy>::PrimCreateListEditorOperation;
+    SdfPayloadsProxy GetListEditor() override { return _primSpec->GetPayloadList(); }
+};
+
+struct PrimCreateInherit : public PrimCreateListEditorOperation<SdfPathKeyPolicy> {
+    using PrimCreateListEditorOperation<SdfPathKeyPolicy>::PrimCreateListEditorOperation;
+    SdfInheritsProxy GetListEditor() override { return _primSpec->GetInheritPathList(); }
+};
+
+struct PrimCreateSpecialize : public PrimCreateListEditorOperation<SdfPathKeyPolicy> {
+    using PrimCreateListEditorOperation<SdfPathKeyPolicy>::PrimCreateListEditorOperation;
+    SdfSpecializesProxy GetListEditor() override { return _primSpec->GetSpecializesList(); }
+};
+
+
+// TODO : REMOVE REFERENCE EDITOR
 #include "ReferenceEditor.h"
 
 struct PrimCreateCompositionArc : public SdfLayerCommand {
@@ -112,7 +156,6 @@ struct PrimCreateCompositionArc : public SdfLayerCommand {
     SdfPath _targetPrimPath;
 };
 
-// Rename to PrimReparent ??
 struct PrimReparent : public SdfLayerCommand {
     PrimReparent(SdfLayerHandle layer, SdfPath source, SdfPath destination)
         : _layer(std::move(layer)), _source(source), _destination(destination) {}
@@ -138,11 +181,16 @@ struct PrimReparent : public SdfLayerCommand {
     SdfPath _destination;
 };
 
-
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
 template void ExecuteAfterDraw<PrimRemove>(SdfPrimSpecHandle primSpec);
-template void ExecuteAfterDraw<PrimCreateCompositionArc>(SdfPrimSpecHandle primSpec, CompositionOperation operation, CompositionList composition,
-                                                 std::string reference, SdfPath targetPrimPath);
+template void ExecuteAfterDraw<PrimCreateCompositionArc>(SdfPrimSpecHandle primSpec, CompositionOperation operation,
+                                                         CompositionList composition, std::string reference,
+                                                         SdfPath targetPrimPath);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
+
+template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, int operation, SdfReference reference);
+template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, int operation, SdfPayload payload);
+template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
+template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);

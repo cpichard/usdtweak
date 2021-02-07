@@ -51,6 +51,8 @@ add_executable(usdtweak
  src/viewport/SelectionManipulator.h
  src/viewport/Viewport.cpp
  src/viewport/Viewport.h
+ src/widgets/CompositionEditor.cpp
+ src/widgets/CompositionEditor.h
  src/widgets/FileBrowser.cpp
  src/widgets/FileBrowser.h
  src/widgets/LayerEditor.cpp

@@ -3,6 +3,11 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+//
+// THIS FILE is deprecated and will be soon removed
+//
+
+
 // TODO: should those list be stored together ?
 enum class CompositionList { Reference = 0, Payload, Inherit, Specialize };
 // TODO: not sure these are the correct operation, double check in the docs

@@ -15,7 +15,11 @@ PXR_NAMESPACE_USING_DIRECTIVE
 ///
 struct PrimNew;
 struct PrimRemove;
-struct PrimCreateCompositionArc;
+struct PrimCreateCompositionArc; // TODO REMOVE
+struct PrimCreateReference;
+struct PrimCreatePayload;
+struct PrimCreateInherit;
+struct PrimCreateSpecialize;
 struct PrimReparent;
 
 struct EditorSetDataPointer;

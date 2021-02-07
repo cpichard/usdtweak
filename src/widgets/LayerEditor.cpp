@@ -22,7 +22,9 @@
 #include "FileBrowser.h"
 #include "LayerEditor.h"
 #include "PrimSpecEditor.h"
-#include "ReferenceEditor.h"
+#include "CompositionEditor.h"
+#include "ReferenceEditor.h" // TODO remove
+
 #include "Constants.h"
 
 
@@ -149,11 +151,19 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
     }
 
     ImGui::Separator();
-    if (ImGui::MenuItem("Add reference")) {
-        DrawPrimAddReferenceModalDialog(primSpec);
+    if (ImGui::MenuItem("Create reference")) {
+        DrawPrimCreateReference(primSpec);
     }
-
-    if (ImGui::MenuItem("Add variant")) {
+    if (ImGui::MenuItem("Create payload")) {
+        DrawPrimCreatePayload(primSpec);
+    }
+    if (ImGui::MenuItem("Create inherit")) {
+        DrawPrimCreateInherit(primSpec);
+    }
+    if (ImGui::MenuItem("Create specialize")) {
+        DrawPrimCreateSpecialize(primSpec);
+    }
+    if (ImGui::MenuItem("Create variant")) {
         DrawModalDialog<AddVariantModalDialog>(primSpec);
     }
 
