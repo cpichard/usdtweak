@@ -8,22 +8,22 @@
 template <typename PolicyT, typename FuncT, typename ...ExtraArgsT>
 static void IterateListEditorItems(SdfListEditorProxy<PolicyT> &listEditor, const FuncT &call, ExtraArgsT... args ) {
     // TODO: should we check if the list is already all explicit ??
-    for (const PolicyT::value_type &item : listEditor.GetExplicitItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetExplicitItems()) {
         call("explicit", item, args...);
     }
-    for (const PolicyT::value_type &item : listEditor.GetOrderedItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetOrderedItems()) {
         call("ordered", item, args...);
     }
-    for (const PolicyT::value_type &item : listEditor.GetAddedItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetAddedItems()) {
         call("add", item, args...); // return "add" as TfToken instead ?
     }
-    for (const PolicyT::value_type &item : listEditor.GetPrependedItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetPrependedItems()) {
         call("prepend", item, args...);
     }
-    for (const PolicyT::value_type &item : listEditor.GetAppendedItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetAppendedItems()) {
         call("append", item, args...);
     }
-    for (const PolicyT::value_type &item : listEditor.GetDeletedItems()) {
+    for (const typename PolicyT::value_type &item : listEditor.GetDeletedItems()) {
         call("delete", item, args...);
     }
 }
