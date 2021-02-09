@@ -34,12 +34,14 @@ template void SdfCommandGroup::StoreInstruction<UndoRedoPopChild<SdfPath>>(UndoR
 
 // Call all the functions stored in _commands in reverse order
 void SdfCommandGroup::UndoIt() {
+    SdfChangeBlock block;
     for (auto &cmd : boost::adaptors::reverse(_instructions)) {
         cmd.UndoIt();
     }
 }
 
 void SdfCommandGroup::DoIt() {
+    SdfChangeBlock block;
     for (auto &cmd : _instructions) {
         cmd.DoIt();
     }
