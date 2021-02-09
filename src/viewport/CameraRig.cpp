@@ -18,25 +18,11 @@ PXR_NAMESPACE_USING_DIRECTIVE
 using DistT = decltype(GfCamera().GetFocusDistance());
 using RotationT = decltype(GfRotation().Decompose(GfVec3d::YAxis(), GfVec3d::XAxis(), GfVec3d::ZAxis()));
 
-CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
-    : _movementType(MovementType::None), _selectionSize(1.0), _viewportSize(viewportSize) {
-    SetZIsUp(isZUp);
-}
-
-void CameraRig::ResetPosition(GfCamera &camera) {
-    camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
-    camera.SetFocusDistance(300.f);
-}
-void CameraRig::SetZIsUp(bool isZUp) {
-    _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0));
-}
-
 /// Updates manipulator internal
 // similar to _pullFromCameraTransform in usdviewq
 // Get internals from the camera transform
 static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMatrix, GfVec3d &center,
                                 RotationT &rotation, DistT &dist) {
-
     auto cameraTransform = camera.GetTransform();
     auto frustum = camera.GetFrustum();
     auto cameraPosition = frustum.GetPosition();
@@ -67,8 +53,29 @@ static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, con
     camera.SetFocusDistance(dist);
 }
 
+
+CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
+    : _movementType(MovementType::None), _selectionSize(1.0), _viewportSize(viewportSize) {
+    SetZIsUp(isZUp);
+}
+
+void CameraRig::ResetPosition(GfCamera &camera) {
+    GfRotation rotf;
+    camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
+    constexpr float focusDistance = 100.f;
+    camera.SetFocusDistance(focusDistance);
+}
+
+void CameraRig::SetZIsUp(bool isZUp) {
+    _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0));
+}
+
 /// Frame a bounding box.
 void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
+    if (bbox.GetVolume() == 0) {
+        return;
+    }
+
     DistT dist;
     RotationT rotation;
     GfVec3d center;
