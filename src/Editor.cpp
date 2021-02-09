@@ -225,15 +225,26 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     _currentStage = stage;
     // NOTE: We set the default layer to the current stage root
     // this might have side effects
-    if (!_currentLayer && _currentStage) {
-        SetCurrentLayer(_currentStage->GetRootLayer());
+    if (!GetCurrentLayer() && _currentStage) {
+        InspectCurrentLayer(_currentStage->GetRootLayer());
     }
     // TODO multiple viewport management
     _viewport.SetCurrentStage(stage);
 }
 
-void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
-    _currentLayer = layer;
+void Editor::InspectCurrentLayer(SdfLayerRefPtr layer) {
+    if (!_layerHistory.empty()) {
+        if (GetCurrentLayer() != layer) {
+            if (_layerHistoryPointer < _layerHistory.size() - 1) {
+                _layerHistory.resize(_layerHistoryPointer + 1);
+            }
+            _layerHistory.push_back(layer);
+            _layerHistoryPointer = _layerHistory.size() - 1;
+        }
+    } else {
+        _layerHistory.push_back(layer);
+        _layerHistoryPointer = _layerHistory.size() - 1;
+    }
 }
 
 void Editor::SetCurrentEditTarget(SdfLayerHandle layer) {
@@ -242,12 +253,30 @@ void Editor::SetCurrentEditTarget(SdfLayerHandle layer) {
     }
 }
 
+SdfLayerRefPtr Editor::GetCurrentLayer() {
+    return _layerHistory.empty() ? SdfLayerRefPtr() : _layerHistory[_layerHistoryPointer];
+}
+
+void Editor::SetPreviousLayer() {
+    if (_layerHistoryPointer > 0) {
+        _layerHistoryPointer--;
+    }
+}
+
+
+void Editor::SetNextLayer() {
+    if (_layerHistoryPointer < _layerHistory.size()-1) {
+        _layerHistoryPointer++;
+    }
+}
+
+
 void Editor::UseLayer(SdfLayerRefPtr layer) {
     if (layer) {
         if (_layers.find(layer) == _layers.end()) {
             _layers.emplace(layer);
         }
-        SetCurrentLayer(layer);
+        InspectCurrentLayer(layer);
         _showTheater = true;
         _showLayerEditor = true;
     }

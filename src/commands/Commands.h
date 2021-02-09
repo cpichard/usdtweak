@@ -28,6 +28,8 @@ struct EditorOpenStage;
 struct EditorOpenLayer;
 struct EditorSetEditTarget;
 struct EditorSetCurrentLayer;
+struct EditorSetPreviousLayer;
+struct EditorSetNextLayer;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

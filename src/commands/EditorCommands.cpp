@@ -91,7 +91,7 @@ struct EditorSetCurrentLayer : public EditorCommand {
 
     bool DoIt() override {
         if (_editor) {
-            _editor->SetCurrentLayer(_layer);
+            _editor->InspectCurrentLayer(_layer);
         }
 
         return false;
@@ -118,4 +118,31 @@ struct EditorOpenLayer : public EditorCommand {
 template void ExecuteAfterDraw<EditorOpenLayer>(std::string layerPath);
 
 
+struct EditorSetPreviousLayer : public EditorCommand {
+
+    EditorSetPreviousLayer() {}
+    ~EditorSetPreviousLayer() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->SetPreviousLayer();
+        }
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorSetPreviousLayer>();
+
+struct EditorSetNextLayer : public EditorCommand {
+
+    EditorSetNextLayer() {}
+    ~EditorSetNextLayer() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->SetNextLayer();
+        }
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorSetNextLayer>();
 

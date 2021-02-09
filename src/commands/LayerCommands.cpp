@@ -30,7 +30,7 @@ struct LayerRemoveSubLayer : public SdfLayerCommand {
 };
 template void ExecuteAfterDraw<LayerRemoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath);
 
-/// Change layer position in the layer stack, moivng up and down
+/// Change layer position in the layer stack, moving up and down
 struct LayerMoveSubLayer : public SdfLayerCommand {
 
     // Removes a sublayer

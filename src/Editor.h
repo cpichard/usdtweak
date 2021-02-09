@@ -27,8 +27,10 @@ public:
     bool ShutdownRequested() const { return _shutdownRequested; }
 
     /// Sets the current edited layer
-    void SetCurrentLayer(SdfLayerRefPtr layer);
-    SdfLayerRefPtr GetCurrentLayer() { return _currentLayer; }
+    void InspectCurrentLayer(SdfLayerRefPtr layer);
+    SdfLayerRefPtr GetCurrentLayer();
+    void SetPreviousLayer(); // go backward in the layer history
+    void SetNextLayer();    // go forward in the layer history
 
     /// List of stages
     /// Using a stage cache to store the stages, seems to work well
@@ -84,7 +86,8 @@ private:
     /// but SdfLayerHandleSet doesn't keep the smart pointer live for some reason. (to be investigated)
     // SdfLayerHandleSet _layers;
     std::set<SdfLayerRefPtr> _layers;
-    SdfLayerRefPtr _currentLayer;
+    SdfLayerRefPtrVector _layerHistory;
+    size_t _layerHistoryPointer;
 
     /// Setting _shutdownRequested to true will stop the main loop
     bool _shutdownRequested = false;

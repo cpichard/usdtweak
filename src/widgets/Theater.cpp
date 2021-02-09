@@ -83,7 +83,7 @@ void DrawTheater(Editor &editor) {
         auto layers = SdfLayer::GetLoadedLayers();
         DrawLayerSet(layers, &selected);
         if (selected != editor.GetCurrentLayer()) {
-            editor.SetCurrentLayer(selected);
+            editor.InspectCurrentLayer(selected);
         }
         ImGui::EndTabItem();
     }

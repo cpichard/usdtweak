@@ -508,11 +508,17 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
 
 /// Draw a SdfLayer in place editor
 void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
-    ImGui::Button(ICON_FA_HOME);
+    if (ImGui::Button(ICON_FA_HOME)) {
+
+    }
     ImGui::SameLine();
-    ImGui::Button(ICON_FA_ARROW_LEFT);
+    if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+        ExecuteAfterDraw<EditorSetPreviousLayer>();
+    }
     ImGui::SameLine();
-    ImGui::Button(ICON_FA_ARROW_RIGHT);
+    if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+        ExecuteAfterDraw<EditorSetNextLayer>();
+    }
     ImGui::SameLine();
     if (!layer)
         return;
