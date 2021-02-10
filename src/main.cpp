@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
 #ifdef DISABLE_DOUBLE_BUFFER
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
 #endif
-    GLFWwindow *window = glfwCreateWindow(width, height, "USD Tweak", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(width, height, "PrimSpector", NULL, NULL);
     if (!window) {
         std::cerr << "unable to create a window, exiting" << std::endl;
         glfwTerminate();
