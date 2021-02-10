@@ -1,5 +1,5 @@
 
-# usdtweak
+# primspector
 
 A free and open source Pixar's Universal Scene Description editor, still in early development.
 
