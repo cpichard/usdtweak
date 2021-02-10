@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.6)
-project (UsdTweak)
+project (PrimSpector)
 set (CMAKE_CXX_STANDARD 14)
 find_package(glfw3 3.2 REQUIRED)
 find_package(OpenGL REQUIRED)
