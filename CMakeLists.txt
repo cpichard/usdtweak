@@ -64,8 +64,6 @@ add_executable(usdtweak
  src/widgets/PrimSpecEditor.h
  src/widgets/PropertyEditor.cpp
  src/widgets/PropertyEditor.h
- src/widgets/ReferenceEditor.h
- src/widgets/ReferenceEditor.cpp
  src/widgets/RendererSettings.cpp
  src/widgets/RendererSettings.h
  src/widgets/StageOutliner.cpp
