@@ -1,5 +1,5 @@
 #pragma once
-
+#include <cassert>
 #include <pxr/usd/sdf/listEditorProxy.h>
 #include <pxr/usd/sdf/reference.h>
 

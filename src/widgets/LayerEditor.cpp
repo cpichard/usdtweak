@@ -3,7 +3,7 @@
 #include <sstream>
 #include <array>
 #include <cctype>
-#include "Gui.h"
+
 #include <pxr/usd/usd/schemaRegistry.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/sdf/layer.h>
@@ -16,6 +16,7 @@
 #include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/camera.h>
+
 #include "Editor.h"
 #include "Commands.h"
 #include "ModalDialogs.h"
@@ -23,8 +24,7 @@
 #include "LayerEditor.h"
 #include "PrimSpecEditor.h"
 #include "CompositionEditor.h"
-#include "ReferenceEditor.h" // TODO remove
-
+#include "Gui.h"
 #include "Constants.h"
 
 
