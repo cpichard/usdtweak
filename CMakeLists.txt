@@ -1,10 +1,10 @@
 cmake_minimum_required (VERSION 3.6)
-project (PrimSpector)
+project (UsdTweak)
 set (CMAKE_CXX_STANDARD 14)
 find_package(glfw3 3.2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(pxr REQUIRED)
-add_executable(primspector
+add_executable(usdtweak
  src/3rdparty/imgui/imgui.cpp
  src/3rdparty/imgui/imgui_draw.cpp
  src/3rdparty/imgui/imgui_impl_glfw.cpp
@@ -76,9 +76,9 @@ add_executable(primspector
  src/widgets/ValueEditor.cpp
  src/widgets/ValueEditor.h
 )
-target_compile_definitions(primspector PRIVATE NOMINMAX)
-target_link_libraries(primspector glfw ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})
-target_include_directories(primspector PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS} 
+target_compile_definitions(usdtweak PRIVATE NOMINMAX)
+target_link_libraries(usdtweak glfw ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})
+target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS} 
  src 
  src/commands
  src/widgets 
@@ -89,7 +89,7 @@ target_include_directories(primspector PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUD
  src/3rdparty/iconfontcppheaders
  src/3rdparty/fontawesome
 )
-# Remove warnings coming from usd
-target_compile_options(primspector PRIVATE
+# Remove warnings coming from usd and enable default multithreaded compilation on windows
+target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305>
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
