@@ -1,5 +1,5 @@
 
-# primspector
+# usdtweak
 
 A free and open source Pixar's Universal Scene Description editor, still in early development.
 
@@ -23,15 +23,15 @@ The project is almost self contained and only needs:
 
 ### Compiling
 
-If you managed to build USD, compiling primspector should be straightforward, cmake needs only 2 variables:
+If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 2 variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
 - __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
 
 on linux it goes along the lines of:
 
-    git clone https://github.com/cpichard/primspector
-    cd primspector
+    git clone https://github.com/cpichard/usdtweak
+    cd usdtweak
     git checkout develop
     mkdir build
     cd build
