@@ -548,16 +548,18 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (!layer)
         return;
-    if (ImGui::MenuItem("Open as Stage")) {
-        ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
-    }
     if (ImGui::MenuItem("Inspect")) {
         ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
     }
+    if (ImGui::MenuItem("Open as Stage")) {
+        ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
+    }
+    ImGui::Separator();
     // TODO: check if this is possible to set this layer as edit target of the stage
     if (ImGui::MenuItem("Set Edit target")) {
         ExecuteAfterDraw<EditorSetEditTarget>(layer);
     }
+    ImGui::Separator();
     if (ImGui::MenuItem("Copy layer path")) {
         ImGui::SetClipboardText(layer->GetRealPath().c_str());
     }

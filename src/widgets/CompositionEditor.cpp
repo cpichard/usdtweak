@@ -186,6 +186,13 @@ template <typename PathOriginT> void DrawSdfPathMenuItems(const SdfPrimSpecHandl
 /// Draw the menu items for AssetPaths (SdfReference and SdfPayload)
 template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHandle &primSpec, const AssetPathT &assetPath) {
 
+    if (ImGui::MenuItem("Inspect")) {
+        ExecuteAfterDraw<EditorOpenLayer>(assetPath.GetAssetPath());
+    }
+    if (ImGui::MenuItem("Open as Stage")) {
+        ExecuteAfterDraw<EditorOpenStage>(assetPath.GetAssetPath());
+    }
+    ImGui::Separator();
     if (ImGui::MenuItem("Remove")) {
         // I am not 100% sure this is safe as we copy the primSpec instead of its location
         // The command UsdFunctionCall will store it between here and the actual call, so between this time it
@@ -197,12 +204,6 @@ template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHand
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeAssetPath);
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Open as Stage")) {
-        ExecuteAfterDraw<EditorOpenStage>(assetPath.GetAssetPath());
-    }
-    if (ImGui::MenuItem("Inspect")) {
-        ExecuteAfterDraw<EditorOpenLayer>(assetPath.GetAssetPath());
-    }
     if (ImGui::MenuItem("Copy asset path")) {
         ImGui::SetClipboardText(assetPath.GetAssetPath().c_str());
     }
