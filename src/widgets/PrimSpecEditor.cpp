@@ -152,37 +152,40 @@ void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+/// Convert prim class tokens to and from char *
+/// The chars are stored in DrawPrimType
+static inline const char *ClassCharFromToken(TfToken &classToken) {
+    return classToken == SdfTokens->AnyTypeToken ? "" : classToken.GetString().c_str();
+}
+
+static inline TfToken ClassTokenFromChar(const char *classChar) {
+    return strcmp(classChar, "") == 0 ? SdfTokens->AnyTypeToken : TfToken(classChar);
+}
+
 /// Draw a prim type name combo
 void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     /// TODO reset to none as well
     /// TODO: look at: https://github.com/ocornut/imgui/issues/282
     // TODO: get all types, ATM the function GetAllTypes is not exposed by the api, missing SDF_API
-    //auto allTypes = primSpec->GetSchema().GetAllTypes();
-    //auto allTypes = SdfSchema::GetInstance().GetAllTypes();
+    // auto allTypes = primSpec->GetSchema().GetAllTypes();
+    // auto allTypes = SdfSchema::GetInstance().GetAllTypes();
     // They are also registered in "registry.usda"
-    const char *classes[] = {"", "Scope",      "Xform",        "Cube",     "Sphere",         "Cylinder",
-                             "Capsule",    "Cone",         "Camera",   "PointInstancer", "Mesh",
-                             "GeomSubset", "DistantLight", "Material", "Shader", "BlendShape"};
+    const char *allTypes[] = {"",       "Scope",     "Xform",          "Cube", "Sphere",     "Cylinder",     "Capsule",
+                              "Cone",   "Camera",    "PointInstancer", "Mesh", "GeomSubset", "DistantLight", "Material",
+                              "Shader", "BlendShape"};
 
-    const TfToken &typeName = primSpec->GetTypeName() == SdfTokens->AnyTypeToken ? TfToken() : primSpec->GetTypeName();
-    const char *currentItem = typeName.GetString().c_str();
-
+    const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
     if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
-        for (int n = 0; n < IM_ARRAYSIZE(classes); n++) {
-            bool isSelected = strcmp(currentItem, classes[n]) == 0;
-            if (ImGui::Selectable(classes[n], isSelected)) {
-                currentItem = classes[n];
+        for (int n = 0; n < IM_ARRAYSIZE(allTypes); n++) {
+            const bool isSelected = strcmp(currentItem, allTypes[n]) == 0;
+            if (ImGui::Selectable(allTypes[n], isSelected)) {
+                currentItem = allTypes[n];
             }
-            if (isSelected)
-                ImGui::SetItemDefaultFocus();
         }
-        if (primSpec->GetTypeName() != TfToken(currentItem)) {
-            if (strcmp(currentItem, "")==0) {
-                ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, SdfTokens->AnyTypeToken);
-            } else {
-                ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
-            }
+
+        if (primSpec->GetTypeName() != ClassTokenFromChar(currentItem)) {
+            ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, ClassTokenFromChar(currentItem));
         }
         ImGui::EndCombo();
     }
