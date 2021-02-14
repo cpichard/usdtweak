@@ -24,7 +24,6 @@ static void DrawVariantSelectionCombo(SdfPrimSpecHandle &primSpec, const SdfVari
             ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSelection.first, "");
         }
         for (const auto &variantName : primSpec->GetVariantNames(variantSelection.first)) {
-            ImGui::SameLine();
             if (ImGui::Selectable(variantName.c_str())) {
                 ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSelection.first, variantName);
             }
