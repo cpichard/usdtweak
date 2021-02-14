@@ -1,6 +1,8 @@
 #pragma once
 #include <pxr/usd/sdf/primSpec.h>
 
+#include "Gui.h"
+
 PXR_NAMESPACE_USING_DIRECTIVE
 
 /// Draw the full fledged primspec editor

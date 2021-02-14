@@ -31,7 +31,7 @@ class RotationManipulator : public Manipulator {
     void OnDrawFrame(const Viewport &) override;
 
     /// Called when the viewport changes its selection
-    void OnSelectionChange(Viewport &); // Should that inherit ?
+    void OnSelectionChange(Viewport &) override;
 
     typedef enum { // use class enum ??
         XAxis = 0,

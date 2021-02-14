@@ -15,9 +15,8 @@
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
 
-#include "Gui.h"
+#include "ImGuiHelpers.h"
 #include "PrimSpecEditor.h"
-#include "ReferenceEditor.h"
 #include "CompositionEditor.h"
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
