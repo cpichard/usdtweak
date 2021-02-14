@@ -15,7 +15,7 @@ struct ScopedStyleColor {
     ScopedStyleColor() = default;
     template <typename StyleT, typename ColorT, typename... Args> ScopedStyleColor(StyleT style, ColorT color, Args... args) {
         ImGui::PushStyleColor(style, color);
-        if (sizeof...(Args)) ScopedStyleColor scope(args...); // TODO use "if constexptr()" when C++17
+        if (sizeof...(Args)) ScopedStyleColor scope(args...); // TODO: use "if constexpr()" with C++17
     }
     ~ScopedStyleColor() { ImGui::PopStyleColor(); }
 };
