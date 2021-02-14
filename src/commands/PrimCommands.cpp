@@ -11,6 +11,8 @@
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/namespaceEdit.h>
 
+#include "ProxyHelpers.h"
+
 PXR_NAMESPACE_USING_DIRECTIVE
 
 struct PrimNew : public SdfLayerCommand {
@@ -84,7 +86,6 @@ struct PrimRemove : public SdfLayerCommand {
     SdfPrimSpecHandle _primSpec;
 };
 
-#include "ProxyHelpers.h"
 
 template <typename ItemType> struct PrimCreateListEditorOperation : SdfLayerCommand {
     PrimCreateListEditorOperation(SdfPrimSpecHandle primSpec, int operation, typename ItemType::value_type item)
@@ -128,34 +129,6 @@ struct PrimCreateSpecialize : public PrimCreateListEditorOperation<SdfPathKeyPol
     SdfSpecializesProxy GetListEditor() override { return _primSpec->GetSpecializesList(); }
 };
 
-
-// TODO : REMOVE REFERENCE EDITOR
-#include "ReferenceEditor.h"
-
-struct PrimCreateCompositionArc : public SdfLayerCommand {
-    PrimCreateCompositionArc(SdfPrimSpecHandle primSpec, CompositionOperation operation, CompositionList composition,
-                             std::string referencePath, SdfPath targetPrimPath)
-        : _primSpec(std::move(primSpec)), _referencePath(std::move(referencePath)), _operation(operation),
-          _composition(composition), _targetPrimPath(targetPrimPath) {}
-
-    ~PrimCreateCompositionArc() override {}
-
-    bool DoIt() override {
-        if (_primSpec) {
-            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
-            ApplyOperationOnCompositionList(_primSpec, _operation, _composition, _referencePath, _targetPrimPath);
-            return true;
-        }
-        return false;
-    }
-
-    CompositionOperation _operation;
-    CompositionList _composition;
-    SdfPrimSpecHandle _primSpec;
-    std::string _referencePath;
-    SdfPath _targetPrimPath;
-};
-
 struct PrimReparent : public SdfLayerCommand {
     PrimReparent(SdfLayerHandle layer, SdfPath source, SdfPath destination)
         : _layer(std::move(layer)), _source(source), _destination(destination) {}
@@ -185,9 +158,6 @@ struct PrimReparent : public SdfLayerCommand {
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
 template void ExecuteAfterDraw<PrimRemove>(SdfPrimSpecHandle primSpec);
-template void ExecuteAfterDraw<PrimCreateCompositionArc>(SdfPrimSpecHandle primSpec, CompositionOperation operation,
-                                                         CompositionList composition, std::string reference,
-                                                         SdfPath targetPrimPath);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
 
 template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, int operation, SdfReference reference);
