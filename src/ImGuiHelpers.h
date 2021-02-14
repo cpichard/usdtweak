@@ -9,13 +9,13 @@ template <typename T, typename... Args> inline void TableSetupColumns(T t, Args.
 }
 template <> inline void TableSetupColumns(const char *label) { ImGui::TableSetupColumn(label); }
 
-/// Creates a scoped object that will push the multiple style color passed in the constructor
-/// and pop the correct number of time when the object is destroyed
+/// Creates a scoped object that will push the pair of style and color passed in the constructor
+/// It will pop the correct number of time when the object is destroyed
 struct ScopedStyleColor {
     ScopedStyleColor() = default;
     template <typename StyleT, typename ColorT, typename... Args> ScopedStyleColor(StyleT style, ColorT color, Args... args) {
         ImGui::PushStyleColor(style, color);
-        if constexpr(sizeof...(Args)) ScopedStyleColor scope(args...); // "if constexptr" is C++17, check compilation on linux
+        if (sizeof...(Args)) ScopedStyleColor scope(args...); // TODO use "if constexptr()" when C++17
     }
     ~ScopedStyleColor() { ImGui::PopStyleColor(); }
 };
