@@ -23,7 +23,7 @@ struct Command {
 ///
 struct SdfLayerCommand : public Command {
     virtual ~SdfLayerCommand(){};
-    virtual bool DoIt() = 0;
+    virtual bool DoIt() override = 0 ;
     bool UndoIt() override {
         _undoCommands.UndoIt();
         return false;

@@ -177,9 +177,8 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
             if (isSelected)
                 ImGui::SetItemDefaultFocus();
         }
-
-        if (currentItem && primSpec->GetTypeName() != currentItem) {
-            if (currentItem=="") {
+        if (primSpec->GetTypeName() != TfToken(currentItem)) {
+            if (strcmp(currentItem, "")==0) {
                 ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, SdfTokens->AnyTypeToken);
             } else {
                 ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, currentItem);
@@ -194,14 +193,6 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
-
-    //// TESTING adding an attribute
-    //if (ImGui::Button("Add attribute")) {
-    //// SdfValueTypeName typeName = SdfSchemaBase::FindType	(	const TfToken & 	typeName	)	const
-    //    SdfValueTypeName typeName = primSpec->GetSchema().FindType("float");
-    //    SdfAttributeSpecHandle test = SdfAttributeSpec::New(primSpec, "Test", typeName);
-    //   // ExecuteCommandAfterDraw<SdfPrimSpecNewAttribute>(primSpec, "Test", typeName);
-    //}
 
     int deleteButtonCounter = 0;
     const auto &attributes = primSpec->GetAttributes();
@@ -353,9 +344,6 @@ void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
-    if (ImGui::Button("Add reference")) {
-        DrawPrimAddReferenceModalDialog(primSpec);
-    }
     ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
 

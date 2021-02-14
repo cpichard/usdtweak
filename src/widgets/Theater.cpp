@@ -21,7 +21,7 @@ void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nul
                     *selectedStage = cache.GetId(stage);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(stage->GetRootLayer()->GetRealPath().c_str());
+                ImGui::SetTooltip("%s", stage->GetRootLayer()->GetRealPath().c_str());
             }
             ImGui::PopID();
         }
@@ -52,7 +52,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                         *selectedLayer = layer;
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(layer->GetRealPath().c_str());
+                    ImGui::SetTooltip("%s", layer->GetRealPath().c_str());
                 }
 
                 if (ImGui::BeginPopupContextItem()) {
