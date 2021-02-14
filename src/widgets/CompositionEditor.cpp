@@ -221,9 +221,9 @@ static void DrawSdfPathRow(const char *operationName, const SdfPath &path, SdfPr
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removePath);
     }
     ImGui::TableSetColumnIndex(1);
-    ImGui::Text(operationName);
+    ImGui::Text("%s", operationName);
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text(path.GetString().c_str());
+    ImGui::Text("%s", path.GetString().c_str());
     if (ImGui::BeginPopupContextItem()) {
         DrawSdfPathMenuItems<ListT>(primSpec, path);
         ImGui::EndPopup();
@@ -245,15 +245,15 @@ static void DrawAssetPathRow(const char *operationName, const AssetPathT &item,
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeAssetPath);
     }
     ImGui::TableSetColumnIndex(1);
-    ImGui::Text(operationName);
+    ImGui::Text("%s", operationName);
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text(item.GetAssetPath().c_str());
+    ImGui::Text("%s", item.GetAssetPath().c_str());
     if (ImGui::BeginPopupContextItem(item.GetPrimPath().GetString().c_str())) {
         DrawAssetPathMenuItems(primSpec, item);
         ImGui::EndPopup();
     }
     ImGui::TableSetColumnIndex(3);
-    ImGui::Text(item.GetPrimPath().GetString().c_str());
+    ImGui::Text("%s", item.GetPrimPath().GetString().c_str());
 }
 
 void DrawPrimPayloads(SdfPrimSpecHandle &primSpec) {
