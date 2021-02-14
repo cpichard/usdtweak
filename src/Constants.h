@@ -40,3 +40,5 @@ constexpr const char *const DefaultPrimSpecName = "prim";
 
 /// Return error codes
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
+
+constexpr const char* ICON_DELETE = "\xef\x87\xb8"; // ICON_FA_TRASH;

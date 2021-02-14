@@ -74,6 +74,8 @@ add_executable(usdtweak
  src/widgets/Timeline.h
  src/widgets/ValueEditor.cpp
  src/widgets/ValueEditor.h
+ src/widgets/VariantEditor.cpp
+ src/widgets/VariantEditor.h
 )
 target_compile_definitions(usdtweak PRIVATE NOMINMAX)
 target_link_libraries(usdtweak glfw ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})

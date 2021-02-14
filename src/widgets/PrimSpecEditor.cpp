@@ -25,6 +25,7 @@
 #include "ValueEditor.h"
 #include "LayerEditor.h"
 
+#include "VariantEditor.h"
 #include "ProxyHelpers.h"
 
 
@@ -351,12 +352,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
 
     DrawPrimSpecMetadata(primSpec);
-
-    //if (ImGui::CollapsingHeader("References")) {
-        DrawPrimCompositions(primSpec);
-    //}
-
-    //if (ImGui::CollapsingHeader("Attributes")) {
-        DrawPrimSpecAttributes(primSpec);
-    //}
+    DrawPrimCompositions(primSpec);
+    DrawPrimVariants(primSpec);
+    DrawPrimSpecAttributes(primSpec); // properties ???
 }

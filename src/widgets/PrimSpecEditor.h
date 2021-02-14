@@ -16,9 +16,4 @@ void DrawPrimHidden(SdfPrimSpecHandle &primSpec);
 void DrawPrimActive(SdfPrimSpecHandle &primSpec);
 void DrawPrimName(SdfPrimSpecHandle &primSpec);
 
-void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec);
-//void DrawPrimCompositionPopupMenu(SdfPrimSpecHandle &primSpec);
-
-
-
 
