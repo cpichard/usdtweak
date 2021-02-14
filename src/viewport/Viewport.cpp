@@ -404,19 +404,24 @@ void Viewport::SetCameraPath(const SdfPath &cameraPath) {
 
 }
 
+template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
+    GfVec3d camPos = camera.GetFrustum().GetPosition();
+    GfVec4f lightPos(camPos[0], camPos[1], camPos[2], 1.0);
+    object.SetPosition(lightPos);
+}
 
 void Viewport::Render() {
-
     GfVec2i renderSize = _drawTarget->GetSize();
     int width = renderSize[0];
     int height = renderSize[1];
 
-    if (width == 0 || height == 0) return;
+    if (width == 0 || height == 0)
+        return;
 
     _drawTarget->Bind();
     glEnable(GL_DEPTH_TEST);
     glClearColor(_renderparams->clearColor[0], _renderparams->clearColor[1], _renderparams->clearColor[2],
-        _renderparams->clearColor[3]);
+                 _renderparams->clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glViewport(0, 0, width, height);
@@ -424,10 +429,11 @@ void Viewport::Render() {
     if (_renderer && GetCurrentStage()) {
         // Render hydra
         // Set camera and lighting state
+        CopyCameraPosition(GetCurrentCamera(), _lights[0]);
         _renderer->SetLightingState(_lights, _material, _ambient);
         _renderer->SetRenderViewport(GfVec4d(0, 0, width, height));
         _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
-        //_renderparams->forceRefresh = true;
+        _renderparams->forceRefresh = true;
 
         // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
         // else set camera state
