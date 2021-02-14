@@ -469,10 +469,10 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
                 ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, false);
             }
             if (layer && layer->IsMuted() && ImGui::MenuItem("Unmute")) {
-                ExecuteAfterDraw(&SdfLayer::SetMuted, layer, false);
+                ExecuteAfterDraw<LayerUnmute>(layer);
             }
             if (layer && !layer->IsMuted() && ImGui::MenuItem("Mute")) {
-                ExecuteAfterDraw(&SdfLayer::SetMuted, layer, true);
+                ExecuteAfterDraw<LayerMute>(layer);
             }
             ImGui::Separator();
         }

@@ -33,6 +33,8 @@ struct EditorSetNextLayer;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;
+struct LayerMute;
+struct LayerUnmute;
 
 struct UndoCommand;
 struct RedoCommand;

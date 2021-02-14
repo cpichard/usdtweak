@@ -78,7 +78,39 @@ struct LayerMoveSubLayer : public SdfLayerCommand {
 };
 template void ExecuteAfterDraw<LayerMoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp);
 
+/// Mute and Unmute seem to keep so additional data outside of Sdf, so they need their own commands
+struct LayerMute : public Command {
+    LayerMute(SdfLayerRefPtr layer) : _layer(layer) {}
+    bool DoIt() override {
+        if (!_layer)
+            return false;
+        _layer->SetMuted(true);
+        return true;
+    };
+    bool UndoIt() override {
+        if (_layer)
+            _layer->SetMuted(false);
+        return false;
+    }
+    SdfLayerRefPtr _layer;
+};
+template void ExecuteAfterDraw<LayerMute>(SdfLayerRefPtr layer);
 
-
+struct LayerUnmute : public Command {
+    LayerUnmute(SdfLayerRefPtr layer) : _layer(layer) {}
+    bool DoIt() override {
+        if (!_layer)
+            return false;
+        _layer->SetMuted(false);
+        return true;
+    };
+    bool UndoIt() override {
+        if (_layer)
+            _layer->SetMuted(true);
+        return false;
+    }
+    SdfLayerRefPtr _layer;
+};
+template void ExecuteAfterDraw<LayerUnmute>(SdfLayerRefPtr layer);
 
 
