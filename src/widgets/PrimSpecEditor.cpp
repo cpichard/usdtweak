@@ -154,7 +154,7 @@ void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
 
 /// Convert prim class tokens to and from char *
 /// The chars are stored in DrawPrimType
-static inline const char *ClassCharFromToken(TfToken &classToken) {
+static inline const char *ClassCharFromToken(const TfToken &classToken) {
     return classToken == SdfTokens->AnyTypeToken ? "" : classToken.GetString().c_str();
 }
 
