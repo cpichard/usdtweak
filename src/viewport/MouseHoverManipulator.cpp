@@ -20,7 +20,7 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     }
     else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
         const Selection &selection = viewport.GetSelection();
-        if (selection && !selection->IsEmpty()) {
+        if (!IsSelectionEmpty(selection)) {
             viewport.FrameSelection(viewport.GetSelection());
         } else {
             viewport.FrameRootPrim();

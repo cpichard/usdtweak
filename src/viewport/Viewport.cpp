@@ -257,10 +257,10 @@ void Viewport::SetSize(int width, int height) {
 
 /// Frane the viewport using the bounding box of the selection
 void Viewport::FrameSelection(const Selection &selection) { // Camera manipulator ???
-    if (GetCurrentStage() && selection) {
+    if (GetCurrentStage() && !IsSelectionEmpty(selection)) {
         UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
         GfBBox3d bbox;
-        for (const auto &primPath : selection->GetAllSelectedPrimPaths()) {
+        for (const auto &primPath : GetSelectedPaths(selection)) {
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
@@ -496,15 +496,12 @@ void Viewport::Update() {
         _drawTarget->Unbind();
     }
     // This is useful when a different camera is selected, when the focal length is changed
-    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]), _renderCamera->GetFieldOfView( GfCamera::FOVHorizontal),
-                                                        GfCamera::FOVHorizontal);
-    /// Note that the following will have terrible performances when selecting thousands of paths
-    /// this is a way to check if the selection has changed since the previous frame, not the most efficient way.
-    SelectionHash currentSelectionHash = GetSelectionHash(_selection);
-    if (_renderer && _lastSelectionHash != currentSelectionHash) {
+    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]),
+                                                                   _renderCamera->GetFieldOfView(GfCamera::FOVHorizontal),
+                                                                   GfCamera::FOVHorizontal);
+    if (_renderer && UpdateSelectionHash(_selection, _lastSelectionHash)) {
         _renderer->ClearSelected();
         _renderer->SetSelected(GetSelectedPaths(_selection));
-        _lastSelectionHash = currentSelectionHash;
 
         // Tell the manipulators the selection has changed
         _positionManipulator.OnSelectionChange(*this);
