@@ -193,6 +193,8 @@ void Viewport::Draw() {
     ImGui::Button("\xef\x89\xac Viewport");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawOpenGLSettings(*_renderer, *_renderparams);
+        ImGui::Separator();
+        DrawPickMode(_selectionManipulator);
         ImGui::EndPopup();
     }
 
