@@ -75,6 +75,26 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     }
 }
 
+/// This function should be called only when the Selection has changed
+/// It modifies the internal imgui tree graph state.
+/// It uses a hash that must be the same as the node, at the moment the label is the name of the prim
+/// which should be the same as the name on the selected paths
+static void OpenSelectedPaths(Selection &selectedPaths) {
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+    ImGuiStorage *storage = window->DC.StateStorage;
+    for (const auto &path : GetSelectedPaths(selectedPaths)) {
+        for (const auto &element : path.GetPrefixes()) {
+            ImGuiID id = window->GetID(element.GetElementString().c_str());
+            storage->SetInt(id, true);
+            window->IDStack.push_back(id);
+        }
+        for (int i = 0; i < path.GetPrefixes().size(); ++i) {
+            window->IDStack.pop_back();
+        }
+    }
+}
+
 /// Draw the hierarchy of the stage
 void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     if (!stage)
@@ -88,6 +108,14 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     ImGui::Columns(2); // Prim name | Type (Xform)
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
     auto unfolded = ImGui::TreeNodeEx(stage->GetRootLayer()->GetDisplayName().c_str(), nodeflags);
+
+    // Unfold the selected paths.
+    // TODO: This might be a behavior we don't want in some situations, so add a way to toggle it
+    static SelectionHash lastSelectionHash = 0;
+    if (UpdateSelectionHash(selectedPaths, lastSelectionHash)) { // We could use the imgui id as well instead of a static ??
+        OpenSelectedPaths(selectedPaths);
+        // TODO HighlightSelectedPaths();
+    }
 
     ImGui::NextColumn();
     ImGui::Text("");
