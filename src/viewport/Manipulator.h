@@ -2,16 +2,18 @@
 
 class Viewport;
 
-/// Base class for a manipulator. The manipulator is multiple thing at the same time, it is seen as an editing state from a fsm
-/// as a portion of code which renders a gizmo,
+/// Base class for a manipulator.
+/// The manipulator can be seen as an editing state part of a FSM
+/// It also knows how to draw itself in the viewport
 
-/// It forces to override the function OnUpdate which is called for every rendered frame.
-/// The manipulator should return the
+/// This base class forces the override of OnUpdate which is called every frame.
+/// The OnUpdate should return the new manipulator to use after the update or itself
+/// if the state (Translate/Rotate) should be the same
 
 struct Manipulator {
     virtual ~Manipulator(){};
-    virtual void OnBeginEdition(Viewport &){}; // Enter State
-    virtual void OnEndEdition(Viewport &){};   // Exit State
+    virtual void OnBeginEdition(Viewport &){};     // Enter State
+    virtual void OnEndEdition(Viewport &){};       // Exit State
     virtual Manipulator *OnUpdate(Viewport &) = 0; // Next State
 
     virtual bool IsMouseOver(const Viewport &) { return false; };

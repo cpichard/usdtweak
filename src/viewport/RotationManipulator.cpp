@@ -12,7 +12,7 @@
 static constexpr GLfloat axisSize = 1.2f;
 
 static constexpr const GLfloat planesPoints[] = {
-    // The 3 planes yz, xz, xy
+    // The 3 quads on planes yz, xz, xy
     0.f,       -axisSize, axisSize, 0.f,      axisSize,  axisSize,  0.f,       -axisSize, -axisSize,
     0.f,       axisSize,  axisSize, 0.f,      axisSize,  -axisSize, 0.f,       -axisSize, -axisSize,
 

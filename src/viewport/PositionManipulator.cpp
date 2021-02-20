@@ -287,8 +287,8 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
         ProjectMouseOnAxis(viewport, mouseOnAxis);
 
         // Get the sign
-        double ori; // = _axisLine.GetDirection()*_originMouseOnAxis;
-        double cur; // = _axisLine.GetDirection()*mouseOnAxis;
+        double ori = 0.0; // = _axisLine.GetDirection()*_originMouseOnAxis;
+        double cur = 0.0; // = _axisLine.GetDirection()*mouseOnAxis;
         _axisLine.FindClosestPoint(_originMouseOnAxis, &ori);
         _axisLine.FindClosestPoint(mouseOnAxis, &cur);
         double sign = cur > ori ? 1.0 : -1.0;

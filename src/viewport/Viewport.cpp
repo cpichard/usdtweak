@@ -15,6 +15,8 @@
 #include "Constants.h"
 #include "RendererSettings.h"
 
+// TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
+
 template <typename BasicShaderT>
 void DrawBasicShadingProperties(BasicShaderT &shader) {
     auto ambient = shader.GetAmbient();
@@ -478,6 +480,7 @@ void Viewport::Update() {
         } else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
             _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+            // TODO: should reset the camera otherwise, depending on the position of the camera, the transform is incorrect
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
             //_selection =
