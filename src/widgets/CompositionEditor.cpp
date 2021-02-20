@@ -147,26 +147,18 @@ void DrawPrimCreateSpecialize(SdfPrimSpecHandle &primSpec) { DrawModalDialog<Cre
 
 /// Remove a Asset Path from a primspec
 inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfReference &item) {
-    if (!primSpec)
-        return;
     primSpec->GetReferenceList().RemoveItemEdits(item);
 }
 inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfPayload &item) {
-    if (!primSpec)
-        return;
     primSpec->GetPayloadList().RemoveItemEdits(item);
 }
 
 /// Remove SdfPath from their lists (Inherits and Specialize)
 template <typename ListT> inline void RemovePathFromList(SdfPrimSpecHandle primSpec, const SdfPath &item);
 template <> inline void RemovePathFromList<Inherit>(SdfPrimSpecHandle primSpec, const SdfPath &item) {
-    if (!primSpec)
-        return;
     primSpec->GetInheritPathList().RemoveItemEdits(item);
 }
 template <> inline void RemovePathFromList<Specialize>(SdfPrimSpecHandle primSpec, const SdfPath &item) {
-    if (!primSpec)
-        return;
     primSpec->GetSpecializesList().RemoveItemEdits(item);
 }
 
