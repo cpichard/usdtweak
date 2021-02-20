@@ -199,7 +199,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
         return;
 
     int deleteButtonCounter = 0;
-    const auto &attributes = primSpec->GetAttributes();
+    const auto &attributes = primSpec->GetProperties();
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -217,9 +217,8 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
             // MiniButton
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(deleteButtonCounter++);
-            if(ImGui::Button(ICON_FA_TRASH)) {
-                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec,
-                                    primSpec->GetPropertyAtPath((*attribute)->GetPath()));
+            if (ImGui::Button(ICON_FA_TRASH)) {
+                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath((*attribute)->GetPath()));
             }
             ImGui::PopID();
 
@@ -228,9 +227,20 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
             SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
             if (timeSamples.empty())
                 nodeFlags |= ImGuiTreeNodeFlags_Leaf;
-            if (ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str())) {
-                // Samples
-                TF_FOR_ALL(sample, timeSamples) {
+            bool unfolded = ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str());
+            if ((*attribute)->HasDefaultValue()) { // If closed show the default value
+                ImGui::TableSetColumnIndex(2);
+                const std::string defaultValueLabel = "Default";
+                ImGui::Text("%s", defaultValueLabel.c_str());
+                ImGui::TableSetColumnIndex(3);
+                ImGui::PushItemWidth(-FLT_MIN);
+                VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
+                 if (modified != VtValue()) {
+                    ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, *attribute, modified);
+                }
+            }
+            if (unfolded) {
+                TF_FOR_ALL(sample, timeSamples) { // Samples
                     ImGui::TableNextRow();
                     // Mini button
                     ImGui::TableSetColumnIndex(1);
@@ -254,17 +264,6 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                     }
                 }
                 ImGui::TreePop();
-            } else // If closed show the default value
-            if ((*attribute)->HasDefaultValue()) {
-                ImGui::TableSetColumnIndex(2);
-                std::string defaultValueLabel = "Default";
-                ImGui::Text("%s", defaultValueLabel.c_str());
-                ImGui::TableSetColumnIndex(3);
-                ImGui::PushItemWidth(-FLT_MIN);
-                VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
-                if (modified != VtValue()) {
-                    ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, *attribute, modified);
-                }
             }
         }
         ImGui::EndTable();

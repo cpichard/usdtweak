@@ -5,6 +5,7 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
+#include <pxr/usd/usdGeom/camera.h>
 #include <functional>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -126,7 +127,9 @@ void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...
     ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
-template <typename FuncT, typename... ArgsT> void ExecuteAfterDraw(FuncT &&func, UsdGeomImageable &geom, ArgsT &&...arguments) {
+// NOTE: UsdGeomImageable and all other schema class will share the same code
+// TODO: template it if needed
+template <typename FuncT, typename... ArgsT> void ExecuteAfterDraw(FuncT &&func, const UsdGeomImageable &geom, ArgsT &&...arguments) {
     const auto &path = geom.GetPrim().GetPath();
     UsdStageWeakPtr stage = geom.GetPrim().GetStage();
     std::function<void()> usdApiFunc = [=]() {
@@ -142,8 +145,20 @@ void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT &&...argum
     const auto path = att->GetPath();
     const auto layer = att->GetLayer();
     std::function<void()> usdApiFunc = [=]() {
-        auto primSpec = layer->GetPrimAtPath(path);
-        std::function<void()> attFunc = std::bind(func, get_pointer(att), arguments...);
+        auto primSpec = layer->GetAttributeAtPath(path);
+        std::function<void()> attFunc = std::bind(func, get_pointer(primSpec), arguments...);
+        attFunc();
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
+}
+
+template <typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, SdfPropertySpecHandle att, ArgsT &&...arguments) {
+    const auto path = att->GetPath();
+    const auto layer = att->GetLayer();
+    std::function<void()> usdApiFunc = [=]() {
+        auto primSpec = layer->GetPropertyAtPath(path);
+        std::function<void()> attFunc = std::bind(func, get_pointer(primSpec), arguments...);
         attFunc();
     };
     ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunc);
