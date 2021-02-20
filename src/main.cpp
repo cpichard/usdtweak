@@ -5,7 +5,6 @@
 #include <pxr/imaging/glf/glew.h>
 #include <pxr/imaging/glf/simpleLight.h>
 #include <pxr/imaging/glf/diagnostic.h>
-//#define GLFW_INCLUDE_GLCOREARB
 #include <GLFW/glfw3.h>
 #include "Gui.h"
 #include "Editor.h"
@@ -43,7 +42,7 @@ int main(int argc, char **argv) {
 #ifdef DISABLE_DOUBLE_BUFFER
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
 #endif
-    GLFWwindow *window = glfwCreateWindow(width, height, "PrimSpector", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(width, height, "USD Tweak", NULL, NULL);
     if (!window) {
         std::cerr << "unable to create a window, exiting" << std::endl;
         glfwTerminate();
