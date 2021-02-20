@@ -87,7 +87,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
 
     ImGui::Columns(2); // Prim name | Type (Xform)
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
-    auto unfolded = ImGui::TreeNodeEx("root", nodeflags);
+    auto unfolded = ImGui::TreeNodeEx(stage->GetRootLayer()->GetDisplayName().c_str(), nodeflags);
 
     ImGui::NextColumn();
     ImGui::Text("");
