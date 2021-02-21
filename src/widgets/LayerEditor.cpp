@@ -255,7 +255,7 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
         if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != selectedPrim) {
             editNamePrim = SdfPrimSpecHandle();
         }
-        if (ImGui::IsMouseDoubleClicked(0)) {
+        if (!primIsVariant && ImGui::IsMouseDoubleClicked(0)) {
             editNamePrim = primSpec;
         }
     }
