@@ -318,25 +318,25 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         // the root layerStack, if you desire. As described at the top of UsdPrimCompositionQueryArc, once you find the inherits
         // (or specializes) arc that "introduces" the class, use that Arc's GetTargetNode() as the PcpNodeRef for a UsdEditTarget,
         // and rummage through its LayerStack's layers to see the layers in which you can edit.
-        UsdPrimCompositionQuery arc(prim);
-        auto compositionArcs = arc.GetCompositionArcs();
-        if (ImGui::BeginListBox("arcs")) {
-            for (auto a : compositionArcs) {
-                if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
-                    a.GetIntroducingLayer()->GetDisplayName();
-                    std::string arcName =
-                        a.GetIntroducingLayer()->GetDisplayName() + " " + a.GetIntroducingPrimPath().GetString();
-                    if (ImGui::Button(arcName.c_str())) {
-                        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
-                                         UsdEditTarget(editTarget.GetLayer(), a.GetTargetNode()));
-                    }
-                }
-            }
-            if (ImGui::Button("Reset")) {
-                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(editTarget.GetLayer()));
-            }
-            ImGui::EndListBox();
-        }
+        //UsdPrimCompositionQuery arc(prim);
+        //auto compositionArcs = arc.GetCompositionArcs();
+        //if (ImGui::BeginListBox("arcs")) {
+        //    for (auto a : compositionArcs) {
+        //        if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
+        //            a.GetIntroducingLayer()->GetDisplayName();
+        //            std::string arcName =
+        //                a.GetIntroducingLayer()->GetDisplayName() + " " + a.GetIntroducingPrimPath().GetString();
+        //            if (ImGui::Button(arcName.c_str())) {
+        //                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
+        //                                 UsdEditTarget(editTarget.GetLayer(), a.GetTargetNode()));
+        //            }
+        //        }
+        //    }
+        //    if (ImGui::Button("Reset")) {
+        //        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(editTarget.GetLayer()));
+        //    }
+        //    ImGui::EndListBox();
+        //}
         ImGui::Separator();
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
