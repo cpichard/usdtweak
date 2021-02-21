@@ -466,7 +466,7 @@ void Editor::Draw() {
             "###Layer Editor");
 
         ImGui::Begin(title.c_str(), &_showLayerEditor);
-        DrawLayerEditor(rootLayer, _selectedPrimSpec);
+        DrawLayerEditor(rootLayer, GetSelectedPrimSpec());
         ImGui::End();
     }
 
