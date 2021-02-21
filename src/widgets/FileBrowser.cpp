@@ -26,10 +26,7 @@ static std::string filePath;
 static bool fileExists = false;
 static std::vector<std::string> validExts;
 
-
-void SetValidExtensions(const std::vector<std::string> &extensions) {
-    validExts = extensions;
-}
+void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
 
 // Using a timer to avoid querying the filesytem at every frame
 // TODO: a separate thread to read from the filesystem only once needed as it might take
@@ -43,16 +40,13 @@ static void EverySecond(const std::function<void()> &deferedFunction) {
     }
 }
 
-
-static void ClearPathBuffer(char *pathBuffer){
-    memset(pathBuffer, 0, PathBufferSize);
-}
+static void ClearPathBuffer(char *pathBuffer) { memset(pathBuffer, 0, PathBufferSize); }
 //
 /// Path buffer must have PathBufferSize
 ///
 /// TODO: use imgui_stdlib instead of converting string to fixed char array
 static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
-    const int n = std::min(PathBufferSize-1, src.size());
+    const int n = std::min(PathBufferSize - 1, src.size());
     ClearPathBuffer(pathBuffer);
     strncpy(&pathBuffer[0], src.c_str(), n);
 }
@@ -79,10 +73,9 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
         ImGui::SameLine();
     }
     len = directoryPath.size();
-    if (ImGui::Button(directoryPath.substr(pos, len-pos).c_str())) {
+    if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
         CopyToPathBuffer(directoryPath.substr(0, len), lineEditBuffer);
     }
-
 }
 
 static bool ShouldBeDisplayed(const fs::directory_entry &p) {
@@ -100,8 +93,7 @@ static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     try {
         const bool isDirectory = fs::is_directory(p);
         return !startsWithDot && (isDirectory || endsWithValidExt);
-    }
-    catch (fs::filesystem_error &) {
+    } catch (fs::filesystem_error &) {
         return false;
     }
 }
@@ -142,10 +134,8 @@ void DrawFileBrowser() {
                 displayedFileName = path;
             }
         }
-        if (!displayedDirectory.empty()
-            && !displayedFileName.empty()
-            && fs::exists(displayedDirectory)
-            && fs::is_directory(displayedDirectory)) {
+        if (!displayedDirectory.empty() && !displayedFileName.empty() && fs::exists(displayedDirectory) &&
+            fs::is_directory(displayedDirectory)) {
             filePath = displayedDirectory / displayedFileName;
         } else {
             filePath = "";
