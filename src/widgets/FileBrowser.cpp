@@ -33,6 +33,7 @@ void SetValidExtensions(const std::vector<std::string> &extensions) { validExts 
 // Using a timer to avoid querying the filesytem at every frame
 // TODO: a separate thread to read from the filesystem only once needed as it might take
 // more than one second to return the list of files on network drives
+// or things like inotify ?? and the equivalent on linux ?
 static void EverySecond(const std::function<void()> &deferedFunction) {
     static auto last = clk::steady_clock::now();
     auto now = clk::steady_clock::now();
@@ -173,7 +174,7 @@ void DrawFileBrowser() {
     // Get window size
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: size of the window
-    if (ImGui::ListBoxHeader("##FileList", sizeArg)) {
+    if (ImGui::BeginListBox("##FileList", sizeArg)) {
         if (ImGui::BeginTable("Files", 4, tableFlags)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("Filename", ImGuiTableColumnFlags_WidthStretch);
@@ -219,7 +220,7 @@ void DrawFileBrowser() {
             ImGui::PopID(); // direntries
             ImGui::EndTable();
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
     }
 
     ImGui::PushItemWidth(0);

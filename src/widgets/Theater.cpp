@@ -11,7 +11,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nullptr,
                     const ImVec2 &listSize = ImVec2(0, -10)) {
     ImGui::PushItemWidth(-1);
-    if (ImGui::ListBoxHeader("##usdcache", listSize)) {
+    if (ImGui::BeginListBox("##usdcache", listSize)) {
         auto allStages = cache.GetAllStages();
         for (auto stage : allStages) {
             bool selected = selectedStage && *selectedStage == cache.GetId(stage);
@@ -25,7 +25,7 @@ void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nul
             }
             ImGui::PopID();
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
     }
 }
 
@@ -39,7 +39,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
               [](const auto &t1, const auto &t2) { return t1->GetDisplayName() < t2->GetDisplayName(); });
     static ImGuiTextFilter filter;
     filter.Draw();
-    if (ImGui::ListBoxHeader("##layers", listSize)) { // TODO: anonymous different per type ??
+    if (ImGui::BeginListBox("##layers", listSize)) { // TODO: anonymous different per type ??
         for (const auto &layer : sortedSet) {
             if (!layer)
                 continue;
@@ -62,7 +62,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                 ImGui::PopID();
             }
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
     }
 }
 

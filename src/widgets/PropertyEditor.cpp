@@ -95,7 +95,7 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
     //}
     relationship.GetTargets(&targets);
     if (!targets.empty()) {
-        if (ImGui::ListBoxHeader("##Relationship", ImVec2(-FLT_MIN, targets.size() * 25))) {
+        if (ImGui::BeginListBox("##Relationship", ImVec2(-FLT_MIN, targets.size() * 25))) {
             for (const auto& path : targets) {
                 if (ImGui::Button(ICON_FA_TRASH)) {
                     ExecuteAfterDraw(&UsdRelationship::RemoveTarget, relationship, path);
@@ -104,7 +104,7 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
                 std::string buffer = path.GetString();
                 ImGui::InputText("##EditRelation", &buffer);
             }
-            ImGui::ListBoxFooter();
+            ImGui::EndListBox();
         }
     }
 }
@@ -320,7 +320,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         // and rummage through its LayerStack's layers to see the layers in which you can edit.
         UsdPrimCompositionQuery arc(prim);
         auto compositionArcs = arc.GetCompositionArcs();
-        if (ImGui::ListBoxHeader("arcs")) {
+        if (ImGui::BeginListBox("arcs")) {
             for (auto a : compositionArcs) {
                 if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
                     a.GetIntroducingLayer()->GetDisplayName();
@@ -335,7 +335,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             if (ImGui::Button("Reset")) {
                 ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(editTarget.GetLayer()));
             }
-            ImGui::ListBoxFooter();
+            ImGui::EndListBox();
         }
         ImGui::Separator();
         if (DrawAssetInfo(prim)) {
