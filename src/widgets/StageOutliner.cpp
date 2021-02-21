@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <pxr/usd/usdGeom/gprim.h>
+#include "pxr/usd/pcp/layerStack.h"
 
 #include "Gui.h"
 #include "StageOutliner.h"
@@ -12,7 +13,31 @@
 /// Note: ImGuiListClipper can be useful if the hierarchy is huge
 ///
 
-static void DrawUsdPrimEdit(const UsdPrim &prim) {
+static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
+    if (!tree)
+        return;
+    auto obj = tree->GetLayer()->GetObjectAtPath(node.GetPath());
+    if (obj) {
+        std::string format;
+        format += tree->GetLayer()->GetDisplayName();
+        format += " ";
+        format += obj->GetPath().GetString();
+        if (ImGui::MenuItem(format.c_str())) {
+            ExecuteAfterDraw<EditorSetCurrentLayer>(tree->GetLayer());
+        }
+    }
+    for (auto subTree : tree->GetChildTrees()) {
+        ExploreLayerTree(subTree, node);
+    }
+}
+
+static void ExploreComposition(PcpNodeRef root) {
+    auto tree = root.GetLayerStack()->GetLayerTree();
+    ExploreLayerTree(tree, root);
+    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode); }
+}
+
+static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
     if (ImGui::MenuItem("Toggle active")) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
@@ -20,8 +45,16 @@ static void DrawUsdPrimEdit(const UsdPrim &prim) {
     if (ImGui::MenuItem("Copy prim path")) {
         ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
     }
+    if (ImGui::BeginMenu("Inspect")) {
+        ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
+        auto pcpIndex = prim.ComputeExpandedPrimIndex();
+        if (pcpIndex.IsValid()) {
+            auto rootNode = pcpIndex.GetRootNode();
+            ExploreComposition(rootNode);
+        }
+        ImGui::EndMenu();
+    }
 }
-
 
 /// Recursive function to draw a prim and its descendants
 static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
@@ -41,7 +74,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
         SetSelected(selectedPaths, prim.GetPath());
     }
     if (ImGui::BeginPopupContextItem()) {
-        DrawUsdPrimEdit(prim);
+        DrawUsdPrimEditMenuItems(prim);
         ImGui::EndPopup();
     }
 
