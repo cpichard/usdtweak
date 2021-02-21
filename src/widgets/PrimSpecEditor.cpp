@@ -200,6 +200,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 
     int deleteButtonCounter = 0;
     const auto &attributes = primSpec->GetProperties();
+    if (attributes.empty()) return;
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
