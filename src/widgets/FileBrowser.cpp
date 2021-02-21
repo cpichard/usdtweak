@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <functional>
+#include <ctime>
 #include <chrono>
 #include "Gui.h"
 #include "FileBrowser.h"
@@ -109,6 +110,17 @@ static bool directoryThenFile(const fs::directory_entry &a, const fs::directory_
     }
 }
 
+void DrawFileSize(uintmax_t fileSize) {
+    static const char *format[6] = {"%ju", "%juKb", "%juMb", "%juGb", "%juTb", "%juPb"};
+    constexpr int nbFormat = sizeof(format) / sizeof(const char *);
+    int i = 0;
+    while (fileSize / 1024 > 0 && i < nbFormat - 1) {
+        fileSize /= 1024;
+        i++;
+    }
+    ImGui::Text(format[i], fileSize);
+}
+
 // TODO check that there is a antislash/slash at the end of c
 void DrawFileBrowser() {
     static char lineEditBuffer[PathBufferSize]; // TODO: check if it can be replaced by imgui_stdlib
@@ -162,9 +174,10 @@ void DrawFileBrowser() {
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: size of the window
     if (ImGui::ListBoxHeader("##FileList", sizeArg)) {
-        if (ImGui::BeginTable("Files", 3, tableFlags)) {
+        if (ImGui::BeginTable("Files", 4, tableFlags)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("Filename", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Date modified", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
             int i = 0;
@@ -191,7 +204,17 @@ void DrawFileBrowser() {
                     ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().c_str());
                 }
                 ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%ju KB", dirEntry.file_size() / 1024);
+                try {
+                    const auto lastModified = last_write_time(dirEntry.path());
+                    const auto cftime = decltype(lastModified)::clock::to_time_t(lastModified);
+                    const auto lt = std::localtime(&cftime);
+                    ImGui::Text("%04d/%02d/%02d %02d:%02d", 1900 + lt->tm_year, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour,
+                                lt->tm_min);
+                } catch (const std::exception &e) {
+                    ImGui::Text("Error reading file");
+                }
+                ImGui::TableSetColumnIndex(3);
+                DrawFileSize(dirEntry.file_size());
             }
             ImGui::PopID(); // direntries
             ImGui::EndTable();
