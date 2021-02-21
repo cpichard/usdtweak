@@ -9,6 +9,7 @@
 #include "Gui.h"
 #include "FileBrowser.h"
 #include "Constants.h"
+#include "ImGuiHelpers.h"
 
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -53,6 +54,7 @@ static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
 
 static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEditBuffer) {
     // Split the path navigator ??
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
     const std::string &directoryPath = displayedDirectory.string();
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
@@ -69,7 +71,7 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
         pos = len + 1;
         len = directoryPath.find(fs::path::preferred_separator, pos);
         ImGui::SameLine();
-        ImGui::Text("/");
+        ImGui::Text(">");
         ImGui::SameLine();
     }
     len = directoryPath.size();
