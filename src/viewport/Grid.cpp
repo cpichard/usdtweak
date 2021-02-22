@@ -74,7 +74,7 @@ static constexpr const char *fragmentShaderSrc =
     "   float fadeFactor = length(gridCoordDerivative)/(cellSize/2.f);"
     "   vec2 gridLine = 1.f - abs(clamp(mod(gridCoord, cellSize) / (2.0*gridCoordDerivative), 0.0, 1.0) * 2 - 1.f);"
     "   float gridLineAlpha = max(gridLine.x, gridLine.y);"
-    "   vec4 c = vec4(0.4, 0.4, 0.4, 1.0);"
+    "   vec4 c = vec4(0.7, 0.7, 0.7, 1.0);"
     "   c.a = gridLineAlpha * (1-fadeFactor*fadeFactor);"
     "   if (c.a == 0) discard;"
     "   FragColor = c;"

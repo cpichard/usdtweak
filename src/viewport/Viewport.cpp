@@ -102,7 +102,7 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _renderparams = new UsdImagingGLRenderParams;
     _renderparams->frame = 1.0;
     _renderparams->complexity = 1.0;
-    _renderparams->clearColor = GfVec4f(0.5, 0.5, 0.5, 1.0);
+    _renderparams->clearColor = GfVec4f(0.08, 0.08, 0.08, 1.0);
     _renderparams->showRender = false;
     _renderparams->forceRefresh = false;
     _renderparams->enableLighting = true;
