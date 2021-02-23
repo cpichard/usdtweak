@@ -485,7 +485,7 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
         if (layer) {
             std::vector<std::string> subLayers = layer->GetSubLayerPaths();
             for (auto subLayerPath : subLayers) {
-                auto subLayer = SdfFindOrOpenRelativeToLayer(layer, &subLayerPath);
+                auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, subLayerPath);
                 DrawLayerSublayerTree(subLayer, layer, subLayerPath);
             }
         }

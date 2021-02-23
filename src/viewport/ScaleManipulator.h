@@ -6,9 +6,6 @@
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 
-#ifdef _WIN32
-#include <GL/glew.h>
-#endif
 #include "Manipulator.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE

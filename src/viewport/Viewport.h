@@ -14,7 +14,7 @@
 #include "ScaleManipulator.h"
 #include "Selection.h"
 #include "Grid.h"
-
+#include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>

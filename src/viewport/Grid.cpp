@@ -8,15 +8,14 @@
 // https://github.com/LWJGL/lwjgl3-demos/blob/main/src/org/lwjgl/demo/opengl/shader/InfinitePlaneDemo.java
 // https://github.com/martin-pr/possumwood/wiki/Infinite-ground-plane-using-GLSL-shaders
 //
-
-#include <GL/glew.h>
-#include "Grid.h"
 #include <iostream>
+#include <pxr/imaging/garch/glApi.h>
 #include <pxr/base/gf/matrix4f.h>
 #include <pxr/base/gf/line.h>
-#include <GLFW/glfw3.h>
+#include "Grid.h"
 #include "Constants.h" // error codes
 #include "Viewport.h"
+#include "Gui.h"
 
 // In the viewing volume, the xy plane clipped at 1, this covers the full view area
 static constexpr const GLfloat gridPoints[] = {1.0,  1.0,  0.f, -1.0, -1.0, 0.f, -1.0, 1.0,  0.f,
@@ -129,6 +128,7 @@ void Grid::Render(Viewport &viewport) {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     glDisable(GL_BLEND);
+    glUseProgram(0);
 }
 
 // TODO: this must be refactored along with TranslationEditor::CompileShader in a dedicated class

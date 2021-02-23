@@ -1,6 +1,7 @@
 #include "ResourcesLoader.h"
-#include "FontAwesomeFree5.h"
 #include "Gui.h"
+#include "FontAwesomeFree5.h"
+
 ResourcesLoader::ResourcesLoader() {
     // Font
     ImGuiIO &io = ImGui::GetIO();

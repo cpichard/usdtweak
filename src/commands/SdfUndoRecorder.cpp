@@ -1,6 +1,6 @@
+#include <iostream>
 #include "SdfUndoRecorder.h"
 #include "UndoLayerStateDelegate.h"
-#include <iostream>
 
 SdfUndoRecorder::SdfUndoRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer)
     : _undoCommands(undoCommands), _layer(layer) {

@@ -1,8 +1,8 @@
+#include <functional>
+#include <vector>
 #include "Commands.h"
 #include "SdfCommandGroup.h"
 #include "SdfUndoRecorder.h"
-#include <functional>
-#include <vector>
 #include "UndoLayerStateDelegate.h"
 
 /// Base class for all commands.

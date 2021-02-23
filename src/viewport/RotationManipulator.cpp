@@ -1,8 +1,8 @@
 #include <iostream>
 #include <pxr/base/gf/line.h>
+#include <pxr/imaging/garch/glApi.h>
+
 #include "Constants.h"
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
 #include "RotationManipulator.h"
 #include "GeometricFunctions.h"
 #include "Viewport.h"

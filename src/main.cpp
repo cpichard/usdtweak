@@ -2,16 +2,14 @@
 #include <Python.h>
 #include <pxr/base/plug/registry.h>
 #include <pxr/imaging/glf/contextCaps.h>
-#include <pxr/imaging/glf/glew.h>
 #include <pxr/imaging/glf/simpleLight.h>
 #include <pxr/imaging/glf/diagnostic.h>
-#include <GLFW/glfw3.h>
-#include "Gui.h"
 #include "Editor.h"
 #include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
 #include "ResourcesLoader.h"
+#include "Gui.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -53,7 +51,7 @@ int main(int argc, char **argv) {
     glfwMakeContextCurrent(window);
 
     // Init glew with USD
-    GlfGlewInit();
+    GarchGLApiLoad();
     GlfContextCaps::InitInstance();
     std::cout << glGetString(GL_VENDOR) << std::endl;
     std::cout << glGetString(GL_RENDERER) << std::endl;

@@ -1,8 +1,9 @@
-#include "SdfCommandGroup.h"
-#include "SdfLayerInstructions.h"
 #include <boost/range/adaptor/reversed.hpp> // why reverse adaptor is not in std ?? seriously ...
 #include <memory>
 #include <iostream>
+#include "SdfCommandGroup.h"
+#include "SdfLayerInstructions.h"
+
 
 
 bool SdfCommandGroup::IsEmpty() const { return _instructions.empty(); }

@@ -3,7 +3,6 @@
 #include "Viewport.h"
 #include "Commands.h"
 #include "Gui.h"
-#include <GLFW/glfw3.h>
 
 CameraManipulator::CameraManipulator(const GfVec2i &viewportSize, bool isZUp) : CameraRig(viewportSize, isZUp) {}
 

@@ -1,9 +1,7 @@
-//#define GLFW_INCLUDE_GLCOREARB
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
 #include <iostream>
 #include <array>
 #include <utility>
+#include <pxr/imaging/garch/glApi.h>
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>

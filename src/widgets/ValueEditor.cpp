@@ -1,14 +1,13 @@
-#include "ValueEditor.h"
-#include "Constants.h"
-#include "pxr/base/gf/vec3f.h"
-#include "pxr/base/gf/vec3d.h"
-#include "pxr/base/vt/array.h"
-#include "pxr/usd/sdf/assetPath.h"
-
-#include "Gui.h"
-
 #include <iostream>
 #include <sstream>
+
+#include "ValueEditor.h"
+#include "Constants.h"
+#include <pxr/base/gf/vec3f.h>
+#include <pxr/base/gf/vec3d.h>
+#include <pxr/base/vt/array.h>
+#include <pxr/usd/sdf/assetPath.h>
+#include "Gui.h"
 
 // VtValue DrawColorValue();
 VtValue DrawTfToken(const std::string &label, const TfToken &token, const VtValue &allowedTokens) {

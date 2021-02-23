@@ -1,11 +1,10 @@
-#include "CameraRig.h"
-#include "Constants.h"
+#include <iostream>
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/transform.h>
 #include <pxr/base/gf/bbox3d.h>
 #include <pxr/base/gf/frustum.h>
-
-#include <iostream>
+#include "CameraRig.h"
+#include "Constants.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

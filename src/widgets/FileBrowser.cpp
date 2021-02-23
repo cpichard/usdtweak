@@ -7,10 +7,6 @@
 #include <functional>
 #include <ctime>
 #include <chrono>
-#include "Gui.h"
-#include "FileBrowser.h"
-#include "Constants.h"
-#include "ImGuiHelpers.h"
 
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -20,6 +16,12 @@ namespace fs = std::filesystem;
 #include <ghc/filesystem.hpp>
 namespace fs = ghc::filesystem;
 #endif
+
+#include "FileBrowser.h"
+#include "Constants.h"
+#include "ImGuiHelpers.h"
+#include "Gui.h"
+
 
 namespace clk = std::chrono;
 
@@ -49,7 +51,7 @@ static void ClearPathBuffer(char *pathBuffer) { memset(pathBuffer, 0, PathBuffer
 ///
 /// TODO: use imgui_stdlib instead of converting string to fixed char array
 static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
-    const int n = std::min(PathBufferSize - 1, src.size());
+    const size_t n = std::min(PathBufferSize - 1, src.size());
     ClearPathBuffer(pathBuffer);
     strncpy(&pathBuffer[0], src.c_str(), n);
 }
@@ -211,7 +213,7 @@ void DrawFileBrowser() {
                     const auto lt = std::localtime(&cftime);
                     ImGui::Text("%04d/%02d/%02d %02d:%02d", 1900 + lt->tm_year, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour,
                                 lt->tm_min);
-                } catch (const std::exception &e) {
+                } catch (const std::exception &) {
                     ImGui::Text("Error reading file");
                 }
                 ImGui::TableSetColumnIndex(3);

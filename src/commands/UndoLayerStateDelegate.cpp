@@ -1,10 +1,9 @@
+#include <iostream>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/sdf/abstractData.h>
 #include "UndoLayerStateDelegate.h"
 #include "SdfUndoRecorder.h"
 #include "SdfLayerInstructions.h"
-#include <iostream>
-
-#include <pxr/usd/sdf/path.h>
-#include <pxr/usd/sdf/abstractData.h>
 
 ///
 /// UndoRedoLayerStateDelegate is a delegate used to record Undo functions.

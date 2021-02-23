@@ -17,7 +17,7 @@ struct LayerRemoveSubLayer : public SdfLayerCommand {
         if (!_layer)
             return false;
         SdfUndoRecorder recorder(_undoCommands, _layer);
-        for (size_t i = 0; i < _layer->GetNumSubLayerPaths(); i++) {
+        for (int i = 0; i < _layer->GetNumSubLayerPaths(); i++) {
             if (_layer->GetSubLayerPaths()[i] == _subLayerPath) {
                 _layer->RemoveSubLayerPath(i);
                 return true;

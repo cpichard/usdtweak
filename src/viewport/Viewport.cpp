@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <pxr/imaging/glf/glew.h>
+#include <pxr/imaging/garch/glApi.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/boundable.h>
 #include <pxr/usd/usdGeom/camera.h>
@@ -8,7 +8,6 @@
 #include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/imageable.h>
 
-#include <GLFW/glfw3.h>
 #include "Gui.h"
 #include "Viewport.h"
 #include "Commands.h"

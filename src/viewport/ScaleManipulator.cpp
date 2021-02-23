@@ -1,9 +1,7 @@
 #include <iostream>
 #include <pxr/base/gf/matrix4f.h>
-
+#include <pxr/imaging/garch/glApi.h>
 #include "Constants.h"
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
 #include "ScaleManipulator.h"
 #include "GeometricFunctions.h"
 #include "Viewport.h"
