@@ -179,10 +179,12 @@ template <typename PathOriginT> void DrawSdfPathMenuItems(const SdfPrimSpecHandl
 template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHandle &primSpec, const AssetPathT &assetPath) {
 
     if (ImGui::MenuItem("Inspect")) {
-        ExecuteAfterDraw<EditorOpenLayer>(assetPath.GetAssetPath());
+        auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
+        ExecuteAfterDraw<EditorOpenLayer>(realPath);
     }
     if (ImGui::MenuItem("Open as Stage")) {
-        ExecuteAfterDraw<EditorOpenStage>(assetPath.GetAssetPath());
+        auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
+        ExecuteAfterDraw<EditorOpenStage>(realPath);
     }
     ImGui::Separator();
     if (ImGui::MenuItem("Remove")) {
