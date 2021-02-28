@@ -219,7 +219,7 @@ static void DrawSdfPathRow(const char *operationName, const SdfPath &path, SdfPr
     ImGui::Text("%s", operationName);
     ImGui::TableSetColumnIndex(2);
     ImGui::Text("%s", path.GetString().c_str());
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(path.GetString().c_str())) {
         DrawSdfPathMenuItems<ListT>(primSpec, path);
         ImGui::EndPopup();
     }
