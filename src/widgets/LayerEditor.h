@@ -6,6 +6,9 @@
 //oid DrawLayerPrimTree(SdfLayerHandle layer);
 void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim);
 
+void DrawLayerHeader(SdfLayerRefPtr layer);
+
 ///
 void DrawLayerActionPopupMenu(SdfLayerHandle layer);
+
 

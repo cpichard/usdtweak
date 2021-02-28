@@ -90,13 +90,13 @@ struct EditorSetCurrentLayer : public EditorCommand {
     ~EditorSetCurrentLayer() override {}
 
     bool DoIt() override {
-        if (_editor) {
+        if (_editor && _layer) {
             _editor->InspectCurrentLayer(_layer);
         }
 
         return false;
     }
-    SdfLayerHandle _layer;
+    SdfLayerRefPtr _layer;
 };
 template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
 

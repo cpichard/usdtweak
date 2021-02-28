@@ -231,6 +231,8 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
 }
 
 void Editor::InspectCurrentLayer(SdfLayerRefPtr layer) {
+    if (!layer)
+        return;
     if (!_layerHistory.empty()) {
         if (GetCurrentLayer() != layer) {
             if (_layerHistoryPointer < _layerHistory.size() - 1) {
@@ -476,7 +478,11 @@ void Editor::Draw() {
 
     if (_showPrimSpecEditor) {
         ImGui::Begin("PrimSpec editor", &_showPrimSpecEditor);
-        DrawPrimSpecEditor(GetSelectedPrimSpec());
+        if (GetSelectedPrimSpec()) {
+            DrawPrimSpecEditor(GetSelectedPrimSpec());
+        } else {
+            DrawLayerHeader(GetCurrentLayer());
+        }
         ImGui::End();
     }
 

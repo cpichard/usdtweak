@@ -336,7 +336,12 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
         }
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-
+        bool selected = SdfPrimSpecHandle() == selectedPrim;
+        if (ImGui::Selectable("##selectTestRow", selected,
+                              ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+            selectedPrim = SdfPrimSpecHandle();
+        }
+        ImGui::SameLine();
         std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
         bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
 
@@ -414,7 +419,7 @@ void DrawUpAxis(SdfLayerRefPtr layer) {
 }
 
 // TODO: move in the property editor
-void DrawLayerMetadata(SdfLayerRefPtr layer) {
+void DrawLayerHeader(SdfLayerRefPtr layer) {
     if (!layer)
         return;
 
