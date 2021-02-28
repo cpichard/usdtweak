@@ -8,10 +8,9 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nullptr,
-                    const ImVec2 &listSize = ImVec2(0, -10)) {
+void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nullptr, const ImVec2 &listSize = ImVec2(0, -10)) {
     ImGui::PushItemWidth(-1);
-    if (ImGui::BeginListBox("##usdcache", listSize)) {
+    if (ImGui::BeginListBox("##DrawStageCache", listSize)) {
         auto allStages = cache.GetAllStages();
         for (auto stage : allStages) {
             bool selected = selectedStage && *selectedStage == cache.GetId(stage);
@@ -68,24 +67,25 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
 
 void DrawTheater(Editor &editor) {
 
-    ImGui::BeginTabBar("theatertabbar");
-    if (ImGui::BeginTabItem("Stages")) {
-        UsdStageCache::Id selected;
-        DrawStageCache(editor.GetStageCache(), &selected);
-        if (selected != UsdStageCache::Id()) {
-            editor.SetCurrentStage(selected);
+    if (ImGui::BeginTabBar("theatertabbar")) {
+        if (ImGui::BeginTabItem("Stages")) {
+            UsdStageCache::Id selected;
+            DrawStageCache(editor.GetStageCache(), &selected);
+            if (selected != UsdStageCache::Id()) {
+                editor.SetCurrentStage(selected);
+            }
+            ImGui::EndTabItem();
         }
-        ImGui::EndTabItem();
-    }
 
-    if (ImGui::BeginTabItem("Layers")) {
-        SdfLayerHandle selected(editor.GetCurrentLayer());
-        auto layers = SdfLayer::GetLoadedLayers();
-        DrawLayerSet(layers, &selected);
-        if (selected != editor.GetCurrentLayer()) {
-            editor.InspectCurrentLayer(selected);
+        if (ImGui::BeginTabItem("Layers")) {
+            SdfLayerHandle selected(editor.GetCurrentLayer());
+            auto layers = SdfLayer::GetLoadedLayers();
+            DrawLayerSet(layers, &selected);
+            if (selected != editor.GetCurrentLayer()) {
+                editor.InspectCurrentLayer(selected);
+            }
+            ImGui::EndTabItem();
         }
-        ImGui::EndTabItem();
+        ImGui::EndTabBar();
     }
-    ImGui::EndTabBar();
 }

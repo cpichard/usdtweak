@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include <pxr/usd/usdGeom/gprim.h>
-#include "pxr/usd/pcp/layerStack.h"
+#include <pxr/usd/pcp/layerStack.h>
 
 #include "Gui.h"
 #include "StageOutliner.h"
