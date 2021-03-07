@@ -92,8 +92,8 @@ void ExecuteAfterDraw(FuncT &&func, const UsdAttribute &attribute, ArgsT &&...ar
     const auto &path = attribute.GetPath();
     UsdStageWeakPtr stage = attribute.GetStage();
     std::function<void()> usdApiFunc = [=]() {
-        auto attribute = stage->GetAttributeAtPath(path);
-        std::function<void()> attributeFunc = std::bind(func, &attribute, arguments...);
+        auto att = stage->GetAttributeAtPath(path);
+        std::function<void()> attributeFunc = std::bind(func, &att, arguments...);
         attributeFunc();
     };
     ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
