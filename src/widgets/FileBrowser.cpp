@@ -103,7 +103,7 @@ static bool directoryThenFile(const fs::directory_entry &a, const fs::directory_
 }
 
 void DrawFileSize(uintmax_t fileSize) {
-    static const char *format[6] = {"%ju", "%juKb", "%juMb", "%juGb", "%juTb", "%juPb"};
+    static const char *format[6] = {"%juB", "%juK", "%juM", "%juG", "%juT", "%juP"};
     constexpr int nbFormat = sizeof(format) / sizeof(const char *);
     int i = 0;
     while (fileSize / 1024 > 0 && i < nbFormat - 1) {
