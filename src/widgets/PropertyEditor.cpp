@@ -10,8 +10,29 @@
 #include "ValueEditor.h"
 #include "Constants.h"
 #include "Commands.h"
+#include "ModalDialogs.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+/// Very basic ui to create a connection
+struct CreateConnectionDialog : public ModalDialog {
+
+    CreateConnectionDialog(const UsdAttribute &attribute) : _attribute(attribute){};
+    ~CreateConnectionDialog() override {}
+
+    void Draw() override {
+        ImGui::Text("Create connection for %s", _attribute.GetPath().GetString().c_str());
+        ImGui::InputText("Path", &_connectionEndPoint);
+        DrawOkCancelModal([&]() {
+            ExecuteAfterDraw(&UsdAttribute::AddConnection, _attribute, SdfPath(_connectionEndPoint),
+                             UsdListPositionBackOfPrependList);
+        });
+    }
+    const char *DialogId() const override { return "Attribute connection"; }
+
+    UsdAttribute _attribute;
+    std::string _connectionEndPoint;
+};
 
 /// Select and draw the appropriate editor depending on the type, metada and so on.
 /// Returns the modified value or VtValue
@@ -46,8 +67,8 @@ void DrawAttributeTypeInfo(const UsdAttribute &attribute) {
 
 // Right align is not used at the moment, but keeping the code as this is useful for quick layout testing
 inline void RightAlignNextItem(const char *str) {
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(str).x -
-                         ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - ImGui::CalcTextSize(str).x - ImGui::GetScrollX() -
+                         2 * ImGui::GetStyle().ItemSpacing.x);
 }
 
 void DrawAttributeDisplayName(const UsdAttribute &attribute) {
@@ -56,32 +77,39 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
 }
 
 void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
-    std::string attributeLabel = GetDisplayName(attribute);
+    const std::string attributeLabel = GetDisplayName(attribute);
     VtValue value;
-    if (attribute.Get(&value, currentTime)) {
+    const bool HasValue = attribute.Get(&value, currentTime);
+
+    if (HasValue) {
         VtValue modified = DrawAttributeValue(attributeLabel, attribute, value);
         if (!modified.IsEmpty()) {
             ExecuteAfterDraw<AttributeSet>(attribute, modified,
                                            attribute.GetNumTimeSamples() ? currentTime : UsdTimeCode::Default());
         }
-    } else {
-        // No values, what do we display ??
-        // TODO: we should always display the connections
-        ImVec4 attributeNameColor = attribute.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
-        if (attribute.HasAuthoredConnections()) {
-            SdfPathVector sources;
-            attribute.GetConnections(&sources);
-            for (auto &connection : sources) {
-                // TODO: edit connection
-                ImGui::TextColored(ImVec4(AttributeConnectionColor), ICON_FA_LINK " %s", connection.GetString().c_str());
+    }
+
+    const bool HasConnections = attribute.HasAuthoredConnections();
+    if (HasConnections) {
+        SdfPathVector sources;
+        attribute.GetConnections(&sources);
+        for (auto &connection : sources) {
+            ImGui::PushID(connection.GetString().c_str());
+            if (ImGui::Button(ICON_FA_TRASH)) {
+                ExecuteAfterDraw(&UsdAttribute::RemoveConnection, attribute, connection);
             }
-        } else {
-            ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(AttributeConnectionColor), ICON_FA_LINK " %s", connection.GetString().c_str());
+            ImGui::PopID();
         }
+    }
+
+    if (!HasValue && !HasConnections) {
+        ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
     }
 }
 
-void DrawUsdRelationshipDisplayName(const UsdRelationship& relationship) {
+void DrawUsdRelationshipDisplayName(const UsdRelationship &relationship) {
     std::string relationshipName = GetDisplayName(relationship);
     ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
     ImGui::TextColored(ImVec4(attributeNameColor), "%s", relationshipName.c_str());
@@ -89,20 +117,22 @@ void DrawUsdRelationshipDisplayName(const UsdRelationship& relationship) {
 
 void DrawUsdRelationshipList(const UsdRelationship &relationship) {
     SdfPathVector targets;
-    //relationship.GetForwardedTargets(&targets);
-    //for (const auto &path : targets) {
+    // relationship.GetForwardedTargets(&targets);
+    // for (const auto &path : targets) {
     //    ImGui::TextColored(ImVec4(AttributeRelationshipColor), "%s", path.GetString().c_str());
     //}
     relationship.GetTargets(&targets);
     if (!targets.empty()) {
         if (ImGui::BeginListBox("##Relationship", ImVec2(-FLT_MIN, targets.size() * 25))) {
-            for (const auto& path : targets) {
+            for (const auto &path : targets) {
+                ImGui::PushID(path.GetString().c_str());
                 if (ImGui::Button(ICON_FA_TRASH)) {
                     ExecuteAfterDraw(&UsdRelationship::RemoveTarget, relationship, path);
-                } // Trash
+                }
                 ImGui::SameLine();
                 std::string buffer = path.GetString();
                 ImGui::InputText("##EditRelation", &buffer);
+                ImGui::PopID();
             }
             ImGui::EndListBox();
         }
@@ -148,12 +178,17 @@ static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = 
     ImGui::PopStyleColor();
 }
 
-// TODO: relationship
-template <typename UsdPropertyT>
-void DrawMenuCreateValue(UsdPropertyT& property) {};
+template <typename UsdPropertyT> void DrawMenuEditConnection(UsdPropertyT &property) {}
+template <> void DrawMenuEditConnection(UsdAttribute &attribute) {
+    if (ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
+        DrawModalDialog<CreateConnectionDialog>(attribute);
+    }
+}
 
-template<>
-void DrawMenuCreateValue(UsdAttribute& attribute) {
+// TODO: relationship
+template <typename UsdPropertyT> void DrawMenuCreateValue(UsdPropertyT &property){};
+
+template <> void DrawMenuCreateValue(UsdAttribute &attribute) {
     if (!attribute.HasValue()) {
         if (ImGui::MenuItem(ICON_FA_DONATE " Create value")) {
             ExecuteAfterDraw<AttributeCreateDefaultValue>(attribute);
@@ -161,18 +196,18 @@ void DrawMenuCreateValue(UsdAttribute& attribute) {
     }
 }
 
-
-
 // Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
-    ImVec4 propertyColor = property.IsAuthoredAt(editTarget) ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
+    ImVec4 propertyColor =
+        property.IsAuthoredAt(editTarget) ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
     DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         DrawMenuSetKey(property, currentTime);
         DrawMenuCreateValue(property);
         DrawMenuClearAuthoredValues(property);
         DrawMenuRemoveProperty(property);
+        DrawMenuEditConnection(property);
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
         }
@@ -182,7 +217,8 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
 
 bool DrawVariantSetsCombos(UsdPrim &prim) {
     int buttonID = 0;
-    if (!prim.HasVariantSets()) return false;
+    if (!prim.HasVariantSets())
+        return false;
     auto variantSets = prim.GetVariantSets();
 
     if (ImGui::BeginTable("##DrawVariantSetsCombos", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -205,7 +241,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
             ImGui::PushID(buttonID++);
             DrawPropertyMiniButton("(v)", variantColor);
             ImGui::PopID();
-            if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft) ){
+            if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
                 if (ImGui::MenuItem("Clear variant selection")) {
                     ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
                 }
@@ -265,10 +301,9 @@ bool DrawAssetInfo(UsdPrim &prim) {
 bool IsMetadataShown(int options) { return true; }
 bool IsTransformShown(int options) { return false; }
 
-
 void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
-     if (ImGui::BeginMenuBar()) {
+    if (ImGui::BeginMenuBar()) {
         if (prim && ImGui::BeginMenu(ICON_FA_PLUS)) {
 
             // TODO: list all the attribute missing or incomplete
@@ -318,9 +353,9 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         // the root layerStack, if you desire. As described at the top of UsdPrimCompositionQueryArc, once you find the inherits
         // (or specializes) arc that "introduces" the class, use that Arc's GetTargetNode() as the PcpNodeRef for a UsdEditTarget,
         // and rummage through its LayerStack's layers to see the layers in which you can edit.
-        //UsdPrimCompositionQuery arc(prim);
-        //auto compositionArcs = arc.GetCompositionArcs();
-        //if (ImGui::BeginListBox("arcs")) {
+        // UsdPrimCompositionQuery arc(prim);
+        // auto compositionArcs = arc.GetCompositionArcs();
+        // if (ImGui::BeginListBox("arcs")) {
         //    for (auto a : compositionArcs) {
         //        if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
         //            a.GetIntroducingLayer()->GetDisplayName();
@@ -337,6 +372,22 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         //    }
         //    ImGui::EndListBox();
         //}
+
+        // TODO: select the UsdPrim variant as well, as we might need to select inside a variant
+        // TODO: draw prim composition tree and it allows to select the layer and primspec
+        //       Before doing that, we need to pass informations back to the editor in some ways
+        //       an obvious way would be to try the command system
+        // if (ImGui::BeginPopupContextItem()){
+        //    auto primIndex = prim.GetPrimIndex();
+        //    auto primNode = primIndex.GetRootNode();
+        //    auto layerTree = primNode.GetLayerStack()->GetLayerTree();
+        //    auto layer = layerTree->GetLayer();
+        //    auto spec = layer->GetObjectAtPath(primNode.GetPath());
+        //    if(ImGui::Button(spec->GetPath().GetString().c_str())) {
+        //            // Call the editor
+        //    }
+        //    ImGui::EndPopup();
+        //}
         ImGui::Separator();
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
@@ -352,7 +403,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::Separator();
         }
 
-        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit|ImGuiTableFlags_RowBg)) {
+        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
             ImGui::TableSetupColumn("Property name");
             ImGui::TableSetupColumn("Value");
@@ -399,8 +450,6 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         }
     }
 }
-
-
 
 // Draw a xform common api in a table
 // I am not sure this is really useful
