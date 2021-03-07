@@ -7,6 +7,7 @@
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/usdGeom/camera.h>
 #include <functional>
+#include <tuple>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -129,7 +130,8 @@ void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...
 
 // NOTE: UsdGeomImageable and all other schema class will share the same code
 // TODO: template it if needed
-template <typename FuncT, typename... ArgsT> void ExecuteAfterDraw(FuncT &&func, const UsdGeomImageable &geom, ArgsT &&...arguments) {
+template <typename FuncT, typename... ArgsT>
+void ExecuteAfterDraw(FuncT &&func, const UsdGeomImageable &geom, ArgsT &&...arguments) {
     const auto &path = geom.GetPrim().GetPath();
     UsdStageWeakPtr stage = geom.GetPrim().GetStage();
     std::function<void()> usdApiFunc = [=]() {
@@ -169,15 +171,44 @@ void ExecuteAfterDraw(FuncT &&func, const UsdGeomXformCommonAPI &api, ArgsT &&..
     const auto prim = api.GetPrim();
     if (prim) {
         const auto path = prim.GetPath();
-        const auto stage = prim.GetStage();
+        const auto stage = prim.GetStage(); // TODO it's copying a weakptr, not really a good idea
         std::function<void()> usdApiFunc = [=]() {
-            UsdGeomXformCommonAPI api(stage->GetPrimAtPath(path));
-            std::function<void()> apiFunc = std::bind(func, api, arguments...);
-            apiFunc();
+            if (stage) {
+                UsdGeomXformCommonAPI api(stage->GetPrimAtPath(path));
+                std::function<void()> apiFunc = std::bind(func, api, arguments...);
+                apiFunc();
+            }
         };
         ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
     }
 }
+
+/////// NOTES for later
+///// 1. To remove template clutter above, it might be possible to reduce all the templates into one that will find use an object location or identity.
+// template <typename HandleT, typename UsdObjectT>
+// HandleT GetHandleTo(UsdObjectT object);
+//
+// template <typename HandleT, typename UsdObjectT>
+// UsdObjectT GetObjectFrom(HandleT object);
+//
+// template<typename FuncT, typename UsdObjectT, typename... ArgsT>
+// void ExecuteAfterDraw(FuncT &&func, const UsdObjectT &object, ArgsT&&... arguments) {
+//    // Get a handle that will allow the command to access what we are looking at
+//    // The handle needs to be copyable
+//    auto handle = GetHandleTo(object);
+//    std::function<void()> usdApiFunction = [=]() {
+//        auto object = GetObjectFrom(handle);
+//        std::function<void()> doIt = std::bind(func, object, arguments...);
+//        doIt();
+//    };
+//    ExecuteAfterDraw<UsdFunctionCall>(layer, usdApiFunction);
+//}
+//// There is a identity.h and Sdf_Identity type that could be used for that purpose
+//// it identifies the logical object behind an SdfSpec.
+////
+//// 2. UsdFunctionCall is not persistent, it creates another command and it destroyed after creating it.
+//// We could simply copy the handle/ref/weak/ptrs
+
 
 /// Process the commands waiting in the queue. Only one command would be waiting at the moment
 void ExecuteCommands();
