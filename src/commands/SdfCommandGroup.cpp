@@ -12,13 +12,12 @@ void SdfCommandGroup::Clear() { _instructions.clear(); }
 
 template <typename InstructionT>
 void SdfCommandGroup::StoreInstruction(InstructionT inst) {
-    InstructionWrapper wrapper(std::move(inst));
     // TODO: specialize by InstructionT type to compact the instructions in the command,
     // typically we don't want to store thousand of setField instruction where only the last one matters
     // One optim would be to look for the previous instruction, check if it is a setfield on the same path, same layer ?
     // Update the latest instruction instead of inserting a new instruction
     // As StoreInstruction is templatized, it is possible to specialize it.
-    _instructions.emplace_back(std::move(wrapper));
+    _instructions.emplace_back(std::move(inst));
 }
 
 
