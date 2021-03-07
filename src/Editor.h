@@ -81,10 +81,7 @@ private:
     /// Using a stage cache to store the stages, seems to work well
     UsdStageCache _stageCache;
 
-        /// List of layers.
-    /// NOTE "interface wise" a SdfLayerHandleSet would be better than a std::set<SdfLayerRefPtr>,
-    /// but SdfLayerHandleSet doesn't keep the smart pointer live for some reason. (to be investigated)
-    // SdfLayerHandleSet _layers;
+    /// List of layers.
     std::set<SdfLayerRefPtr> _layers;
     SdfLayerRefPtrVector _layerHistory;
     size_t _layerHistoryPointer;
