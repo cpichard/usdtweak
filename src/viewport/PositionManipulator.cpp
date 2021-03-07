@@ -7,6 +7,7 @@
 #include "Viewport.h"
 #include "Gui.h"
 #include "Commands.h"
+#include "GlslCode.h"
 
 /*
     TODO:  we ultimately want to be compatible with Vulkan / Metal, the following opengl/glsl code should really be using the
@@ -32,32 +33,6 @@ static constexpr const GLfloat axisPoints[] = {0.f, 0.f,      0.f, axisSize, 0.f
 
 static constexpr const GLfloat axisColors[] = {1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f,
                                                0.f, 1.f, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 1.f};
-
-static constexpr const char *vertexShaderSrc = "#version 330 core\n"
-                                               "layout (location = 0) in vec3 aPos;"
-                                               "layout (location = 1) in vec4 inColor;"
-                                               "uniform vec3 scale;"
-                                               "uniform mat4 modelView;"
-                                               "uniform mat4 projection;"
-                                               "uniform mat4 objectMatrix;"
-                                               "out vec4 color;"
-                                               "void main()"
-                                               "{"
-                                               "    vec4 bPos = objectMatrix*vec4(aPos*scale, 1.0);"
-                                               "    gl_Position = projection*modelView*bPos;"
-                                               "    color = inColor;"
-                                               "}";
-
-static constexpr const char *fragmentShaderSrc = "#version 330 core\n"
-                                                 "in vec4 color;"
-                                                 "out vec4 FragColor;"
-                                                 "uniform vec3 highlight;"
-                                                 "void main()"
-                                                 "{"
-                                                 "    if (dot(highlight, color.xyz) >0.9) "
-                                                 "       { FragColor = vec4(1.0, 1.0, 0.2, 1.0);}"
-                                                 "  else {  FragColor = color; }"
-                                                 "}";
 
 PositionManipulator::PositionManipulator() : _selectedAxis(None) {
 
@@ -99,10 +74,10 @@ bool PositionManipulator::CompileShaders() {
 
     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
+    glShaderSource(vertexShader, 1, &PositionManipulatorVert, nullptr);
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSrc, nullptr);
+    glShaderSource(fragmentShader, 1, &PositionManipulatorFrag, nullptr);
 
     // Compile shaders
     int success = 0;

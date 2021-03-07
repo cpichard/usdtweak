@@ -9,7 +9,7 @@ add_executable(usdtweak "")
 add_subdirectory(src)
 
 target_compile_definitions(usdtweak PRIVATE NOMINMAX)
-target_link_libraries(usdtweak glfw ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})
+target_link_libraries(usdtweak glfw glslcode ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})
 target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS})
 
 # Remove warnings coming from usd and enable default multithreaded compilation on windows

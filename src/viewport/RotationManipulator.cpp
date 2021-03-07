@@ -8,6 +8,7 @@
 #include "Viewport.h"
 #include "Gui.h"
 #include "Commands.h"
+#include "GlslCode.h"
 
 static constexpr GLfloat axisSize = 1.2f;
 
@@ -35,43 +36,6 @@ static constexpr const GLfloat planesColor[] = {
     0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f,
 
     0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f};
-
-static constexpr const char *vertexShaderSrc = "#version 330 core\n"
-                                               "layout (location = 0) in vec3 aPos;"
-                                               "layout (location = 1) in vec2 inUv;"
-                                               "layout (location = 2) in vec3 inColor;"
-                                               "uniform vec3 scale;"
-                                               "uniform mat4 modelView;"
-                                               "uniform mat4 projection;"
-                                               "uniform mat4 objectMatrix;"
-                                               "out vec4 color;"
-                                               "out vec2 uv;"
-                                               "void main()"
-                                               "{"
-                                               "    vec4 bPos = objectMatrix*vec4(aPos*scale, 1.0);"
-                                               "    gl_Position = projection*modelView*bPos;"
-                                               "    color = vec4(inColor.rgb, 1.0);"
-                                               "    uv = inUv;"
-                                               "}";
-
-// First approach was to draw circles on a quad using fragment shader, fun, but not the best solution
-// TODO: change to drawing lines as this really doesn't look nice
-static constexpr const char *fragmentShaderSrc =
-    "#version 330 core\n"
-    "in vec4 color;"
-    "in vec2 uv;"
-    "uniform vec3 highlight;"
-    "out vec4 FragColor;"
-    "void main()"
-    "{"
-    "    float alpha = abs(1.f-sqrt(uv.x*uv.x+uv.y*uv.y));"
-    "    float derivative = length(fwidth(uv));"
-    "    if (derivative > 0.1) discard;"
-    "    alpha = smoothstep(2.0*derivative, 0.0, alpha);"
-    "    if (alpha < 0.2) discard;"
-    "    if (dot(highlight,color.xyz) >0.9) { FragColor = vec4(1.0, 1.0, 0.2, alpha);}"
-    "    else {FragColor = vec4(color.xyz, alpha);}"
-    "}";
 
 RotationManipulator::RotationManipulator() : _selectedAxis(None) {
 
@@ -120,10 +84,10 @@ bool RotationManipulator::CompileShaders() {
 
     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
+    glShaderSource(vertexShader, 1, &RotationManipulatorVert, nullptr);
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSrc, nullptr);
+    glShaderSource(fragmentShader, 1, &RotationManipulatorFrag, nullptr);
 
     // Compile shaders
     int success = 0;
