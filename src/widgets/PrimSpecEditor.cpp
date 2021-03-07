@@ -24,18 +24,8 @@
 #include "Constants.h"
 #include "ValueEditor.h"
 #include "LayerEditor.h"
-
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
-
-
-/// Should that move in Common.h ???
-std::array<char, TextEditBufferSize> CreateEditBufferFor(const std::string &str) {
-    auto strEnd = str.size() < (TextEditBufferSize-1) ? str.cend() : str.cbegin() + (TextEditBufferSize-1);
-    std::array<char, TextEditBufferSize> buffer{ 0 };
-    std::copy(str.cbegin(), strEnd, buffer.begin());
-    return buffer; // Should construct in place with copy ellision
-}
 
 
 
@@ -124,8 +114,8 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
 }
 
 void DrawPrimName(SdfPrimSpecHandle &primSpec) {
-    auto nameBuffer = CreateEditBufferFor(primSpec->GetName());
-    ImGui::InputText("Prim Name", nameBuffer.data(), nameBuffer.size());
+    auto nameBuffer = primSpec->GetName();
+    ImGui::InputText("Prim Name", &nameBuffer);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         auto primName = std::string(const_cast<char *>(nameBuffer.data()));
         if (primSpec->CanSetName(primName, nullptr)) {

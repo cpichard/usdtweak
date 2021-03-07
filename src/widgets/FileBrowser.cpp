@@ -45,18 +45,7 @@ static void EverySecond(const std::function<void()> &deferedFunction) {
     }
 }
 
-static void ClearPathBuffer(char *pathBuffer) { memset(pathBuffer, 0, PathBufferSize); }
-//
-/// Path buffer must have PathBufferSize
-///
-/// TODO: use imgui_stdlib instead of converting string to fixed char array
-static void CopyToPathBuffer(const std::string &src, char *pathBuffer) {
-    const size_t n = std::min(PathBufferSize - 1, src.size());
-    ClearPathBuffer(pathBuffer);
-    strncpy(&pathBuffer[0], src.c_str(), n);
-}
-
-static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEditBuffer) {
+static void DrawNavigationBar(const fs::path &displayedDirectory, std::string &lineEditBuffer) {
     // Split the path navigator ??
     ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
     const std::string &directoryPath = displayedDirectory.string();
@@ -67,9 +56,9 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
     while (len != std::string::npos) {
         if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
             if (len) {
-                CopyToPathBuffer(directoryPath.substr(0, len), lineEditBuffer);
+                lineEditBuffer = directoryPath.substr(0, len);
             } else {
-                CopyToPathBuffer("/", lineEditBuffer);
+                lineEditBuffer = "/";
             }
         }
         pos = len + 1;
@@ -80,7 +69,7 @@ static void DrawNavigationBar(const fs::path &displayedDirectory, char *lineEdit
     }
     len = directoryPath.size();
     if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
-        CopyToPathBuffer(directoryPath.substr(0, len), lineEditBuffer);
+        lineEditBuffer = directoryPath.substr(0, len);
     }
 }
 
@@ -126,7 +115,7 @@ void DrawFileSize(uintmax_t fileSize) {
 
 // TODO check that there is a antislash/slash at the end of c
 void DrawFileBrowser() {
-    static char lineEditBuffer[PathBufferSize]; // TODO: check if it can be replaced by imgui_stdlib
+    static std::string lineEditBuffer;
     static fs::path displayedDirectory = fs::current_path();
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
@@ -137,16 +126,16 @@ void DrawFileBrowser() {
         // Process the line entered by the user
         if (fs::is_directory(path)) {
             displayedDirectory = path;
-            ClearPathBuffer(lineEditBuffer);
+            lineEditBuffer = "";
             displayedFileName = "";
         } else if (fs::is_directory(path.parent_path())) {
             displayedDirectory = path.parent_path();
-            CopyToPathBuffer(path.filename().string(), lineEditBuffer);
+            lineEditBuffer = path.filename().string();
             displayedFileName = path.filename();
         } else {
             if (path.filename() != path) {
                 displayedFileName = path.filename();
-                CopyToPathBuffer(path.filename().string(), lineEditBuffer);
+                lineEditBuffer = path.filename().string();
             } else {
                 displayedFileName = path;
             }
@@ -193,7 +182,7 @@ void DrawFileBrowser() {
                 // makes the line selectable, and when selected copy the path
                 // to the line edit buffer
                 if (ImGui::Selectable("", false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
-                    CopyToPathBuffer(dirEntry.path().string(), lineEditBuffer);
+                    lineEditBuffer = dirEntry.path().string();
                 }
                 ImGui::PopID();
                 ImGui::SameLine();
@@ -226,7 +215,7 @@ void DrawFileBrowser() {
     }
 
     ImGui::PushItemWidth(0);
-    ImGui::InputText("File name", lineEditBuffer, PathBufferSize);
+    ImGui::InputText("File name", &lineEditBuffer);
 }
 
 bool FilePathExists() { return fileExists; }
