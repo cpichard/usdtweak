@@ -315,9 +315,8 @@ void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
         int rowId = 0;
 
         if (ImGui::BeginTable("##DrawPrimSpecMetadata", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-            ImGui::TableSetupColumn("Metadata");
-            ImGui::TableSetupColumn("Value");
+            
+            TableSetupColumns("", "Metadata", "Value");
             ImGui::TableHeadersRow();
 
             DrawMetadataRow<Specifier>(primSpec, rowId++);
