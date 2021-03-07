@@ -15,9 +15,6 @@ constexpr float ViewportBorderSize = 60.f;
 /// Height of a row in the property editor
 constexpr float TableRowHeight = 22.f;
 
-/// Max buffer size for file path, used in file browser
-constexpr size_t PathBufferSize = 1024;
-
 /// Predefined colors for the different widgets
 #define AttributeAuthoredColor {1.0, 1.0, 1.0, 1.0}
 #define AttributeUnauthoredColor {0.5, 0.5, 0.5, 1.0}
