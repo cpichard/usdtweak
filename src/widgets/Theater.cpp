@@ -43,7 +43,9 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
             if (!layer)
                 continue;
             bool selected = selectedLayer && *selectedLayer == layer;
-            std::string layerName = std::string(layer->IsDirty() ? ICON_FA_SAVE " " : "  ") + layer->GetDisplayName();
+            std::string layerName = std::string(layer->IsDirty() ? ICON_FA_SAVE " " : "  ") +
+                                    (layer->GetAssetName() != "" ? layer->GetAssetName() : layer->GetIdentifier());
+
             if (filter.PassFilter(layerName.c_str())) {
                 ImGui::PushID(layer->GetUniqueIdentifier());
                 if (ImGui::Selectable(layerName.c_str(), selected)) {
@@ -51,7 +53,18 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                         *selectedLayer = layer;
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", layer->GetRealPath().c_str());
+                    ImGui::SetTooltip("%s\n%s", layer->GetRealPath().c_str(), layer->GetIdentifier().c_str());
+                    auto assetInfo = layer->GetAssetInfo();
+                    if (!assetInfo.IsEmpty()) {
+                        if (assetInfo.CanCast<VtDictionary>()) {
+                            auto assetInfoDict = assetInfo.Get<VtDictionary>();
+                            TF_FOR_ALL(keyValue, assetInfoDict) {
+                                std::stringstream ss;
+                                ss << keyValue->second;
+                                ImGui::SetTooltip("%s %s", keyValue->first.c_str(), ss.str().c_str());
+                            }
+                        }
+                    }
                 }
 
                 if (ImGui::BeginPopupContextItem()) {
