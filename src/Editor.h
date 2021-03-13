@@ -27,7 +27,7 @@ public:
     bool ShutdownRequested() const { return _shutdownRequested; }
 
     /// Sets the current edited layer
-    void InspectCurrentLayer(SdfLayerRefPtr layer);
+    void SetCurrentLayer(SdfLayerRefPtr layer);
     SdfLayerRefPtr GetCurrentLayer();
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();    // go forward in the layer history

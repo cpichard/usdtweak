@@ -91,7 +91,7 @@ struct EditorSetCurrentLayer : public EditorCommand {
 
     bool DoIt() override {
         if (_editor && _layer) {
-            _editor->InspectCurrentLayer(_layer);
+            _editor->SetCurrentLayer(_layer);
         }
 
         return false;

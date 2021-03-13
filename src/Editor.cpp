@@ -224,13 +224,13 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     // NOTE: We set the default layer to the current stage root
     // this might have side effects
     if (!GetCurrentLayer() && _currentStage) {
-        InspectCurrentLayer(_currentStage->GetRootLayer());
+        SetCurrentLayer(_currentStage->GetRootLayer());
     }
     // TODO multiple viewport management
     _viewport.SetCurrentStage(stage);
 }
 
-void Editor::InspectCurrentLayer(SdfLayerRefPtr layer) {
+void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
     if (!layer)
         return;
     if (!_layerHistory.empty()) {
@@ -276,7 +276,7 @@ void Editor::UseLayer(SdfLayerRefPtr layer) {
         if (_layers.find(layer) == _layers.end()) {
             _layers.emplace(layer);
         }
-        InspectCurrentLayer(layer);
+        SetCurrentLayer(layer);
         _showTheater = true;
         _showLayerEditor = true;
     }
