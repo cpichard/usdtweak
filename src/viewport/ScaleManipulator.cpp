@@ -164,11 +164,12 @@ GfMatrix4d ScaleManipulator::ComputeManipulatorToWorldTransform(const Viewport &
         _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
         const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
         const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
+        const auto rotMat = _xformAPI.GetRotationTransform(rotation, rotOrder);
         const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
         const auto parentToWorld = xformable.ComputeParentToWorldTransform(currentTime);
 
         // We are just interested in the pivot position and the orientation
-        const GfMatrix4d toManipulator = pivotMat * transMat * parentToWorld;
+        const GfMatrix4d toManipulator = rotMat * pivotMat * transMat * parentToWorld;
         return toManipulator.GetOrthonormalized();
     }
     return GfMatrix4d();
