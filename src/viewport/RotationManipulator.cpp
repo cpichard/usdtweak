@@ -1,4 +1,5 @@
 #include <iostream>
+#include <vector>
 #include <pxr/base/gf/line.h>
 #include <pxr/imaging/garch/glApi.h>
 
@@ -12,30 +13,46 @@
 
 static constexpr GLfloat axisSize = 1.2f;
 
-static constexpr const GLfloat planesPoints[] = {
-    // The 3 quads on planes yz, xz, xy
-    0.f,       -axisSize, axisSize, 0.f,      axisSize,  axisSize,  0.f,       -axisSize, -axisSize,
-    0.f,       axisSize,  axisSize, 0.f,      axisSize,  -axisSize, 0.f,       -axisSize, -axisSize,
+static constexpr int nbSegments = 200;      // nb segments per circle
+static constexpr int nbCircles = 3;         // 3 color = 3 axis
+static constexpr int pointNbComponents = 3; // 3 float
+static constexpr int colorNbComponents = 4; // 3 float
 
-    -axisSize, 0.f,       axisSize, axisSize, 0.f,       axisSize,  -axisSize, 0.f,       -axisSize,
-    axisSize,  0.f,       axisSize, axisSize, 0.f,       -axisSize, -axisSize, 0.f,       -axisSize,
+static void CreateCircles(std::vector<GLfloat> &points, std::vector<GLfloat> &colors) {
+    points.resize(nbSegments * nbCircles * pointNbComponents, 0.f);
+    colors.resize(nbSegments * nbCircles * colorNbComponents, 0.f);
+    for (size_t i = 0; i < nbSegments; ++i) {
+        const float angle = 2.f * PI_F * static_cast<float>(i) / static_cast<float>(nbSegments);
+        const float cosAngle = cos(angle);
+        const float sinAngle = sin(angle);
+        points[i * 3 + 0] = 0.f;
+        points[i * 3 + 1] = cosAngle;
+        points[i * 3 + 2] = sinAngle;
 
-    -axisSize, axisSize,  0.f,      axisSize, axisSize,  0.f,       -axisSize, -axisSize, 0.f,
-    axisSize,  axisSize,  0.f,      axisSize, -axisSize, 0.f,       -axisSize, -axisSize, 0.f};
+        points[(i + nbSegments) * 3 + 0] = cosAngle;
+        points[(i + nbSegments) * 3 + 1] = 0.f;
+        points[(i + nbSegments) * 3 + 2] = sinAngle;
 
-static constexpr const GLfloat planesUV[] = {
-    -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, -axisSize,
+        points[(i + 2 * nbSegments) * 3 + 0] = cosAngle;
+        points[(i + 2 * nbSegments) * 3 + 1] = sinAngle;
+        points[(i + 2 * nbSegments) * 3 + 2] = 0.f;
 
-    -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, -axisSize,
+        colors[i * 4 + 0] = 1.f;
+        colors[i * 4 + 1] = 0.f;
+        colors[i * 4 + 2] = 0.f;
+        colors[i * 4 + 3] = 1.f;
 
-    -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, axisSize, axisSize, axisSize, -axisSize, -axisSize, -axisSize};
+        colors[(i + nbSegments) * 4 + 0] = 0.f;
+        colors[(i + nbSegments) * 4 + 1] = 1.f;
+        colors[(i + nbSegments) * 4 + 2] = 0.f;
+        colors[(i + nbSegments) * 4 + 3] = 1.f;
 
-static constexpr const GLfloat planesColor[] = {
-    1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f,
-
-    0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f,
-
-    0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.f, 1.f};
+        colors[(i + 2 * nbSegments) * 4 + 0] = 0.f;
+        colors[(i + 2 * nbSegments) * 4 + 1] = 0.f;
+        colors[(i + 2 * nbSegments) * 4 + 2] = 1.f;
+        colors[(i + 2 * nbSegments) * 4 + 3] = 1.f;
+    }
+}
 
 RotationManipulator::RotationManipulator() : _selectedAxis(None) {
 
@@ -50,27 +67,26 @@ RotationManipulator::RotationManipulator() : _selectedAxis(None) {
         _objectMatrixUniform = glGetUniformLocation(_programShader, "objectMatrix");
         _highlightUniform = glGetUniformLocation(_programShader, "highlight");
 
+        // Create 3 circles
+        std::vector<GLfloat> points;
+        std::vector<GLfloat> colors;
+        CreateCircles(points, colors);
+
         // We store points and colors in the same buffer
         glGenBuffers(1, &_arrayBuffer);
         glBindBuffer(GL_ARRAY_BUFFER, _arrayBuffer);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(planesPoints) + sizeof(planesUV) + sizeof(planesColor), nullptr, GL_STATIC_DRAW);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(planesPoints), planesPoints);
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(planesPoints), sizeof(planesUV), planesUV);
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(planesPoints) + sizeof(planesUV), sizeof(planesColor), planesColor);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * (points.size() + colors.size()), nullptr, GL_STATIC_DRAW);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * points.size(), points.data());
+        glBufferSubData(GL_ARRAY_BUFFER, sizeof(GLfloat) * points.size(), sizeof(GLfloat) * colors.size(), colors.data());
+
 
         GLint vertexAttr = glGetAttribLocation(_programShader, "aPos");
-        glVertexAttribPointer(vertexAttr, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)0);
+        glVertexAttribPointer(vertexAttr, pointNbComponents, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)0);
         glEnableVertexAttribArray(vertexAttr);
 
-        GLint uvAttr = glGetAttribLocation(_programShader, "inUv");
-        glVertexAttribPointer(uvAttr, 2, GL_FLOAT, GL_FALSE, 0, (GLvoid *)sizeof(planesPoints));
-        glEnableVertexAttribArray(uvAttr);
-
         GLint colorAttr = glGetAttribLocation(_programShader, "inColor");
-        glVertexAttribPointer(colorAttr, 3, GL_FLOAT, GL_TRUE, 0, (GLvoid *)(sizeof(planesPoints) + sizeof(planesUV)));
+        glVertexAttribPointer(colorAttr, colorNbComponents, GL_FLOAT, GL_TRUE, 0, (GLvoid *)(points.size() * sizeof(GLfloat)));
         glEnableVertexAttribArray(colorAttr);
-
-        // glBindBuffer(GL_ARRAY_BUFFER, 0);
     } else {
         exit(ERROR_UNABLE_TO_COMPILE_SHADER);
     }
@@ -84,10 +100,10 @@ bool RotationManipulator::CompileShaders() {
 
     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &RotationManipulatorVert, nullptr);
+    glShaderSource(vertexShader, 1, &PositionManipulatorVert, nullptr);
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &RotationManipulatorFrag, nullptr);
+    glShaderSource(fragmentShader, 1, &PositionManipulatorFrag, nullptr);
 
     // Compile shaders
     int success = 0;
@@ -112,8 +128,7 @@ bool RotationManipulator::CompileShaders() {
     glAttachShader(_programShader, vertexShader);
     glAttachShader(_programShader, fragmentShader);
     glBindAttribLocation(_programShader, 0, "aPos");
-    glBindAttribLocation(_programShader, 1, "inUv");
-    glBindAttribLocation(_programShader, 2, "inColor");
+    glBindAttribLocation(_programShader, 1, "inColor");
     glLinkProgram(_programShader);
 
     glGetProgramiv(_programShader, GL_LINK_STATUS, &success);
@@ -226,8 +241,9 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
             toWorldf[i] = static_cast<float>(manipulatorCoordinates.data()[i]);
         }
 
-        // glEnable(GL_DEPTH_TEST);
-        glDisable(GL_DEPTH_TEST); // TESTING
+        glEnable(GL_DEPTH_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glLineWidth(3);
         glUseProgram(_programShader);
         GfMatrix4f mvp(mv);
         GfMatrix4f projp(proj);
@@ -244,7 +260,10 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         else
             glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
         glBindVertexArray(_vertexArrayObject);
-        glDrawArrays(GL_TRIANGLES, 0, 18);
+
+        const int first[nbCircles] = {0, nbSegments, nbSegments * 2};
+        const int count[nbCircles] = {nbSegments, nbSegments, nbSegments};
+        glMultiDrawArrays(GL_LINE_STRIP, first, count, nbCircles);
         glBindVertexArray(0);
         // glDisable(GL_DEPTH_TEST);
     }
