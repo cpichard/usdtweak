@@ -74,10 +74,10 @@ bool PositionManipulator::CompileShaders() {
 
     // Associate shader source with shader id
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &PositionManipulatorVert, nullptr);
+    glShaderSource(vertexShader, 1, &ManipulatorVert, nullptr);
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &PositionManipulatorFrag, nullptr);
+    glShaderSource(fragmentShader, 1, &ManipulatorFrag, nullptr);
 
     // Compile shaders
     int success = 0;

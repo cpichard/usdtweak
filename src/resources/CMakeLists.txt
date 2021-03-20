@@ -8,10 +8,8 @@ target_include_directories(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # glsl to cpp
 list(APPEND GLSL_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/RotationManipulatorVert.glsl
-    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/RotationManipulatorFrag.glsl
-    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/PositionManipulatorVert.glsl
-    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/PositionManipulatorFrag.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/ManipulatorVert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/ManipulatorFrag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/GridVert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/GridFrag.glsl
 )
