@@ -19,7 +19,7 @@
 #include "ModalDialogs.h"
 #include "StageOutliner.h"
 #include "Timeline.h"
-#include "Theater.h"
+#include "ContentBrowser.h"
 #include "PrimSpecEditor.h"
 #include "Constants.h"
 #include "Commands.h"
@@ -277,7 +277,7 @@ void Editor::UseLayer(SdfLayerRefPtr layer) {
             _layers.emplace(layer);
         }
         SetCurrentLayer(layer);
-        _showTheater = true;
+        _showContentBrowser = true;
         _showLayerEditor = true;
     }
 }
@@ -299,7 +299,7 @@ void Editor::ImportStage(const std::string &path) {
     if (newStage) {
         _stageCache.Insert(newStage);
         SetCurrentStage(newStage);
-        _showTheater = true;
+        _showContentBrowser = true;
         _showViewport = true;
     }
 }
@@ -321,7 +321,7 @@ void Editor::CreateStage(const std::string &path) {
         if (newStage) {
             _stageCache.Insert(newStage);
             SetCurrentStage(newStage);
-            _showTheater = true;
+            _showContentBrowser = true;
             _showViewport = true;
         }
     }
@@ -397,7 +397,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem("Property editor", nullptr, &_showPropertyEditor);
             ImGui::MenuItem("Stage Outliner", nullptr, &_showOutliner);
             ImGui::MenuItem("Timeline", nullptr, &_showTimeline);
-            ImGui::MenuItem("Theater", nullptr, &_showTheater);
+            ImGui::MenuItem("Content Browser", nullptr, &_showContentBrowser);
             ImGui::MenuItem("Layer editor", nullptr, &_showLayerEditor);
             ImGui::MenuItem("Viewport", nullptr, &_showViewport);
             ImGui::MenuItem("PrimSpec Editor", nullptr, &_showPrimSpecEditor);
@@ -470,9 +470,9 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_showTheater) {
-        ImGui::Begin("Theater", &_showTheater);
-        DrawTheater(*this);
+    if (_showContentBrowser) {
+        ImGui::Begin("Content Browser", &_showContentBrowser);
+        DrawContentBrowser(*this);
         ImGui::End();
     }
 

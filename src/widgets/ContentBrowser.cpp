@@ -2,7 +2,7 @@
 #include <array>
 #include <pxr/usd/usd/stage.h>
 #include "Gui.h"
-#include "Theater.h"
+#include "ContentBrowser.h"
 #include "LayerEditor.h" // for DrawLayerMenuItems
 #include "Commands.h"
 
@@ -78,7 +78,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
     }
 }
 
-void DrawTheater(Editor &editor) {
+void DrawContentBrowser(Editor &editor) {
 
     if (ImGui::BeginTabBar("theatertabbar")) {
         if (ImGui::BeginTabItem("Stages")) {

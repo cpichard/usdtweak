@@ -97,7 +97,7 @@ private:
     bool _showOutliner = true;
     bool _showTimeline = false;
     bool _showLayerEditor = false;
-    bool _showTheater = false;
+    bool _showContentBrowser = false;
     bool _showPrimSpecEditor = false;
     bool _showViewport = false;
 
