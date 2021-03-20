@@ -32,6 +32,43 @@
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
 
 
+
+struct CreateAttributeDialog : public ModalDialog {
+    CreateAttributeDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim){};
+    ~CreateAttributeDialog() override {}
+
+    void Draw() override {
+        ImGui::InputText("Name", &_attributeName);
+        if(ImGui::BeginCombo("Type", _typeName.GetAsToken().GetString().c_str())) {
+            for (int i = 0; i < GetAllValueTypeNames().size(); i++) {
+                if (ImGui::Selectable(GetAllValueTypeNames()[i].GetAsToken().GetString().c_str(), false)) {
+                    _typeName = GetAllValueTypeNames()[i];
+                }
+            }
+            ImGui::EndCombo();
+        }
+        bool varying = _variability == SdfVariabilityVarying;
+        if(ImGui::Checkbox("Varying", &varying) ) {
+            _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
+        }
+        if(ImGui::Checkbox("Custom", &_custom) ) {
+            _custom = !_custom;
+        }
+        DrawOkCancelModal([&]() {
+            ExecuteAfterDraw<PrimCreateProperty>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom);
+        });
+    }
+    const char *DialogId() const override { return "Create attribute"; }
+
+    SdfPrimSpecHandle _sdfPrim;
+    std::string _attributeName;
+    SdfVariability _variability = SdfVariabilityVarying;
+    SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
+    bool _custom = true;
+};
+
+
+
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     const SdfSpecifier current = primSpec->GetSpecifier();
@@ -342,7 +379,9 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
         return;
     ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
-
+    if(ImGui::Button("Create Attribute")) {
+        DrawModalDialog<CreateAttributeDialog>(primSpec);
+    }
     DrawPrimSpecMetadata(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
