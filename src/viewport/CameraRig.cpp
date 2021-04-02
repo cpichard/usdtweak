@@ -14,19 +14,18 @@ PXR_NAMESPACE_USING_DIRECTIVE
 ///
 
 //
-using DistT = decltype(GfCamera().GetFocusDistance());
-using RotationT = decltype(GfRotation().Decompose(GfVec3d::YAxis(), GfVec3d::XAxis(), GfVec3d::ZAxis()));
+using DistT = float;
+using RotationT = GfVec3d;
 
 /// Updates manipulator internal
 // similar to _pullFromCameraTransform in usdviewq
 // Get internals from the camera transform
-static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMatrix, GfVec3d &center,
-                                RotationT &rotation, DistT &dist) {
-    auto cameraTransform = camera.GetTransform();
-    auto frustum = camera.GetFrustum();
-    auto cameraPosition = frustum.GetPosition();
-    auto cameraAxis = frustum.ComputeViewDirection();
-    auto transform = cameraTransform * zUpMatrix;
+static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMatrix, GfVec3d &center, RotationT &rotation,
+                                DistT &dist) {
+    const auto &frustum = camera.GetFrustum();
+    const auto &cameraPosition = frustum.GetPosition();
+    const auto &cameraAxis = frustum.ComputeViewDirection();
+    auto transform = camera.GetTransform() * zUpMatrix;
     transform.Orthonormalize();
     auto camRotation = transform.ExtractRotation();
 
@@ -37,7 +36,7 @@ static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMat
 }
 
 static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, const GfVec3d &center,
-                              const RotationT &rotation, const DistT &dist) {
+                              const RotationT &rotation, const float &dist) {
     GfMatrix4d trans;
     trans.SetTranslate(GfVec3d::ZAxis() * dist);
     GfMatrix4d roty(1.0);
