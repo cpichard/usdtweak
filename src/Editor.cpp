@@ -25,7 +25,7 @@
 #include "Commands.h"
 
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
-static std::vector<std::string> GetUsdValidExtensions() {
+static const std::vector<std::string> GetUsdValidExtensions() {
     const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
     std::vector<std::string> validExtensions;
     auto addDot = [](const std::string &str) { return "." + str; };
