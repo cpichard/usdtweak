@@ -1,15 +1,15 @@
 
 # usdtweak
 
-A free and open source Pixar's Universal Scene Description editor, still in early development.
+A free and open source Pixar's USD editor, still in early development.
 
-The UI is built upon [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other OpenGL+USD projects.
+The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other OpenGL+USD projects.
 
-![screenshot1](doc/screenshot1.jpg)
+![screenshot1](https://media.giphy.com/media/9Nb4JmmqEXzO05DpvL/giphy.gif)
 
 ## Status
 
-The editor is still an early prototype but allows to edit multiple stages and layers, add or delete prims in layers, add references, change values, translate objects in the viewport, etc. The original idea is not only to edit stages, but also layers, as one would with a text editor. The development is slow as this one of my side project outside of work and I spend very little time on it at the moment.
+The editor allows to edit multiple stages and layers, add, delete, reparent, rename prims in layers, add references and payloads, change values, add keys, move objects in the viewport, etc. They are still a lot of missing features and the editor hasn't been tested in production but it can be useful for quick change. One of the original idea was to directly edit layers like you would with a text editor, but without the need of knowing the syntax and with a better browsing experience. The development is slow as this one of my side project outside of work and I dont't spend much time on it at the moment.
 
 ## Building
 
@@ -38,8 +38,8 @@ on linux it goes along the lines of:
     cmake -Dpxr_DIR=/installs/usd-21.02 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
     make
 
-It should compile successfully on Windows 10 with MSCV 19, Centos 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
+It should compile successfully on Windows 10 with MSVC 19, Centos 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
 
 ## Contact
 
-If you are interest by this project, want to know more or contribute, drop me an email: cpichard.github@gmail.com
+If you want to know more, drop me an email: cpichard.github@gmail.com
