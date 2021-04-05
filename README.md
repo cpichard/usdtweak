@@ -3,13 +3,26 @@
 
 A free and open source Pixar's USD editor, still in early development.
 
-The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other OpenGL+USD projects.
+The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other C++ projects using OpenGL and USD.
+
+## Sneak peek
 
 ![screenshot1](https://media.giphy.com/media/9Nb4JmmqEXzO05DpvL/giphy.gif)
 
 ## Status
 
-The editor allows to edit multiple stages and layers, add, delete, reparent, rename prims in layers, add references and payloads, change values, add keys, move objects in the viewport, etc. They are still a lot of missing features and the editor hasn't been tested in production but it can be useful for quick change. One of the original idea was to directly edit layers like you would with a text editor, but without the need of knowing the syntax and with a better browsing experience. The development is slow as this one of my side project outside of work and I dont't spend much time on it at the moment.
+The editor allows
+
+- editing multiple stages and layers
+- adding, deleting, reparenting, renaming sdf prims in layers
+- creating and deleting variants
+- adding references and payloads, inherits, ...
+- changing property values
+- adding and deleting keys
+- translating, rotating, scaling objects in the viewport.
+- and more ...
+
+They are still missing features and the editor hasn't faced users yet but I believe it might be useful in some situations, to replace text editors for small fixes, or to author a simple master stage. One of the original idea was to directly edit layers without the need of knowing the USD syntax, and the Layer editor has the basic functionalities for that. Drop me an email if you are interested in beta testing.
 
 ## Building
 
@@ -38,7 +51,7 @@ on linux it goes along the lines of:
     cmake -Dpxr_DIR=/installs/usd-21.02 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
     make
 
-It should compile successfully on Windows 10 with MSVC 19, Centos 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
+It should compile successfully on Windows 10 with MSVC 19, CentOS 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
 
 ## Contact
 
