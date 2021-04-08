@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 #include <pxr/usd/sdf/abstractData.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
@@ -111,7 +112,6 @@ struct UndoRedoCreateSpec {
             _layer->GetStateDelegate()->DeleteSpec(_path, _inert);
         }
     }
-
 
     SdfLayerRefPtr _layer;
     const SdfPath _path;

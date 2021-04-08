@@ -67,6 +67,9 @@ int main(int argc, char **argv) {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
+    //ImGuiStyle& style = ImGui::GetStyle();
+    //style.Colors[ImGuiCol_Tab] = style.Colors[ImGuiCol_FrameBg];
+
     // Dock with shift key
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigDockingWithShift = true;

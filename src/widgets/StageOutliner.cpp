@@ -42,6 +42,12 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
     }
+    if (prim.HasAuthoredPayloads() && prim.IsLoaded() && ImGui::MenuItem("Unload")) {
+        ExecuteAfterDraw(&UsdPrim::Unload, prim);
+    }
+    if (prim.HasAuthoredPayloads() && !prim.IsLoaded() && ImGui::MenuItem("Load")) {
+        ExecuteAfterDraw(&UsdPrim::Load, prim, UsdLoadWithDescendants);
+    }
     if (ImGui::MenuItem("Copy prim path")) {
         ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
     }

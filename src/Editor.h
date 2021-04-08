@@ -28,6 +28,7 @@ public:
 
     /// Sets the current edited layer
     void SetCurrentLayer(SdfLayerRefPtr layer);
+    //void SetCurrentLayerAndPrim(SdfLayerRefPtr layer, SdfPrimSpecHandle sdfPrim);
     SdfLayerRefPtr GetCurrentLayer();
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();    // go forward in the layer history

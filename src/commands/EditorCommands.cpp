@@ -84,6 +84,22 @@ struct EditorSetEditTarget : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 
+// Will set the current layer and the current selected layer prim
+//struct EditorInspectLayerLocation : public EditorCommand {
+//    EditorInspectLayerLocation(SdfLayerHandle layer) : _layer(layer) {}
+//    ~EditorInspectLayerLocation() override {}
+//
+//    bool DoIt() override {
+//        if (_editor && _layer) {
+//           _editor->InspectLayerLocation(_layer, _selectedPrim);
+//        }
+//
+//        return false;
+//    }
+//    SdfLayerRefPtr _layer;
+//};
+
+
 struct EditorSetCurrentLayer : public EditorCommand {
 
     EditorSetCurrentLayer(SdfLayerHandle layer) : _layer(layer) {}
