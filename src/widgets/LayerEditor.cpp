@@ -24,9 +24,8 @@
 #include "LayerEditor.h"
 #include "PrimSpecEditor.h"
 #include "CompositionEditor.h"
-#include "Gui.h"
+#include "ImGuiHelpers.h"
 #include "Constants.h"
-
 
 struct AddSublayer : public ModalDialog {
 
@@ -167,12 +166,25 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
         DrawModalDialog<AddVariantModalDialog>(primSpec);
     }
 
-
     ImGui::Separator();
     if (ImGui::MenuItem("Copy prim path")) {
         ImGui::SetClipboardText(primSpec->GetPath().GetString().c_str());
     }
+}
 
+static void DrawBackgroundSelection(SdfPrimSpecHandle &currentPrim, SdfPrimSpecHandle &selectedPrim) {
+    const bool selected = currentPrim == selectedPrim;
+
+    const auto selectedColor = ImGui::GetColorU32(ImGuiCol_Header);
+    ScopedStyleColor scopedStyle(ImGuiCol_HeaderHovered, selected ? selectedColor : 0 /*transparent color*/,
+                                 ImGuiCol_HeaderActive, selectedColor);
+
+    const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
+    if (ImGui::Selectable("##backgroundSelectedPrim", selected, selectableFlags)) {
+        selectedPrim = currentPrim;
+    }
+
+    ImGui::SameLine();
 }
 
 static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
@@ -203,37 +215,12 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
         }
         ImGui::EndDragDropTarget();
     }
-
 }
-/// Draw a node in the primspec tree
-static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
 
-    static SdfPrimSpecHandle editNamePrim;
-    if (!primSpec)
-        return;
-    bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
-
-    ImGui::TableNextRow();
-
-    ImGui::TableSetColumnIndex(0);
-
-    ImGui::PushID(nodeId);
-    nodeId=0; //reset the counter
-
-    // Makes the row selectable
-    bool selected = primSpec == selectedPrim;
-    if (ImGui::Selectable("##selectRow", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
-        selectedPrim = primSpec;
-    }
-    // Drag and drop on Selectable
-    HandleDragAndDrop(primSpec);
-
-    auto childrenNames = primSpec->GetNameChildren();
-    ImGuiTreeNodeFlags nodeFlags =
-        childrenNames.empty() && ! primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf : ImGuiTreeNodeFlags_DefaultOpen;
-    nodeFlags |= ImGuiTreeNodeFlags_OpenOnArrow;
-
-    // Draw the tree column
+// Returns unfolded
+static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &primSpec, SdfPrimSpecHandle &selectedPrim,
+                                 bool hasChildren) {
+    // Format text differently when the prim is a variant
     std::string primSpecName;
     if (primIsVariant) {
         auto variantSelection = primSpec->GetPath().GetVariantSelection();
@@ -241,15 +228,16 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     } else {
         primSpecName = primSpec->GetPath().GetName();
     }
+    ScopedStyleColor textColor(ImGuiCol_Text,
+                               primIsVariant ? ImU32(ImColor::HSV(0.2 / 7.0f, 0.5f, 0.8f)) : ImGui::GetColorU32(ImGuiCol_Text));
 
-    // Style
-    if (primIsVariant){
-        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor::HSV(0.2/7.0f, 0.5f, 0.8f));
-    }
-    ImGui::SameLine();
-    auto cursor = ImGui::GetCursorPos(); // Store position for the InputText
-    auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags|ImGuiTreeNodeFlags_AllowItemOverlap);
+    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap;
+     nodeFlags |= hasChildren && !primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf : ImGuiTreeNodeFlags_DefaultOpen;
+    auto cursor = ImGui::GetCursorPos(); // Store position for the InputText to edit the prim name
+    auto unfolded = ImGui::TreeNodeEx(primSpecName.c_str(), nodeFlags);
 
+    // Edition of the prim name
+    static SdfPrimSpecHandle editNamePrim;
     if (ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
         if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != selectedPrim) {
@@ -268,10 +256,33 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
         }
         ImGui::PopStyleColor();
     }
+    return unfolded;
+}
 
-    if (primIsVariant) {
-        ImGui::PopStyleColor();
-    }
+/// Draw a node in the primspec tree
+static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selectedPrim, int nodeId) {
+
+    if (!primSpec)
+        return;
+    bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
+
+    ImGui::TableNextRow();
+
+    ImGui::TableSetColumnIndex(0);
+
+    ImGui::PushID(nodeId);
+    nodeId = 0; // reset the counter
+
+    DrawBackgroundSelection(primSpec, selectedPrim);
+
+    // Drag and drop on Selectable
+    HandleDragAndDrop(primSpec);
+
+    // Draw the tree column
+    auto childrenNames = primSpec->GetNameChildren();
+
+    ImGui::SameLine();
+    bool unfolded = DrawTreeNodePrimName(primIsVariant, primSpec, selectedPrim, childrenNames.empty());
 
     // Right click will open the quick edit popup menu
     if (ImGui::BeginPopupContextItem()) {
@@ -319,30 +330,35 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     ImGui::PopID();
 }
 
-void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim, ImVec2 &size) {
 
-    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
-    if (ImGui::BeginTable("##DrawPrimSpecTree", 4, tableFlags)) {
+    if (!layer) return;
+
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
+    if (ImGui::BeginTable("##DrawPrimSpecTree", 4, tableFlags, size)) {
         ImGui::TableSetupColumn("Hierarchy");
         ImGui::TableSetupColumn("Spec", ImGuiTableColumnFlags_WidthFixed, 40);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80);
-        ImGui::TableSetupColumn("References");
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 100);
+        ImGui::TableSetupColumn("Composition");
+        ImGui::TableSetupScrollFreeze(4, 1);
         ImGui::TableHeadersRow();
-        ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
+
+        ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap;
         int nodeId = 0;
         if (layer->GetRootPrims().empty()) {
             treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
         }
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        bool selected = SdfPrimSpecHandle() == selectedPrim;
-        if (ImGui::Selectable("##selectTestRow", selected,
-                              ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+
+        DrawBackgroundSelection(SdfPrimSpecHandle(), selectedPrim);
+
+        std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
+        bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags );
+
+        if (ImGui::IsItemClicked()) {
             selectedPrim = SdfPrimSpecHandle();
         }
-        ImGui::SameLine();
-        std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
-        bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
 
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Add root prim")) {
@@ -447,7 +463,7 @@ void DrawLayerHeader(SdfLayerRefPtr layer) {
     }
 }
 
-static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, std::string layerPath) {
+static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, std::string layerPath, int nodeID=0) {
     // Note: layer can be null if it wasn't found
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
@@ -455,9 +471,9 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
     if (!layer || !layer->GetNumSubLayerPaths()) {
         treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
     }
-
-    std::string label = layer ? (layer->IsMuted() ? ICON_FA_EYE_SLASH " " : ICON_FA_EYE " ") + layer->GetDisplayName()
-                              : "Not found " + layerPath;
+    ImGui::PushID(nodeID);
+    std::string label =
+        layer ? (layer->IsMuted() ? ICON_FA_EYE_SLASH " " : ICON_FA_EYE " ") + layer->GetDisplayName() : "Not found " + layerPath;
     bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
     if (ImGui::BeginPopupContextItem()) {
         if (layer && ImGui::MenuItem("Add sublayer")) {
@@ -492,19 +508,19 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
             std::vector<std::string> subLayers = layer->GetSubLayerPaths();
             for (auto subLayerPath : subLayers) {
                 auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, subLayerPath);
-                DrawLayerSublayerTree(subLayer, layer, subLayerPath);
+                DrawLayerSublayerTree(subLayer, layer, subLayerPath, nodeID++);
             }
         }
         ImGui::TreePop();
     }
+    ImGui::PopID();
 }
 
-void DrawLayerSublayers(SdfLayerRefPtr layer) {
+void DrawLayerSublayers(SdfLayerRefPtr layer, ImVec2 &size) {
     if (!layer)
         return;
-
-    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;
-    if (ImGui::BeginTable("##DrawLayerSublayers", 1, tableFlags)) {
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
+    if (ImGui::BeginTable("##DrawLayerSublayers", 1, tableFlags, size)) {
         ImGui::TableSetupColumn("Layers");
         ImGui::TableHeadersRow();
         DrawLayerSublayerTree(layer, SdfLayerRefPtr(), std::string());
@@ -512,10 +528,8 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
     }
 }
 
-/// Draw a SdfLayer in place editor
-void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+static void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     if (ImGui::Button(ICON_FA_HOME)) {
-
     }
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
@@ -538,16 +552,34 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     ImGui::Separator();
     ImGui::Text("%s", layer->GetRealPath().c_str());
     ImGui::Separator();
-    // if (ImGui::CollapsingHeader("Metadata")) {
-    //    DrawLayerMetadata(layer); // TODO move in "Layer properties ?
-    //}
-    // if (ImGui::CollapsingHeader("Sublayers")) {
-    DrawLayerSublayers(layer);
-    ImGui::Separator();
-    //}
-    // if (ImGui::CollapsingHeader("Prims tree")) {
-    DrawLayerPrimHierarchy(layer, selectedPrim);
-    //}
+}
+
+/// Draw a SdfLayer editor
+void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+    // Layout
+    using namespace ImGui;
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+
+    static ImVec2 navigationWidgetSize(-1, 50);
+    static ImVec2 subLayerWidgetSize(-1, 100);
+    static ImVec2 layerWidgetSize(-1, window->Size.y - subLayerWidgetSize.y - navigationWidgetSize.y - 50);
+
+    ImGui::BeginChild("layerEditorNavigation", navigationWidgetSize);
+    DrawLayerNavigation(layer, selectedPrim);
+    ImGui::EndChild();
+
+    if (!Splitter(false, 5, &subLayerWidgetSize.y, &layerWidgetSize.y, 10, 10)) {
+        layerWidgetSize.y = window->Size.y - navigationWidgetSize.y - subLayerWidgetSize.y - 50;
+    }
+
+    ImGui::BeginChild("layerEditorSublayers", subLayerWidgetSize, false, ImGuiWindowFlags_NoDecoration);
+    DrawLayerSublayers(layer, subLayerWidgetSize);
+    ImGui::EndChild();
+
+    ImGui::BeginChild("layerEditorPrimHierarchy", layerWidgetSize, false, ImGuiWindowFlags_NoDecoration);
+    DrawLayerPrimHierarchy(layer, selectedPrim, layerWidgetSize);
+    ImGui::EndChild();
 }
 
 /// Draw a popup menu with the possible action on a layer
