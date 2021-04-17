@@ -340,8 +340,9 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
         const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
-        ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
         ImGui::Text(ICON_FA_PEN " %s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
+        ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
+
 
         // TODO: Edit in variant context, under a variant
         // This is a test.
