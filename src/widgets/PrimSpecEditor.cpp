@@ -87,7 +87,6 @@ void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFl
     }
 }
 
-
 // TODO Share code as we want to share the style of the button, but not necessarily the behaviour
 // DrawMiniButton ?? in a specific file ? OptionButton ??? OptionMenuButton ??
 static void DrawPropertyMiniButton(const char *btnStr, int rowId, const ImVec4 &btnColor = ImVec4({0.0, 0.7, 0.0, 1.0})) {
@@ -287,7 +286,9 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
 /// Using templates to factor the code in DrawPrimSpecMetadata
 template <typename MetadataField> const char *NameForMetadataField();
 template <typename MetadataField> void DrawMetadataFieldValue(SdfPrimSpecHandle &primSpec);
-template <typename MetadataField> void DrawMetadataFieldButton(SdfPrimSpecHandle& primSpec, int rowId) { DrawPropertyMiniButton("(m)", rowId); }
+template <typename MetadataField> void DrawMetadataFieldButton(SdfPrimSpecHandle &primSpec, int rowId) {
+    DrawPropertyMiniButton("(m)", rowId);
+}
 
 /// Draw one row of the metadata field
 template <typename MetadataField> void DrawMetadataRow(SdfPrimSpecHandle &primSpec, int rowId) {
