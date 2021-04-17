@@ -250,3 +250,49 @@ const std::array<SdfValueTypeName, 106> GetAllValueTypeNames() {
         SdfValueTypeNames->TexCoord3dArray,
     };
 }
+
+
+// TODO: get all spec types from the USD API
+// ATM the function GetAllTypes is not exposed by the api, missing SDF_API
+// auto allTypes = primSpec->GetSchema().GetAllTypes();
+// auto allTypes = SdfSchema::GetInstance().GetAllTypes();
+// They are also registered in "registry.usda"
+const std::array<const char *, 35> GetAllSpecTypeNames() {
+    return {"",
+            "Backdrop",
+            "BlendShape",
+            "Camera",
+            "Capsule",
+            "Cone",
+            "Cube",
+            "Cylinder",
+            "DiskLight",
+            "DistantLight",
+            "DomeLight",
+            "Field3DAsset",
+            "GeomSubset",
+            "GeometryLight",
+            "HermiteCurves",
+            "Material",
+            "Mesh",
+            "NodeGraph",
+            "NurbsPatch",
+            "OpenVDBAsset",
+            "PackedJoinedAnimation",
+            "PointInstancer",
+            "Points",
+            "PortalLight"
+            "RectLight",
+            "RenderSettings",
+            "RenderVar",
+            "Scope",
+            "Shader",
+            "SkelAnimation",
+            "SkelRoot",
+            "Skeleton",
+            "Sphere",
+            "SphereLight",
+            "Volume",
+            "Xform"
+    };
+}

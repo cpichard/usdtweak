@@ -195,23 +195,13 @@ static inline TfToken ClassTokenFromChar(const char *classChar) {
 
 /// Draw a prim type name combo
 void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
-
-    /// TODO reset to none as well
-    /// TODO: look at: https://github.com/ocornut/imgui/issues/282
-    // TODO: get all types, ATM the function GetAllTypes is not exposed by the api, missing SDF_API
-    // auto allTypes = primSpec->GetSchema().GetAllTypes();
-    // auto allTypes = SdfSchema::GetInstance().GetAllTypes();
-    // They are also registered in "registry.usda"
-    const char *allTypes[] = {"",       "Scope",     "Xform",          "Cube", "Sphere",     "Cylinder",     "Capsule",
-                              "Cone",   "Camera",    "PointInstancer", "Mesh", "GeomSubset", "DistantLight", "Material",
-                              "Shader", "BlendShape"};
-
     const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
+    const auto allSpecTypes = GetAllSpecTypeNames();
     if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
-        for (int n = 0; n < IM_ARRAYSIZE(allTypes); n++) {
-            const bool isSelected = strcmp(currentItem, allTypes[n]) == 0;
-            if (ImGui::Selectable(allTypes[n], isSelected)) {
-                currentItem = allTypes[n];
+        for (int n = 0; n < allSpecTypes.size(); n++) {
+            const bool isSelected = strcmp(currentItem, allSpecTypes[n]) == 0;
+            if (ImGui::Selectable(allSpecTypes[n], isSelected)) {
+                currentItem = allSpecTypes[n];
             }
         }
 
