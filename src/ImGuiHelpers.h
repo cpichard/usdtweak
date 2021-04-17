@@ -24,3 +24,17 @@ struct ScopedStyleColor {
 /// Plus Operation on ImVec2
 inline ImVec2 operator+(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
 
+/// Creates a splitter
+/// This is coming right from the imgui github repo
+inline bool Splitter(bool splitVertically, float thickness, float *size1, float *size2, float minSize1, float minSize2,
+                     float splitterLongAxisSize = -1.0f) {
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+    ImGuiID id = window->GetID("##Splitter");
+    ImRect bb;
+    bb.Min = window->DC.CursorPos + (splitVertically ? ImVec2(*size1, 0.0f) : ImVec2(0.0f, *size1));
+    bb.Max = bb.Min + ImGui::CalcItemSize(splitVertically ? ImVec2(thickness, splitterLongAxisSize)
+                                                          : ImVec2(splitterLongAxisSize, thickness),
+                                          0.0f, 0.0f);
+    return ImGui::SplitterBehavior(bb, id, splitVertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, minSize1, minSize2, 0.0f);
+}
