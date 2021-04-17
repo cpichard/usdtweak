@@ -395,12 +395,12 @@ void Editor::DrawMainMenuBar() {
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Debug window", nullptr, &_showDebugWindow);
             ImGui::MenuItem("Property editor", nullptr, &_showPropertyEditor);
-            ImGui::MenuItem("Stage Outliner", nullptr, &_showOutliner);
+            ImGui::MenuItem("Stage outliner", nullptr, &_showOutliner);
             ImGui::MenuItem("Timeline", nullptr, &_showTimeline);
-            ImGui::MenuItem("Content Browser", nullptr, &_showContentBrowser);
+            ImGui::MenuItem("Content browser", nullptr, &_showContentBrowser);
             ImGui::MenuItem("Layer editor", nullptr, &_showLayerEditor);
             ImGui::MenuItem("Viewport", nullptr, &_showViewport);
-            ImGui::MenuItem("PrimSpec Editor", nullptr, &_showPrimSpecEditor);
+            ImGui::MenuItem("SdfPrim editor", nullptr, &_showPrimSpecEditor);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -445,7 +445,7 @@ void Editor::Draw() {
     }
 
     if (_showOutliner) {
-        ImGui::Begin("Stage Outliner", &_showOutliner);
+        ImGui::Begin("Stage outliner", &_showOutliner);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }
@@ -462,8 +462,8 @@ void Editor::Draw() {
         auto rootLayer = GetCurrentLayer();
 
         const std::string title(
-            "Layer Editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
-            "###Layer Editor");
+            "Layer editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
+            "###Layer editor");
 
         ImGui::Begin(title.c_str(), &_showLayerEditor);
         DrawLayerEditor(rootLayer, GetSelectedPrimSpec());
@@ -471,13 +471,13 @@ void Editor::Draw() {
     }
 
     if (_showContentBrowser) {
-        ImGui::Begin("Content Browser", &_showContentBrowser);
+        ImGui::Begin("Content browser", &_showContentBrowser);
         DrawContentBrowser(*this);
         ImGui::End();
     }
 
     if (_showPrimSpecEditor) {
-        ImGui::Begin("PrimSpec editor", &_showPrimSpecEditor);
+        ImGui::Begin("SdfPrim editor", &_showPrimSpecEditor);
         if (GetSelectedPrimSpec()) {
             DrawPrimSpecEditor(GetSelectedPrimSpec());
         } else {
