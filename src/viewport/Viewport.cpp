@@ -194,10 +194,11 @@ void Viewport::Draw() {
     ImGui::Button("\xef\x89\xac Viewport");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawOpenGLSettings(*_renderer, *_renderparams);
-        ImGui::Separator();
-        DrawPickMode(_selectionManipulator);
         ImGui::EndPopup();
     }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    DrawPickMode(_selectionManipulator);
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
