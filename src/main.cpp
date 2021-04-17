@@ -69,10 +69,7 @@ int main(int argc, char **argv) {
 
     //ImGuiStyle& style = ImGui::GetStyle();
     //style.Colors[ImGuiCol_Tab] = style.Colors[ImGuiCol_FrameBg];
-
-    // Dock with shift key
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigDockingWithShift = true;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     { // Scope as the editor should be deleted before imgui and glfw, to release correctly the memory
