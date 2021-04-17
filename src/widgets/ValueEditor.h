@@ -2,8 +2,7 @@
 #include <string>
 #include <array>
 #include <pxr/base/vt/value.h>
-#include "pxr/usd/sdf/valueTypeName.h"
-
+#include <pxr/usd/sdf/valueTypeName.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
