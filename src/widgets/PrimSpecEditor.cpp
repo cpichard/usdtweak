@@ -27,11 +27,8 @@
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
 
-
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
-
-
 
 struct CreateAttributeDialog : public ModalDialog {
     CreateAttributeDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim){};
@@ -39,7 +36,7 @@ struct CreateAttributeDialog : public ModalDialog {
 
     void Draw() override {
         ImGui::InputText("Name", &_attributeName);
-        if(ImGui::BeginCombo("Type", _typeName.GetAsToken().GetString().c_str())) {
+        if (ImGui::BeginCombo("Type", _typeName.GetAsToken().GetString().c_str())) {
             for (int i = 0; i < GetAllValueTypeNames().size(); i++) {
                 if (ImGui::Selectable(GetAllValueTypeNames()[i].GetAsToken().GetString().c_str(), false)) {
                     _typeName = GetAllValueTypeNames()[i];
@@ -48,15 +45,14 @@ struct CreateAttributeDialog : public ModalDialog {
             ImGui::EndCombo();
         }
         bool varying = _variability == SdfVariabilityVarying;
-        if(ImGui::Checkbox("Varying", &varying) ) {
+        if (ImGui::Checkbox("Varying", &varying)) {
             _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
         }
-        if(ImGui::Checkbox("Custom", &_custom) ) {
+        if (ImGui::Checkbox("Custom", &_custom)) {
             _custom = !_custom;
         }
-        DrawOkCancelModal([&]() {
-            ExecuteAfterDraw<PrimCreateProperty>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom);
-        });
+        DrawOkCancelModal(
+            [&]() { ExecuteAfterDraw<PrimCreateProperty>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom); });
     }
     const char *DialogId() const override { return "Create attribute"; }
 
@@ -66,8 +62,6 @@ struct CreateAttributeDialog : public ModalDialog {
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
     bool _custom = true;
 };
-
-
 
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
@@ -167,7 +161,7 @@ void DrawPrimName(SdfPrimSpecHandle &primSpec) {
 void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
     auto primKind = primSpec->GetKind();
     if (ImGui::BeginCombo("Kind", primKind.GetString().c_str())) {
-        for (auto kind: KindRegistry::GetAllKinds()){
+        for (auto kind : KindRegistry::GetAllKinds()) {
             bool isSelected = primKind == kind;
             if (ImGui::Selectable(kind.GetString().c_str(), isSelected)) {
                 ExecuteAfterDraw(&SdfPrimSpec::SetKind, primSpec, kind);
@@ -212,15 +206,14 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     }
 }
 
-
-
 void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
     int deleteButtonCounter = 0;
     const auto &attributes = primSpec->GetProperties();
-    if (attributes.empty()) return;
+    if (attributes.empty())
+        return;
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -256,7 +249,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                 ImGui::TableSetColumnIndex(3);
                 ImGui::PushItemWidth(-FLT_MIN);
                 VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
-                 if (modified != VtValue()) {
+                if (modified != VtValue()) {
                     ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, *attribute, modified);
                 }
             }
@@ -337,15 +330,13 @@ struct PrimHidden {};
 template <> const char *NameForMetadataField<PrimHidden>() { return "Hidden"; }
 template <> void DrawMetadataFieldValue<PrimHidden>(SdfPrimSpecHandle &primSpec) { DrawPrimHidden(primSpec); }
 
-
-
 void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
 
         int rowId = 0;
 
         if (ImGui::BeginTable("##DrawPrimSpecMetadata", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-            
+
             TableSetupColumns("", "Metadata", "Value");
             ImGui::TableHeadersRow();
 
@@ -369,7 +360,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
         return;
     ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
     ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
-    if(ImGui::Button("Create Attribute")) {
+    if (ImGui::Button("Create Attribute")) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
     }
     DrawPrimSpecMetadata(primSpec);

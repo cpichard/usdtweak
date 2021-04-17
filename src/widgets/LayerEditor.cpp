@@ -106,35 +106,35 @@ struct AddVariantModalDialog : public ModalDialog {
     SdfPrimSpecHandle _primSpec;
     std::string _variantSet;
     std::string _variant;
-    bool _addToEditList=false;
+    bool _addToEditList = false;
 };
-
 
 // Look for a new name. If prefix ends with a number, it will increase its value until
 // a valid name/token is found
 static std::string FindNextAvailablePrimName(std::string prefix) {
     // Find number in the prefix
     size_t end = prefix.size() - 1;
-    while (end>0 && std::isdigit(prefix[end])) {
+    while (end > 0 && std::isdigit(prefix[end])) {
         end--;
     }
     size_t padding = prefix.size() - 1 - end;
-    const std::string number = prefix.substr(end+1, padding);
+    const std::string number = prefix.substr(end + 1, padding);
     auto value = number.size() ? std::stoi(number) : 0;
     std::ostringstream newName;
     padding = padding == 0 ? 4 : padding; // 4: default padding
     do {
         value += 1;
         newName.seekp(0, std::ios_base::beg); // rewind
-        newName << prefix.substr(0, end+1) << std::setfill('0') << std::setw(padding) << value;
+        newName << prefix.substr(0, end + 1) << std::setfill('0') << std::setw(padding) << value;
         // Looking for existing token with the same name.
         // There might be a better solution here
-    } while (TfToken::Find(newName.str())!=TfToken());
+    } while (TfToken::Find(newName.str()) != TfToken());
     return newName.str();
 }
 
-void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
-    if (!primSpec) return;
+void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
+    if (!primSpec)
+        return;
 
     if (ImGui::MenuItem("Add child")) {
         ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
@@ -176,12 +176,12 @@ void DrawTreeNodePopup(SdfPrimSpecHandle& primSpec) {
 }
 
 static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
-     static SdfPath payload;
+    static SdfPath payload;
     // Drag and drop
     ImGuiDragDropFlags srcFlags = 0;
     srcFlags |= ImGuiDragDropFlags_SourceNoDisableHover;     // Keep the source displayed as hovered
     srcFlags |= ImGuiDragDropFlags_SourceNoHoldToOpenOthers; // Because our dragging is local, we disable the feature of opening
-                                                              // foreign treenodes/tabs while dragging
+                                                             // foreign treenodes/tabs while dragging
     // src_flags |= ImGuiDragDropFlags_SourceNoPreviewTooltip; // Hide the tooltip
     if (ImGui::BeginDragDropSource(srcFlags)) {
         if (!(srcFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
@@ -262,11 +262,10 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     if (primSpec == editNamePrim) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 1.0));
         ImGui::SetCursorPos(cursor);
-        DrawPrimName(primSpec);
-        if (ImGui::IsItemDeactivatedAfterEdit()||!ImGui::IsItemFocused()) {
+        DrawPrimName(primSpec); // Draw the prim name editor
+        if (ImGui::IsItemDeactivatedAfterEdit() || !ImGui::IsItemFocused()) {
             editNamePrim = SdfPrimSpecHandle();
         }
-
         ImGui::PopStyleColor();
     }
 
@@ -408,11 +407,13 @@ void DrawUpAxis(SdfLayerRefPtr layer) {
     if (ImGui::BeginCombo("Up Axis", upAxisStr.c_str())) {
         bool selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->z;
         if (ImGui::Selectable("Z", selected)) {
-            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->z);
+            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis,
+                             UsdGeomTokens->z);
         }
         selected = !upAxis.IsEmpty() && upAxis.Get<TfToken>() == UsdGeomTokens->y;
         if (ImGui::Selectable("Y", selected)) {
-            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis, UsdGeomTokens->y);
+            ExecuteAfterDraw(&SdfLayer::SetField<TfToken>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis,
+                             UsdGeomTokens->y);
         }
         ImGui::EndCombo();
     }
