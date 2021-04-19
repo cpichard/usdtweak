@@ -172,7 +172,7 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawBackgroundSelection(SdfPrimSpecHandle &currentPrim, SdfPrimSpecHandle &selectedPrim) {
+static void DrawBackgroundSelection(const SdfPrimSpecHandle &currentPrim, SdfPrimSpecHandle &selectedPrim) {
     const bool selected = currentPrim == selectedPrim;
 
     const auto selectedColor = ImGui::GetColorU32(ImGuiCol_Header);
