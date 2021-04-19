@@ -91,7 +91,7 @@ bool PositionManipulator::CompileShaders() {
         return false;
     }
     glCompileShader(fragmentShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if (!success) {
         glGetShaderInfoLog(fragmentShader, logSize, nullptr, logStr);
         std::cout << "Compilation failed\n" << logStr << std::endl;

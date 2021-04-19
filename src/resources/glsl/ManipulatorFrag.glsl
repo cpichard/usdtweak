@@ -10,4 +10,4 @@ void main() {
     } else {
        FragColor = color;
     }
-};
+}
