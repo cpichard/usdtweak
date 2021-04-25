@@ -12,8 +12,12 @@ constexpr int InitialWindowHeight = 1024;
 
 /// Viewport border between the panel and the window
 constexpr float ViewportBorderSize = 60.f;
+
 /// Height of a row in the property editor
 constexpr float TableRowHeight = 22.f;
+
+/// Waiting time before a tooltip shows up
+constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 
 /// Predefined colors for the different widgets
 #define AttributeAuthoredColor {1.0, 1.0, 1.0, 1.0}

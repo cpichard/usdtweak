@@ -5,6 +5,7 @@
 #include "ContentBrowser.h"
 #include "LayerEditor.h" // for DrawLayerMenuItems
 #include "Commands.h"
+#include "Constants.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -19,7 +20,7 @@ void DrawStageCache(UsdStageCache &cache, UsdStageCache::Id *selectedStage = nul
                 if (selectedStage)
                     *selectedStage = cache.GetId(stage);
             }
-            if (ImGui::IsItemHovered()) {
+            if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > TimeBeforeTooltip) {
                 ImGui::SetTooltip("%s", stage->GetRootLayer()->GetRealPath().c_str());
             }
             ImGui::PopID();
@@ -38,7 +39,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
               [](const auto &t1, const auto &t2) { return t1->GetDisplayName() < t2->GetDisplayName(); });
     static ImGuiTextFilter filter;
     filter.Draw();
-    if (ImGui::BeginListBox("##layers", listSize)) { // TODO: anonymous different per type ??
+    if (ImGui::BeginListBox("##DrawLayerSet", listSize)) { // TODO: anonymous different per type ??
         for (const auto &layer : sortedSet) {
             if (!layer)
                 continue;
@@ -52,7 +53,7 @@ void DrawLayerSet(SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer, const I
                     if (selectedLayer)
                         *selectedLayer = layer;
                 }
-                if (ImGui::IsItemHovered()) {
+                if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 2) {
                     ImGui::SetTooltip("%s\n%s", layer->GetRealPath().c_str(), layer->GetIdentifier().c_str());
                     auto assetInfo = layer->GetAssetInfo();
                     if (!assetInfo.IsEmpty()) {
