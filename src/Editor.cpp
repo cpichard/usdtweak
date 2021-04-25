@@ -34,34 +34,9 @@ static const std::vector<std::string> GetUsdValidExtensions() {
 }
 
 /// Modal dialog used to create a new layer
-struct CreateLayerModal : public ModalDialog {
+struct CreateUsdFileModalDialog : public ModalDialog {
 
-    CreateLayerModal(Editor &editor) : editor(editor) {};
-
-    void Draw() override {
-        DrawFileBrowser();
-        auto filePath = GetFileBrowserFilePath();
-
-        if (FilePathExists()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
-        } else {
-            ImGui::Text("Create: ");
-        } // ... could add other messages like permission denied, or incorrect extension
-        ImGui::Text("%s", filePath.c_str());
-        DrawOkCancelModal([&]() {
-            if (!filePath.empty()) {
-                editor.CreateLayer(filePath);
-            }
-        });
-    }
-
-    const char *DialogId() const override { return "Create layer"; }
-    Editor &editor;
-};
-
-struct CreateStageModal : public ModalDialog {
-
-    CreateStageModal(Editor& editor) : editor(editor) { SetValidExtensions({}); };
+    CreateUsdFileModalDialog(Editor &editor) : editor(editor), createStage(true){};
 
     void Draw() override {
         DrawFileBrowser();
@@ -70,31 +45,35 @@ struct CreateStageModal : public ModalDialog {
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
         } else {
-            ImGui::Text("Create: ");
+            ImGui::Checkbox("Open as stage", &createStage);
         } // ... could add other messages like permission denied, or incorrect extension
         ImGui::Text("%s", filePath.c_str());
-
         DrawOkCancelModal([&]() {
             if (!filePath.empty()) {
-                editor.CreateStage(filePath);
+                if (createStage) {
+                    editor.CreateStage(filePath);
+                } else {
+                    editor.CreateLayer(filePath);
+                }
             }
         });
     }
 
-    const char *DialogId() const override { return "Create stage"; }
+    const char *DialogId() const override { return "Create usd file"; }
     Editor &editor;
+    bool createStage = true;
 };
-
 
 /// Modal dialog to open a layer
-struct OpenLayerModal : public ModalDialog {
+struct OpenUsdFileModalDialog : public ModalDialog {
 
-    OpenLayerModal(Editor &editor) : editor(editor) { SetValidExtensions(GetUsdValidExtensions()); };
-    ~OpenLayerModal() override {}
+    OpenUsdFileModalDialog(Editor &editor) : editor(editor) { SetValidExtensions(GetUsdValidExtensions()); };
+    ~OpenUsdFileModalDialog() override {}
     void Draw() override {
         DrawFileBrowser();
+
         if (FilePathExists()) {
-            ImGui::Text("Open: ");
+            ImGui::Checkbox("Open as stage", &openAsStage);
         } else {
             ImGui::Text("Not found: ");
         }
@@ -102,37 +81,18 @@ struct OpenLayerModal : public ModalDialog {
         ImGui::Text("%s", filePath.c_str());
         DrawOkCancelModal([&]() {
             if (!filePath.empty() && FilePathExists()) {
-                editor.ImportLayer(filePath);
+                if (openAsStage) {
+                    editor.ImportStage(filePath);
+                } else {
+                    editor.ImportLayer(filePath);
+                }
             }
         });
     }
 
     const char *DialogId() const override { return "Open layer"; }
     Editor &editor;
-};
-
-struct OpenStageModal : public ModalDialog {
-
-    OpenStageModal(Editor &editor) : editor(editor) { SetValidExtensions(GetUsdValidExtensions()); };
-    ~OpenStageModal() override {}
-    void Draw() override {
-        DrawFileBrowser();
-        auto filePath = GetFileBrowserFilePath();
-        if (FilePathExists()) {
-            ImGui::Text("Open: ");
-        } else {
-            ImGui::Text("Not found: ");
-        }
-        ImGui::Text("%s", filePath.c_str());
-        DrawOkCancelModal([&]() {
-            if (!filePath.empty() && FilePathExists()) {
-                editor.ImportStage(filePath);
-            }
-        });
-    }
-
-    const char *DialogId() const override { return "Open stage"; }
-    Editor &editor;
+    bool openAsStage = true;
 };
 
 struct SaveLayerAs : public ModalDialog {
@@ -199,8 +159,7 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
                 if (ArchGetFileLength(paths[i]) == 0) {
                     // if the file is empty, this is considered a new file
                     editor->CreateStage(std::string(paths[i]));
-                }
-                else {
+                } else {
                     editor->ImportLayer(std::string(paths[i]));
                 }
             }
@@ -340,37 +299,22 @@ void Editor::DrawMainMenuBar() {
 
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::BeginMenu("New")) {
-                if (ImGui::MenuItem("Layer")) {
-                    DrawModalDialog<CreateLayerModal>(*this);
-                }
-                if (ImGui::MenuItem("Stage")) {
-                    DrawModalDialog<CreateStageModal>(*this);
-                }
-                ImGui::EndMenu();
+            if (ImGui::MenuItem(ICON_FA_FILE " New")) {
+                DrawModalDialog<CreateUsdFileModalDialog>(*this);
             }
-            if (ImGui::BeginMenu("Open")) {
-                if (ImGui::MenuItem("Layer")) {
-                    DrawModalDialog<OpenLayerModal>(*this);
-                }
-                if (ImGui::MenuItem("Stage")) {
-                    DrawModalDialog<OpenStageModal>(*this);
-                }
-                ImGui::EndMenu();
+            if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " Open")) {
+                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
             }
-            if (ImGui::BeginMenu("Save")) {
-                if (ImGui::MenuItem("Selected layer")) {
-                    if (GetCurrentLayer()) {
-                        GetCurrentLayer()->Save(true);
-                    }
-                }
-                if (ImGui::MenuItem("Selected layer as")) {
-                    if (GetCurrentLayer()) {
-                        DrawModalDialog<SaveLayerAs>(*this);
-                    }
-                }
-                ImGui::EndMenu();
+            ImGui::Separator();
+            const bool hasLayer = GetCurrentLayer() != SdfLayerRefPtr();
+            if (ImGui::MenuItem(ICON_FA_SAVE " Save layer", "CTRL+S", false, hasLayer)) {
+                GetCurrentLayer()->Save(true);
             }
+            if (ImGui::MenuItem(ICON_FA_SAVE " Save layer as", "CTRL+F", false, hasLayer)) {
+                DrawModalDialog<SaveLayerAs>(*this);
+            }
+
+            ImGui::Separator();
             if (ImGui::MenuItem("Quit")) {
                 _shutdownRequested = true;
             }
