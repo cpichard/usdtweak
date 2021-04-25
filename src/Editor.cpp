@@ -353,9 +353,7 @@ void Editor::DrawMainMenuBar() {
 
 void Editor::Draw() {
 
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    NewFrame();
 
     // Dock
     BeginBackgoundDock();

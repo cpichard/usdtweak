@@ -14,3 +14,9 @@
 
 /// Icons font
 #include "IconsFontAwesome5.h"
+
+inline void NewFrame() {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+}
