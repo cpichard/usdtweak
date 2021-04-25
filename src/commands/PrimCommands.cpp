@@ -153,14 +153,14 @@ struct PrimReparent : public SdfLayerCommand {
     SdfPath _destination;
 };
 
-struct PrimCreateProperty : public SdfLayerCommand {
+struct PrimCreateAttribute : public SdfLayerCommand {
 
-    PrimCreateProperty(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
+    PrimCreateAttribute(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
                        SdfVariability variability = SdfVariabilityVarying, bool custom = false)
         : _owner(std::move(owner)), _name(std::move(name)), _typeName(std::move(typeName)), _variability(variability),
           _custom(custom) {}
 
-    ~PrimCreateProperty() override {}
+    ~PrimCreateAttribute() override {}
 
     bool DoIt() override {
         if (!_owner)
@@ -192,5 +192,5 @@ template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, 
 template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, int operation, SdfPayload payload);
 template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
 template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);
-template void ExecuteAfterDraw<PrimCreateProperty>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
+template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
                                                    SdfVariability variability, bool custom);

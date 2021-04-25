@@ -23,7 +23,7 @@ struct PrimCreatePayload;
 struct PrimCreateInherit;
 struct PrimCreateSpecialize;
 struct PrimReparent;
-struct PrimCreateProperty;
+struct PrimCreateAttribute;
 
 struct EditorSetDataPointer;
 struct EditorSelectPrimPath;

@@ -52,7 +52,7 @@ struct CreateAttributeDialog : public ModalDialog {
             _custom = !_custom;
         }
         DrawOkCancelModal(
-            [&]() { ExecuteAfterDraw<PrimCreateProperty>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom); });
+            [&]() { ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom); });
     }
     const char *DialogId() const override { return "Create attribute"; }
 
@@ -205,24 +205,24 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     }
 }
 
-void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecProperties(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
     int deleteButtonCounter = 0;
-    const auto &attributes = primSpec->GetProperties();
-    if (attributes.empty())
+    const auto &properties = primSpec->GetProperties();
+    if (properties.empty())
         return;
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
-    if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
+    if (ImGui::BeginTable("##DrawPrimSpecProperties", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-        ImGui::TableSetupColumn("Attribute");
+        ImGui::TableSetupColumn("Property");
         ImGui::TableSetupColumn("Time");
         ImGui::TableSetupColumn("Value");
 
         ImGui::TableHeadersRow();
 
-        TF_FOR_ALL(attribute, attributes) {
+        TF_FOR_ALL(attribute, properties) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
 
             ImGui::TableNextRow();
@@ -367,5 +367,5 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     DrawPrimSpecMetadata(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
-    DrawPrimSpecAttributes(primSpec); // properties ???
+    DrawPrimSpecProperties(primSpec); // properties ???
 }
