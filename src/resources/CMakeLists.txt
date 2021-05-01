@@ -15,8 +15,8 @@ list(APPEND GLSL_SOURCES
 )
 
 # target_sources won't take the generated files for a target outside of the current directory
-# so as a solution a glslcode library is created
-add_library(glslcode STATIC "")
+# so as a solution a resources library is created
+add_library(resources STATIC "")
 
 # Function to add a custom command to embed a glsl file in a cpp as a const char *
 function(embed_glsl cpp_file glsl_file)
@@ -38,8 +38,8 @@ foreach (glsl_file ${GLSL_SOURCES})
     # Save the variable name in a list
     get_filename_component(variable_name ${glsl_file} NAME_WE)
     string(APPEND glsl_header "extern const char *${variable_name};\n")
-    # Add the generated cpp to the glslcode target
-    target_sources(glslcode PRIVATE ${cpp_file})
+    # Add the generated cpp to the resources target
+    target_sources(resources PRIVATE ${cpp_file})
 endforeach()
 
 # Write a header file
@@ -47,3 +47,20 @@ endforeach()
 file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/GlslCode.h" "#pragma once\n
 ${glsl_header}"
 )
+
+# Default ini file is also embedded
+set(default_ini_file ${CMAKE_CURRENT_SOURCE_DIR}/ini/imgui.ini)
+set(default_ini_header ${CMAKE_CURRENT_SOURCE_DIR}/DefaultImGuiIni.h)
+add_custom_command(
+    OUTPUT "${default_ini_header}"
+    DEPENDS "${default_ini_file}"
+    COMMAND "${CMAKE_COMMAND}"
+            "-DSOURCE_FILE=${default_ini_file}"
+            "-DDESTINATION_FILE=${default_ini_header}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/embed_text.cmake"
+    COMMENT "Embedding ${default_ini_file}"
+)
+# not really necessary, but useful in the IDE
+target_sources(resources PRIVATE ${default_ini_header})
+
+

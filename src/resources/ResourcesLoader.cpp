@@ -1,6 +1,7 @@
 #include "ResourcesLoader.h"
 #include "Gui.h"
 #include "FontAwesomeFree5.h"
+#include "DefaultImGuiIni.h"
 
 ResourcesLoader::ResourcesLoader() {
     // Font
@@ -17,7 +18,13 @@ ResourcesLoader::ResourcesLoader() {
     auto font = io.Fonts->AddFontFromMemoryCompressedTTF(fontawesomefree5_compressed_data, fontawesomefree5_compressed_size,
                                                          13.0f, &iconsConfig, iconRanges);
 
-
-    // TODO: Configuration. The first time the configuration is not saved and the UI is all over the place.
-
+    // Ini file
+    // The first time the application is open, there is no default ini and the UI is all over the place.
+    // This bit of code adds a default configuration
+    ImFileHandle f;
+    if ((f = ImFileOpen(io.IniFilename, "rb")) == nullptr) {
+        ImGui::LoadIniSettingsFromMemory(imgui, 0);
+    } else {
+        ImFileClose(f);
+    }
 }
