@@ -51,7 +51,7 @@ public:
     void CreateLayer(const std::string &path);
     void ImportLayer(const std::string &path);
     void CreateStage(const std::string &path);
-    void ImportStage(const std::string &path);
+    void ImportStage(const std::string &path,  bool openLoaded=true);
     void SaveCurrentLayerAs(const std::string &path);
 
     /// Render the hydra viewport

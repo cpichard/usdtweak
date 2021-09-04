@@ -74,6 +74,10 @@ struct OpenUsdFileModalDialog : public ModalDialog {
 
         if (FilePathExists()) {
             ImGui::Checkbox("Open as stage", &openAsStage);
+            if (openAsStage) {
+                ImGui::SameLine();
+                ImGui::Checkbox("Load payloads", &openLoaded);
+            }
         } else {
             ImGui::Text("Not found: ");
         }
@@ -82,7 +86,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         DrawOkCancelModal([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 if (openAsStage) {
-                    editor.ImportStage(filePath);
+                    editor.ImportStage(filePath, openLoaded);
                 } else {
                     editor.ImportLayer(filePath);
                 }
@@ -93,6 +97,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
     const char *DialogId() const override { return "Open layer"; }
     Editor &editor;
     bool openAsStage = true;
+    bool openLoaded = true;
 };
 
 struct SaveLayerAs : public ModalDialog {
@@ -253,8 +258,8 @@ void Editor::ImportLayer(const std::string &path) {
 }
 
 //
-void Editor::ImportStage(const std::string &path) {
-    auto newStage = UsdStage::Open(path);
+void Editor::ImportStage(const std::string &path, bool openLoaded) {
+    auto newStage = UsdStage::Open(path, openLoaded ? UsdStage::LoadAll : UsdStage::LoadNone); // TODO: as an option
     if (newStage) {
         _stageCache.Insert(newStage);
         SetCurrentStage(newStage);
