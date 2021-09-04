@@ -30,7 +30,7 @@ static const std::vector<std::string> GetUsdValidExtensions() {
     std::vector<std::string> validExtensions;
     auto addDot = [](const std::string &str) { return "." + str; };
     std::transform(usdExtensions.cbegin(), usdExtensions.cend(), std::back_inserter(validExtensions), addDot);
-    return std::move(validExtensions);
+    return validExtensions;
 }
 
 /// Modal dialog used to create a new layer
