@@ -65,7 +65,8 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
 /// Recursive function to draw a prim and its descendants
 static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-    if (prim.GetAllChildren().empty()) {
+    auto &children = prim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+    if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
     if (IsSelected(selectedPaths, prim.GetPath())) {
@@ -106,7 +107,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
 
     if (unfolded) {
         if (prim.IsActive()) {
-            for (const auto &child : prim.GetAllChildren()) {
+            for (const auto &child : children) {
                 DrawPrimTreeNode(child, selectedPaths);
             }
         }
@@ -160,7 +161,8 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     ImGui::Text("");
     ImGui::NextColumn(); // Back to the first column
     if (unfolded) {
-        for (const auto &child : rootPrim.GetAllChildren()) {
+        auto &children = rootPrim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+        for (const auto &child : children) {
             DrawPrimTreeNode(child, selectedPaths);
         }
         ImGui::TreePop();
