@@ -140,8 +140,8 @@ VtValue DrawColorValue(const std::string &label, const VtValue &value) {
     return VtValue();
 }
 
-const std::array<SdfValueTypeName, 106> GetAllValueTypeNames() {
-    return {
+const std::array<SdfValueTypeName, 106> & GetAllValueTypeNames() {
+    static std::array<SdfValueTypeName, 106> allValueTypeNames = {
         SdfValueTypeNames->Bool,
         SdfValueTypeNames->UChar,
         SdfValueTypeNames->Int,
@@ -249,6 +249,7 @@ const std::array<SdfValueTypeName, 106> GetAllValueTypeNames() {
         SdfValueTypeNames->TexCoord3fArray,
         SdfValueTypeNames->TexCoord3dArray,
     };
+    return allValueTypeNames;
 }
 
 
@@ -257,8 +258,8 @@ const std::array<SdfValueTypeName, 106> GetAllValueTypeNames() {
 // auto allTypes = primSpec->GetSchema().GetAllTypes();
 // auto allTypes = SdfSchema::GetInstance().GetAllTypes();
 // They are also registered in "registry.usda"
-const std::array<const char *, 35> GetAllSpecTypeNames() {
-    return {"",
+const std::array<const char *, 35> & GetAllSpecTypeNames() {
+    static std::array<const char *, 35> allSpecTypeNames = {"",
             "Backdrop",
             "BlendShape",
             "Camera",
@@ -295,4 +296,5 @@ const std::array<const char *, 35> GetAllSpecTypeNames() {
             "Volume",
             "Xform"
     };
+    return allSpecTypeNames;
 }
