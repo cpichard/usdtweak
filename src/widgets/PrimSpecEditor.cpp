@@ -192,9 +192,10 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     const auto allSpecTypes = GetAllSpecTypeNames();
     if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
         for (int n = 0; n < allSpecTypes.size(); n++) {
-            const bool isSelected = strcmp(currentItem, allSpecTypes[n]) == 0;
-            if (ImGui::Selectable(allSpecTypes[n], isSelected)) {
-                currentItem = allSpecTypes[n];
+            auto typeAsChar = allSpecTypes[n];
+            const bool isSelected = strcmp(currentItem, typeAsChar) == 0;
+            if (ImGui::Selectable(typeAsChar, isSelected)) {
+                currentItem = typeAsChar;
             }
         }
 
