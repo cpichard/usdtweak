@@ -92,7 +92,11 @@ int main(int argc, char **argv) {
             glfwGetFramebufferSize(window, &width, &height);
             glViewport(0, 0, width, height);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
             editor.Draw();
+            ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 #ifndef DISABLE_DOUBLE_BUFFER

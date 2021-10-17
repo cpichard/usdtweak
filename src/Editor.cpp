@@ -357,9 +357,6 @@ void Editor::DrawMainMenuBar() {
 }
 
 void Editor::Draw() {
-
-    NewFrame();
-
     // Dock
     BeginBackgoundDock();
 
@@ -461,5 +458,5 @@ void Editor::Draw() {
     /////////////////
 
     EndBackgroundDock();
-    ImGui::Render();
+
 }
