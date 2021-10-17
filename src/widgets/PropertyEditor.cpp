@@ -335,7 +335,7 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
-    DrawPropertyEditorMenuBar(prim, 0);
+    // DrawPropertyEditorMenuBar(prim, 0);
 
     if (prim) {
         auto editTarget = prim.GetStage()->GetEditTarget();
