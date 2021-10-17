@@ -70,9 +70,6 @@ static std::vector<std::string> validExts;
 void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
 
 // Using a timer to avoid querying the filesytem at every frame
-// TODO: a separate thread to read from the filesystem only once needed as it might take
-// more than one second to return the list of files on network drives
-// or things like inotify ?? and the equivalent on linux ?
 static void EverySecond(const std::function<void()> &deferedFunction) {
     static auto last = clk::steady_clock::now();
     auto now = clk::steady_clock::now();
@@ -100,13 +97,11 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
     len = directoryPath.find(fs::path::preferred_separator, pos);
 
     while (len != std::string::npos) {
-        if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
-            lineEditBuffer = directoryPath.substr(0, len) + fs::path::preferred_separator;
-            displayedDirectory = fs::path(lineEditBuffer);
-            return true;
-        }
-        if (pos == 0 && !drivesList.empty()) { // Show the drives if there are any in the list
-            if (ImGui::BeginPopupContextItem()) {
+        if (pos == 0 && !drivesList.empty()) {
+            if (ImGui::Button(ICON_FA_HDD)) {
+                ImGui::OpenPopup("driveslist");
+            }
+            if (ImGui::BeginPopup("driveslist")) {
                 for (auto driveLetter : drivesList) {
                     if (ImGui::Selectable(driveLetter.c_str(), false)) {
                         lineEditBuffer = driveLetter + fs::path::preferred_separator;
@@ -117,6 +112,13 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
                 }
                 ImGui::EndPopup();
             }
+            ImGui::SameLine();
+        }
+
+        if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
+            lineEditBuffer = directoryPath.substr(0, len) + fs::path::preferred_separator;
+            displayedDirectory = fs::path(lineEditBuffer);
+            return true;
         }
         pos = len + 1;
         len = directoryPath.find(fs::path::preferred_separator, pos);
@@ -240,7 +242,7 @@ void DrawFileBrowser() {
 
     // Get window size
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
-    ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: 170 should be computer
+    ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: 170 should be computed
 
     if (ImGui::BeginListBox("##FileList", sizeArg)) {
         constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;
