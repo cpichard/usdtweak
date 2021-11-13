@@ -66,6 +66,7 @@ inline void localtime_(struct tm *result, const time_t *timep) { localtime_r(tim
 static std::string filePath;
 static bool fileExists = false;
 static std::vector<std::string> validExts;
+static std::string lineEditBuffer;
 
 void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
 
@@ -172,7 +173,7 @@ static void DrawFileSize(uintmax_t fileSize) {
 }
 
 void DrawFileBrowser() {
-    static std::string lineEditBuffer;
+
     static fs::path displayedDirectory = fs::current_path();
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
@@ -308,3 +309,4 @@ void DrawFileBrowser() {
 bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
+void ResetFileBrowserFilePath() { filePath = ""; lineEditBuffer = ""; }

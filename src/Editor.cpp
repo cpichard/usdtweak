@@ -34,19 +34,23 @@ static const std::vector<std::string> GetUsdValidExtensions() {
 }
 
 /// Modal dialog used to create a new layer
-struct CreateUsdFileModalDialog : public ModalDialog {
+ struct CreateUsdFileModalDialog : public ModalDialog {
 
-    CreateUsdFileModalDialog(Editor &editor) : editor(editor), createStage(true){};
+    CreateUsdFileModalDialog(Editor &editor) : editor(editor), createStage(true) { ResetFileBrowserFilePath(); };
 
     void Draw() override {
         DrawFileBrowser();
         auto filePath = GetFileBrowserFilePath();
-
+        ImGui::Checkbox("Open as stage", &createStage);
         if (FilePathExists()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
+            // ... could add other messages like permission denied, or incorrect extension
+            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Warning: overwriting");
         } else {
-            ImGui::Checkbox("Open as stage", &createStage);
-        } // ... could add other messages like permission denied, or incorrect extension
+            if (!filePath.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "New stage: ");
+            }
+        }
+
         ImGui::Text("%s", filePath.c_str());
         DrawOkCancelModal([&]() {
             if (!filePath.empty()) {

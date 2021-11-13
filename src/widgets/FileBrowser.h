@@ -9,6 +9,9 @@ void DrawFileBrowser();
 /// Returns the current stored file browser path
 std::string GetFileBrowserFilePath();
 
+/// Reset currently stored path in the file browser
+void ResetFileBrowserFilePath();
+
 /// Returns true if the current file browser path exists
 bool FilePathExists();
 
