@@ -9,11 +9,14 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "ResourcesLoader.h"
+#include "CommandLineOptions.h"
 #include "Gui.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-int main(int argc, char **argv) {
+int main(int argc, const char **argv) {
+
+    CommandLineOptions options(argc, argv);
 
     // Initialize python
 #ifdef WANTS_PYTHON
@@ -77,6 +80,11 @@ int main(int argc, char **argv) {
         ResourcesLoader resources;
         glfwSetWindowUserPointer(window, &editor);
         glfwSetDropCallback(window, Editor::DropCallback);
+
+        // Process command line options
+        for (auto& stage : options.stages()) {
+            editor.ImportStage(stage);
+        }
 
         // Loop until the user closes the window
         while (!glfwWindowShouldClose(window) && !editor.ShutdownRequested()) {
