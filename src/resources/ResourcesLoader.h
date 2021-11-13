@@ -3,4 +3,5 @@
  class ResourcesLoader {
   public:
     ResourcesLoader();
+    ~ResourcesLoader();
 };
