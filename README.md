@@ -14,7 +14,7 @@ The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/
 The editor allows
 
 - editing multiple stages and layers
-- adding, deleting, reparenting, renaming sdf prims in layers
+- adding, deleting, reparenting, renaming SdfPrims in layers
 - creating and deleting variants
 - adding references and payloads, inherits, ...
 - changing property values
@@ -31,27 +31,49 @@ They are still missing features and the editor hasn't faced users yet but I beli
 The project is almost self contained and only needs:
 
 - cmake > 3.6 and a C++14 compiler installed
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v21.02) version 21.02
-- a build of [GLFW](https://www.glfw.org/), version 3.3.2 works
-
-### Compiling
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v21.11) version 21.11
+- a build of [GLFW](https://www.glfw.org/), [version 3.3.5](https://github.com/glfw/glfw/releases/download/3.3.5/glfw-3.3.5.zip) works
 
 If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 2 variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
 - __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
 
-on linux it goes along the lines of:
+### Compiling on linux
+
+On linux it should compile with:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-21.02 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
+    cmake -Dpxr_DIR=/installs/usd-21.11 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
     make
 
-It should compile successfully on Windows 10 with MSVC 19, CentOS 7 with g++ and MacOS Catalina. The viewport doesn't work on mac as the OpenGL version is not supported, but the layer editor does.
+### Compiling on MacOs
+
+It compiles on MacOs Catalina. The viewport doesn't work as the required OpenGL version is not supported, but the layer editor does.
+
+    git clone https://github.com/cpichard/usdtweak
+    cd usdtweak
+    git checkout develop
+    mkdir build
+    cd build
+    cmake -Dpxr_DIR=/installs/usd-21.11 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
+    make
+
+### Compiling on Windows
+
+It should compile successfully on Windows 10 with MSVC 19 or 17, using the x64 Native Tools commands prompt.
+
+    git clone https://github.com/cpichard/usdtweak
+    cd usdtweak
+    git checkout develop
+    mkdir build
+    cd build
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 -Dglfw3_DIR=C:\installs\glfw-3.3.2\lib\cmake\glfw3 ..
+    make
 
 ## Contact
 
