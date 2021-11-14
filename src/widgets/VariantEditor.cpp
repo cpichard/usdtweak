@@ -17,7 +17,7 @@ static void DrawVariantSelectionMiniButton(SdfPrimSpecHandle &primSpec, const st
     ImGui::PopID();
 }
 
-static void DrawVariantSelectionCombo(SdfPrimSpecHandle &primSpec, const SdfVariantSelectionProxy::const_reference & variantSelection, int &buttonId) {
+static void DrawVariantSelectionCombo(SdfPrimSpecHandle &primSpec, SdfVariantSelectionProxy::const_reference & variantSelection, int &buttonId) {
     ImGui::PushID(buttonId++);
     if (ImGui::BeginCombo("Variant selection", variantSelection.second.c_str())) {
         if (ImGui::Selectable("")) { // Empty variant selection
