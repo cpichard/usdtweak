@@ -490,12 +490,6 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
             if (ImGui::MenuItem("Move down")) {
                 ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, false);
             }
-            if (layer && layer->IsMuted() && ImGui::MenuItem("Unmute")) {
-                ExecuteAfterDraw<LayerUnmute>(layer);
-            }
-            if (layer && !layer->IsMuted() && ImGui::MenuItem("Mute")) {
-                ExecuteAfterDraw<LayerMute>(layer);
-            }
             ImGui::Separator();
         }
         if (layer)
@@ -586,12 +580,27 @@ void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
 void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (!layer)
         return;
-    if (ImGui::MenuItem("Inspect")) {
+    if (ImGui::MenuItem("Edit")) {
         ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
+    }
+    if (!layer->IsAnonymous() && ImGui::MenuItem("Reload")) {
+        ExecuteAfterDraw(&SdfLayer::Reload, layer, false);
     }
     if (ImGui::MenuItem("Open as Stage")) {
         ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
     }
+    if (layer->IsDirty() && !layer->IsAnonymous() && ImGui::MenuItem("Save layer")) {
+        ExecuteAfterDraw(&SdfLayer::Save, layer, true);
+    }
+    ImGui::Separator();
+    // Not sure how safe this is with the undo/redo
+    if (layer->IsMuted() && ImGui::MenuItem("Unmute")) {
+        ExecuteAfterDraw<LayerUnmute>(layer);
+    }
+    if (!layer->IsMuted() && ImGui::MenuItem("Mute")) {
+        ExecuteAfterDraw<LayerMute>(layer);
+    }
+
     ImGui::Separator();
     // TODO: check if this is possible to set this layer as edit target of the stage
     if (ImGui::MenuItem("Set Edit target")) {
