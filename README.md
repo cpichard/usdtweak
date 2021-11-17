@@ -73,7 +73,7 @@ It should compile successfully on Windows 10 with MSVC 19 or 17, using the x64 N
     mkdir build
     cd build
     cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 -Dglfw3_DIR=C:\installs\glfw-3.3.2\lib\cmake\glfw3 ..
-    make
+    cmake --build . --config RelWithDebInfo
 
 ## Contact
 
