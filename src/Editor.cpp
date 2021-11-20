@@ -474,6 +474,5 @@ void Editor::LoadSettings() {
 }
 
 void Editor::SaveSettings() const {
-    std::cout << "saving layer " << _settings._showLayerEditor << std::endl;
     ResourcesLoader::GetEditorSettings() = _settings;
 }

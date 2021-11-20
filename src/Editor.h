@@ -74,7 +74,9 @@ public:
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
 
+    /// Make the layer editor visible
     void ShowLayerEditor() { _settings._showLayerEditor = true; }
+
 private:
 
     /// Make sure the layer is correctly in the list of layers,
@@ -101,14 +103,6 @@ private:
     /// Editor settings contains the windows states
     ///
     EditorSettings _settings;
-    //bool _showDebugWindow = false;
-    //bool _showPropertyEditor = true;
-    //bool _showOutliner = true;
-    //bool _showTimeline = false;
-    //bool _showLayerEditor = false;
-    //bool _showContentBrowser = false;
-    //bool _showPrimSpecEditor = false;
-    //bool _showViewport = false;
 
     UsdStageRefPtr _currentStage;
     Viewport _viewport;
