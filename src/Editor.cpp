@@ -23,6 +23,7 @@
 #include "PrimSpecEditor.h"
 #include "Constants.h"
 #include "Commands.h"
+#include "ResourcesLoader.h"
 
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
@@ -179,9 +180,12 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
 
 Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
+    LoadSettings();
 }
 
-Editor::~Editor(){}
+Editor::~Editor(){
+    SaveSettings();
+}
 
 void Editor::SetCurrentStage(UsdStageCache::Id current) {
     SetCurrentStage(_stageCache.Find(current));
@@ -245,8 +249,8 @@ void Editor::UseLayer(SdfLayerRefPtr layer) {
             _layers.emplace(layer);
         }
         SetCurrentLayer(layer);
-        _showContentBrowser = true;
-        _showLayerEditor = true;
+        _settings._showContentBrowser = true;
+        _settings._showLayerEditor = true;
     }
 }
 
@@ -267,8 +271,8 @@ void Editor::ImportStage(const std::string &path, bool openLoaded) {
     if (newStage) {
         _stageCache.Insert(newStage);
         SetCurrentStage(newStage);
-        _showContentBrowser = true;
-        _showViewport = true;
+        _settings._showContentBrowser = true;
+        _settings._showViewport = true;
     }
 }
 
@@ -289,8 +293,8 @@ void Editor::CreateStage(const std::string &path) {
         if (newStage) {
             _stageCache.Insert(newStage);
             SetCurrentStage(newStage);
-            _showContentBrowser = true;
-            _showViewport = true;
+            _settings._showContentBrowser = true;
+            _settings._showViewport = true;
         }
     }
 }
@@ -346,14 +350,14 @@ void Editor::DrawMainMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Windows")) {
-            ImGui::MenuItem("Debug window", nullptr, &_showDebugWindow);
-            ImGui::MenuItem("Property editor", nullptr, &_showPropertyEditor);
-            ImGui::MenuItem("Stage outliner", nullptr, &_showOutliner);
-            ImGui::MenuItem("Timeline", nullptr, &_showTimeline);
-            ImGui::MenuItem("Content browser", nullptr, &_showContentBrowser);
-            ImGui::MenuItem("Layer editor", nullptr, &_showLayerEditor);
-            ImGui::MenuItem("Viewport", nullptr, &_showViewport);
-            ImGui::MenuItem("SdfPrim editor", nullptr, &_showPrimSpecEditor);
+            ImGui::MenuItem("Debug window", nullptr, &_settings._showDebugWindow);
+            ImGui::MenuItem("Property editor", nullptr, &_settings._showPropertyEditor);
+            ImGui::MenuItem("Stage outliner", nullptr, &_settings._showOutliner);
+            ImGui::MenuItem("Timeline", nullptr, &_settings._showTimeline);
+            ImGui::MenuItem("Content browser", nullptr, &_settings._showContentBrowser);
+            ImGui::MenuItem("Layer editor", nullptr, &_settings._showLayerEditor);
+            ImGui::MenuItem("Viewport", nullptr, &_settings._showViewport);
+            ImGui::MenuItem("SdfPrim editor", nullptr, &_settings._showPrimSpecEditor);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -367,24 +371,24 @@ void Editor::Draw() {
     // Main Menu bar
     DrawMainMenuBar();
 
-    if (_showViewport) {
-        ImGui::Begin("Viewport", &_showViewport);
+    if (_settings._showViewport) {
+        ImGui::Begin("Viewport", &_settings._showViewport);
         ImVec2 wsize = ImGui::GetWindowSize();
         GetViewport().SetSize(wsize.x, wsize.y - ViewportBorderSize); // for the next render
         GetViewport().Draw();
         ImGui::End();
     }
 
-    if (_showDebugWindow) {
-        ImGui::Begin("Debug window", &_showDebugWindow);
+    if (_settings._showDebugWindow) {
+        ImGui::Begin("Debug window", &_settings._showDebugWindow);
         // DrawDebugInfo();
         ImGui::Text("\xee\x81\x99" " %.3f ms/frame  (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
     }
 
-    if (_showPropertyEditor) {
+    if (_settings._showPropertyEditor) {
         ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
-        ImGui::Begin("Property editor", &_showPropertyEditor, windowFlags);
+        ImGui::Begin("Property editor", &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
@@ -392,40 +396,40 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_showOutliner) {
-        ImGui::Begin("Stage outliner", &_showOutliner);
+    if (_settings._showOutliner) {
+        ImGui::Begin("Stage outliner", &_settings._showOutliner);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }
 
-    if (_showTimeline) {
-        ImGui::Begin("Timeline", &_showTimeline);
+    if (_settings._showTimeline) {
+        ImGui::Begin("Timeline", &_settings._showTimeline);
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
         GetViewport().SetCurrentTimeCode(tc);
         ImGui::End();
     }
 
-    if (_showLayerEditor) {
+    if (_settings._showLayerEditor) {
         auto rootLayer = GetCurrentLayer();
 
         const std::string title(
             "Layer editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
             "###Layer editor");
 
-        ImGui::Begin(title.c_str(), &_showLayerEditor);
+        ImGui::Begin(title.c_str(), &_settings._showLayerEditor);
         DrawLayerEditor(rootLayer, GetSelectedPrimSpec());
         ImGui::End();
     }
 
-    if (_showContentBrowser) {
-        ImGui::Begin("Content browser", &_showContentBrowser);
+    if (_settings._showContentBrowser) {
+        ImGui::Begin("Content browser", &_settings._showContentBrowser);
         DrawContentBrowser(*this);
         ImGui::End();
     }
 
-    if (_showPrimSpecEditor) {
-        ImGui::Begin("SdfPrim editor", &_showPrimSpecEditor);
+    if (_settings._showPrimSpecEditor) {
+        ImGui::Begin("SdfPrim editor", &_settings._showPrimSpecEditor);
         if (GetSelectedPrimSpec()) {
             DrawPrimSpecEditor(GetSelectedPrimSpec());
         } else {
@@ -463,4 +467,13 @@ void Editor::Draw() {
 
     EndBackgroundDock();
 
+}
+
+void Editor::LoadSettings() {
+    _settings = ResourcesLoader::GetEditorSettings();
+}
+
+void Editor::SaveSettings() const {
+    std::cout << "saving layer " << _settings._showLayerEditor << std::endl;
+    ResourcesLoader::GetEditorSettings() = _settings;
 }

@@ -5,6 +5,7 @@
 #include <pxr/usd/sdf/primSpec.h>
 #include <Selection.h>
 #include <Viewport.h>
+#include "EditorSettings.h"
 
 struct GLFWwindow;
 
@@ -73,11 +74,17 @@ public:
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
 
+    void ShowLayerEditor() { _settings._showLayerEditor = true; }
 private:
 
     /// Make sure the layer is correctly in the list of layers,
     /// makes it current and show the appropriate windows
     void UseLayer(SdfLayerRefPtr layer);
+
+    /// Interface with the settings
+    void LoadSettings();
+    void SaveSettings() const;
+
 
     /// Using a stage cache to store the stages, seems to work well
     UsdStageCache _stageCache;
@@ -91,16 +98,17 @@ private:
     bool _shutdownRequested = false;
 
     ///
-    /// Editor manages the windows states
+    /// Editor settings contains the windows states
     ///
-    bool _showDebugWindow = false;
-    bool _showPropertyEditor = true;
-    bool _showOutliner = true;
-    bool _showTimeline = false;
-    bool _showLayerEditor = false;
-    bool _showContentBrowser = false;
-    bool _showPrimSpecEditor = false;
-    bool _showViewport = false;
+    EditorSettings _settings;
+    //bool _showDebugWindow = false;
+    //bool _showPropertyEditor = true;
+    //bool _showOutliner = true;
+    //bool _showTimeline = false;
+    //bool _showLayerEditor = false;
+    //bool _showContentBrowser = false;
+    //bool _showPrimSpecEditor = false;
+    //bool _showViewport = false;
 
     UsdStageRefPtr _currentStage;
     Viewport _viewport;
