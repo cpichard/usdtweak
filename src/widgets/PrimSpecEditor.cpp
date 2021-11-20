@@ -48,9 +48,7 @@ struct CreateAttributeDialog : public ModalDialog {
         if (ImGui::Checkbox("Varying", &varying)) {
             _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
         }
-        if (ImGui::Checkbox("Custom", &_custom)) {
-            _custom = !_custom;
-        }
+        ImGui::Checkbox("Custom", &_custom);
         DrawOkCancelModal(
             [&]() { ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom); });
     }
