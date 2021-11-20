@@ -5,12 +5,54 @@
 #include "Constants.h"
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec3d.h>
+#include <pxr/base/gf/vec3i.h>
+#include <pxr/base/gf/matrix4f.h>
+#include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/matrix3f.h>
+#include <pxr/base/gf/matrix3d.h>
+#include <pxr/base/gf/matrix2f.h>
+#include <pxr/base/gf/matrix2d.h>
 #include <pxr/base/vt/array.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/types.h>
 #include "Gui.h"
 
-// VtValue DrawColorValue();
+
+template <typename GfMatrixT, int DataType, int Rows, int Cols>
+VtValue DrawGfMatrix(const std::string &label, const VtValue &value) {
+    GfMatrixT mat = value.Get<GfMatrixT>();
+    bool valueChanged = false;
+    ImGui::PushID(label.c_str());
+    ImGui::InputScalarN("###row0", DataType, mat.data(), Cols, NULL, NULL, DecimalPrecision, ImGuiInputTextFlags());
+    valueChanged |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::InputScalarN("###row1", DataType, mat.data() + Cols, Cols, NULL, NULL, DecimalPrecision, ImGuiInputTextFlags());
+    valueChanged |= ImGui::IsItemDeactivatedAfterEdit();
+    if /* constexpr */ (Rows > 2) {
+        ImGui::InputScalarN("###row2", DataType, mat.data() + 2 * Cols, Cols, NULL, NULL, DecimalPrecision, ImGuiInputTextFlags());
+        valueChanged |= ImGui::IsItemDeactivatedAfterEdit();
+        if /*constexpr */ (Rows > 3) {
+            ImGui::InputScalarN("###row3", DataType, mat.data() + 3 * Cols, Cols, NULL, NULL, DecimalPrecision, ImGuiInputTextFlags());
+            valueChanged |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+    }
+    ImGui::PopID();
+    if (valueChanged) {
+        return VtValue(GfMatrixT(mat));
+    }
+    return VtValue();
+}
+
+template <typename GfVecT, int DataType, int N>
+VtValue DrawGfVec(const std::string& label, const VtValue& value) {
+    GfVecT buffer(value.Get<GfVecT>());
+    constexpr const char* format = DataType == ImGuiDataType_S32 ? "%d" : DecimalPrecision;
+    ImGui::InputScalarN(label.c_str(), DataType, buffer.data(), N, NULL, NULL, format, ImGuiInputTextFlags());
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        return VtValue(GfVecT(buffer));
+    }
+    return VtValue();
+}
+
 VtValue DrawTfToken(const std::string &label, const TfToken &token, const VtValue &allowedTokens) {
     VtValue newToken;
     if (!allowedTokens.IsEmpty() && allowedTokens.IsHolding<VtArray<TfToken>>()) {
@@ -46,20 +88,23 @@ VtValue DrawTfToken(const std::string &label, const VtValue &value, const VtValu
 VtValue DrawVtValue(const std::string &label, const VtValue &value) {
 
     if (value.IsHolding<GfVec3f>()) {
-        GfVec3f buffer(value.Get<GfVec3f>());
-        ImGui::InputFloat3(label.c_str(), buffer.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            return VtValue(GfVec3f(buffer));
-        }
-    } else if (value.IsHolding<GfVec3d>()) {
-        // Converting to float from double to use the InputFloat3
-        // TODO: create a nice InputDouble3 with mouse increase/decrease
-        // TODO: check dragfloat, looks what we want
-        GfVec3f buffer(value.Get<GfVec3d>());
-        ImGui::InputFloat3(label.c_str(), buffer.data(), DecimalPrecision);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            return VtValue(GfVec3d(buffer));
-        }
+        return DrawGfVec<GfVec3f, ImGuiDataType_Float, 3>(label, value);
+    } else if (value.IsHolding<GfVec2f>()) {
+        return DrawGfVec<GfVec2f, ImGuiDataType_Float, 2>(label, value);
+    } else if (value.IsHolding<GfVec4f>()) {
+        return DrawGfVec<GfVec4f, ImGuiDataType_Float, 4>(label, value);
+    }  else if (value.IsHolding<GfVec3d>()) {
+        return DrawGfVec<GfVec3d, ImGuiDataType_Double, 3>(label, value);
+    } else if (value.IsHolding<GfVec2d>()) {
+        return DrawGfVec<GfVec2d, ImGuiDataType_Double, 2>(label, value);
+    } else if (value.IsHolding<GfVec4d>()) {
+        return DrawGfVec<GfVec4d, ImGuiDataType_Double, 4>(label, value);
+    } else if (value.IsHolding<GfVec4i>()) {
+        return DrawGfVec<GfVec4i, ImGuiDataType_S32, 4>(label, value);
+    } else if (value.IsHolding<GfVec3i>()) {
+        return DrawGfVec<GfVec3i, ImGuiDataType_S32, 3>(label, value);
+    } else if (value.IsHolding<GfVec2i>()) {
+        return DrawGfVec<GfVec2i, ImGuiDataType_S32, 2>(label, value);
     } else if (value.IsHolding<bool>()) {
         bool isOn = value.Get<bool>();
         if (ImGui::Checkbox(label.c_str(), &isOn)) {
@@ -99,6 +144,18 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(assetPath);
         }
+    } else if (value.IsHolding<GfMatrix4d>()) { // Matrices are in row order
+        return DrawGfMatrix<GfMatrix4d, ImGuiDataType_Double, 4, 4>(label, value);
+    } else if (value.IsHolding<GfMatrix4f>()) {
+        return DrawGfMatrix<GfMatrix4f, ImGuiDataType_Float, 4, 4>(label, value);
+    } else if (value.IsHolding<GfMatrix3d>()) {
+        return DrawGfMatrix<GfMatrix3d, ImGuiDataType_Double, 3, 3>(label, value);
+    } else if (value.IsHolding<GfMatrix3f>()) {
+        return DrawGfMatrix<GfMatrix3f, ImGuiDataType_Float, 3, 3>(label, value);
+    } else if (value.IsHolding<GfMatrix2d>()) {
+        return DrawGfMatrix<GfMatrix2d, ImGuiDataType_Double, 2, 2>(label, value);
+    } else if (value.IsHolding<GfMatrix2f>()) {
+        return DrawGfMatrix<GfMatrix2f, ImGuiDataType_Float, 2, 2>(label, value);
     } // TODO: Array values should be handled outside DrawVtValue
     else if (value.IsArrayValued() && value.GetArraySize() == 1 && value.IsHolding<VtArray<float>>()) {
         VtArray<float> fltArray = value.Get<VtArray<float>>();
@@ -109,7 +166,7 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
             return VtValue(fltArray);
         }
     } else if (value.IsArrayValued() && value.GetArraySize() > 5) {
-        ImGui::Text("array with %zu values", value.GetArraySize());
+        ImGui::Text("%s with %zu values", value.GetTypeName().c_str(), value.GetArraySize());
     } else {
         std::stringstream ss;
         ss << value;
@@ -127,15 +184,12 @@ VtValue DrawColorValue(const std::string &label, const VtValue &value) {
     } else if (value.IsArrayValued() && value.GetArraySize() == 1 && value.IsHolding<VtArray<GfVec3f>>()) {
         VtArray<GfVec3f> colorArray = value.Get<VtArray<GfVec3f>>();
         GfVec3f colorValue = colorArray[0];
-
         if (ImGui::ColorEdit3(label.c_str(), colorValue.data())) {
             colorArray[0] = colorValue;
             return VtValue(colorArray);
         }
     } else {
-        std::stringstream ss;
-        ss << value;
-        ImGui::Text("%s", ss.str().c_str());
+        return DrawVtValue(label, value);
     }
     return VtValue();
 }
