@@ -76,9 +76,13 @@ int main(int argc, const char **argv) {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
+
+
     { // Scope as the editor should be deleted before imgui and glfw, to release correctly the memory
+        // Resource will load the font/textures/settings
+        ResourcesLoader resources; // Assuming resources will be destroyed after editor
         Editor editor;
-        ResourcesLoader resources;
+
         glfwSetWindowUserPointer(window, &editor);
         glfwSetDropCallback(window, Editor::DropCallback);
 
