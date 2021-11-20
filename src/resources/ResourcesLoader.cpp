@@ -32,6 +32,58 @@ std::string GetConfigFilePath() { return GUI_CONFIG_FILE; }
 
 #endif
 
+static void *UsdTweakDataReadOpen(ImGuiContext *, ImGuiSettingsHandler *iniHandler, const char *name) {
+    ResourcesLoader *loader = static_cast<ResourcesLoader *>(iniHandler->UserData);
+    return loader;
+}
+
+static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandler, void *loaderPtr, const char *line) {
+    // Loader could be retrieved with
+    // ResourcesLoader *loader = static_cast<ResourcesLoader *>(loaderPtr);
+    int value = 0;
+
+    // Editor settings
+    auto &settings = ResourcesLoader::GetEditorSettings();
+    if (sscanf(line, "ShowLayerEditor=%i", &value) == 1) {
+        settings._showLayerEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowPropertyEditor=%i", &value) == 1) {
+        settings._showPropertyEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowOutliner=%i", &value) == 1) {
+        settings._showOutliner = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowTimeline=%i", &value) == 1) {
+        settings._showTimeline = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowContentBrowser=%i", &value) == 1) {
+        settings._showContentBrowser = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowPrimSpecEditor=%i", &value) == 1) {
+        settings._showPrimSpecEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowViewport=%i", &value) == 1) {
+        settings._showViewport = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowDebugWindow=%i", &value) == 1) {
+        settings._showDebugWindow = static_cast<bool>(value);
+    }
+}
+
+static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHandler, ImGuiTextBuffer *buf) {
+    // ResourcesLoader *loader = static_cast<ResourcesLoader *>(iniHandler->UserData);
+    buf->reserve(2048); // ballpark reserve
+
+    // Saving the editor settings
+    auto &settings = ResourcesLoader::GetEditorSettings();
+    buf->appendf("[%s][%s]\n", iniHandler->TypeName, "Editor");
+    buf->appendf("ShowLayerEditor=%d\n", settings._showLayerEditor);
+    buf->appendf("ShowPropertyEditor=%d\n", settings._showPropertyEditor);
+    buf->appendf("ShowOutliner=%d\n", settings._showOutliner);
+    buf->appendf("ShowTimeline=%d\n", settings._showTimeline);
+    buf->appendf("ShowContentBrowser=%d\n", settings._showContentBrowser);
+    buf->appendf("ShowPrimSpecEditor=%d\n", settings._showPrimSpecEditor);
+    buf->appendf("ShowViewport=%d\n", settings._showViewport);
+    buf->appendf("ShowDebugWindow=%d\n", settings._showDebugWindow);
+}
+
+EditorSettings ResourcesLoader::_editorSettings = EditorSettings();
+
+EditorSettings &ResourcesLoader::GetEditorSettings() { return _editorSettings; }
+
 ResourcesLoader::ResourcesLoader() {
     // Font
     ImGuiIO &io = ImGui::GetIO();
@@ -46,6 +98,17 @@ ResourcesLoader::ResourcesLoader() {
 
     auto font = io.Fonts->AddFontFromMemoryCompressedTTF(fontawesomefree5_compressed_data, fontawesomefree5_compressed_size,
                                                          13.0f, &iconsConfig, iconRanges);
+    //ImGui::Initialize();
+    // Install handlers to read and write the settings
+    ImGuiContext *imGuiContext = ImGui::GetCurrentContext();
+    ImGuiSettingsHandler iniHandler;
+    iniHandler.TypeName = "UsdTweakData";
+    iniHandler.TypeHash = ImHashStr("UsdTweakData");
+    iniHandler.ReadOpenFn = UsdTweakDataReadOpen;
+    iniHandler.ReadLineFn = UsdTweakDataReadLine;
+    iniHandler.WriteAllFn = UsdTweakDataWriteAll;
+    iniHandler.UserData = this;
+    imGuiContext->SettingsHandlers.push_back(iniHandler);
 
     // Ini file
     // The first time the application is open, there is no default ini and the UI is all over the place.
