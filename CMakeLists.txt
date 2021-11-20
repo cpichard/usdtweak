@@ -14,5 +14,5 @@ target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_D
 
 # Remove warnings coming from usd and enable default multithreaded compilation on windows
 target_compile_options(usdtweak PRIVATE
-	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305>
+	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
