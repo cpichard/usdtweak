@@ -470,6 +470,13 @@ void Editor::Draw() {
 
 }
 
+
+void Editor::SetSelectedPrimSpec(const SdfPath& primPath) {
+    if (GetCurrentLayer()) {
+        _selectedPrimSpec = GetCurrentLayer()->GetPrimAtPath(primPath);
+    }
+}
+
 void Editor::LoadSettings() {
     _settings = ResourcesLoader::GetEditorSettings();
 }

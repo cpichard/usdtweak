@@ -12,7 +12,7 @@
 #include "Editor.h"
 
 ///
-/// Base class for an editor command, contains only a pointer of the editor
+/// Base class for an editor command, contai ns only a pointer of the editor
 ///
 struct EditorCommand : public Command {
     static Editor *_editor;
@@ -85,20 +85,23 @@ struct EditorSetEditTarget : public EditorCommand {
 template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 
 // Will set the current layer and the current selected layer prim
-//struct EditorInspectLayerLocation : public EditorCommand {
-//    EditorInspectLayerLocation(SdfLayerHandle layer) : _layer(layer) {}
-//    ~EditorInspectLayerLocation() override {}
-//
-//    bool DoIt() override {
-//        if (_editor && _layer) {
-//           _editor->InspectLayerLocation(_layer, _selectedPrim);
-//        }
-//
-//        return false;
-//    }
-//    SdfLayerRefPtr _layer;
-//};
+struct EditorInspectLayerLocation : public EditorCommand {
+    EditorInspectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
+    ~EditorInspectLayerLocation() override {}
 
+    bool DoIt() override {
+        if (_editor && _layer) {
+            _editor->SetCurrentLayer(_layer);
+            _editor->SetSelectedPrimSpec(_path);
+            _editor->ShowLayerEditor();
+        }
+
+        return false;
+    }
+    SdfLayerRefPtr _layer;
+    SdfPath _path;
+};
+template void ExecuteAfterDraw<EditorInspectLayerLocation>(SdfLayerHandle layer, SdfPath);
 
 struct EditorSetCurrentLayer : public EditorCommand {
 
@@ -108,11 +111,13 @@ struct EditorSetCurrentLayer : public EditorCommand {
     bool DoIt() override {
         if (_editor && _layer) {
             _editor->SetCurrentLayer(_layer);
+            _editor->ShowLayerEditor();
         }
 
         return false;
     }
     SdfLayerRefPtr _layer;
+
 };
 template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
 

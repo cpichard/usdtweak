@@ -33,6 +33,7 @@ struct EditorSetEditTarget;
 struct EditorSetCurrentLayer;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
+struct EditorInspectLayerLocation;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

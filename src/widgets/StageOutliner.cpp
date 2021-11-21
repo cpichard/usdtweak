@@ -24,7 +24,7 @@ static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
         format += " ";
         format += obj->GetPath().GetString();
         if (ImGui::MenuItem(format.c_str())) {
-            ExecuteAfterDraw<EditorSetCurrentLayer>(tree->GetLayer());
+            ExecuteAfterDraw<EditorInspectLayerLocation>(tree->GetLayer(), obj->GetPath());
         }
     }
     for (auto subTree : tree->GetChildTrees()) {

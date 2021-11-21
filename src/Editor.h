@@ -47,6 +47,7 @@ public:
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
     SdfPrimSpecHandle &GetSelectedPrimSpec() { return _selectedPrimSpec; }
+    void SetSelectedPrimSpec(const SdfPath& primPath);
 
     /// Create a new layer in file path
     void CreateLayer(const std::string &path);
