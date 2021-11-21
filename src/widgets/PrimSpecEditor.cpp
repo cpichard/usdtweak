@@ -187,7 +187,7 @@ static inline TfToken ClassTokenFromChar(const char *classChar) {
 /// Draw a prim type name combo
 void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
-    const auto allSpecTypes = GetAllSpecTypeNames();
+    const auto &allSpecTypes = GetAllSpecTypeNames();
     if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
         for (int n = 0; n < allSpecTypes.size(); n++) {
             auto typeAsChar = allSpecTypes[n];
