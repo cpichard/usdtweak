@@ -178,7 +178,6 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
 }
 
 
-Editor::Editor() : _viewport(UsdStageRefPtr(), _selection) {
 Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
