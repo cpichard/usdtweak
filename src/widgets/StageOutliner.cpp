@@ -4,6 +4,7 @@
 #include <pxr/usd/pcp/layerStack.h>
 
 #include "Gui.h"
+#include "ImGuiHelpers.h"
 #include "StageOutliner.h"
 #include "Commands.h"
 #include "ValueEditor.h"
@@ -62,6 +63,24 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
     }
 }
 
+static ImVec4 GetPrimColor(const UsdPrim &prim) {
+    if (!prim.IsActive() || !prim.IsLoaded()) {
+        return ImVec4(PrimInactiveColor);
+    }
+    if (prim.IsInstance()) {
+        return ImVec4(PrimInstanceColor);
+    }
+    const auto hasCompositionArcs = prim.HasAuthoredReferences() || prim.HasAuthoredPayloads() || prim.HasAuthoredInherits() ||
+                                    prim.HasAuthoredSpecializes() || prim.HasVariantSets();
+    if (hasCompositionArcs) {
+        return ImVec4(PrimHasCompositionColor);
+    }
+    if (prim.IsPrototype() || prim.IsInPrototype() || prim.IsInstanceProxy()) {
+        return ImVec4(PrimPrototypeColor);
+    }
+    return ImVec4(PrimDefaultColor);
+}
+
 /// Recursive function to draw a prim and its descendants
 static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
@@ -72,35 +91,34 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
     if (IsSelected(selectedPaths, prim.GetPath())) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
-    if (!prim.IsActive()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(PrimInactiveColor));
-    }
 
-    auto unfolded = ImGui::TreeNodeEx(prim.GetName().GetText(), flags);
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        SetSelected(selectedPaths, prim.GetPath());
-    }
-    if (ImGui::BeginPopupContextItem()) {
-        DrawUsdPrimEditMenuItems(prim);
-        ImGui::EndPopup();
-    }
+    bool unfolded = true;
+    {
+        ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
+        unfolded = ImGui::TreeNodeEx(prim.GetName().GetText(), flags);
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            SetSelected(selectedPaths, prim.GetPath());
+        }
+        {
+            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(PrimDefaultColor));
+            if (ImGui::BeginPopupContextItem()) {
+                DrawUsdPrimEditMenuItems(prim);
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::NextColumn();
 
-    ImGui::NextColumn();
+        // Get visibility parameter.
+        // Is it really useful ???
+        UsdGeomImageable imageable(prim);
+        const char* icon = "";
+        if (imageable) {
+            VtValue visible;
+            imageable.GetVisibilityAttr().Get(&visible);
+            icon = visible == TfToken("invisible") ? ICON_FA_EYE_SLASH : ICON_FA_EYE;
+        }
 
-    // Get visibility parameter.
-    // Is it really useful ???
-    UsdGeomImageable imageable(prim);
-    const char *icon = "";
-    if (imageable) {
-        VtValue visible;
-        imageable.GetVisibilityAttr().Get(&visible);
-        icon = visible == TfToken("invisible") ? ICON_FA_EYE_SLASH : ICON_FA_EYE;
-    }
-
-    ImGui::Text("%s %s", icon, prim.GetTypeName().GetText());
-
-    if (!prim.IsActive()) {
-        ImGui::PopStyleColor();
+        ImGui::Text("%s %s", icon, prim.GetTypeName().GetText());
     }
 
     ImGui::NextColumn(); // Back to the first column
