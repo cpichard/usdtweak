@@ -117,6 +117,13 @@ void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec) {
     if (ImGui::Checkbox("Instanceable", &isInstanceable)) {
         ExecuteAfterDraw(&SdfPrimSpec::SetInstanceable, primSpec, isInstanceable);
     }
+
+    if (primSpec->HasInstanceable()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Clear###Instanceable")) {
+            ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
+        }
+    }
 }
 
 void DrawPrimHidden(SdfPrimSpecHandle &primSpec) {
