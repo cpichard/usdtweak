@@ -14,6 +14,7 @@
 #include "Gui.h"
 #include "Editor.h"
 #include "LayerEditor.h"
+#include "LayerHierarchyEditor.h"
 #include "FileBrowser.h"
 #include "PropertyEditor.h"
 #include "ModalDialogs.h"
@@ -356,6 +357,8 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem("Timeline", nullptr, &_settings._showTimeline);
             ImGui::MenuItem("Content browser", nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem("Layer editor", nullptr, &_settings._showLayerEditor);
+            ImGui::MenuItem("Layer hierarchy", nullptr, &_settings._showLayerHierarchyEditor);
+            ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem("Viewport", nullptr, &_settings._showViewport);
             ImGui::MenuItem("SdfPrim editor", nullptr, &_settings._showPrimSpecEditor);
             ImGui::EndMenu();
@@ -411,14 +414,32 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerEditor) {
-        auto rootLayer = GetCurrentLayer();
-
+        const auto &rootLayer = GetCurrentLayer();
         const std::string title(
             "Layer editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
             "###Layer editor");
-
         ImGui::Begin(title.c_str(), &_settings._showLayerEditor);
         DrawLayerEditor(rootLayer, GetSelectedPrimSpec());
+        ImGui::End();
+    }
+
+    if (_settings._showLayerHierarchyEditor) {
+        const auto &rootLayer = GetCurrentLayer();
+        const std::string title(
+            "Layer hierarchy " + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
+            "###Layer hierarchy");
+        ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor);
+        DrawLayerPrimHierarchy(rootLayer, GetSelectedPrimSpec());
+        ImGui::End();
+    }
+
+    if (_settings._showLayerStackEditor) {
+        const auto &rootLayer = GetCurrentLayer();
+        const std::string title(
+            "Layer stack " + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
+            "###Layer stack");
+        ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor);
+        DrawLayerSublayers(rootLayer);
         ImGui::End();
     }
 
