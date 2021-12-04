@@ -66,7 +66,7 @@ struct CreateRelationDialog : public ModalDialog {
     ~CreateRelationDialog() override {}
 
     void Draw() override {
-        ImGui::InputText("Relationship Name", &_relationName);
+        ImGui::InputText("Relationship name", &_relationName);
         ImGui::InputText("Target path", &_targetPath);
         if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
             for (int i = 0; i < GetListEditorOperationSize(); ++i) {
@@ -472,7 +472,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Create Relation")) {
+    if (ImGui::Button("Create Relationship")) {
         DrawModalDialog<CreateRelationDialog>(primSpec);
     }
     DrawPrimSpecMetadata(primSpec);
