@@ -50,7 +50,7 @@ struct CreateAttributeDialog : public ModalDialog {
         }
         ImGui::Checkbox("Custom", &_custom);
         DrawOkCancelModal(
-            [&]() { ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, SdfVariabilityVarying, _custom); });
+            [&]() { ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom); });
     }
     const char *DialogId() const override { return "Create attribute"; }
 
@@ -60,6 +60,44 @@ struct CreateAttributeDialog : public ModalDialog {
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
     bool _custom = true;
 };
+
+struct CreateRelationDialog : public ModalDialog {
+    CreateRelationDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim){};
+    ~CreateRelationDialog() override {}
+
+    void Draw() override {
+        ImGui::InputText("Relationship Name", &_relationName);
+        ImGui::InputText("Target path", &_targetPath);
+        if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
+            for (int i = 0; i < GetListEditorOperationSize(); ++i) {
+                if (ImGui::Selectable(GetListEditorOperationName(i), false)) {
+                    _operation = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        bool varying = _variability == SdfVariabilityVarying;
+        if (ImGui::Checkbox("Varying", &varying)) {
+            _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
+        }
+        ImGui::Checkbox("Custom", &_custom);
+
+        DrawOkCancelModal([=]() {
+            ExecuteAfterDraw<PrimCreateRelationship>(_sdfPrim, _relationName, _variability, _custom, _operation, _targetPath);
+        });
+    }
+    const char *DialogId() const override { return "Create relationship"; }
+
+    SdfPrimSpecHandle _sdfPrim;
+    std::string _relationName;
+    std::string _targetPath;
+    int _operation = 0;
+    SdfVariability _variability = SdfVariabilityVarying;
+    bool _custom = true;
+};
+
+
 
 void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
@@ -211,24 +249,24 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     }
 }
 
-void DrawPrimSpecProperties(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
     int deleteButtonCounter = 0;
-    const auto &properties = primSpec->GetProperties();
-    if (properties.empty())
+    const auto &attributes = primSpec->GetAttributes();
+    if (attributes.empty())
         return;
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
-    if (ImGui::BeginTable("##DrawPrimSpecProperties", 4, tableFlags)) {
+    if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-        ImGui::TableSetupColumn("Property");
+        ImGui::TableSetupColumn("Attribute");
         ImGui::TableSetupColumn("Time");
         ImGui::TableSetupColumn("Value");
 
         ImGui::TableHeadersRow();
 
-        TF_FOR_ALL(attribute, properties) {
+        TF_FOR_ALL(attribute, attributes) {
             ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
 
             ImGui::TableNextRow();
@@ -258,6 +296,7 @@ void DrawPrimSpecProperties(SdfPrimSpecHandle &primSpec) {
                     ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, *attribute, modified);
                 }
             }
+
             if (unfolded) {
                 TF_FOR_ALL(sample, timeSamples) { // Samples
                     ImGui::TableNextRow();
@@ -289,6 +328,67 @@ void DrawPrimSpecProperties(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &path, int &id, SdfPrimSpecHandle &primSpec,
+                                   SdfPath &relationPath) {
+    ImGui::TableSetColumnIndex(2);
+    std::string newPathStr = path.GetString();
+    ImGui::PushID(id++);
+    ImGui::Text("%s", operation);
+    ImGui::SameLine();
+    ImGui::PushItemWidth(-FLT_MIN);
+    ImGui::InputText("###RelationValue", &newPathStr);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        std::function<void()> replaceItemEdits = [=]() {
+            if (primSpec) {
+                auto &relationship = primSpec->GetRelationshipAtPath(relationPath);
+                if (relationship) {
+                    relationship->GetTargetPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
+                }
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), replaceItemEdits);
+    }
+    ImGui::PopID();
+}
+
+void DrawPrimSpecRelations(SdfPrimSpecHandle &primSpec) {
+    if (!primSpec)
+        return;
+    int widgetId = 0;
+    static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
+    if (ImGui::BeginTable("##DrawPrimSpecRelations", 3, tableFlags)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 48); // 48 => size of 2 mini button
+        ImGui::TableSetupColumn("Relations");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+
+        ImGui::TableHeadersRow();
+        auto relations = primSpec->GetRelationships();
+        for (const auto &relation : relations) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::PushID(widgetId++);
+            if (ImGui::Button(ICON_FA_TRASH)) {
+                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
+            ImGui::PushID(widgetId++);
+            // if (ImGui::Button(ICON_FA_PLUS)) {
+            //    // TODO: at the moment we can only add one edit per relationship list, which is limited.
+            //    // So we want to add a + button to be able to add multiple edits
+            //}
+            ImGui::PopID();
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", relation->GetName().c_str());
+            IterateListEditorItems(relation->GetTargetPathList(), DrawRelashionshipEditListItem, widgetId, primSpec,
+                                   relation->GetPath());
+        }
+        ImGui::EndTable();
+    }
+}
+
+
+
 /// Using templates to factor the code in DrawPrimSpecMetadata
 template <typename MetadataField> const char *NameForMetadataField();
 template <typename MetadataField> void DrawMetadataFieldValue(SdfPrimSpecHandle &primSpec);
@@ -307,6 +407,7 @@ template <typename MetadataField> void DrawMetadataRow(SdfPrimSpecHandle &primSp
     ImGui::PushItemWidth(-FLT_MIN);
     DrawMetadataFieldValue<MetadataField>(primSpec);
 }
+
 
 // Definitions for Metadata field
 struct PrimName {};
@@ -370,8 +471,13 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (ImGui::Button("Create Attribute")) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Create Relation")) {
+        DrawModalDialog<CreateRelationDialog>(primSpec);
+    }
     DrawPrimSpecMetadata(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
-    DrawPrimSpecProperties(primSpec); // properties ???
+    DrawPrimSpecAttributes(primSpec);
+    DrawPrimSpecRelations(primSpec);
 }

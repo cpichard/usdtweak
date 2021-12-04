@@ -183,6 +183,36 @@ struct PrimCreateAttribute : public SdfLayerCommand {
     bool _custom = false;
 };
 
+
+struct PrimCreateRelationship : public SdfLayerCommand {
+
+    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom, int operation,
+                           std::string targetPath)
+        : _owner(std::move(owner)), _name(std::move(name)), _variability(variability), _custom(custom), _operation(operation),
+          _targetPath(targetPath) {}
+
+    ~PrimCreateRelationship() override {}
+
+    bool DoIt() override {
+        if (!_owner)
+            return false;
+        auto layer = _owner->GetLayer();
+        SdfUndoRecorder recorder(_undoCommands, layer);
+        if (SdfRelationshipSpecHandle relationship = SdfRelationshipSpec::New(_owner, _name, _custom, _variability)) {
+            CreateListEditorOperation(relationship->GetTargetPathList(), _operation, SdfPath(_targetPath));
+            return true;
+        }
+        return false;
+    }
+    //
+    SdfPrimSpecHandle _owner;
+    std::string _name;
+    SdfVariability _variability = SdfVariabilityVarying;
+    bool _custom = false;
+    int _operation = 0;
+    std::string _targetPath;
+};
+
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
@@ -193,4 +223,6 @@ template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, in
 template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
 template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);
 template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
-                                                   SdfVariability variability, bool custom);
+                                                    SdfVariability variability, bool custom);
+template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, std::string name, SdfVariability variability,
+                                                       bool custom, int operation, std::string targetPath);

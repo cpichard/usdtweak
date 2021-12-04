@@ -24,6 +24,7 @@ struct PrimCreateInherit;
 struct PrimCreateSpecialize;
 struct PrimReparent;
 struct PrimCreateAttribute;
+struct PrimCreateRelationship;
 
 struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
