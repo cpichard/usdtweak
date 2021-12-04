@@ -226,7 +226,7 @@ struct PrimReorder : public SdfLayerCommand {
         // and find the position of the prim in the parent
         int position = -1;
         auto parent = _prim->GetNameParent();
-        auto &nameChildren = parent ? parent->GetNameChildren() : _prim->GetLayer()->GetRootPrims();
+        const auto &nameChildren = parent ? parent->GetNameChildren() : _prim->GetLayer()->GetRootPrims();
         for (int i = 0; i < nameChildren.size(); ++i) {
             if (nameChildren[i]->GetNameToken() == name) {
                 position = i;
