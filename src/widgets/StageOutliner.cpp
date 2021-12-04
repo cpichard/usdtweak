@@ -43,6 +43,7 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
         const bool active = !prim.IsActive();
         ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
     }
+    // TODO: Load and Unload are not in the undo redo :( ... make a command for them
     if (prim.HasAuthoredPayloads() && prim.IsLoaded() && ImGui::MenuItem("Unload")) {
         ExecuteAfterDraw(&UsdPrim::Unload, prim);
     }
