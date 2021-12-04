@@ -183,6 +183,79 @@ struct PrimCreateAttribute : public SdfLayerCommand {
     bool _custom = false;
 };
 
+
+struct PrimCreateRelationship : public SdfLayerCommand {
+
+    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom, int operation,
+                           std::string targetPath)
+        : _owner(std::move(owner)), _name(std::move(name)), _variability(variability), _custom(custom), _operation(operation),
+          _targetPath(targetPath) {}
+
+    ~PrimCreateRelationship() override {}
+
+    bool DoIt() override {
+        if (!_owner)
+            return false;
+        auto layer = _owner->GetLayer();
+        SdfUndoRecorder recorder(_undoCommands, layer);
+        if (SdfRelationshipSpecHandle relationship = SdfRelationshipSpec::New(_owner, _name, _custom, _variability)) {
+            CreateListEditorOperation(relationship->GetTargetPathList(), _operation, SdfPath(_targetPath));
+            return true;
+        }
+        return false;
+    }
+    //
+    SdfPrimSpecHandle _owner;
+    std::string _name;
+    SdfVariability _variability = SdfVariabilityVarying;
+    bool _custom = false;
+    int _operation = 0;
+    std::string _targetPath;
+};
+
+struct PrimReorder : public SdfLayerCommand {
+    PrimReorder(SdfPrimSpecHandle prim, bool up) : _prim(std::move(prim)), _up(up) {}
+    ~PrimReorder() override {}
+    bool DoIt() override {
+        if (!_prim)
+            return false;
+        auto layer = _prim->GetLayer();
+
+        TfToken name = _prim->GetNameToken();
+        // Look for parent .. layer or prim
+        // and find the position of the prim in the parent
+        int position = -1;
+        auto parent = _prim->GetNameParent();
+        auto &nameChildren = parent ? parent->GetNameChildren() : _prim->GetLayer()->GetRootPrims();
+        for (int i = 0; i < nameChildren.size(); ++i) {
+            if (nameChildren[i]->GetNameToken() == name) {
+                position = i;
+                break;
+            }
+        }
+
+        if (position == -1)
+            return false;
+        position = _up ? position - 1 : position + 2;
+        if (position < 0 || position > nameChildren.size())
+            return false;
+
+        SdfUndoRecorder recorder(_undoCommands, layer);
+        SdfNamespaceEdit reorderEdit = SdfNamespaceEdit::Reorder(_prim->GetPath(), position);
+        SdfBatchNamespaceEdit batchEdit;
+        batchEdit.Add(reorderEdit);
+        if (layer->CanApply(batchEdit)) {
+            layer->Apply(batchEdit);
+            return true;
+        }
+        return false;
+    }
+
+    bool _up = true;
+    SdfPrimSpecHandle _prim;
+};
+
+
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
@@ -193,4 +266,7 @@ template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, in
 template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
 template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);
 template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
-                                                   SdfVariability variability, bool custom);
+                                                    SdfVariability variability, bool custom);
+template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, std::string name, SdfVariability variability,
+                                                       bool custom, int operation, std::string targetPath);
+template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);

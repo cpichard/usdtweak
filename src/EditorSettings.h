@@ -9,6 +9,8 @@ struct EditorSettings {
     bool _showOutliner = true;
     bool _showTimeline = false;
     bool _showLayerEditor = false;
+    bool _showLayerHierarchyEditor = false;
+    bool _showLayerStackEditor = false;
     bool _showContentBrowser = false;
     bool _showPrimSpecEditor = false;
     bool _showViewport = false;

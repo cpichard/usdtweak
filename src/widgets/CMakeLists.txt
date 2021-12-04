@@ -6,6 +6,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.h
     ${CMAKE_CURRENT_SOURCE_DIR}/PrimSpecEditor.cpp

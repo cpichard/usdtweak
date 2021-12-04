@@ -12,3 +12,4 @@ void DrawLayerHeader(SdfLayerRefPtr layer);
 void DrawLayerActionPopupMenu(SdfLayerHandle layer);
 
 
+void DrawLayerSublayers(SdfLayerRefPtr layer);
