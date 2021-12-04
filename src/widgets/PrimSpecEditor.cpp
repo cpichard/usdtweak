@@ -145,7 +145,7 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
     // TODO Move the clear button into a menu item :Reset to default
     if (primSpec->HasActive()) {
         ImGui::SameLine();
-        if (ImGui::Button("Clear")) {
+        if (ImGui::Button("Clear###Active")) {
             ExecuteAfterDraw(&SdfPrimSpec::ClearActive, primSpec);
         }
     }
@@ -175,7 +175,7 @@ void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
     }
     if (primSpec->HasKind()) {
         ImGui::SameLine();
-        if (ImGui::Button("Clear")) {
+        if (ImGui::Button("Clear###Kind")) {
             ExecuteAfterDraw(&SdfPrimSpec::ClearKind, primSpec);
         }
     }
