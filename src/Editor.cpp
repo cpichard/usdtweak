@@ -305,8 +305,10 @@ Viewport & Editor::GetViewport() {
 }
 
 void Editor::HydraRender() {
+#ifndef __APPLE__
     _viewport.Update();
     _viewport.Render();
+#endif
 }
 
 void Editor::DrawMainMenuBar() {

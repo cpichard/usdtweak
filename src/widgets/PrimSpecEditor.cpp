@@ -340,7 +340,7 @@ static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         std::function<void()> replaceItemEdits = [=]() {
             if (primSpec) {
-                auto &relationship = primSpec->GetRelationshipAtPath(relationPath);
+                const auto &relationship = primSpec->GetRelationshipAtPath(relationPath);
                 if (relationship) {
                     relationship->GetTargetPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
                 }
