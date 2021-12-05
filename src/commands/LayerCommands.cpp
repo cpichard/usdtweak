@@ -117,3 +117,35 @@ struct LayerUnmute : public Command {
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerRefPtr layer);
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerHandle layer);
 
+
+/* WARNING: this is a brute force and dumb implementation of storing text modification.
+ It basically stores the previous and new layer as text in a string. So .... this will eat up the memory
+ quite quickly if used intensively.
+ But for now it's a quick way to test if text editing is worth in the application.
+ */
+struct LayerTextEdit : public SdfLayerCommand {
+    
+    LayerTextEdit(SdfLayerRefPtr layer, std::string newText) : _layer(layer), _newText(newText) {}
+    
+    ~LayerTextEdit() override {}
+    
+    bool DoIt() override {
+        if(!_layer) return false;
+        SdfUndoRecorder recorder(_undoCommands, _layer);
+        if(_oldText.empty()) {
+            _layer->ExportToString(&_oldText);
+        }
+        return _layer->ImportFromString(_newText);
+        //_layer->SetDirty();
+    };
+    
+    bool UndoIt() override {
+        if(!_layer) return false;
+        return _layer->ImportFromString(_oldText);
+    }
+
+    SdfLayerRefPtr _layer;
+    std::string _oldText;
+    std::string _newText;
+};
+template void ExecuteAfterDraw<LayerTextEdit>(SdfLayerRefPtr layer, std::string newText);
