@@ -1,5 +1,7 @@
 
 target_sources(usdtweak PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/TextEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TextEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CompositionEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CompositionEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.cpp

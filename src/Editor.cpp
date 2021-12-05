@@ -25,6 +25,7 @@
 #include "Constants.h"
 #include "Commands.h"
 #include "ResourcesLoader.h"
+#include "TextEditor.h"
 
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
@@ -363,6 +364,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem("Viewport", nullptr, &_settings._showViewport);
             ImGui::MenuItem("SdfPrim editor", nullptr, &_settings._showPrimSpecEditor);
+            ImGui::MenuItem("Text editor", nullptr, &_settings._textEditor);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -460,7 +462,12 @@ void Editor::Draw() {
         }
         ImGui::End();
     }
-
+    
+    if (_settings._textEditor) {
+        ImGui::Begin("Text editor", &_settings._textEditor);
+            DrawTextEditor(GetCurrentLayer());
+        ImGui::End();
+    }
     DrawCurrentModal();
 
     ///////////////////////

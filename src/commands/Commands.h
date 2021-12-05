@@ -41,6 +41,7 @@ struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;
 struct LayerMute;
 struct LayerUnmute;
+struct LayerTextEdit;
 
 struct UndoCommand;
 struct RedoCommand;
