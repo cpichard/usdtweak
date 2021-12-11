@@ -11,6 +11,7 @@
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/namespaceEdit.h>
 #include <pxr/usd/sdf/valueTypeName.h>
+#include <pxr/usd/sdf/copyUtils.h>
 #include "ProxyHelpers.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -255,6 +256,22 @@ struct PrimReorder : public SdfLayerCommand {
     SdfPrimSpecHandle _prim;
 };
 
+struct PrimDuplicate : public SdfLayerCommand {
+    PrimDuplicate(SdfPrimSpecHandle prim, std::string &newName) : _prim(std::move(prim)), _newName(newName){};
+    ~PrimDuplicate() override {}
+    bool DoIt() override {
+        if (_prim) {
+            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            return (SdfCopySpec(_prim->GetLayer(), _prim->GetPath(), _prim->GetLayer(),
+                                _prim->GetPath().ReplaceName(TfToken(_newName))));
+        }
+        return false;
+    }
+
+    std::string _newName;
+    SdfPrimSpecHandle _prim;
+};
+
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
@@ -270,3 +287,4 @@ template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std
 template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, std::string name, SdfVariability variability,
                                                        bool custom, int operation, std::string targetPath);
 template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
+template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);

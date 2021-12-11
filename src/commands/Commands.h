@@ -26,6 +26,7 @@ struct PrimReparent;
 struct PrimCreateAttribute;
 struct PrimCreateRelationship;
 struct PrimReorder;
+struct PrimDuplicate;
 
 struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
