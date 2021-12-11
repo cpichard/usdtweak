@@ -8,6 +8,7 @@
 #include <ctime>
 #include <chrono>
 
+
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -132,6 +133,18 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
     return false;
 }
 
+inline
+static bool DrawRefreshButton() {
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
+    ImGui::SameLine();
+    const float buttonPosX = ImGui::GetWindowContentRegionMax().x - 20; // 20 == button size
+    ImGui::SetCursorPosX(buttonPosX);
+    if (ImGui::Button(ICON_FA_REDO_ALT)) {
+        return true;
+    }
+    return false;
+}
+
 static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     const auto &filename = p.path().filename();
     // TODO: startsWith is defined in ghc/filesystem.hpp and won't compile with c++17
@@ -233,18 +246,16 @@ void DrawFileBrowser() {
     // We scan the line buffer edit every second, no need to do it at every frame
     EverySecond(ParseLineBufferEdit);
 
+    mustUpdateDirectoryContent |= DrawNavigationBar(displayedDirectory);
+    mustUpdateDirectoryContent |= DrawRefreshButton();
     if (mustUpdateDirectoryContent) {
         UpdateDirectoryContent();
     }
 
-    ImGui::PushItemWidth(-1); // List takes the full size
-
-    mustUpdateDirectoryContent |= DrawNavigationBar(displayedDirectory);
-
     // Get window size
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 170); // TODO: 170 should be computed
-
+    ImGui::PushItemWidth(-1); // List takes the full size
     if (ImGui::BeginListBox("##FileList", sizeArg)) {
         constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;
         if (ImGui::BeginTable("Files", 4, tableFlags)) {
