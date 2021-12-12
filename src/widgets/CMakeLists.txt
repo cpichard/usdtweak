@@ -22,6 +22,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/StageOutliner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/TextFilter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TextFilter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Timeline.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Timeline.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ValueEditor.cpp
