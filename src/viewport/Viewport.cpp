@@ -220,35 +220,35 @@ void Viewport::Draw() {
 
 // Poor man manipulator toolbox
 void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
-    const ImVec2 buttonSize(40, 40); // Button size
-    const ImVec2 toolBoxPos(20, 20); // Alignment
+    const ImVec2 buttonSize(25, 25); // Button size
+    const ImVec2 toolBoxPos(15, 15); // Alignment
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
-    const ImVec4 selectedColor(0.2, 0.2, 0.2, 0.7);
+    const ImVec4 selectedColor(0.5, 0.7, 0.5, 0.7);
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
-    if (ImGui::Button("P", buttonSize)) {
+    if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
         ChooseManipulator<MouseHoverManipulator>();
     }
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<PositionManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
-    if (ImGui::Button("T", buttonSize)) {
+    if (ImGui::Button(ICON_FA_ARROWS_ALT, buttonSize)) {
         ChooseManipulator<PositionManipulator>();
     }
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<RotationManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
-    if (ImGui::Button("R", buttonSize)) {
+    if (ImGui::Button(ICON_FA_SYNC_ALT, buttonSize)) {
         ChooseManipulator<RotationManipulator>();
     }
     ImGui::PopStyleColor();
 
      ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
      ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
-    if (ImGui::Button("S", buttonSize)) {
+    if (ImGui::Button(ICON_FA_COMPRESS, buttonSize)) {
         ChooseManipulator<ScaleManipulator>();
     }
      ImGui::PopStyleColor();
