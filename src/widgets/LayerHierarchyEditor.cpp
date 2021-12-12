@@ -119,7 +119,13 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     if (ImGui::MenuItem("Remove")) {
         ExecuteAfterDraw<PrimRemove>(primSpec);
     }
-
+    ImGui::Separator();
+    if (ImGui::MenuItem("Copy")) {
+        ExecuteAfterDraw<PrimCopy>(primSpec);
+    }
+    if (ImGui::MenuItem("Paste")) {
+        ExecuteAfterDraw<PrimPaste>(primSpec);
+    }
     ImGui::Separator();
     if (ImGui::MenuItem("Create reference")) {
         DrawPrimCreateReference(primSpec);
@@ -136,7 +142,6 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     if (ImGui::MenuItem("Create variant")) {
         DrawModalDialog<AddVariantModalDialog>(primSpec);
     }
-
     ImGui::Separator();
     if (ImGui::MenuItem("Copy prim path")) {
         ImGui::SetClipboardText(primSpec->GetPath().GetString().c_str());
@@ -157,6 +162,16 @@ static void DrawBackgroundSelection(const SdfPrimSpecHandle &currentPrim, SdfPri
     ImGui::SameLine();
 }
 
+inline void DrawTooltip(const char *text) {
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
     ScopedStyleColor transparent(ImGuiCol_Button, ImVec4(0.5, 0.5, 0.5, 1.0));
     if (ImGui::Button(ICON_FA_PLUS)) {
@@ -166,6 +181,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
             ExecuteAfterDraw<PrimNew>(prim, FindNextAvailablePrimName(DefaultPrimSpecName));
         }
     }
+    DrawTooltip("New child prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_PLUS_SQUARE) && prim) {
         auto parent = prim->GetNameParent();
@@ -175,22 +191,37 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(prim->GetName()));
         }
     }
+    DrawTooltip("New sibbling prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_CLONE) && prim) {
         ExecuteAfterDraw<PrimDuplicate>(prim, FindNextAvailablePrimName(prim->GetName()));
     }
+    DrawTooltip("Duplicate");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROW_UP) && prim) {
         ExecuteAfterDraw<PrimReorder>(prim, true);
     }
+    DrawTooltip("Move up");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROW_DOWN) && prim) {
         ExecuteAfterDraw<PrimReorder>(prim, false);
     }
+    DrawTooltip("Move down");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_TRASH) && prim) {
         ExecuteAfterDraw<PrimRemove>(prim);
     }
+    DrawTooltip("Remove");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_COPY) && prim) {
+        ExecuteAfterDraw<PrimCopy>(prim);
+    }
+    DrawTooltip("Copy");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_PASTE) && prim) {
+        ExecuteAfterDraw<PrimPaste>(prim);
+    }
+    DrawTooltip("Paste");
 }
 
 static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {

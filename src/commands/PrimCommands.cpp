@@ -272,6 +272,50 @@ struct PrimDuplicate : public SdfLayerCommand {
     SdfPrimSpecHandle _prim;
 };
 
+struct CopyPasteCommand : public SdfLayerCommand {
+    ~CopyPasteCommand() override {}
+    static SdfLayerRefPtr _copyPasteLayer;
+};
+SdfLayerRefPtr CopyPasteCommand::_copyPasteLayer(SdfLayer::CreateAnonymous("CopyPasteBuffer"));
+
+struct PrimCopy : public CopyPasteCommand {
+    PrimCopy(SdfPrimSpecHandle prim) : _prim(prim){};
+    ~PrimCopy() override {}
+    bool DoIt() override {
+        if (_prim && _copyPasteLayer) {
+            SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
+            // Ditch root prim
+            auto defaultPrimToken = _copyPasteLayer->GetDefaultPrim();
+            if (defaultPrimToken != TfToken()) {
+                auto defaultPrim = _copyPasteLayer->GetPrimAtPath(SdfPath::AbsoluteRootPath().AppendChild(defaultPrimToken));
+                defaultPrim->GetLayer()->RemoveRootPrim(defaultPrim);
+            }
+            // Copy
+            const bool copyOk = SdfCopySpec(_prim->GetLayer(), _prim->GetPath(), _copyPasteLayer,
+                                            SdfPath::AbsoluteRootPath().AppendChild(_prim->GetNameToken()));
+            if (copyOk) {
+                _copyPasteLayer->SetDefaultPrim(_prim->GetNameToken());
+            }
+            return copyOk;
+        }
+        return false;
+    }
+    SdfPrimSpecHandle _prim;
+};
+
+struct PrimPaste : public CopyPasteCommand {
+    PrimPaste(SdfPrimSpecHandle prim) : _prim(prim){};
+    ~PrimPaste() override {}
+    bool DoIt() override {
+        if (_prim && _copyPasteLayer) {
+            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            return SdfCopySpec(_copyPasteLayer, SdfPath::AbsoluteRootPath().AppendChild(_copyPasteLayer->GetDefaultPrim()),
+                               _prim->GetLayer(), _prim->GetPath().AppendChild(_copyPasteLayer->GetDefaultPrim()));
+        }
+        return false;
+    }
+    SdfPrimSpecHandle _prim;
+};
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
@@ -288,3 +332,5 @@ template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, 
                                                        bool custom, int operation, std::string targetPath);
 template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
 template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);
+template void ExecuteAfterDraw<PrimCopy>(SdfPrimSpecHandle prim);
+template void ExecuteAfterDraw<PrimPaste>(SdfPrimSpecHandle prim);
