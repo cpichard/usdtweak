@@ -2,6 +2,10 @@
 #include "Gui.h"
 #include "Commands.h"
 
+// The following include contains the code which writes usd to text, but it's not
+// distributed with the api
+//#include <pxr/usd/sdf/fileIO_Common.h>
+
 void DrawTextEditor(SdfLayerRefPtr layer) {
     static std::string layerText;
     ImGui::Text("WARNING: this will slow down the application if the layer is big");
@@ -12,10 +16,11 @@ void DrawTextEditor(SdfLayerRefPtr layer) {
     }
     ImGui::PushItemWidth(-FLT_MIN);
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
-    ImVec2 sizeArg(0, currentWindow->Size[1] - 90); // TODO: 90 is a roughly the size of the widgets above, but this should be computed
+    ImVec2 sizeArg(0, currentWindow->Size[1] - 110);
 
     ImGui::InputTextMultiline("###TextEditor", &layerText, sizeArg, ImGuiInputTextFlags_None);
     if (layer && ImGui::IsItemDeactivatedAfterEdit()) {
         ExecuteAfterDraw<LayerTextEdit>(layer, layerText);
     }
+    ImGui::Text("Ctrl+Enter to apply your change");
 }
