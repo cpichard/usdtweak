@@ -27,6 +27,11 @@
 #include "ResourcesLoader.h"
 #include "TextEditor.h"
 
+// There is a bug in the Undo/Redo when reloading certain layers, here is the post
+// that explains how to debug the issue:
+// Reloading model.stage doesn't work but reloading stage separately does
+// https://groups.google.com/u/1/g/usd-interest/c/lRTmWgq78dc/m/HOZ6x9EdCQAJ
+
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
     const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
