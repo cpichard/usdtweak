@@ -453,7 +453,8 @@ void Editor::Draw() {
     }
 
     if (_settings._showContentBrowser) {
-        ImGui::Begin("Content browser", &_settings._showContentBrowser);
+        ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
+        ImGui::Begin("Content browser", &_settings._showContentBrowser, windowFlags);
         DrawContentBrowser(*this);
         ImGui::End();
     }
