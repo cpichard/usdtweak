@@ -34,28 +34,35 @@ struct AddSublayer : public ModalDialog {
     void Draw() override {
         DrawFileBrowser();
         auto filePath = GetFileBrowserFilePath();
-
-        if (FilePathExists()) {
+        const bool filePathExits = FilePathExists();
+        ImGui::BeginDisabled(filePathExits);
+        ImGui::Checkbox("Create new", &_createNew);
+        ImGui::EndDisabled();
+        if (filePathExits) {
             ImGui::Text("Import layer: ");
         } else {
-            ImGui::Text("Not found: ");
-        } // ... other messages like permission denied, or incorrect extension
-        ImGui::Text("%s", filePath.c_str());
-
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Ok")) {
-            if (!filePath.empty()) {
-                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, filePath, -1);
+            if (_createNew) {
+                ImGui::Text("Create new layer: ");
+            } else {
+                ImGui::Text("Not found: ");
             }
-            CloseModal();
-        }
+        } // ... other messages like permission denied, or incorrect extension
+
+        ImGui::Text("%s", filePath.c_str());
+        DrawOkCancelModal([&]() {
+            if (!filePath.empty()) {
+                if (_createNew && !filePathExits) {
+                    // TODO: Check extension
+                    SdfLayer::CreateNew(filePath);
+                }
+                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, filePath, 0);
+            }
+        });
     }
 
     const char *DialogId() const override { return "Import sublayer"; }
     SdfLayerRefPtr layer;
+    bool _createNew = true;
 };
 
 
