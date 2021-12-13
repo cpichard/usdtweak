@@ -26,6 +26,7 @@
 #include "Commands.h"
 #include "ResourcesLoader.h"
 #include "TextEditor.h"
+#include "Shortcuts.h"
 
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
@@ -477,29 +478,9 @@ void Editor::Draw() {
     DrawCurrentModal();
 
     ///////////////////////
-    // The following piece of code should give birth to a more refined "shortcut" system
-    //
-    ImGuiIO &io = ImGui::GetIO();
-    static bool UndoCommandpressedOnce = true;
-    if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_Z]) {
-        if (UndoCommandpressedOnce) {
-            ExecuteAfterDraw<UndoCommand>();
-            UndoCommandpressedOnce = false;
-        }
-    } else {
-        UndoCommandpressedOnce = true;
-    }
-    static bool RedoCommandpressedOnce = true;
-    if (io.KeysDown[GLFW_KEY_LEFT_CONTROL] && io.KeysDown[GLFW_KEY_R]) {
-        if (RedoCommandpressedOnce) {
-            ExecuteAfterDraw<RedoCommand>();
-            RedoCommandpressedOnce = false;
-        }
-    } else {
-        RedoCommandpressedOnce = true;
-    }
-
-    /////////////////
+    // Top level shortcuts functions
+    AddShortcut<UndoCommand, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_Z>();
+    AddShortcut<RedoCommand, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_R>();
 
     EndBackgroundDock();
 

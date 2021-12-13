@@ -2,6 +2,7 @@
 target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Commands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Commands.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Shortcuts.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfCommandGroup.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfCommandGroup.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerInstructions.cpp

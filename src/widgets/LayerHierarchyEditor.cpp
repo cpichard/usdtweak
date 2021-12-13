@@ -26,6 +26,7 @@
 #include "CompositionEditor.h"
 #include "ImGuiHelpers.h"
 #include "Constants.h"
+#include "Shortcuts.h"
 
 struct AddVariantModalDialog : public ModalDialog {
 
@@ -423,5 +424,13 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
             DrawMiniToolbar(layer, selectedPrim);
         }
         ImGui::EndTable();
+    }
+    if (ImGui::IsItemHovered() && selectedPrim) {
+        AddShortcut<PrimRemove, GLFW_KEY_DELETE>(selectedPrim);
+        AddShortcut<PrimCopy, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_C>(selectedPrim);
+        AddShortcut<PrimPaste, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_V>(selectedPrim);
+        AddShortcut<PrimDuplicate, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_D>(selectedPrim,
+                                                                      FindNextAvailablePrimName(selectedPrim->GetName()));
+
     }
 }
