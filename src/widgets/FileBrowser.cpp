@@ -223,7 +223,7 @@ void DrawFileBrowser() {
     // Update the list of entries for the chosen directory
     auto UpdateDirectoryContent = [&]() {
         directoryContent.clear();
-        for (auto &item : fs::directory_iterator(displayedDirectory)) {
+        for (auto &item : fs::directory_iterator(displayedDirectory, fs::directory_options::skip_permission_denied)) {
             if (ShouldBeDisplayed(item)) {
                 directoryContent.push_back(item);
             };
