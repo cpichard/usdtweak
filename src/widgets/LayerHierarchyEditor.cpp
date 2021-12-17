@@ -255,6 +255,20 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+
+static void HandleDragAndDrop(SdfLayerHandle layer) {
+    static SdfPath payload;
+    // Drop on the layer
+    if (ImGui::BeginDragDropTarget()) {
+        ImGuiDragDropFlags targetFlags = 0;
+        if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
+            SdfPath source(*(SdfPath*)pl->Data);
+            ExecuteAfterDraw<PrimReparent>(layer, source, SdfPath::AbsoluteRootPath());
+        }
+        ImGui::EndDragDropTarget();
+    }
+}
+
 // Returns unfolded
 static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &primSpec, SdfPrimSpecHandle &selectedPrim,
                                  bool hasChildren) {
@@ -398,6 +412,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
         ImGui::TableSetColumnIndex(0);
 
         DrawBackgroundSelection(SdfPrimSpecHandle(), selectedPrim);
+        HandleDragAndDrop(layer);
         ImGui::SetItemAllowOverlap();
         std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
         bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
