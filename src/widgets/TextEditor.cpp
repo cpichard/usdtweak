@@ -18,7 +18,7 @@ void DrawTextEditor(SdfLayerRefPtr layer) {
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, currentWindow->Size[1] - 110);
 
-    ImGui::InputTextMultiline("###TextEditor", &layerText, sizeArg, ImGuiInputTextFlags_None);
+    ImGui::InputTextMultiline("###TextEditor", &layerText, sizeArg, ImGuiInputTextFlags_None | ImGuiInputTextFlags_NoUndoRedo);
     if (layer && ImGui::IsItemDeactivatedAfterEdit()) {
         ExecuteAfterDraw<LayerTextEdit>(layer, layerText);
     }
