@@ -64,3 +64,8 @@ add_custom_command(
 target_sources(resources PRIVATE ${default_ini_header})
 
 
+# Organise the source files in folders in xcode and visual studio
+get_target_property(RESOURCES_SOURCES resources SOURCES)
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}"
+    PREFIX "src"
+    FILES ${RESOURCES_SOURCES})
