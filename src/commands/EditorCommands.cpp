@@ -56,7 +56,6 @@ struct EditorOpenStage : public EditorCommand {
 
     bool DoIt() override {
         if (_editor) {
-            // TODO: we should check if the stage is already imported ?
             _editor->ImportStage(_stagePath);
         }
 
@@ -66,6 +65,22 @@ struct EditorOpenStage : public EditorCommand {
     std::string _stagePath;
 };
 template void ExecuteAfterDraw<EditorOpenStage>(std::string stagePath);
+
+struct EditorSetCurrentStage : public EditorCommand {
+
+    EditorSetCurrentStage(SdfLayerHandle layer) : _layer(layer) {}
+
+    bool DoIt() override {
+        if (_editor) {
+            if (auto stage = _editor->GetStageCache().FindOneMatching(_layer)) {
+                _editor->SetCurrentStage(stage);
+            }
+        }
+        return false; // never store this command
+    }
+    SdfLayerHandle _layer;
+};
+template void ExecuteAfterDraw<EditorSetCurrentStage>(SdfLayerHandle layer);
 
 struct EditorSetEditTarget : public EditorCommand {
 
@@ -87,6 +102,7 @@ template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 // Will set the current layer and the current selected layer prim
 struct EditorInspectLayerLocation : public EditorCommand {
     EditorInspectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
+    EditorInspectLayerLocation(SdfLayerRefPtr layer, SdfPath path) : _layer(layer), _path(path) {}
     ~EditorInspectLayerLocation() override {}
 
     bool DoIt() override {
@@ -102,6 +118,7 @@ struct EditorInspectLayerLocation : public EditorCommand {
     SdfPath _path;
 };
 template void ExecuteAfterDraw<EditorInspectLayerLocation>(SdfLayerHandle layer, SdfPath);
+template void ExecuteAfterDraw<EditorInspectLayerLocation>(SdfLayerRefPtr layer, SdfPath);
 
 struct EditorSetCurrentLayer : public EditorCommand {
 

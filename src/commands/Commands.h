@@ -36,6 +36,7 @@ struct EditorOpenStage;
 struct EditorOpenLayer;
 struct EditorSetEditTarget;
 struct EditorSetCurrentLayer;
+struct EditorSetCurrentStage;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
 struct EditorInspectLayerLocation;
