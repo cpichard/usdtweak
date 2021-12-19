@@ -26,6 +26,7 @@
 #include "CompositionEditor.h"
 #include "ImGuiHelpers.h"
 #include "Constants.h"
+#include "ValueEditor.h"
 
 struct AddSublayer : public ModalDialog {
 
@@ -238,7 +239,7 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
     }
 }
 
-static void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
+void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
     if (ImGui::Button(ICON_FA_HOME)) {
     }
     ImGui::SameLine();
@@ -252,23 +253,8 @@ static void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selecte
     ImGui::SameLine();
     if (!layer)
         return;
-
     ImGui::SameLine();
-
     ImGui::Text("%s", layer->GetRealPath().c_str());
-    ImGui::Separator();
-}
-
-/// Draw a SdfLayer editor
-void DrawLayerEditor(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
-    using namespace ImGui;
-    ImGuiContext &g = *GImGui;
-    ImGuiWindow *window = g.CurrentWindow;
-
-    static ImVec2 navigationWidgetSize(-1, 50);
-    ImGui::BeginChild("layerEditorNavigation", navigationWidgetSize);
-    DrawLayerNavigation(layer, selectedPrim);
-    ImGui::EndChild();
 }
 
 /// Draw a popup menu with the possible action on a layer

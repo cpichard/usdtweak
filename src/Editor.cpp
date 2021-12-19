@@ -429,7 +429,7 @@ void Editor::Draw() {
             "Layer editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
             "###Layer editor");
         ImGui::Begin(title.c_str(), &_settings._showLayerEditor);
-        DrawLayerEditor(rootLayer, GetSelectedPrimSpec());
+        DrawLayerNavigation(rootLayer,  GetSelectedPrimSpec());
         ImGui::End();
     }
 
