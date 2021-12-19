@@ -177,7 +177,6 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     }
 
     ImGui::NextColumn();
-    ImGui::Text("");
     ImGui::NextColumn(); // Back to the first column
     if (unfolded) {
         const auto &children = rootPrim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));

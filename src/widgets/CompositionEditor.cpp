@@ -343,7 +343,7 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     summary += assetPath.GetAssetPath().empty() ? "" : "@" + assetPath.GetAssetPath() + "@";
     summary += assetPath.GetPrimPath().GetString().empty() ? "" : "<" + assetPath.GetPrimPath().GetString() + ">";
     ImGui::PushID(menuItemId++);
-    ImGui::Text(summary.c_str());
+    ImGui::Text("%s", summary.c_str());
     if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
         DrawAssetPathMenuItems(primSpec, assetPath);
         ImGui::EndPopup();
