@@ -354,6 +354,9 @@ static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &
 void DrawPrimSpecRelations(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
+    const auto &relationships = primSpec->GetRelationships();
+    if (relationships.empty())
+        return;
     int widgetId = 0;
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     if (ImGui::BeginTable("##DrawPrimSpecRelations", 3, tableFlags)) {
