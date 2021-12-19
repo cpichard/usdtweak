@@ -3,11 +3,12 @@
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/payload.h>
 #include "CompositionEditor.h"
-#include "Gui.h"
+#include "ImGuiHelpers.h"
 #include "ProxyHelpers.h"
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
 #include "Commands.h"
+#include "Constants.h"
 #include "ImGuiHelpers.h"
 
 // 2 local struct to differentiate Inherit and Specialize which have the same underlying type
@@ -310,8 +311,13 @@ void DrawPrimCompositions(SdfPrimSpecHandle &primSpec) {
 template <typename PathListT>
 inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec,
                                int &menuItemId) {
+    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
     ImGui::PushID(menuItemId++);
-    std::string summary = header + path.GetString(); // TODO: add target prim and offsets
+    if (ImGui::Button(header.c_str())) {
+        ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
+    }
+    ImGui::SameLine();
+    std::string summary = path.GetString(); // TODO: add target prim and offsets
     ImGui::Selectable(summary.c_str());
     if (ImGui::BeginPopupContextItem()) {
         DrawSdfPathMenuItems<PathListT>(primSpec, path);
@@ -323,10 +329,22 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
 template <typename AssetPathT>
 inline void DrawAssetPathSummary(std::string &&header, const char *operation, const AssetPathT &assetPath,
                                  SdfPrimSpecHandle &primSpec, int &menuItemId) {
+    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
     ImGui::PushID(menuItemId++);
-    std::string summary = header + assetPath.GetAssetPath(); // TODO: add target prim and offsets
-    ImGui::Selectable(summary.c_str());
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::Button(header.c_str())) {
+        auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
+        auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
+        ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, assetPath.GetPrimPath());
+    }
+    ImGui::PopID();
+    ImGui::SameLine();
+    std::string summary(operation);
+    summary += " ";
+    summary += assetPath.GetAssetPath().empty() ? "" : "@" + assetPath.GetAssetPath() + "@";
+    summary += assetPath.GetPrimPath().GetString().empty() ? "" : "<" + assetPath.GetPrimPath().GetString() + ">";
+    ImGui::PushID(menuItemId++);
+    ImGui::Text(summary.c_str());
+    if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
         DrawAssetPathMenuItems(primSpec, assetPath);
         ImGui::EndPopup();
     }
@@ -334,19 +352,19 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
 }
 
 void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawAssetPathSummary(ICON_FA_EXTERNAL_LINK_ALT " reference ", operation, assetPath, primSpec, menuItemId);
+    DrawAssetPathSummary(ICON_FA_EXTERNAL_LINK_ALT, operation, assetPath, primSpec, menuItemId);
 }
 
 void DrawPayloadSummary(const char *operation, const SdfPayload &assetPath, SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawAssetPathSummary(ICON_FA_BULLSEYE " payload ", operation, assetPath, primSpec, menuItemId);
+    DrawAssetPathSummary(ICON_FA_WEIGHT_HANGING, operation, assetPath, primSpec, menuItemId);
 }
 
 void DrawInheritsSummary(const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawSdfPathSummary<Inherit>(ICON_FA_EXTERNAL_LINK_SQUARE_ALT " inherit ", operation, path, primSpec, menuItemId);
+    DrawSdfPathSummary<Inherit>(ICON_FA_EXTERNAL_LINK_SQUARE_ALT, operation, path, primSpec, menuItemId);
 }
 
 void DrawSpecializesSummary(const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawSdfPathSummary<Specialize>(ICON_FA_SIGN_IN_ALT " specialize ", operation, path, primSpec, menuItemId);
+    DrawSdfPathSummary<Specialize>(ICON_FA_SIGN_IN_ALT, operation, path, primSpec, menuItemId);
 }
 
 void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {

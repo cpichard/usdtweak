@@ -32,6 +32,8 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define PrimInstanceColor {135.f/255.f, 206.f/255.f, 250.f/255.f, 1.0}
 #define PrimPrototypeColor {118.f/255.f, 136.f/255.f, 217.f/255.f, 1.0}
 #define PrimHasCompositionColor {222.f/255.f, 158.f/255.f, 46.f/255.f, 1.0}
+#define GreyishColor {0.5, 0.5, 0.5, 1.0}
+#define ButtonHighlightColor {0.5, 0.7, 0.5, 0.7}
 
 /// Decimal Precision shown in the floating point values UI
 constexpr const char * DecimalPrecision = "%.5f";
@@ -43,3 +45,4 @@ constexpr const char *const DefaultPrimSpecName = "prim";
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 
 constexpr const char* ICON_DELETE = "\xef\x87\xb8"; // ICON_FA_TRASH;
+
