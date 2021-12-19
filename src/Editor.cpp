@@ -361,16 +361,16 @@ void Editor::DrawMainMenuBar() {
         }
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Debug window", nullptr, &_settings._showDebugWindow);
-            ImGui::MenuItem("Property editor", nullptr, &_settings._showPropertyEditor);
-            ImGui::MenuItem("Stage outliner", nullptr, &_settings._showOutliner);
-            ImGui::MenuItem("Timeline", nullptr, &_settings._showTimeline);
             ImGui::MenuItem("Content browser", nullptr, &_settings._showContentBrowser);
-            ImGui::MenuItem("Layer editor", nullptr, &_settings._showLayerEditor);
+            ImGui::MenuItem("Stage outliner", nullptr, &_settings._showOutliner);
+            ImGui::MenuItem("Stage property editor", nullptr, &_settings._showPropertyEditor);
+            ImGui::MenuItem("Stage timeline", nullptr, &_settings._showTimeline);
+            ImGui::MenuItem("Stage viewport", nullptr, &_settings._showViewport);
+            ImGui::MenuItem("Layer navigator", nullptr, &_settings._showLayerEditor);
             ImGui::MenuItem("Layer hierarchy", nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
-            ImGui::MenuItem("Viewport", nullptr, &_settings._showViewport);
-            ImGui::MenuItem("SdfPrim editor", nullptr, &_settings._showPrimSpecEditor);
-            ImGui::MenuItem("Text editor", nullptr, &_settings._textEditor);
+            ImGui::MenuItem("Layer property editor", nullptr, &_settings._showPrimSpecEditor);
+            ImGui::MenuItem("Layer text editor", nullptr, &_settings._textEditor);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -401,7 +401,7 @@ void Editor::Draw() {
 
     if (_settings._showPropertyEditor) {
         ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
-        ImGui::Begin("Property editor", &_settings._showPropertyEditor, windowFlags);
+        ImGui::Begin("Stage property editor", &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
@@ -426,8 +426,8 @@ void Editor::Draw() {
     if (_settings._showLayerEditor) {
         const auto &rootLayer = GetCurrentLayer();
         const std::string title(
-            "Layer editor" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
-            "###Layer editor");
+            "Layer navigation" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
+            "###Layer navigation");
         ImGui::Begin(title.c_str(), &_settings._showLayerEditor);
         DrawLayerNavigation(rootLayer,  GetSelectedPrimSpec());
         ImGui::End();
@@ -461,7 +461,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showPrimSpecEditor) {
-        ImGui::Begin("SdfPrim editor", &_settings._showPrimSpecEditor);
+        ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor);
         if (GetSelectedPrimSpec()) {
             DrawPrimSpecEditor(GetSelectedPrimSpec());
         } else {
@@ -471,7 +471,7 @@ void Editor::Draw() {
     }
     
     if (_settings._textEditor) {
-        ImGui::Begin("Text editor", &_settings._textEditor);
+        ImGui::Begin("Layer text editor", &_settings._textEditor);
             DrawTextEditor(GetCurrentLayer());
         ImGui::End();
     }
