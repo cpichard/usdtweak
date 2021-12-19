@@ -174,7 +174,6 @@ inline void DrawTooltip(const char *text) {
 }
 
 void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
-    ScopedStyleColor transparent(ImGuiCol_Button, ImVec4(0.5, 0.5, 0.5, 1.0));
     if (ImGui::Button(ICON_FA_PLUS)) {
         if (prim == SdfPrimSpecHandle()) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
@@ -434,6 +433,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
             ImGui::TreePop();
         }
         if (selectedPosY != -1) {
+            ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ButtonHighlightColor));
             ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 160);
             ImGui::SetCursorPosY(selectedPosY);
             DrawMiniToolbar(layer, selectedPrim);
