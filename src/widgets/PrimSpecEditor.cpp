@@ -466,6 +466,31 @@ void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
     }
 }
 
+static void DrawAssetInfo(SdfPrimSpecHandle prim) {
+    if (!prim)
+        return;
+    const auto &assetInfo = prim->GetAssetInfo();
+    if (!assetInfo.empty()) {
+        if (ImGui::BeginTable("##DrawAssetInfo", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            TableSetupColumns("", "Asset Info", "");
+            ImGui::TableHeadersRow();
+            TF_FOR_ALL(keyValue, assetInfo) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%s", keyValue->first.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::PushItemWidth(-FLT_MIN);
+                VtValue modified = DrawVtValue(keyValue->first.c_str(), keyValue->second);
+                if (modified != VtValue()) {
+                    ExecuteAfterDraw(&SdfPrimSpec::SetAssetInfo, prim, keyValue->first, modified);
+                }
+            }
+            ImGui::EndTable();
+            ImGui::Separator();
+        }
+    }
+}
+
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
@@ -479,6 +504,7 @@ void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
         DrawModalDialog<CreateRelationDialog>(primSpec);
     }
     DrawPrimSpecMetadata(primSpec);
+    DrawAssetInfo(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec);
