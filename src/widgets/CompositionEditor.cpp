@@ -313,7 +313,7 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
                                int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
     ImGui::PushID(menuItemId++);
-    if (ImGui::Button(header.c_str())) {
+    if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
         ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
     }
     ImGui::SameLine();
@@ -331,7 +331,7 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
                                  SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
     ImGui::PushID(menuItemId++);
-    if (ImGui::Button(header.c_str())) {
+    if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
         auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
         auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
         ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, assetPath.GetPrimPath());

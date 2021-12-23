@@ -116,8 +116,8 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
             }
             ImGui::SameLine();
         }
-
-        if (ImGui::Button(directoryPath.substr(pos, len - pos).c_str())) {
+        const std::string dirLabel = directoryPath.substr(pos, len - pos);
+        if (ImGui::Button(dirLabel.empty() ? "###emptydirlabel" : dirLabel.c_str())) {
             lineEditBuffer = directoryPath.substr(0, len) + fs::path::preferred_separator;
             displayedDirectory = fs::path(lineEditBuffer);
             return true;
@@ -129,7 +129,8 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
         ImGui::SameLine();
     }
     len = directoryPath.size();
-    ImGui::Button(directoryPath.substr(pos, len - pos).c_str());
+    const std::string dirLabel = directoryPath.substr(pos, len - pos);
+    ImGui::Button(dirLabel.empty() ? "###emptydir" : dirLabel.c_str());
     return false;
 }
 
