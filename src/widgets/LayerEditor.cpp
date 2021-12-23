@@ -71,9 +71,9 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
     auto rootPrims = layer->GetRootPrims();
     auto defautPrim = layer->GetDefaultPrim();
 
-    if (ImGui::BeginCombo("Defaut Prim", defautPrim.GetString().c_str())) {
+    if (ImGui::BeginCombo("Default Prim", defautPrim.GetString().c_str())) {
         bool isSelected = defautPrim == "";
-        if (ImGui::Selectable("", isSelected)) {
+        if (ImGui::Selectable("##defaultprim", isSelected)) {
             defautPrim = TfToken("");
             if (isSelected)
                 ImGui::SetItemDefaultFocus();
