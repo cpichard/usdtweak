@@ -52,7 +52,7 @@ static SdfPath perspectiveCameraPath("/usdtweak/cameras/cameraPerspective");
 void DrawCameraList(Viewport &viewport) {
     // TODO: the viewport cameras and the stage camera should live in different lists
     constexpr char const *perspectiveCameraName = "Perspective";
-    if (ImGui::BeginListBox("")) {
+    if (ImGui::BeginListBox("##CameraList")) {
         // OpenGL Cameras
         if (ImGui::Selectable(perspectiveCameraName, viewport.GetCameraPath() == perspectiveCameraPath)) {
             viewport.SetCameraPath(perspectiveCameraPath);
