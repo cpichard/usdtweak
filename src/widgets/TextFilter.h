@@ -1,12 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <regex>
-
 #include "Gui.h"
 
 /*
-    The following code was copied from imgui and modified to add regex
+    The following code was copied from imgui and modified to add wildcard search
 */
 struct TextFilter {
     IMGUI_API TextFilter(const char *default_filter = "");
@@ -35,8 +32,8 @@ struct TextFilter {
     char InputBuf[256];
     ImVector<TextRange> Filters;
     int CountGrep;
+    
+    bool UseWildcard = false;
+    std::function<const char *(const char *, const char *, const char *, const char *)> PatternMatchFunc;
 
-    bool UseRegex;
-    std::unique_ptr<std::regex> Regex = std::make_unique<std::regex>(".*", std::regex::grep);
-    std::string lastRegex;
 };
