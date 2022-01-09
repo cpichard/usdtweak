@@ -1,7 +1,7 @@
 #include "TextFilter.h"
 
 // A slow version of ImStristr with wildcard matching using dynamic programming
-const char * ImStrWildcard(const char *haystack, const char *haystack_end, const char *needle, const char *needle_end) {
+const char *ImStrWildcard(const char *haystack, const char *haystack_end, const char *needle, const char *needle_end) {
     if (!needle_end)
         needle_end = needle + strlen(needle);
     if (!haystack_end)
@@ -15,14 +15,12 @@ const char * ImStrWildcard(const char *haystack, const char *haystack_end, const
     if (!haystack_size)
         return nullptr;
 
-    // OPTIM: We can use only one line instead of the full table
-    bool dpbuf[(haystack_size + 1)][(needle_size + 1)];
+    // Memory optimisation: using only the current and previous line
+    bool dpbuf[2][(needle_size + 1)];
 
     // Init empty character
     dpbuf[0][0] = true;
-    for (int j = 1; j <= haystack_size; ++j) {
-        dpbuf[j][0] = false;
-    }
+    dpbuf[1][0] = false;
     for (int i = 1; i <= needle_size; ++i) {
         if (needle[i - 1] == '*')
             dpbuf[0][i] = dpbuf[0][i - 1];
@@ -30,20 +28,23 @@ const char * ImStrWildcard(const char *haystack, const char *haystack_end, const
             dpbuf[0][i] = false;
     }
 
-    // Fill dp table
+    // Fill dp array
     for (int j = 1; j <= haystack_size; ++j) {
+        const int jmod2 = j & 1;
+        const int jm1mod2 = (j - 1) & 1;
+        dpbuf[jmod2][0] = false;
         for (int i = 1; i <= needle_size; ++i) {
             if (haystack[j - 1] == needle[i - 1] || needle[i - 1] == '?') {
-                dpbuf[j][i] = dpbuf[j - 1][i - 1];
+                dpbuf[jmod2][i] = dpbuf[jm1mod2][i - 1];
             } else if (needle[i - 1] == '*') {
-                dpbuf[j][i] = dpbuf[j - 1][i] || dpbuf[j][i - 1];
+                dpbuf[jmod2][i] = dpbuf[jm1mod2][i] || dpbuf[jmod2][i - 1];
             } else {
-                dpbuf[j][i] = false;
+                dpbuf[jmod2][i] = false;
             }
         }
     }
 
-    return dpbuf[haystack_size][needle_size] ? haystack : nullptr;
+    return dpbuf[haystack_size % 2][needle_size] ? haystack : nullptr;
 }
 
 TextFilter::TextFilter(const char *default_filter) {
