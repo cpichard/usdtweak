@@ -1,7 +1,18 @@
 #include "TextFilter.h"
 
-// A slow version of ImStristr with wildcard matching using dynamic programming
-const char *ImStrWildcard(const char *haystack, const char *haystack_end, const char *needle, const char *needle_end) {
+//
+// Using a more performant algorithm for wildcard matching:
+// https://en.wikipedia.org/wiki/Matching_wildcards
+// 
+#define USE_KRAUSS_WILDCARDS_ALGO 1
+
+#ifdef USE_KRAUSS_WILDCARDS_ALGO
+#include "WildcardsCompare.h"
+const char *ImStrWildcards(const char *haystack, const char *haystack_end, const char *needle, const char *needle_end) {
+    return FastWildComparePortable(needle, haystack) ? haystack : nullptr;
+}
+#else
+const char *ImStrWildcards(const char *haystack, const char *haystack_end, const char *needle, const char *needle_end) {
     if (!needle_end)
         needle_end = needle + strlen(needle);
     if (!haystack_end)
@@ -46,6 +57,7 @@ const char *ImStrWildcard(const char *haystack, const char *haystack_end, const 
 
     return dpbuf[haystack_size % 2][needle_size] ? haystack : nullptr;
 }
+#endif
 
 TextFilter::TextFilter(const char *default_filter) {
     if (default_filter) {
@@ -62,7 +74,7 @@ bool TextFilter::Draw(const char *label, float width) {
         ImGui::SetNextItemWidth(width);
     bool value_changed = ImGui::InputTextWithHint(label, "Search", InputBuf, IM_ARRAYSIZE(InputBuf));
     ImGui::SameLine();
-    if (ImGui::Checkbox("Use wildcard", &UseWildcard) || value_changed)
+    if (ImGui::Checkbox("Use wildcard", &UseWildcards) || value_changed)
         Build();
     return value_changed;
 }
@@ -84,7 +96,7 @@ void TextFilter::TextRange::split(char separator, ImVector<TextRange> *out) cons
 
 void TextFilter::Build() {
     
-    PatternMatchFunc = UseWildcard ? ImStrWildcard : ImStristr;
+    PatternMatchFunc = UseWildcards ? ImStrWildcards : ImStristr;
     
     Filters.resize(0);
     TextRange input_range(InputBuf, InputBuf + strlen(InputBuf));
