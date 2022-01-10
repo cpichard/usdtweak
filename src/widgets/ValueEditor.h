@@ -25,4 +25,4 @@ VtValue DrawColorValue(const std::string &label, const VtValue &value);
 const std::array<SdfValueTypeName, 106> & GetAllValueTypeNames();
 
 /// Helper function to return all spec type names. The function is not exposed in the usd api
-const std::array<const char *, 35> & GetAllSpecTypeNames();
+const std::vector<std::string> & GetAllSpecTypeNames();

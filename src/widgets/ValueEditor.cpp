@@ -15,6 +15,8 @@
 #include <pxr/base/vt/array.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/types.h>
+#include <pxr/usd/usd/typed.h>
+#include <pxr/base/plug/registry.h>
 #include "Gui.h"
 
 
@@ -194,6 +196,9 @@ VtValue DrawColorValue(const std::string &label, const VtValue &value) {
     return VtValue();
 }
 
+// Return all the value types.
+// In the next version 22.03 we should be able to use:
+// SdfSchema::GetInstance().GetAllTypes();
 const std::array<SdfValueTypeName, 106> & GetAllValueTypeNames() {
     static std::array<SdfValueTypeName, 106> allValueTypeNames = {
         SdfValueTypeNames->Bool,
@@ -307,48 +312,19 @@ const std::array<SdfValueTypeName, 106> & GetAllValueTypeNames() {
 }
 
 
-// TODO: get all spec types from the USD API
-// ATM the function GetAllTypes is not exposed by the api, missing SDF_API
-// auto allTypes = primSpec->GetSchema().GetAllTypes();
-// auto allTypes = SdfSchema::GetInstance().GetAllTypes();
-// They are also registered in "registry.usda"
-const std::array<const char *, 35> & GetAllSpecTypeNames() {
-    static std::array<const char *, 35> allSpecTypeNames = {"",
-            "Backdrop",
-            "BlendShape",
-            "Camera",
-            "Capsule",
-            "Cone",
-            "Cube",
-            "Cylinder",
-            "DiskLight",
-            "DistantLight",
-            "DomeLight",
-            "Field3DAsset",
-            "GeomSubset",
-            "GeometryLight",
-            "HermiteCurves",
-            "Material",
-            "Mesh",
-            "NodeGraph",
-            "NurbsPatch",
-            "OpenVDBAsset",
-            "PackedJoinedAnimation",
-            "PointInstancer",
-            "Points",
-            "PortalLight"
-            "RectLight",
-            "RenderSettings",
-            "RenderVar",
-            "Scope",
-            "Shader",
-            "SkelAnimation",
-            "SkelRoot",
-            "Skeleton",
-            "Sphere",
-            "SphereLight",
-            "Volume",
-            "Xform"
-    };
+// Return all the prim types from the registry.
+// There is no function in USD to simply retrieve the list, this is explained in the forum:
+// https://groups.google.com/g/usd-interest/c/q8asqMYuyeg/m/sRhFTIEfCAAJ
+const std::vector<std::string> &GetAllSpecTypeNames() {
+    static std::vector<std::string> allSpecTypeNames;
+    static std::once_flag called_once;
+    std::call_once(called_once, [&]() {
+        allSpecTypeNames.push_back(""); // empty type
+        const TfType baseType = TfType::Find<UsdTyped>();
+        std::set<TfType> schemaTypes;
+        PlugRegistry::GetAllDerivedTypes(baseType, &schemaTypes);
+        TF_FOR_ALL(type, schemaTypes) { allSpecTypeNames.push_back(UsdSchemaRegistry::GetInstance().GetSchemaTypeName(*type)); }
+        std::sort(allSpecTypeNames.begin(), allSpecTypeNames.end());
+    });
     return allSpecTypeNames;
 }
