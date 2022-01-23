@@ -40,6 +40,7 @@ struct EditorSetCurrentStage;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
 struct EditorInspectLayerLocation;
+struct EditorShutdown;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

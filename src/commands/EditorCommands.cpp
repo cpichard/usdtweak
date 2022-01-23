@@ -99,6 +99,21 @@ struct EditorSetEditTarget : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 
+// Shutting down the editor
+struct EditorShutdown : public EditorCommand {
+    ~EditorShutdown() override {}
+    bool DoIt() override {
+        // Checking if we have unsaved file, later on we can also check for connections, etc etc
+        if (_editor->HasUnsavedWork()) {
+            _editor->ConfirmShutdown("You have unsaved work.");
+        } else {
+            _editor->Shutdown();
+        }
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorShutdown>();
+
 // Will set the current layer and the current selected layer prim
 struct EditorInspectLayerLocation : public EditorCommand {
     EditorInspectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}

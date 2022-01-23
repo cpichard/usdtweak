@@ -42,6 +42,47 @@ static const std::vector<std::string> GetUsdValidExtensions() {
     return validExtensions;
 }
 
+struct CloseEditorModalDialog : public ModalDialog {
+    CloseEditorModalDialog(Editor &editor, std::string confirmReasons) : editor(editor), confirmReasons(confirmReasons) {}
+
+    void Draw() override {
+        ImGui::Text("%s", confirmReasons.c_str());
+        ImGui::Text("Close anyway ?");
+        if (ImGui::Button("  No  ")) {
+            CloseModal();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("  Yes  ")) {
+            CloseModal();
+            editor.Shutdown();
+        }
+    }
+    const char *DialogId() const override { return "Closing Usdtweak"; }
+    Editor &editor;
+    std::string confirmReasons;
+};
+
+
+void Editor::RequestShutdown() {
+    if (!_isShutdown) {
+        ExecuteAfterDraw<EditorShutdown>();
+    }
+}
+
+bool Editor::HasUnsavedWork() {
+    for (const auto &layer : SdfLayer::GetLoadedLayers()) {
+        if (layer && layer->IsDirty() && !layer->IsAnonymous()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Editor::ConfirmShutdown(std::string why) {
+    ForceCloseCurrentModal();
+    DrawModalDialog<CloseEditorModalDialog>(*this, why);
+}
+
 /// Modal dialog used to create a new layer
  struct CreateUsdFileModalDialog : public ModalDialog {
 
@@ -182,6 +223,14 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
                 }
             }
         }
+    }
+}
+
+void Editor::WindowCloseCallback(GLFWwindow *window) {
+    void *userPointer = glfwGetWindowUserPointer(window);
+    if (userPointer) {
+        Editor *editor = static_cast<Editor *>(userPointer);
+        editor->RequestShutdown();
     }
 }
 
@@ -339,7 +388,7 @@ void Editor::DrawMainMenuBar() {
 
             ImGui::Separator();
             if (ImGui::MenuItem("Quit")) {
-                _shutdownRequested = true;
+                RequestShutdown();
             }
             ImGui::EndMenu();
         }

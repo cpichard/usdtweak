@@ -85,6 +85,7 @@ int main(int argc, const char **argv) {
 
         glfwSetWindowUserPointer(window, &editor);
         glfwSetDropCallback(window, Editor::DropCallback);
+        glfwSetWindowCloseCallback(window, Editor::WindowCloseCallback);
 
         // Process command line options
         for (auto& stage : options.stages()) {
@@ -92,7 +93,7 @@ int main(int argc, const char **argv) {
         }
 
         // Loop until the user closes the window
-        while (!glfwWindowShouldClose(window) && !editor.ShutdownRequested()) {
+        while (!editor.IsShutdown()) {
 
             // Poll and process events
             glfwMakeContextCurrent(window);

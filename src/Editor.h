@@ -24,8 +24,14 @@ public:
     Editor(const Editor &) = delete;
     Editor &operator=(const Editor &) = delete;
 
-    /// Setting _shutdownRequested to true will stop the main loop
-    bool ShutdownRequested() const { return _shutdownRequested; }
+    /// Calling Shutdown will stop the main loop
+    void Shutdown() { _isShutdown = true; }
+    bool IsShutdown() const { return _isShutdown; }
+    void RequestShutdown();
+    void ConfirmShutdown(std::string why);
+
+    /// Check if there are some unsaved work, looking at all the layers dirtyness
+    bool HasUnsavedWork();
 
     /// Sets the current edited layer
     void SetCurrentLayer(SdfLayerRefPtr layer);
@@ -53,7 +59,7 @@ public:
     void CreateLayer(const std::string &path);
     void ImportLayer(const std::string &path);
     void CreateStage(const std::string &path);
-    void ImportStage(const std::string &path,  bool openLoaded=true);
+    void ImportStage(const std::string &path, bool openLoaded = true);
     void SaveCurrentLayerAs(const std::string &path);
 
     /// Render the hydra viewport
@@ -69,8 +75,11 @@ public:
     /// Draw the UI
     void Draw();
 
-    /// Handle drag and drop from external applications
+    /// glfw callback to handle drag and drop from external applications
     static void DropCallback(GLFWwindow *window, int count, const char **paths);
+
+    /// glfw callback to close the application
+    static void WindowCloseCallback(GLFWwindow *window);
 
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
@@ -97,8 +106,8 @@ private:
     SdfLayerRefPtrVector _layerHistory;
     size_t _layerHistoryPointer;
 
-    /// Setting _shutdownRequested to true will stop the main loop
-    bool _shutdownRequested = false;
+    /// Setting _isShutdown to true will stop the main loop
+    bool _isShutdown = false;
 
     ///
     /// Editor settings contains the windows states

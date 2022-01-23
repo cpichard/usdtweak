@@ -22,7 +22,7 @@ bool ShouldOpenModal() {
     }
 }
 
-void CloseModal() {
+void ModalDialog::CloseModal() {
     modalCloseTriggered = true; // Delete the dialog at the next frame;
     ImGui::CloseCurrentPopup();
 }
@@ -32,6 +32,13 @@ void CheckCloseModal() {
         modalCloseTriggered = false;
         delete currentModalDialog;
         currentModalDialog = nullptr;
+    }
+}
+
+void ForceCloseCurrentModal() {
+    if (currentModalDialog) {
+        currentModalDialog->CloseModal();
+        CheckCloseModal();
     }
 }
 
@@ -51,11 +58,11 @@ void DrawOkCancelModal(const std::function<void()> &onOk) {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetWindowWidth() - 3 * ImGui::CalcTextSize(" Cancel ").x -
                          ImGui::GetScrollX() - 2 * ImGui::GetStyle().ItemSpacing.x);
     if (ImGui::Button(" Cancel ")) {
-        CloseModal();
+        currentModalDialog->CloseModal();
     }
     ImGui::SameLine();
     if (ImGui::Button("   Ok   ")) {
         onOk();
-        CloseModal();
+        currentModalDialog->CloseModal();
     }
 }

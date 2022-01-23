@@ -8,6 +8,7 @@ struct ModalDialog {
     virtual void Draw() = 0;
     virtual ~ModalDialog(){};
     virtual const char *DialogId() const = 0;
+    static void CloseModal();
 };
 
 /// TODO: Get/Set CurrentModalDialog shouldn't be exposed in this header
@@ -28,5 +29,5 @@ void DrawCurrentModal();
 /// Convenience function to draw an Ok and Cancel buttons in a Modal dialog
 void DrawOkCancelModal(const std::function<void()> &onOk);
 
-/// Close the modal
-void CloseModal();
+/// Force closing the current modal dialog
+void ForceCloseCurrentModal();
