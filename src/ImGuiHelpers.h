@@ -12,13 +12,28 @@ template <> inline void TableSetupColumns(const char *label) { ImGui::TableSetup
 /// Creates a scoped object that will push the pair of style and color passed in the constructor
 /// It will pop the correct number of time when the object is destroyed
 struct ScopedStyleColor {
-    ScopedStyleColor() = default;
-    template <typename StyleT, typename ColorT, typename... Args> ScopedStyleColor(StyleT style, ColorT color, Args... args) {
-        ImGui::PushStyleColor(style, color);
-        if (sizeof...(Args))
-            ScopedStyleColor scope(args...); // TODO: use "if constexpr()" with C++17
+
+    ScopedStyleColor() = delete;
+
+    template <typename StyleT, typename ColorT, typename... Args>
+    ScopedStyleColor(StyleT &&style, ColorT &&color, Args... args) : nbPop(1 + sizeof...(args) / 2) {
+        PushStyles(style, color, args...);
     }
-    ~ScopedStyleColor() { ImGui::PopStyleColor(); }
+
+    template <typename StyleT, typename ColorT, typename... Args>
+    static void PushStyles(StyleT &&style, ColorT &&color, Args... args) { // constexpr is
+        ImGui::PushStyleColor(style, color);
+        PushStyles(args...);
+    }
+    static void PushStyles(){};
+
+    ~ScopedStyleColor() {
+        for (size_t i = 0; i < nbPop; i++) {
+            ImGui::PopStyleColor();
+        }
+    }
+
+    const size_t nbPop; // TODO: get rid of this constant and generate the correct number of pop at compile time
 };
 
 /// Plus Operation on ImVec2
