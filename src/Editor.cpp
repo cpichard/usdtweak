@@ -302,9 +302,6 @@ void Editor::SetNextLayer() {
 
 void Editor::UseLayer(SdfLayerRefPtr layer) {
     if (layer) {
-        if (_layers.find(layer) == _layers.end()) {
-            _layers.emplace(layer);
-        }
         SetCurrentLayer(layer);
         _settings._showContentBrowser = true;
         _settings._showLayerEditor = true;

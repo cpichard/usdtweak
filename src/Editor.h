@@ -102,7 +102,6 @@ private:
     UsdStageCache _stageCache;
 
     /// List of layers.
-    std::set<SdfLayerRefPtr> _layers;
     SdfLayerRefPtrVector _layerHistory;
     size_t _layerHistoryPointer;
 
