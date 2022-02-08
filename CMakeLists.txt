@@ -1,9 +1,25 @@
-cmake_minimum_required (VERSION 3.11)
+cmake_minimum_required (VERSION 3.14)
 project(UsdTweak)
 set(CMAKE_CXX_STANDARD 14)
-find_package(glfw3 3.2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(pxr REQUIRED)
+
+# for glfw, if the user doesn't specify the glfw install dir, we attempt to
+# download the latest version and add it to the project directly
+if (DEFINED glfw3_DIR)
+    find_package(glfw3 3.2 REQUIRED)
+else ()
+    include(FetchContent)
+    FetchContent_Declare(
+        glfw
+        URL https://github.com/glfw/glfw/releases/download/3.3.6/glfw-3.3.6.zip
+    )
+    set(GLFW_BUILD_EXAMPLES OFF)
+    set(GLFW_BUILD_TESTS OFF)
+    set(GLFW_BUILD_DOCS OFF)
+    FetchContent_MakeAvailable(glfw)
+endif (DEFINED glfw3_DIR)
+
 
 # Use folders in the generated xcode/vs projects
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)

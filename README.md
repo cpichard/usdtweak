@@ -1,9 +1,9 @@
 
 # usdtweak
 
-A free and open source Pixar's USD editor, still in early development.
+usdtweak is a free and open source Pixar's USD editor, still in early development, but it can already be used for small and simple tasks like cleaning asset coming from blender, creating new layers or even inspecting existing usd files.
 
-The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/OpenGL. The code is organised such that it should eventually be possible to reuse the widgets in other C++ projects using OpenGL and USD.
+This project is fully C++/OpenGL and relies on [ImGUI](https://github.com/ocornut/imgui) for the UI.
 
 ## Sneak peek
 
@@ -13,16 +13,16 @@ The UI is built with [ImGUI](https://github.com/ocornut/imgui) and is fully C++/
 
 The editor allows
 
-- editing multiple stages and layers
-- adding, deleting, reparenting, renaming SdfPrims in layers
-- creating and deleting variants
-- adding references and payloads, inherits, ...
-- changing property values
-- adding and deleting keys
-- translating, rotating, scaling objects in the viewport.
+- to edit multiple stages and layers at the same time, copying and pasting prims between layers.
+- to edit the layer hierarchy: adding, deleting, reparenting, and renaming prims
+- to create and delete variants, references and payloads, inherits, ...
+- to change property values in layers or stage. The arrays are not editable yet
+- to adding and deleting keys
+- a minimal viewport interaction: translating, rotating, scaling objects.
+- text editing for small files
 - and more ...
 
-They are still missing features and the editor hasn't faced users yet but I believe it might be useful in some situations, to replace text editors for small fixes, or to author a simple master stage. One of the original idea was to directly edit layers without the need of knowing the USD syntax, and the Layer editor has the basic functionalities for that. Drop me an email if you are interested in beta testing.
+The original idea was to be able to edit layers without knowing the USD syntax, and the layer editors have some of the basic functionalities for that. As this is my side project and I can only work on it a few hours during the week-end, the development is slow, but steady. Drop me an email if you are interested in beta testing or if you can't compile it.
 
 ## Building
 
@@ -30,14 +30,13 @@ They are still missing features and the editor hasn't faced users yet but I beli
 
 The project is almost self contained and only needs:
 
-- cmake > 3.6 and a C++14 compiler installed
+- cmake installed (version > 3.14)
+- a C++14 compiler installed: MSVC 19 or 17, gcc or llvm.
 - a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v21.11) version 21.11
-- a build of [GLFW](https://www.glfw.org/), [version 3.3.5](https://github.com/glfw/glfw/releases/download/3.3.5/glfw-3.3.5.zip) works
 
-If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 2 variables:
+If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 1 required variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
-- __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
 
 ### Compiling on linux
 
@@ -48,7 +47,7 @@ On linux it should compile with:
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-21.11 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
+    cmake -Dpxr_DIR=/installs/usd-21.11 ..
     make
 
 ### Compiling on MacOs
@@ -60,20 +59,30 @@ It compiles on MacOs Catalina. The viewport doesn't work as the required OpenGL 
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-21.11 -Dglfw3_DIR=/installs/glfw-3.3.2/lib/cmake/glfw3 ..
+    cmake -Dpxr_DIR=/installs/usd-21.11 ..
     make
 
 ### Compiling on Windows
 
-It should compile successfully on Windows 10 with MSVC 19 or 17, using the x64 Native Tools commands prompt.
+It should compile successfully on Windows 10 with MSVC 19 or 17. Make sure you open/use the x64 Native Tools commands prompt before typing the following commands:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 -Dglfw3_DIR=C:\installs\glfw-3.3.2\lib\cmake\glfw3 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 ..
     cmake --build . --config RelWithDebInfo
+
+### Compiling with your version of glfw
+
+Under the hood usdtweak is using [GLFW](https://www.glfw.org/). Cmake should normally download, compile and install glfw without any intervention. However, if you already have a compiled version you want to use, and you'll need to disable the automatic build of glfw, by passing an additional cmake variable:
+
+- __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
+
+A cmake command will then look like:
+
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 -Dglfw3_DIR=C:\installs\glfw3-3.3.6\lib\cmake\glfw3 ..
 
 ## Contact
 
