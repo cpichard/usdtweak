@@ -61,10 +61,15 @@ void DrawCameraList(Viewport &viewport) {
             UsdPrimRange range = viewport.GetCurrentStage()->Traverse();
             for (const auto &prim : range) {
                 if (prim.IsA<UsdGeomCamera>()) {
+                    ImGui::PushID(prim.GetPath().GetString().c_str());
                     const bool isSelected = (prim.GetPath() == viewport.GetCameraPath());
                     if (ImGui::Selectable(prim.GetName().data(), isSelected)) {
                         viewport.SetCameraPath(prim.GetPath());
                     }
+                    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 2) {
+                        ImGui::SetTooltip("%s", prim.GetPath().GetString().c_str());
+                    }
+                    ImGui::PopID();
                 }
             }
         }
