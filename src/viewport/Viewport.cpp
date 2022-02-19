@@ -310,7 +310,7 @@ void Viewport::HandleKeyboardShortcut() {
     if (ImGui::IsItemHovered()) {
         ImGuiIO &io = ImGui::GetIO();
         static bool SelectionManipulatorPressedOnce = true;
-        if (io.KeysDown[GLFW_KEY_Q]) {
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) {
             if (SelectionManipulatorPressedOnce) {
                 ChooseManipulator<MouseHoverManipulator>();
                 SelectionManipulatorPressedOnce = false;
@@ -320,7 +320,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool PositionManipulatorPressedOnce = true;
-        if (io.KeysDown[GLFW_KEY_W]) {
+        if (ImGui::IsKeyDown(ImGuiKey_W)) {
             if (PositionManipulatorPressedOnce) {
                 ChooseManipulator<PositionManipulator>();
                 PositionManipulatorPressedOnce = false;
@@ -330,7 +330,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool RotationManipulatorPressedOnce = true;
-        if (io.KeysDown[GLFW_KEY_E]) {
+        if (ImGui::IsKeyDown(ImGuiKey_E)) {
             if (RotationManipulatorPressedOnce) {
                 ChooseManipulator<RotationManipulator>();
                 RotationManipulatorPressedOnce = false;
@@ -340,7 +340,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool ScaleManipulatorPressedOnce = true;
-        if (io.KeysDown[GLFW_KEY_R]) {
+        if (ImGui::IsKeyDown(ImGuiKey_R)) {
             if (ScaleManipulatorPressedOnce) {
                 ChooseManipulator<ScaleManipulator>();
                 ScaleManipulatorPressedOnce = false;

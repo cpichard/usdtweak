@@ -24,7 +24,7 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
     /// If the user released key alt, escape camera manipulation
-    if (!io.KeysDown[GLFW_KEY_LEFT_ALT]) {
+    if (!ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     } else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
         SetMovementType(MovementType::None);

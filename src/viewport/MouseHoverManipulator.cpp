@@ -5,7 +5,7 @@
 Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
 
-    if (io.KeysDown[GLFW_KEY_LEFT_ALT]) {
+    if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
         return viewport.GetManipulator<CameraManipulator>();
     }
     else if (ImGui::IsMouseClicked(0)) {
@@ -16,7 +16,7 @@ Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
             return viewport.GetManipulator<SelectionManipulator>();
         }
     }
-    else if (ImGui::IsKeyPressed(GLFW_KEY_F)) {
+    else if (ImGui::IsKeyDown(ImGuiKey_F)) {
         const Selection &selection = viewport.GetSelection();
         if (!IsSelectionEmpty(selection)) {
             viewport.FrameSelection(viewport.GetSelection());

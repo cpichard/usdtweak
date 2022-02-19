@@ -46,7 +46,7 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
             }
         }
 
-        if (ImGui::IsKeyDown(GLFW_KEY_LEFT_SHIFT)) {
+        if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
             AddSelection(selection, outHitPrimPath);
         } else {
             SetSelected(selection, outHitPrimPath);

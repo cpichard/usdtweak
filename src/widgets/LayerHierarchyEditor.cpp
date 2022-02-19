@@ -441,10 +441,10 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
         ImGui::EndTable();
     }
     if (ImGui::IsItemHovered() && selectedPrim) {
-        AddShortcut<PrimRemove, GLFW_KEY_DELETE>(selectedPrim);
-        AddShortcut<PrimCopy, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_C>(selectedPrim);
-        AddShortcut<PrimPaste, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_V>(selectedPrim);
-        AddShortcut<PrimDuplicate, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_D>(selectedPrim,
+        AddShortcut<PrimRemove, ImGuiKey_Delete>(selectedPrim);
+        AddShortcut<PrimCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPrim);
+        AddShortcut<PrimPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(selectedPrim);
+        AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim,
                                                                       FindNextAvailablePrimName(selectedPrim->GetName()));
 
     }
