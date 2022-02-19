@@ -110,7 +110,7 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _renderparams->showRender = false;
     _renderparams->forceRefresh = false;
     _renderparams->enableLighting = true;
-    _renderparams->enableSceneMaterials = true;
+    _renderparams->enableSceneMaterials = false;
     _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
     _renderparams->highlight = true;
     _renderparams->gammaCorrectColors = false;
