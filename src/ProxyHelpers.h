@@ -29,9 +29,9 @@ static void IterateListEditorItems(const SdfListEditorProxy<PolicyT> &listEditor
 }
 
 /// The operations available on a SdfListEditor
-constexpr int GetListEditorOperationSize() { return 4; }
+constexpr int GetListEditorOperationSize() { return 5; }
 inline const char *GetListEditorOperationName(int index) {
-    constexpr const char *names[GetListEditorOperationSize()] = {"Add", "Prepend", "Append", "Remove"};
+    constexpr const char *names[GetListEditorOperationSize()] = {"Add", "Prepend", "Append", "Remove", "Explicit"};
     return names[index];
 }
 
@@ -50,6 +50,9 @@ void CreateListEditorOperation(SdfListEditorProxy<PolicyT> &&listEditor, int ope
         break;
     case 3:
         listEditor.Remove(item);
+        break;
+    case 4:
+        listEditor.GetExplicitItems().push_back(item);
         break;
     default:
         assert(0);
