@@ -295,6 +295,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                 if (modified != VtValue()) {
                     ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, *attribute, modified);
                 }
+                ImGui::PopItemWidth();
             }
 
             if (unfolded) {
@@ -320,6 +321,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
                         ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(),
                                          sample->first, modified);
                     }
+                    ImGui::PopItemWidth();
                 }
                 ImGui::TreePop();
             }
@@ -409,6 +411,7 @@ template <typename MetadataField> void DrawMetadataRow(SdfPrimSpecHandle &primSp
     ImGui::TableSetColumnIndex(2);
     ImGui::PushItemWidth(-FLT_MIN);
     DrawMetadataFieldValue<MetadataField>(primSpec);
+    ImGui::PopItemWidth();
 }
 
 
@@ -484,6 +487,7 @@ static void DrawAssetInfo(SdfPrimSpecHandle prim) {
                 if (modified != VtValue()) {
                     ExecuteAfterDraw(&SdfPrimSpec::SetAssetInfo, prim, keyValue->first, modified);
                 }
+                ImGui::PopItemWidth();
             }
             ImGui::EndTable();
             ImGui::Separator();
