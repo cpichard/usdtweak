@@ -142,6 +142,7 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *
         }
         ImGui::EndListBox();
     }
+    ImGui::PopItemWidth();
 }
 
 void DrawContentBrowser(Editor &editor) {

@@ -51,6 +51,7 @@ static void DrawVariantSelection(SdfPrimSpecHandle &primSpec) {
                 ImGui::TableSetColumnIndex(2);
                 ImGui::PushItemWidth(-FLT_MIN);
                 DrawVariantSelectionCombo(primSpec, variantSelection, buttonId);
+                ImGui::PopItemWidth();
             }
 
             ImGui::EndTable();

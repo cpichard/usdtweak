@@ -261,6 +261,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
                 }
                 ImGui::EndCombo();
             }
+            ImGui::PopItemWidth();
         }
         ImGui::EndTable();
     }
@@ -291,6 +292,7 @@ bool DrawAssetInfo(UsdPrim &prim) {
             if (!modified.IsEmpty()) {
                 ExecuteAfterDraw(&UsdPrim::SetAssetInfoByKey, prim, TfToken(keyValue->first), modified);
             }
+            ImGui::PopItemWidth();
         }
         ImGui::EndTable();
     }
@@ -426,7 +428,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
                 ImGui::TableSetColumnIndex(2);
                 ImGui::PushItemWidth(-FLT_MIN); // Right align and get rid of widget label
                 DrawAttributeValueAtTime(attribute, currentTime);
-
+                ImGui::PopItemWidth();
                 // TODO: in the hint ???
                 // DrawAttributeTypeInfo(attribute);
             }
@@ -489,6 +491,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
                 translation[2] = translationf[2];
                 ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translation, currentTime);
             }
+            ImGui::PopItemWidth();
             // Rotation
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -503,6 +506,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotation, rotOrder, currentTime);
             }
+            ImGui::PopItemWidth();
             // Scale
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -517,7 +521,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scale, currentTime);
             }
-
+            ImGui::PopItemWidth();
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             DrawPropertyMiniButton("(x)");
@@ -526,10 +530,12 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::Text("pivot");
 
             ImGui::TableSetColumnIndex(2);
+            ImGui::PushItemWidth(-FLT_MIN);
             ImGui::InputFloat3("Pivot", pivot.data(), DecimalPrecision);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
             }
+            ImGui::PopItemWidth();
             // TODO rotation order
             ImGui::EndTable();
         }

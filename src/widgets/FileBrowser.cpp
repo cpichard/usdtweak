@@ -314,7 +314,7 @@ void DrawFileBrowser() {
         ImGui::EndListBox();
     }
 
-    ImGui::PushItemWidth(0);
+    ImGui::PopItemWidth();
     ImGui::InputText("File name", &lineEditBuffer);
 }
 
