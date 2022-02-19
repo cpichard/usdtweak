@@ -237,9 +237,10 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
         for (int n = 0; n < allSpecTypes.size(); n++) {
             const auto typeAsChar = allSpecTypes[n].c_str();
             const bool isSelected = strcmp(currentItem, typeAsChar) == 0;
-            if (ImGui::Selectable(typeAsChar[0]=='\0' ? "##notype" : typeAsChar, isSelected)) {
+            if (ImGui::Selectable(typeAsChar[0] == '\0' ? "##notype" : typeAsChar, isSelected)) {
                 currentItem = typeAsChar;
             }
+            FocusLastItemOnKeyPressed(typeAsChar);
         }
 
         if (primSpec->GetTypeName() != ClassTokenFromChar(currentItem)) {
