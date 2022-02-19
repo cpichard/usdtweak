@@ -350,6 +350,7 @@ static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &
         };
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), replaceItemEdits);
     }
+    ImGui::PopItemWidth();
     ImGui::PopID();
 }
 
