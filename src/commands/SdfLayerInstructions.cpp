@@ -1,9 +1,13 @@
-
+#include <iostream>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/abstractData.h>
 #include "SdfLayerInstructions.h"
 
 static void _CopySpec(const SdfAbstractData &src, SdfAbstractData *dst, const SdfPath &path) {
+    if (!dst) {
+        std::cerr << "ERROR: when copying the destination prim is null at path " << path.GetString() << std::endl;
+        return;
+    }
     dst->CreateSpec(path, src.GetSpecType(path));
     const TfTokenVector &fields = src.List(path);
     TF_FOR_ALL(i, fields) { dst->Set(path, *i, src.Get(path, *i)); }
