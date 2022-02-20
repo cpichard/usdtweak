@@ -36,9 +36,6 @@ class Viewport final {
     /// Update internal data: selection, current renderer
     void Update();
 
-    /// Set the hydra render size
-    void SetSize(int width, int height);
-
     /// Draw the full widget
     void Draw();
 
@@ -134,7 +131,7 @@ class Viewport final {
     // another shared object, CameraList or similar
     GfCamera _perspectiveCamera; // opengl
 
-    GfVec2i _viewportSize;
+    GfVec2i _textureSize;
     GfVec2d _mousePosition;
     Grid _grid;
 

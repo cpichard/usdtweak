@@ -89,12 +89,12 @@ void DrawCameraList(Viewport &viewport) {
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
-      _viewportSize(InitialWindowWidth, InitialWindowHeight), _selectedCameraPath(perspectiveCameraPath), _renderCamera(&_perspectiveCamera) {
+      _textureSize(1, 1), _selectedCameraPath(perspectiveCameraPath), _renderCamera(&_perspectiveCamera) {
 
     // Viewport draw target
     _cameraManipulator.ResetPosition(GetCurrentCamera());
 
-    _drawTarget = GlfDrawTarget::New(_viewportSize, false);
+    _drawTarget = GlfDrawTarget::New(_textureSize, false);
     _drawTarget->Bind();
     _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
     _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
@@ -159,7 +159,8 @@ Viewport::~Viewport() {
 
 /// Draw the viewport widget
 void Viewport::Draw() {
-    ImVec2 wsize = ImGui::GetWindowSize();
+    const ImVec2 wsize = ImGui::GetWindowSize();
+
     ImGui::Button("\xef\x80\xb0 Cameras");
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
@@ -200,10 +201,13 @@ void Viewport::Draw() {
     ImGui::SetNextItemWidth(100);
     DrawPickMode(_selectionManipulator);
 
+    // Set the size of the texture here as we need the current window size
+    const auto cursorPos = ImGui::GetCursorPos();
+    _textureSize = GfVec2i(wsize[0], std::max(1.f, wsize[1] - cursorPos.y - 2 * GImGui->Style.ItemSpacing.y));
+
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
-        auto cursorPos = ImGui::GetCursorPos();
-        ImGui::Image((ImTextureID)_textureId, ImVec2(wsize.x, wsize.y - ViewportBorderSize), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image((ImTextureID)_textureId, ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
         //if (ImGui::BeginPopupContextItem()) {
@@ -252,11 +256,6 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
         ChooseManipulator<ScaleManipulator>();
     }
      ImGui::PopStyleColor();
-}
-
-/// Resize the Hydra viewport/render panel
-void Viewport::SetSize(int width, int height) {
-    _viewportSize = GfVec2i(width, height);
 }
 
 /// Frane the viewport using the bounding box of the selection
@@ -494,13 +493,14 @@ void Viewport::Update() {
     }
 
     const GfVec2i &currentSize = _drawTarget->GetSize();
-    if (currentSize != _viewportSize) {
+    if (currentSize != _textureSize) {
         _drawTarget->Bind();
-        _drawTarget->SetSize(_viewportSize);
+        _drawTarget->SetSize(_textureSize);
         _drawTarget->Unbind();
     }
+
     // This is useful when a different camera is selected, when the focal length is changed
-    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_viewportSize[0]) / double(_viewportSize[1]),
+    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_textureSize[0]) / double(_textureSize[1]),
                                                                    _renderCamera->GetFieldOfView(GfCamera::FOVHorizontal),
                                                                    GfCamera::FOVHorizontal);
     if (_renderer && UpdateSelectionHash(_selection, _lastSelectionHash)) {

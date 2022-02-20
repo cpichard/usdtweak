@@ -10,9 +10,6 @@ constexpr float PI_F = 3.14159265;
 constexpr int InitialWindowWidth = 1024;
 constexpr int InitialWindowHeight = 1024;
 
-/// Viewport border between the panel and the window
-constexpr float ViewportBorderSize = 60.f;
-
 /// Height of a row in the property editor
 constexpr float TableRowHeight = 22.f;
 
