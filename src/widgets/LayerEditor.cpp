@@ -252,7 +252,7 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
     ImGui::SameLine();
     {
         ScopedStyleColor layerIsDirtyColor(ImGuiCol_Text,
-                                           layer->IsDirty() ? ImGui::GetColorU32(ImGuiCol_Text) : ImU32(ImColor{GreyishColor}));
+                                           layer->IsDirty() ? ImGui::GetColorU32(ImGuiCol_Text) : ImU32(ImColor{ColorGreyish}));
         if (ImGui::Button(ICON_FA_REDO_ALT)) {
             ExecuteAfterDraw(&SdfLayer::Reload, layer, false);
         }
@@ -266,7 +266,7 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
         return;
 
     {
-        ScopedStyleColor textBackground(ImGuiCol_Header, ImU32(ImColor{PrimHasCompositionColor}));
+        ScopedStyleColor textBackground(ImGuiCol_Header, ImU32(ImColor{ColorPrimHasComposition}));
         ImGui::Selectable("##LayerNavigation");
         ImGui::SameLine();
         ImGui::Text("Layer: %s", layer->GetRealPath().c_str());

@@ -311,7 +311,7 @@ void DrawPrimCompositions(SdfPrimSpecHandle &primSpec) {
 template <typename PathListT>
 inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec,
                                int &menuItemId) {
-    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
     if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
         ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
@@ -329,7 +329,7 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
 template <typename AssetPathT>
 inline void DrawAssetPathSummary(std::string &&header, const char *operation, const AssetPathT &assetPath,
                                  SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
     if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
         auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());

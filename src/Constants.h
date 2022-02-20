@@ -17,20 +17,20 @@ constexpr float TableRowHeight = 22.f;
 constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 
 /// Predefined colors for the different widgets
-#define AttributeAuthoredColor {1.0, 1.0, 1.0, 1.0}
-#define AttributeUnauthoredColor {0.5, 0.5, 0.5, 1.0}
-#define AttributeRelationshipColor {0.5, 0.5, 0.9, 1.0}
-#define AttributeConnectionColor {0.5, 0.5, 0.9, 1.0}
-#define MiniButtonAuthoredColor {0.0, 1.0, 0.0, 1.0}
-#define MiniButtonUnauthoredColor {0.6, 0.6, 0.6, 1.0}
-#define TransparentColor {0.0, 0.0, 0.0, 0.0}
-#define PrimDefaultColor {227.f/255.f, 227.f/255.f, 227.f/255.f, 1.0}
-#define PrimInactiveColor {0.4, 0.4, 0.4, 1.0}
-#define PrimInstanceColor {135.f/255.f, 206.f/255.f, 250.f/255.f, 1.0}
-#define PrimPrototypeColor {118.f/255.f, 136.f/255.f, 217.f/255.f, 1.0}
-#define PrimHasCompositionColor {222.f/255.f, 158.f/255.f, 46.f/255.f, 1.0}
-#define GreyishColor {0.5, 0.5, 0.5, 1.0}
-#define ButtonHighlightColor {0.5, 0.7, 0.5, 0.7}
+#define ColorAttributeAuthored {1.0, 1.0, 1.0, 1.0}
+#define ColorAttributeUnauthored {0.5, 0.5, 0.5, 1.0}
+#define ColorAttributeRelationship {0.5, 0.5, 0.9, 1.0}
+#define ColorAttributeConnection {0.5, 0.5, 0.9, 1.0}
+#define ColorMiniButtonAuthored {0.0, 1.0, 0.0, 1.0}
+#define ColorMiniButtonUnauthored {0.6, 0.6, 0.6, 1.0}
+#define ColorTransparent {0.0, 0.0, 0.0, 0.0}
+#define ColorPrimDefault {227.f/255.f, 227.f/255.f, 227.f/255.f, 1.0}
+#define ColorPrimInactive {0.4, 0.4, 0.4, 1.0}
+#define ColorPrimInstance {135.f/255.f, 206.f/255.f, 250.f/255.f, 1.0}
+#define ColorPrimPrototype {118.f/255.f, 136.f/255.f, 217.f/255.f, 1.0}
+#define ColorPrimHasComposition {222.f/255.f, 158.f/255.f, 46.f/255.f, 1.0}
+#define ColorGreyish {0.5, 0.5, 0.5, 1.0}
+#define ColorButtonHighlight {0.5, 0.7, 0.5, 0.7}
 
 /// Decimal Precision shown in the floating point values UI
 constexpr const char * DecimalPrecision = "%.5f";

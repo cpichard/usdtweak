@@ -92,7 +92,7 @@ inline void ConvertToDirectory(const fs::path &path, std::string &directory) {
 static bool DrawNavigationBar(fs::path &displayedDirectory) {
     // Split the path navigator ??
     std::string lineEditBuffer;
-    ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
     const std::string &directoryPath = displayedDirectory.string();
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
@@ -136,7 +136,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
 
 inline
 static bool DrawRefreshButton() {
-    ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::SameLine();
     const float buttonPosX = ImGui::GetWindowContentRegionMax().x - 20; // 20 == button size
     ImGui::SetCursorPosX(buttonPosX);

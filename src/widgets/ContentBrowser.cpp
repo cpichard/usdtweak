@@ -68,7 +68,7 @@ static bool PassOptionsFilter(SdfLayerHandle layer, const ContentBrowserOptions 
 }
 
 static inline void DrawSaveButton(SdfLayerHandle layer) {
-    ScopedStyleColor style(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
     if (ImGui::SmallButton(layer->IsDirty() ? ICON_FA_SAVE "###Save" : "  ###Save")) {
         ExecuteAfterDraw(&SdfLayer::Save, layer, true);
     }

@@ -8,7 +8,7 @@
 #include "ImGuiHelpers.h"
 
 static void DrawVariantSelectionMiniButton(SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
-    ScopedStyleColor style(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0), ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor style(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0), ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(buttonId++);
     if (ImGui::SmallButton(ICON_DELETE)) {
         // ExecuteAfterDraw(&SdfPrimSpec::BlockVariantSelection, primSpec); // TODO in 21.02

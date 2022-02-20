@@ -434,7 +434,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
             ImGui::TreePop();
         }
         if (selectedPosY != -1) {
-            ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ButtonHighlightColor));
+            ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ColorButtonHighlight));
             ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 160);
             ImGui::SetCursorPosY(selectedPosY);
             DrawMiniToolbar(layer, selectedPrim);

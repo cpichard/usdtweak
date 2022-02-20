@@ -101,7 +101,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
                 ExecuteAfterDraw(&UsdAttribute::RemoveConnection, attribute, connection);
             }
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(AttributeConnectionColor), ICON_FA_LINK " %s", connection.GetString().c_str());
+            ImGui::TextColored(ImVec4(ColorAttributeConnection), ICON_FA_LINK " %s", connection.GetString().c_str());
             ImGui::PopID();
         }
     }
@@ -113,7 +113,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
 
 void DrawUsdRelationshipDisplayName(const UsdRelationship &relationship) {
     std::string relationshipName = GetDisplayName(relationship);
-    ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(AttributeAuthoredColor) : ImVec4(AttributeUnauthoredColor);
+    ImVec4 attributeNameColor = relationship.IsAuthored() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored);
     ImGui::TextColored(ImVec4(attributeNameColor), "%s", relationshipName.c_str());
 }
 
@@ -179,8 +179,8 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
 }
 
 // TODO Share the code,
-static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(MiniButtonUnauthoredColor)) {
-    ScopedStyleColor miniButtonStyle(ImGuiCol_Text, btnColor, ImGuiCol_Button, ImVec4(TransparentColor) );
+static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(ColorMiniButtonUnauthored)) {
+    ScopedStyleColor miniButtonStyle(ImGuiCol_Text, btnColor, ImGuiCol_Button, ImVec4(ColorTransparent) );
     ImGui::SmallButton(btnStr);
 }
 
@@ -206,7 +206,7 @@ template <> void DrawMenuCreateValue(UsdAttribute &attribute) {
 template <typename UsdPropertyT>
 void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
     ImVec4 propertyColor =
-        property.IsAuthoredAt(editTarget) ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
+        property.IsAuthoredAt(editTarget) ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
     DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         DrawMenuSetKey(property, currentTime);
@@ -244,7 +244,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
             // TODO: how do we figure out if the variant set has been edited in this edit target ?
             // Otherwise after a "Clear variant selection" the button remains green and it visually looks like it did nothing
             ImVec4 variantColor =
-                variantSet.HasAuthoredVariantSelection() ? ImVec4(MiniButtonAuthoredColor) : ImVec4(MiniButtonUnauthoredColor);
+                variantSet.HasAuthoredVariantSelection() ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
             ImGui::PushID(buttonID++);
             DrawPropertyMiniButton("(v)", variantColor);
             ImGui::PopID();
@@ -322,7 +322,6 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
             }
             if (ImGui::MenuItem("Relation", nullptr)) {
             }
-
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Show")) {
@@ -371,20 +370,20 @@ void DrawUsdPrimEditTarget(UsdPrim &prim) {
 // TODO: this is a copied function that needs to be moved in the next release
 static ImVec4 GetPrimColor(const UsdPrim &prim) {
     if (!prim.IsActive() || !prim.IsLoaded()) {
-        return ImVec4(PrimInactiveColor);
+        return ImVec4(ColorPrimInactive);
     }
     if (prim.IsInstance()) {
-        return ImVec4(PrimInstanceColor);
+        return ImVec4(ColorPrimInstance);
     }
     const auto hasCompositionArcs = prim.HasAuthoredReferences() || prim.HasAuthoredPayloads() || prim.HasAuthoredInherits() ||
                                     prim.HasAuthoredSpecializes() || prim.HasVariantSets();
     if (hasCompositionArcs) {
-        return ImVec4(PrimHasCompositionColor);
+        return ImVec4(ColorPrimHasComposition);
     }
     if (prim.IsPrototype() || prim.IsInPrototype() || prim.IsInstanceProxy()) {
-        return ImVec4(PrimPrototypeColor);
+        return ImVec4(ColorPrimPrototype);
     }
-    return ImVec4(PrimDefaultColor);
+    return ImVec4(ColorPrimDefault);
 }
 
 void DrawUsdPrimHeader(UsdPrim &prim) {

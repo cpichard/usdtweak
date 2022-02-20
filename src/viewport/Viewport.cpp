@@ -227,7 +227,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
     const ImVec2 buttonSize(25, 25); // Button size
     const ImVec2 toolBoxPos(15, 15); // Alignment
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
-    const ImVec4 selectedColor(ButtonHighlightColor);
+    const ImVec4 selectedColor(ColorButtonHighlight);
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));

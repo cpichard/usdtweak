@@ -66,20 +66,20 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
 
 static ImVec4 GetPrimColor(const UsdPrim &prim) {
     if (!prim.IsActive() || !prim.IsLoaded()) {
-        return ImVec4(PrimInactiveColor);
+        return ImVec4(ColorPrimInactive);
     }
     if (prim.IsInstance()) {
-        return ImVec4(PrimInstanceColor);
+        return ImVec4(ColorPrimInstance);
     }
     const auto hasCompositionArcs = prim.HasAuthoredReferences() || prim.HasAuthoredPayloads() || prim.HasAuthoredInherits() ||
                                     prim.HasAuthoredSpecializes() || prim.HasVariantSets();
     if (hasCompositionArcs) {
-        return ImVec4(PrimHasCompositionColor);
+        return ImVec4(ColorPrimHasComposition);
     }
     if (prim.IsPrototype() || prim.IsInPrototype() || prim.IsInstanceProxy()) {
-        return ImVec4(PrimPrototypeColor);
+        return ImVec4(ColorPrimPrototype);
     }
-    return ImVec4(PrimDefaultColor);
+    return ImVec4(ColorPrimDefault);
 }
 
 /// Recursive function to draw a prim and its descendants
@@ -101,7 +101,7 @@ static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
             SetSelected(selectedPaths, prim.GetPath());
         }
         {
-            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(PrimDefaultColor));
+            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
             if (ImGui::BeginPopupContextItem()) {
                 DrawUsdPrimEditMenuItems(prim);
                 ImGui::EndPopup();
