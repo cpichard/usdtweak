@@ -217,6 +217,7 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
 
     static SdfLayerRefPtr selectedParent;
     static std::string selectedLayerPath;
+    DrawLayerNavigation(layer);
 
     if (ImGui::Button("Add sublayer")) {
         DrawModalDialog<AddSublayer>(layer);
@@ -239,10 +240,8 @@ void DrawLayerSublayers(SdfLayerRefPtr layer) {
     }
 }
 
-void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) {
-    if (ImGui::Button(ICON_FA_HOME)) {
-    }
-    ImGui::SameLine();
+void DrawLayerNavigation(SdfLayerRefPtr layer) {
+    if (!layer) return;
     if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
         ExecuteAfterDraw<EditorSetPreviousLayer>();
     }
@@ -251,10 +250,27 @@ void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPrim) 
         ExecuteAfterDraw<EditorSetNextLayer>();
     }
     ImGui::SameLine();
+    {
+        ScopedStyleColor layerIsDirtyColor(ImGuiCol_Text,
+                                           layer->IsDirty() ? ImGui::GetColorU32(ImGuiCol_Text) : ImU32(ImColor(GreyishColor)));
+        if (ImGui::Button(ICON_FA_REDO_ALT)) {
+            ExecuteAfterDraw(&SdfLayer::Reload, layer, false);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_SAVE)) {
+            ExecuteAfterDraw(&SdfLayer::Save, layer, false);
+        }
+    }
+    ImGui::SameLine();
     if (!layer)
         return;
-    ImGui::SameLine();
-    ImGui::Text("%s", layer->GetRealPath().c_str());
+
+    {
+        ScopedStyleColor textBackground(ImGuiCol_Header, ImU32(ImColor(PrimHasCompositionColor)));
+        ImGui::Selectable("##LayerNavigation");
+        ImGui::SameLine();
+        ImGui::Text("Layer: %s", layer->GetRealPath().c_str());
+    }
 }
 
 /// Draw a popup menu with the possible action on a layer

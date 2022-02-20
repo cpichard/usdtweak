@@ -84,9 +84,6 @@ public:
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
 
-    /// Make the layer editor visible
-    void ShowLayerEditor() { _settings._showLayerEditor = true; }
-
 private:
 
     /// Make sure the layer is correctly in the list of layers,

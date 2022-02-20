@@ -304,7 +304,6 @@ void Editor::UseLayer(SdfLayerRefPtr layer) {
     if (layer) {
         SetCurrentLayer(layer);
         _settings._showContentBrowser = true;
-        _settings._showLayerEditor = true;
     }
 }
 
@@ -412,7 +411,6 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem("Stage property editor", nullptr, &_settings._showPropertyEditor);
             ImGui::MenuItem("Stage timeline", nullptr, &_settings._showTimeline);
             ImGui::MenuItem("Stage viewport", nullptr, &_settings._showViewport);
-            ImGui::MenuItem("Layer navigator", nullptr, &_settings._showLayerEditor);
             ImGui::MenuItem("Layer hierarchy", nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem("Layer property editor", nullptr, &_settings._showPrimSpecEditor);
@@ -466,16 +464,6 @@ void Editor::Draw() {
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
         GetViewport().SetCurrentTimeCode(tc);
-        ImGui::End();
-    }
-
-    if (_settings._showLayerEditor) {
-        const auto &rootLayer = GetCurrentLayer();
-        const std::string title(
-            "Layer navigation" + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
-            "###Layer navigation");
-        ImGui::Begin(title.c_str(), &_settings._showLayerEditor);
-        DrawLayerNavigation(rootLayer,  GetSelectedPrimSpec());
         ImGui::End();
     }
 

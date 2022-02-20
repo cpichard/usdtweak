@@ -8,6 +8,6 @@ void DrawLayerHeader(SdfLayerRefPtr layer);
 ///
 void DrawLayerActionPopupMenu(SdfLayerHandle layer);
 
-void DrawLayerNavigation(SdfLayerRefPtr layer, SdfPrimSpecHandle& selectedPrim);
+void DrawLayerNavigation(SdfLayerRefPtr layer);
 
 void DrawLayerSublayers(SdfLayerRefPtr layer);

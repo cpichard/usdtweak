@@ -45,7 +45,7 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
     // Editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
     if (sscanf(line, "ShowLayerEditor=%i", &value) == 1) {
-        settings._showLayerEditor = static_cast<bool>(value);
+        // Discarding old preference
     } else if (sscanf(line, "ShowLayerHierarchyEditor=%i", &value) == 1) {
         settings._showLayerHierarchyEditor = static_cast<bool>(value);
     } else if (sscanf(line, "ShowLayerStackEditor=%i", &value) == 1) {
@@ -74,7 +74,6 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
     // Saving the editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
     buf->appendf("[%s][%s]\n", iniHandler->TypeName, "Editor");
-    buf->appendf("ShowLayerEditor=%d\n", settings._showLayerEditor);
     buf->appendf("ShowLayerHierarchyEditor=%d\n", settings._showLayerHierarchyEditor);
     buf->appendf("ShowLayerStackEditor=%d\n", settings._showLayerStackEditor);
     buf->appendf("ShowPropertyEditor=%d\n", settings._showPropertyEditor);

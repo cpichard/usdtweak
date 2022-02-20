@@ -388,6 +388,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
     if (!layer)
         return;
 
+    DrawLayerNavigation(layer);
     DrawMiniToolbar(layer, selectedPrim);
 
     auto tableCursor = ImGui::GetCursorPosY();
