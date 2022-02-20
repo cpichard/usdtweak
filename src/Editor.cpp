@@ -428,6 +428,9 @@ void Editor::Draw() {
     // Main Menu bar
     DrawMainMenuBar();
 
+    const auto &rootLayer = GetCurrentLayer();
+    const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
+
     if (_settings._showViewport) {
         ImGui::Begin("Viewport", &_settings._showViewport);
         GetViewport().Draw();
@@ -442,7 +445,8 @@ void Editor::Draw() {
     }
 
     if (_settings._showPropertyEditor) {
-        ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
+        // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin("Stage property editor", &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
@@ -466,34 +470,29 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerHierarchyEditor) {
-        const auto &rootLayer = GetCurrentLayer();
-        const std::string title(
-            "Layer hierarchy " + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
-            "###Layer hierarchy");
-        ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor);
+        const std::string title("Layer hierarchy " + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
+                                "###Layer hierarchy");
+        ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor, layerWindowFlag);
         DrawLayerPrimHierarchy(rootLayer, GetSelectedPrimSpec());
         ImGui::End();
     }
 
     if (_settings._showLayerStackEditor) {
-        const auto &rootLayer = GetCurrentLayer();
-        const std::string title(
-            "Layer stack " + (rootLayer ? (" - " + rootLayer->GetDisplayName() + (rootLayer->IsDirty() ? " *" : " ")) : "") +
-            "###Layer stack");
-        ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor);
+        const std::string title("Layer stack " + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
+        ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor, layerWindowFlag);
         DrawLayerSublayers(rootLayer);
         ImGui::End();
     }
 
     if (_settings._showContentBrowser) {
-        ImGuiWindowFlags windowFlags = 0 | ImGuiWindowFlags_MenuBar;
+        const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         ImGui::Begin("Content browser", &_settings._showContentBrowser, windowFlags);
         DrawContentBrowser(*this);
         ImGui::End();
     }
 
     if (_settings._showPrimSpecEditor) {
-        ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor);
+        ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor, layerWindowFlag);
         if (GetSelectedPrimSpec()) {
             DrawPrimSpecEditor(GetSelectedPrimSpec());
         } else {
