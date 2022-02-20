@@ -21,7 +21,7 @@
 #include "Commands.h"
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
-#include "LayerEditor.h"
+#include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
 #include "CompositionEditor.h"
 #include "ImGuiHelpers.h"

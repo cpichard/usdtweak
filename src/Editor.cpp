@@ -13,7 +13,7 @@
 #include <pxr/usd/usdGeom/gprim.h>
 #include "Gui.h"
 #include "Editor.h"
-#include "LayerEditor.h"
+#include "SdfLayerEditor.h"
 #include "LayerHierarchyEditor.h"
 #include "FileBrowser.h"
 #include "PropertyEditor.h"

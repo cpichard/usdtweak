@@ -23,7 +23,7 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "VtValueEditor.h"
-#include "LayerEditor.h"
+#include "SdfLayerEditor.h"
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
 
