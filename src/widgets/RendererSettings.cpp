@@ -71,7 +71,9 @@ void DrawOpenGLSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &
     ImGui::Separator();
     ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
+    ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
+    ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
 }
 
 void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
