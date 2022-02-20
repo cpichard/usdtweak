@@ -5,12 +5,14 @@
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/pcp/node.h>
+#include <pxr/usd/pcp/layerStack.h>
 #include "Gui.h"
 #include "PropertyEditor.h"
 #include "ValueEditor.h"
 #include "Constants.h"
 #include "Commands.h"
 #include "ModalDialogs.h"
+#include "ImGuiHelpers.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -178,11 +180,8 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
 
 // TODO Share the code,
 static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(MiniButtonUnauthoredColor)) {
-    ImGui::PushStyleColor(ImGuiCol_Text, btnColor);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(TransparentColor));
+    ScopedStyleColor miniButtonStyle(ImGuiCol_Text, btnColor, ImGuiCol_Button, ImVec4(TransparentColor) );
     ImGui::SmallButton(btnStr);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
 }
 
 template <typename UsdPropertyT> void DrawMenuEditConnection(UsdPropertyT &property) {}
@@ -343,63 +342,113 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
     }
 }
 
+// First version of an edit target selector
+void DrawUsdPrimEditTarget(UsdPrim &prim) {
+    using Query = pxr::UsdPrimCompositionQuery;
+    auto filter = UsdPrimCompositionQuery::Filter();
+    pxr::UsdPrimCompositionQuery arc(prim, filter);
+    auto compositionArcs = arc.GetCompositionArcs();
+    if (ImGui::MenuItem("Session layer")) {
+        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
+    }
+    if (ImGui::MenuItem("Root layer")) {
+        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+    }
+    for (auto a : compositionArcs) {
+        // NOTE: we can use GetIntroducingLayer() and GetIntroducingPrimPath() to add more information
+        if (a.GetTargetNode()) {
+            std::string arcName = a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer->GetDisplayName() + " " +
+                                  a.GetTargetNode().GetPath().GetString();
+            if (ImGui::MenuItem(arcName.c_str())) {
+                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
+                                 UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()));
+            }
+        }
+    }
+}
+
+// Testing
+// TODO: this is a copied function that needs to be moved in the next release
+static ImVec4 GetPrimColor(const UsdPrim &prim) {
+    if (!prim.IsActive() || !prim.IsLoaded()) {
+        return ImVec4(PrimInactiveColor);
+    }
+    if (prim.IsInstance()) {
+        return ImVec4(PrimInstanceColor);
+    }
+    const auto hasCompositionArcs = prim.HasAuthoredReferences() || prim.HasAuthoredPayloads() || prim.HasAuthoredInherits() ||
+                                    prim.HasAuthoredSpecializes() || prim.HasVariantSets();
+    if (hasCompositionArcs) {
+        return ImVec4(PrimHasCompositionColor);
+    }
+    if (prim.IsPrototype() || prim.IsInPrototype() || prim.IsInstanceProxy()) {
+        return ImVec4(PrimPrototypeColor);
+    }
+    return ImVec4(PrimDefaultColor);
+}
+
+void DrawUsdPrimHeader(UsdPrim &prim) {
+    auto editTarget = prim.GetStage()->GetEditTarget();
+    const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
+
+    if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+        ImGui::TableSetupColumn("Field");
+        ImGui::TableSetupColumn("Value");
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Stage");
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Path");
+        ImGui::TableSetColumnIndex(2);
+        {
+            ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+            ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
+        }
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableSetColumnIndex(0);
+        DrawPropertyMiniButton(ICON_FA_PEN);
+        ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
+        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+            DrawUsdPrimEditTarget(prim);
+            ImGui::EndPopup();
+        }
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Edit target");
+        ImGui::TableSetColumnIndex(2);
+        {
+            auto targetPath = editTarget.MapToSpecPath(prim.GetPath());
+            ScopedStyleColor color(ImGuiCol_Text,
+                                   targetPath == SdfPath() ? ImVec4(1.0, 0.0, 0.0, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
+            ImGui::Text("%s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
+        }
+
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Type");
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+
+        ImGui::EndTable();
+    }
+}
+
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
-    // DrawPropertyEditorMenuBar(prim, 0);
+    DrawPropertyEditorMenuBar(prim, 0);
 
     if (prim) {
-        auto editTarget = prim.GetStage()->GetEditTarget();
-        const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
-        ImGui::Text(ICON_FA_PEN " %s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
-        ImGui::Text("%s %s", prim.GetTypeName().GetString().c_str(), prim.GetPrimPath().GetString().c_str());
-
-
-        // TODO: Edit in variant context, under a variant
-        // This is a test.
-        // Notes from the USD forum:
-        // The new UsdPrimCompositionQuery API, which should land in the dev branch soon, will allow you to find any reference,
-        // and give you exactly what you need to construct an UsdEditTarget to edit the reference, no matter where it was
-        // authored. You and the user still need to decide and agree whether you�re only allowing �root layerStack� i.e.
-        // non-destructive edits, or whether all referenced layers are game for editing. The Query API can restrict its search to
-        // the root layerStack, if you desire. As described at the top of UsdPrimCompositionQueryArc, once you find the inherits
-        // (or specializes) arc that "introduces" the class, use that Arc's GetTargetNode() as the PcpNodeRef for a UsdEditTarget,
-        // and rummage through its LayerStack's layers to see the layers in which you can edit.
-        // UsdPrimCompositionQuery arc(prim);
-        // auto compositionArcs = arc.GetCompositionArcs();
-        // if (ImGui::BeginListBox("arcs")) {
-        //    for (auto a : compositionArcs) {
-        //        if (a.GetArcType() == PcpArcType::PcpArcTypeVariant) {
-        //            a.GetIntroducingLayer()->GetDisplayName();
-        //            std::string arcName =
-        //                a.GetIntroducingLayer()->GetDisplayName() + " " + a.GetIntroducingPrimPath().GetString();
-        //            if (ImGui::Button(arcName.c_str())) {
-        //                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
-        //                                 UsdEditTarget(editTarget.GetLayer(), a.GetTargetNode()));
-        //            }
-        //        }
-        //    }
-        //    if (ImGui::Button("Reset")) {
-        //        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(editTarget.GetLayer()));
-        //    }
-        //    ImGui::EndListBox();
-        //}
-
-        // TODO: select the UsdPrim variant as well, as we might need to select inside a variant
-        // TODO: draw prim composition tree and it allows to select the layer and primspec
-        //       Before doing that, we need to pass informations back to the editor in some ways
-        //       an obvious way would be to try the command system
-        // if (ImGui::BeginPopupContextItem()){
-        //    auto primIndex = prim.GetPrimIndex();
-        //    auto primNode = primIndex.GetRootNode();
-        //    auto layerTree = primNode.GetLayerStack()->GetLayerTree();
-        //    auto layer = layerTree->GetLayer();
-        //    auto spec = layer->GetObjectAtPath(primNode.GetPath());
-        //    if(ImGui::Button(spec->GetPath().GetString().c_str())) {
-        //            // Call the editor
-        //    }
-        //    ImGui::EndPopup();
-        //}
+        auto headerSize = ImGui::GetWindowSize();
+        headerSize.y = TableRowHeight*4; // 4 fields in the header
+        ImGui::BeginChild("##Header", headerSize);
+        DrawUsdPrimHeader(prim);
+        ImGui::EndChild();
         ImGui::Separator();
+        ImGui::BeginChild("##Body");
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
@@ -421,6 +470,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::TableHeadersRow();
 
             int miniButtonId = 0;
+            const auto &editTarget = prim.GetStage()->GetEditTarget();
 
             // Draw attributes
             for (auto &attribute : prim.GetAttributes()) {
@@ -459,6 +509,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
             ImGui::EndTable();
         }
+        ImGui::EndChild();
     }
 }
 
