@@ -12,8 +12,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrimSpecEditor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrimSpecEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/PropertyEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PropertyEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/RendererSettings.cpp

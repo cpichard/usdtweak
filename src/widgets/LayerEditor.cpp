@@ -22,7 +22,7 @@
 #include "ModalDialogs.h"
 #include "FileBrowser.h"
 #include "LayerEditor.h"
-#include "PrimSpecEditor.h"
+#include "SdfPrimEditor.h"
 #include "CompositionEditor.h"
 #include "ImGuiHelpers.h"
 #include "Constants.h"

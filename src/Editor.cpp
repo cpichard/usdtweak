@@ -21,7 +21,7 @@
 #include "StageOutliner.h"
 #include "Timeline.h"
 #include "ContentBrowser.h"
-#include "PrimSpecEditor.h"
+#include "SdfPrimEditor.h"
 #include "Constants.h"
 #include "Commands.h"
 #include "ResourcesLoader.h"
