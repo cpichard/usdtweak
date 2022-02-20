@@ -147,9 +147,16 @@ template <> const char *SmallButtonLabel<UsdRelationship>() { return "(r)"; };
 template <typename UsdPropertyT> void DrawMenuClearAuthoredValues(UsdPropertyT &property){};
 template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
     if (attribute.IsAuthored()) {
-        if (ImGui::MenuItem(ICON_FA_EJECT " Clear")) {
+        if (ImGui::MenuItem(ICON_FA_EJECT " Clear values")) {
             ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
         }
+    }
+}
+
+template <typename UsdPropertyT> void DrawMenuBlockValues(UsdPropertyT &property){};
+template <> void DrawMenuBlockValues(UsdAttribute &attribute) {
+    if (ImGui::MenuItem(ICON_FA_STOP " Block values")) {
+        ExecuteAfterDraw(&UsdAttribute::Block, attribute);
     }
 }
 
@@ -206,6 +213,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
         DrawMenuSetKey(property, currentTime);
         DrawMenuCreateValue(property);
         DrawMenuClearAuthoredValues(property);
+        DrawMenuBlockValues(property);
         DrawMenuRemoveProperty(property);
         DrawMenuEditConnection(property);
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
@@ -351,7 +359,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         // Notes from the USD forum:
         // The new UsdPrimCompositionQuery API, which should land in the dev branch soon, will allow you to find any reference,
         // and give you exactly what you need to construct an UsdEditTarget to edit the reference, no matter where it was
-        // authored. You and the user still need to decide and agree whether you’re only allowing “root layerStack” i.e.
+        // authored. You and the user still need to decide and agree whether youï¿½re only allowing ï¿½root layerStackï¿½ i.e.
         // non-destructive edits, or whether all referenced layers are game for editing. The Query API can restrict its search to
         // the root layerStack, if you desire. As described at the top of UsdPrimCompositionQueryArc, once you find the inherits
         // (or specializes) arc that "introduces" the class, use that Arc's GetTargetNode() as the PcpNodeRef for a UsdEditTarget,
