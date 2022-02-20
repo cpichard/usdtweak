@@ -8,7 +8,7 @@
 #include <pxr/usd/pcp/layerStack.h>
 #include "Gui.h"
 #include "PropertyEditor.h"
-#include "ValueEditor.h"
+#include "VtValueEditor.h"
 #include "Constants.h"
 #include "Commands.h"
 #include "ModalDialogs.h"

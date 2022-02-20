@@ -1,7 +1,7 @@
 #include <iostream>
 #include <sstream>
 
-#include "ValueEditor.h"
+#include "VtValueEditor.h"
 #include "Constants.h"
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec3d.h>

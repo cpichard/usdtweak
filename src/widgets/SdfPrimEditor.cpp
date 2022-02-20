@@ -22,7 +22,7 @@
 #include "FileBrowser.h"
 #include "Commands.h"
 #include "Constants.h"
-#include "ValueEditor.h"
+#include "VtValueEditor.h"
 #include "LayerEditor.h"
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"

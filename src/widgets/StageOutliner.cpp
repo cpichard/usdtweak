@@ -7,7 +7,7 @@
 #include "ImGuiHelpers.h"
 #include "StageOutliner.h"
 #include "Commands.h"
-#include "ValueEditor.h"
+#include "VtValueEditor.h"
 #include "Constants.h"
 
 ///

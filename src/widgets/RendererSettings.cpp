@@ -1,7 +1,7 @@
 #include <iostream>
 #include <map>
 #include "RendererSettings.h"
-#include "ValueEditor.h"
+#include "VtValueEditor.h"
 #include "Gui.h"
 
 // We keep the currently selected AOV per engine here as there is it not really store in UsdImagingGLEngine.
