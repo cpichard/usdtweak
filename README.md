@@ -78,7 +78,7 @@ It should compile successfully on Windows 10 with MSVC 19 or 17. Make sure you o
 
 Under the hood usdtweak is using [GLFW](https://www.glfw.org/). Cmake should normally download, compile and install glfw without any intervention. However, if you already have a compiled version you want to use, and you'll need to disable the automatic build of glfw, by passing an additional cmake variable:
 
-- __glfw3_DIR__  pointing to the USD installation directory containing the file glfw3Config.cmake
+- __glfw3_DIR__  pointing to the GLFW installation directory containing the file glfw3Config.cmake
 
 A cmake command will then look like:
 
