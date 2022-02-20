@@ -313,8 +313,7 @@ bool IsTransformShown(int options) { return false; }
 void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
     if (ImGui::BeginMenuBar()) {
-        if (prim && ImGui::BeginMenu(ICON_FA_PLUS)) {
-
+        if (prim && ImGui::BeginMenu("Create")) {
             // TODO: list all the attribute missing or incomplete
             if (ImGui::MenuItem("Attribute", nullptr)) {
             }
