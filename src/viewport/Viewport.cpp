@@ -155,11 +155,6 @@ Viewport::~Viewport() {
         delete _renderparams;
         _renderparams = nullptr;
     }
-
-    if (_currentEditingState){
-        delete _currentEditingState;
-        _currentEditingState = nullptr;
-    }
 }
 
 /// Draw the viewport widget
