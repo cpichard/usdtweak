@@ -66,6 +66,10 @@ PositionManipulator::PositionManipulator() : _selectedAxis(None) {
     }
 
     glBindVertexArray(0);
+    
+    GLfloat aLineWidthRange[2];
+    glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
+    _lineWidth = std::min(_lineWidth, aLineWidthRange[1]);
 }
 
 PositionManipulator::~PositionManipulator() { glDeleteBuffers(1, &_axisGLBuffers); }
@@ -209,7 +213,7 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
         if (depthTestStatus)
             glDisable(GL_DEPTH_TEST);
 
-        glLineWidth(2);
+        glLineWidth(_lineWidth);
         glUseProgram(_programShader);
         GfMatrix4f mvp(mv);
         GfMatrix4f projp(proj);

@@ -66,4 +66,6 @@ class ScaleManipulator : public Manipulator {
     unsigned int _scaleFactorUniform;
     unsigned int _objectMatrixUniform;
     unsigned int _highlightUniform;
+    
+    float _lineWidth = 2.f;
 };
