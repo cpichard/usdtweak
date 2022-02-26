@@ -289,7 +289,7 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
 
     // Edition of the prim name
     static SdfPrimSpecHandle editNamePrim;
-    if (ImGui::IsItemClicked()) {
+    if (!ImGui::IsItemToggledOpen() && ImGui::IsItemClicked()) {
         selectedPrim = primSpec;
         if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != selectedPrim) {
             editNamePrim = SdfPrimSpecHandle();
@@ -417,7 +417,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
         std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
         bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
 
-        if (ImGui::IsItemClicked()) {
+        if (!ImGui::IsItemToggledOpen() && ImGui::IsItemClicked()) {
             selectedPrim = SdfPrimSpecHandle();
         }
 
