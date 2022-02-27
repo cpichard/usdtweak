@@ -22,5 +22,6 @@ void DrawTextEditor(SdfLayerRefPtr layer) {
     if (layer && ImGui::IsItemDeactivatedAfterEdit()) {
         ExecuteAfterDraw<LayerTextEdit>(layer, layerText);
     }
+    ImGui::PopItemWidth();
     ImGui::Text("Ctrl+Enter to apply your change");
 }
