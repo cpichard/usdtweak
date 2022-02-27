@@ -11,7 +11,7 @@ constexpr int InitialWindowWidth = 1024;
 constexpr int InitialWindowHeight = 1024;
 
 /// Height of a row in the property editor
-constexpr float TableRowHeight = 22.f;
+constexpr float TableRowDefaultHeight = 22.f;
 
 /// Waiting time before a tooltip shows up
 constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
@@ -36,7 +36,7 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 constexpr const char * DecimalPrecision = "%.5f";
 
 /// Default name when creating a prim
-constexpr const char *const DefaultPrimSpecName = "prim";
+constexpr const char *const SdfPrimSpecDefaultName = "prim";
 
 /// Return error codes
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;

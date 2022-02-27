@@ -106,7 +106,7 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
         return;
 
     if (ImGui::MenuItem("Add child")) {
-        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(DefaultPrimSpecName));
+        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
     }
     auto parent = primSpec->GetNameParent();
     if (parent) {
@@ -176,9 +176,9 @@ inline void DrawTooltip(const char *text) {
 void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
     if (ImGui::Button(ICON_FA_PLUS)) {
         if (prim == SdfPrimSpecHandle()) {
-            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
+            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
         } else {
-            ExecuteAfterDraw<PrimNew>(prim, FindNextAvailablePrimName(DefaultPrimSpecName));
+            ExecuteAfterDraw<PrimNew>(prim, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
         }
     }
     DrawTooltip("New child prim");
@@ -423,7 +423,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
 
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Add root prim")) {
-                ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(DefaultPrimSpecName));
+                ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
             }
             ImGui::EndPopup();
         }

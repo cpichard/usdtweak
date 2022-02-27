@@ -393,13 +393,13 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
         ImGui::TableSetupColumn("Field");
         ImGui::TableSetupColumn("Value");
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("Stage");
         ImGui::TableSetColumnIndex(2);
         ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
 
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("Path");
         ImGui::TableSetColumnIndex(2);
@@ -407,7 +407,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
             ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
             ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
         }
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
         ImGui::TableSetColumnIndex(0);
         DrawPropertyMiniButton(ICON_FA_PEN);
         ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
@@ -425,7 +425,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
             ImGui::Text("%s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
         }
 
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("Type");
         ImGui::TableSetColumnIndex(2);
@@ -441,7 +441,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = TableRowHeight*4; // 4 fields in the header
+        headerSize.y = TableRowDefaultHeight*4; // 4 fields in the header
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);
         ImGui::EndChild();
@@ -472,7 +472,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
             // Draw attributes
             for (auto &attribute : prim.GetAttributes()) {
-                ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowHeight);
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(miniButtonId++);
                 DrawPropertyMiniButton(attribute, editTarget, currentTime);
