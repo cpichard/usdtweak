@@ -4,13 +4,13 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 /// Draw modal dialogs to add composition on primspec (reference, payload, inherit, specialize)
-void DrawPrimCreateReference(SdfPrimSpecHandle &primSpec);
-void DrawPrimCreatePayload(SdfPrimSpecHandle &primSpec);
-void DrawPrimCreateInherit(SdfPrimSpecHandle &primSpec);
-void DrawPrimCreateSpecialize(SdfPrimSpecHandle &primSpec);
+void DrawPrimCreateReference(const SdfPrimSpecHandle &primSpec);
+void DrawPrimCreatePayload(const SdfPrimSpecHandle &primSpec);
+void DrawPrimCreateInherit(const SdfPrimSpecHandle &primSpec);
+void DrawPrimCreateSpecialize(const SdfPrimSpecHandle &primSpec);
 
 /// Draw multiple tables with the compositions (Reference, Payload, Inherit, Specialize)
-void DrawPrimCompositions(SdfPrimSpecHandle &primSpec);
+void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec);
 
 // Draw a text summary of the composition
-void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec);
+void DrawPrimCompositionSummary(const SdfPrimSpecHandle &primSpec);

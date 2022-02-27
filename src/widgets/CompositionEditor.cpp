@@ -23,7 +23,7 @@ static bool HasComposition(const SdfPrimSpecHandle &primSpec) {
 /// This is used for inherit and specialize
 struct CreateSdfPathModalDialog : public ModalDialog {
 
-    CreateSdfPathModalDialog(SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
+    CreateSdfPathModalDialog(const SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
     ~CreateSdfPathModalDialog() override {}
 
     void Draw() override {
@@ -60,7 +60,7 @@ struct CreateSdfPathModalDialog : public ModalDialog {
 /// This is used by References and Payloads which share the same interface
 struct CreateAssetPathModalDialog : public ModalDialog {
 
-    CreateAssetPathModalDialog(SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
+    CreateAssetPathModalDialog(const SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
     ~CreateAssetPathModalDialog() override {}
 
     void Draw() override {
@@ -112,7 +112,7 @@ struct CreateAssetPathModalDialog : public ModalDialog {
 
 // Inheriting, but could also be done with templates, would the code be cleaner ?
 struct CreateReferenceModalDialog : public CreateAssetPathModalDialog {
-    CreateReferenceModalDialog(SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
+    CreateReferenceModalDialog(const SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create reference"; }
     void OnOkCallBack() override {
         SdfReference reference(_assetPath, SdfPath(_primPath));
@@ -121,7 +121,7 @@ struct CreateReferenceModalDialog : public CreateAssetPathModalDialog {
 };
 
 struct CreatePayloadModalDialog : public CreateAssetPathModalDialog {
-    CreatePayloadModalDialog(SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
+    CreatePayloadModalDialog(const SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create payload"; }
     void OnOkCallBack() override {
         SdfPayload payload(_assetPath, SdfPath(_primPath));
@@ -130,21 +130,21 @@ struct CreatePayloadModalDialog : public CreateAssetPathModalDialog {
 };
 
 struct CreateInheritModalDialog : public CreateSdfPathModalDialog {
-    CreateInheritModalDialog(SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
+    CreateInheritModalDialog(const SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create inherit"; }
     void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateInherit>(_primSpec, _operation, SdfPath(_primPath)); }
 };
 
 struct CreateSpecializeModalDialog : public CreateSdfPathModalDialog {
-    CreateSpecializeModalDialog(SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
+    CreateSpecializeModalDialog(const SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create specialize"; }
     void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateSpecialize>(_primSpec, _operation, SdfPath(_primPath)); }
 };
 
-void DrawPrimCreateReference(SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateReferenceModalDialog>(primSpec); }
-void DrawPrimCreatePayload(SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreatePayloadModalDialog>(primSpec); }
-void DrawPrimCreateInherit(SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateInheritModalDialog>(primSpec); }
-void DrawPrimCreateSpecialize(SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateSpecializeModalDialog>(primSpec); }
+void DrawPrimCreateReference(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateReferenceModalDialog>(primSpec); }
+void DrawPrimCreatePayload(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreatePayloadModalDialog>(primSpec); }
+void DrawPrimCreateInherit(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateInheritModalDialog>(primSpec); }
+void DrawPrimCreateSpecialize(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateSpecializeModalDialog>(primSpec); }
 
 /// Remove a Asset Path from a primspec
 inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfReference &item) {
@@ -155,11 +155,11 @@ inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfPayload
 }
 
 /// Remove SdfPath from their lists (Inherits and Specialize)
-template <typename ListT> inline void RemovePathFromList(SdfPrimSpecHandle primSpec, const SdfPath &item);
-template <> inline void RemovePathFromList<Inherit>(SdfPrimSpecHandle primSpec, const SdfPath &item) {
+template <typename ListT> inline void RemovePathFromList(const SdfPrimSpecHandle &primSpec, const SdfPath &item);
+template <> inline void RemovePathFromList<Inherit>(const SdfPrimSpecHandle &primSpec, const SdfPath &item) {
     primSpec->GetInheritPathList().RemoveItemEdits(item);
 }
-template <> inline void RemovePathFromList<Specialize>(SdfPrimSpecHandle primSpec, const SdfPath &item) {
+template <> inline void RemovePathFromList<Specialize>(const SdfPrimSpecHandle &primSpec, const SdfPath &item) {
     primSpec->GetSpecializesList().RemoveItemEdits(item);
 }
 
@@ -231,7 +231,7 @@ static void DrawSdfPathRow(const char *operationName, const SdfPath &path, SdfPr
 // and avoid to duplicate the code
 template <typename AssetPathT>
 static void DrawAssetPathRow(const char *operationName, const AssetPathT &item,
-                             SdfPrimSpecHandle &primSpec) { // TODO:primSpec might not be useful here
+                             const SdfPrimSpecHandle &primSpec) { // TODO:primSpec might not be useful here
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
     if (ImGui::SmallButton(ICON_FA_TRASH)) { // TODO: replace with the proper menu
@@ -252,7 +252,7 @@ static void DrawAssetPathRow(const char *operationName, const AssetPathT &item,
     ImGui::Text("%s", item.GetPrimPath().GetString().c_str());
 }
 
-void DrawPrimPayloads(SdfPrimSpecHandle &primSpec) {
+void DrawPrimPayloads(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasPayloads())
         return;
     if (ImGui::BeginTable("##DrawPrimPayloads", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -263,7 +263,7 @@ void DrawPrimPayloads(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimReferences(SdfPrimSpecHandle &primSpec) {
+void DrawPrimReferences(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasReferences())
         return;
     if (ImGui::BeginTable("##DrawPrimReferences", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -274,7 +274,7 @@ void DrawPrimReferences(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimInherits(SdfPrimSpecHandle &primSpec) {
+void DrawPrimInherits(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasInheritPaths())
         return;
     if (ImGui::BeginTable("##DrawPrimInherits", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -285,7 +285,7 @@ void DrawPrimInherits(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimSpecializes(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecializes(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasSpecializes())
         return;
     if (ImGui::BeginTable("##DrawPrimSpecializes", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -296,7 +296,7 @@ void DrawPrimSpecializes(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimCompositions(SdfPrimSpecHandle &primSpec) {
+void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
 
@@ -309,7 +309,7 @@ void DrawPrimCompositions(SdfPrimSpecHandle &primSpec) {
 /////////////// Summary for the layer editor
 
 template <typename PathListT>
-inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec,
+inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec,
                                int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
@@ -328,7 +328,7 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
 
 template <typename AssetPathT>
 inline void DrawAssetPathSummary(std::string &&header, const char *operation, const AssetPathT &assetPath,
-                                 SdfPrimSpecHandle &primSpec, int &menuItemId) {
+                                 const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
     if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
@@ -351,23 +351,23 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     ImGui::PopID();
 }
 
-void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawAssetPathSummary(ICON_FA_EXTERNAL_LINK_ALT, operation, assetPath, primSpec, menuItemId);
 }
 
-void DrawPayloadSummary(const char *operation, const SdfPayload &assetPath, SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawPayloadSummary(const char *operation, const SdfPayload &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawAssetPathSummary(ICON_FA_WEIGHT_HANGING, operation, assetPath, primSpec, menuItemId);
 }
 
-void DrawInheritsSummary(const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawInheritsSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawSdfPathSummary<Inherit>(ICON_FA_EXTERNAL_LINK_SQUARE_ALT, operation, path, primSpec, menuItemId);
 }
 
-void DrawSpecializesSummary(const char *operation, const SdfPath &path, SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawSpecializesSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawSdfPathSummary<Specialize>(ICON_FA_SIGN_IN_ALT, operation, path, primSpec, menuItemId);
 }
 
-void DrawPrimCompositionSummary(SdfPrimSpecHandle &primSpec) {
+void DrawPrimCompositionSummary(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
     int menuItemId = 0;
