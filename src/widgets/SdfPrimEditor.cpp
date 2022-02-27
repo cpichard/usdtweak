@@ -54,7 +54,7 @@ struct CreateAttributeDialog : public ModalDialog {
     }
     const char *DialogId() const override { return "Create attribute"; }
 
-    SdfPrimSpecHandle _sdfPrim;
+    const SdfPrimSpecHandle &_sdfPrim;
     std::string _attributeName;
     SdfVariability _variability = SdfVariabilityVarying;
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
@@ -89,7 +89,7 @@ struct CreateRelationDialog : public ModalDialog {
     }
     const char *DialogId() const override { return "Create relationship"; }
 
-    SdfPrimSpecHandle _sdfPrim;
+    const SdfPrimSpecHandle &_sdfPrim;
     std::string _relationName;
     std::string _targetPath;
     int _operation = 0;
@@ -99,7 +99,7 @@ struct CreateRelationDialog : public ModalDialog {
 
 
 
-void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
+void DrawPrimSpecifier(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
 
     const SdfSpecifier current = primSpec->GetSpecifier();
     SdfSpecifier selected = current;
@@ -135,8 +135,7 @@ static void DrawPropertyMiniButton(const char *btnStr, int rowId, const ImVec4 &
     ImGui::PopID();
 }
 
-void DrawPrimInstanceableActionButton(SdfPrimSpecHandle &primSpec, int buttonId) {
-
+void DrawPrimInstanceableActionButton(const SdfPrimSpecHandle &primSpec, int buttonId) {
     DrawPropertyMiniButton("(m)", buttonId);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         if (primSpec->HasInstanceable()) {
@@ -148,7 +147,7 @@ void DrawPrimInstanceableActionButton(SdfPrimSpecHandle &primSpec, int buttonId)
     }
 }
 
-void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec) {
+void DrawPrimInstanceable(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     bool isInstanceable = primSpec->GetInstanceable();
@@ -164,7 +163,7 @@ void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimHidden(SdfPrimSpecHandle &primSpec) {
+void DrawPrimHidden(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     bool isHidden = primSpec->GetHidden();
@@ -173,7 +172,7 @@ void DrawPrimHidden(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
+void DrawPrimActive(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     bool isActive = primSpec->GetActive();
@@ -189,7 +188,7 @@ void DrawPrimActive(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimName(SdfPrimSpecHandle &primSpec) {
+void DrawPrimName(const SdfPrimSpecHandle &primSpec) {
     auto nameBuffer = primSpec->GetName();
     ImGui::InputText("Prim Name", &nameBuffer);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -200,7 +199,7 @@ void DrawPrimName(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-void DrawPrimKind(SdfPrimSpecHandle &primSpec) {
+void DrawPrimKind(const SdfPrimSpecHandle &primSpec) {
     auto primKind = primSpec->GetKind();
     if (ImGui::BeginCombo("Kind", primKind.GetString().c_str())) {
         for (auto kind : KindRegistry::GetAllKinds()) {
@@ -230,7 +229,7 @@ static inline TfToken ClassTokenFromChar(const char *classChar) {
 }
 
 /// Draw a prim type name combo
-void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
+void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
     const auto &allSpecTypes = GetAllSpecTypeNames();
     if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
@@ -250,7 +249,7 @@ void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     }
 }
 
-void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
@@ -331,7 +330,7 @@ void DrawPrimSpecAttributes(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &path, int &id, SdfPrimSpecHandle &primSpec,
+static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &path, int &id, const SdfPrimSpecHandle &primSpec,
                                    SdfPath &relationPath) {
     ImGui::TableSetColumnIndex(2);
     std::string newPathStr = path.GetString();
@@ -355,7 +354,7 @@ static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &
     ImGui::PopID();
 }
 
-void DrawPrimSpecRelations(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     const auto &relationships = primSpec->GetRelationships();
@@ -446,7 +445,7 @@ struct PrimHidden {};
 template <> const char *NameForMetadataField<PrimHidden>() { return "Hidden"; }
 template <> void DrawMetadataFieldValue<PrimHidden>(SdfPrimSpecHandle &primSpec) { DrawPrimHidden(primSpec); }
 
-void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
+void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
 
         int rowId = 0;
@@ -471,7 +470,7 @@ void DrawPrimSpecMetadata(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawAssetInfo(SdfPrimSpecHandle prim) {
+static void DrawAssetInfo(const SdfPrimSpecHandle prim) {
     if (!prim)
         return;
     const auto &assetInfo = prim->GetAssetInfo();
@@ -497,7 +496,7 @@ static void DrawAssetInfo(SdfPrimSpecHandle prim) {
     }
 }
 
-void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec) {
+void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());

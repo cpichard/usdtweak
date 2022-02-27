@@ -7,7 +7,7 @@
 #include "ProxyHelpers.h"
 #include "ImGuiHelpers.h"
 
-static void DrawVariantSelectionMiniButton(SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
+static void DrawVariantSelectionMiniButton(const SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
     ScopedStyleColor style(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0), ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(buttonId++);
     if (ImGui::SmallButton(ICON_DELETE)) {
@@ -17,7 +17,7 @@ static void DrawVariantSelectionMiniButton(SdfPrimSpecHandle &primSpec, const st
     ImGui::PopID();
 }
 
-static void DrawVariantSelectionCombo(SdfPrimSpecHandle &primSpec, SdfVariantSelectionProxy::const_reference & variantSelection, int &buttonId) {
+static void DrawVariantSelectionCombo(const SdfPrimSpecHandle &primSpec, SdfVariantSelectionProxy::const_reference & variantSelection, int &buttonId) {
     ImGui::PushID(buttonId++);
     if (ImGui::BeginCombo("Variant selection", variantSelection.second.c_str())) {
         if (ImGui::Selectable("")) { // Empty variant selection
@@ -33,7 +33,10 @@ static void DrawVariantSelectionCombo(SdfPrimSpecHandle &primSpec, SdfVariantSel
     ImGui::PopID();
 }
 
-static void DrawVariantSelection(SdfPrimSpecHandle &primSpec) {
+static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
+
+    // TODO: we would like to have a list of potential variant we can select and the variant selected
+    auto variantSetNameList = primSpec->GetVariantSetNameList();
     auto variantSelections = primSpec->GetVariantSelections();
     if (!variantSelections.empty()) {
         if (ImGui::BeginTable("##DrawPrimVariantSelections", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -79,7 +82,7 @@ static void DrawVariantEditListItem(const char *operation, const std ::string &v
 }
 
 /// Draw the variantSet names edit list
-static void DrawVariantSetNames(SdfPrimSpecHandle &primSpec) {
+static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
     int buttonId = 0;
     auto nameList = primSpec->GetVariantSetNameList();
     if (ImGui::BeginTable("##DrawPrimVariantSets", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
@@ -92,7 +95,7 @@ static void DrawVariantSetNames(SdfPrimSpecHandle &primSpec) {
 }
 
 // Draw a table with the variant selections
-void DrawPrimVariants(SdfPrimSpecHandle &primSpec) {
+void DrawPrimVariants(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 

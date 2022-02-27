@@ -3,4 +3,4 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-void DrawPrimVariants(SdfPrimSpecHandle &primSpec);
+void DrawPrimVariants(const SdfPrimSpecHandle &primSpec);

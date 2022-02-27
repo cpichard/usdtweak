@@ -8,12 +8,15 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Draw the full fledged primspec editor
 void DrawPrimSpecEditor(SdfPrimSpecHandle &primSpec);
 
-void DrawPrimKind(SdfPrimSpecHandle &primSpec);
-void DrawPrimType(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags=0);
-void DrawPrimSpecifierCombo(SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags=0);
-void DrawPrimInstanceable(SdfPrimSpecHandle &primSpec);
-void DrawPrimHidden(SdfPrimSpecHandle &primSpec);
-void DrawPrimActive(SdfPrimSpecHandle &primSpec);
-void DrawPrimName(SdfPrimSpecHandle &primSpec);
+void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec);
 
+void DrawPrimKind(const SdfPrimSpecHandle &primSpec);
+void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags=0);
+void DrawPrimSpecifier(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags=0);
+void DrawPrimInstanceable(const SdfPrimSpecHandle &primSpec);
+void DrawPrimHidden(const SdfPrimSpecHandle &primSpec);
+void DrawPrimActive(const SdfPrimSpecHandle &primSpec);
+void DrawPrimName(const SdfPrimSpecHandle &primSpec);
+//void DrawPrimDocumentation(const SdfPrimSpecHandle &primSpec);
+//void DrawPrimComment(const SdfPrimSpecHandle &primSpec);
 
