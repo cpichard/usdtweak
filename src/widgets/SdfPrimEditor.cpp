@@ -26,6 +26,7 @@
 #include "SdfLayerEditor.h"
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
+#include "FieldValueTable.h"
 
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
@@ -154,13 +155,6 @@ void DrawPrimInstanceable(const SdfPrimSpecHandle &primSpec) {
     if (ImGui::Checkbox("Instanceable", &isInstanceable)) {
         ExecuteAfterDraw(&SdfPrimSpec::SetInstanceable, primSpec, isInstanceable);
     }
-
-    if (primSpec->HasInstanceable()) {
-        ImGui::SameLine();
-        if (ImGui::Button("Clear###Instanceable")) {
-            ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
-        }
-    }
 }
 
 void DrawPrimHidden(const SdfPrimSpecHandle &primSpec) {
@@ -177,14 +171,8 @@ void DrawPrimActive(const SdfPrimSpecHandle &primSpec) {
         return;
     bool isActive = primSpec->GetActive();
     if (ImGui::Checkbox("Active", &isActive)) {
+        // TODO: use CTRL click to clear the checkbox
         ExecuteAfterDraw(&SdfPrimSpec::SetActive, primSpec, isActive);
-    }
-    // TODO Move the clear button into a menu item :Reset to default
-    if (primSpec->HasActive()) {
-        ImGui::SameLine();
-        if (ImGui::Button("Clear###Active")) {
-            ExecuteAfterDraw(&SdfPrimSpec::ClearActive, primSpec);
-        }
     }
 }
 
@@ -209,12 +197,6 @@ void DrawPrimKind(const SdfPrimSpecHandle &primSpec) {
             }
         }
         ImGui::EndCombo();
-    }
-    if (primSpec->HasKind()) {
-        ImGui::SameLine();
-        if (ImGui::Button("Clear###Kind")) {
-            ExecuteAfterDraw(&SdfPrimSpec::ClearKind, primSpec);
-        }
     }
 }
 
@@ -260,9 +242,9 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
     static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-        ImGui::TableSetupColumn("Attribute");
-        ImGui::TableSetupColumn("Time");
-        ImGui::TableSetupColumn("Value");
+        ImGui::TableSetupColumn("Attribute", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
 
@@ -332,7 +314,6 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
 
 static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &path, int &id, const SdfPrimSpecHandle &primSpec,
                                    SdfPath &relationPath) {
-    ImGui::TableSetColumnIndex(2);
     std::string newPathStr = path.GetString();
     ImGui::PushID(id++);
     ImGui::Text("%s", operation);
@@ -354,119 +335,89 @@ static void DrawRelashionshipEditListItem(const char *operation, const SdfPath &
     ImGui::PopID();
 }
 
+
+struct RelationField {};
+template <>
+inline void DrawFieldName<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                         const SdfRelationshipSpecHandle &relation) {
+    ImGui::Text("%s", relation->GetName().c_str());
+};
+template <>
+inline void DrawFieldValue<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                          const SdfRelationshipSpecHandle &relation) {
+    IterateListEditorItems(relation->GetTargetPathList(), DrawRelashionshipEditListItem, rowId, primSpec, relation->GetPath());
+};
+template <>
+inline void DrawFieldButton<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                           const SdfRelationshipSpecHandle &relation) {
+    if (ImGui::Button(ICON_FA_COG)) {
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
+    }
+};
+
 void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     const auto &relationships = primSpec->GetRelationships();
     if (relationships.empty())
         return;
-    int widgetId = 0;
-    static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
-    if (ImGui::BeginTable("##DrawPrimSpecRelations", 3, tableFlags)) {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 48); // 48 => size of 2 mini button
-        ImGui::TableSetupColumn("Relations");
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
-
-        ImGui::TableHeadersRow();
+    int rowId = 0;
+    if (BeginFieldValueTable("##DrawPrimSpecRelations")) {
+        FieldValueTableSetupColumns(true, "", "Relations", "");
         auto relations = primSpec->GetRelationships();
-        for (const auto &relation : relations) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::PushID(widgetId++);
-            if (ImGui::Button(ICON_FA_TRASH)) {
-                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
-            }
-            ImGui::PopID();
-            ImGui::SameLine();
-            ImGui::PushID(widgetId++);
-            // if (ImGui::Button(ICON_FA_PLUS)) {
-            //    // TODO: at the moment we can only add one edit per relationship list, which is limited.
-            //    // So we want to add a + button to be able to add multiple edits
-            //}
-            ImGui::PopID();
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%s", relation->GetName().c_str());
-            IterateListEditorItems(relation->GetTargetPathList(), DrawRelashionshipEditListItem, widgetId, primSpec,
-                                   relation->GetPath());
+        for (const SdfRelationshipSpecHandle &relation : relations) {
+            DrawFieldValueTableRow<RelationField>(rowId, primSpec, relation);
         }
         ImGui::EndTable();
     }
 }
 
 
+#define GENERATE_FIELD(ClassName_, FieldName_, DrawFunction_)                                                                    \
+    struct ClassName_ {                                                                                                          \
+        static constexpr const char *fieldName = FieldName_;                                                                     \
+    };                                                                                                                           \
+    template <> inline void DrawFieldValue<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                     \
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
+        DrawFunction_(primSpec);                                                                                                 \
+    }
 
-/// Using templates to factor the code in DrawPrimSpecMetadata
-template <typename MetadataField> const char *NameForMetadataField();
-template <typename MetadataField> void DrawMetadataFieldValue(SdfPrimSpecHandle &primSpec);
-template <typename MetadataField> void DrawMetadataFieldButton(SdfPrimSpecHandle &primSpec, int rowId) {
-    DrawPropertyMiniButton("(m)", rowId);
-}
-
-/// Draw one row of the metadata field
-template <typename MetadataField> void DrawMetadataRow(SdfPrimSpecHandle &primSpec, int rowId) {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    DrawMetadataFieldButton<MetadataField>(primSpec, rowId);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%s", NameForMetadataField<MetadataField>());
-    ImGui::TableSetColumnIndex(2);
-    ImGui::PushItemWidth(-FLT_MIN);
-    DrawMetadataFieldValue<MetadataField>(primSpec);
-    ImGui::PopItemWidth();
-}
+#define GENERATE_FIELD_WITH_BUTTON(ClassName_, Token_, FieldName_, DrawFunction_)                                                \
+    GENERATE_FIELD(ClassName_, FieldName_, DrawFunction_);                                                                       \
+    template <> inline bool HasEdits<ClassName_>(const SdfPrimSpecHandle &prim) { return prim->HasField(Token_); }               \
+    template <> inline void DrawFieldButton<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                    \
+        ImGui::PushID(rowId);                                                                                                    \
+        if (ImGui::Button(ICON_FA_TRASH) && HasEdits<ClassName_>(primSpec)) {                                                    \
+            ExecuteAfterDraw(&SdfPrimSpec::ClearField, primSpec, Token_);                                                        \
+        }                                                                                                                        \
+        ImGui::PopID();                                                                                                          \
+    }\
 
 
-// Definitions for Metadata field
-struct PrimName {};
-template <> const char *NameForMetadataField<PrimName>() { return "Name"; }
-template <> void DrawMetadataFieldValue<PrimName>(SdfPrimSpecHandle &primSpec) { DrawPrimName(primSpec); }
+GENERATE_FIELD(Specifier, "Specifier", DrawPrimSpecifier);
+GENERATE_FIELD(PrimType,  "Type", DrawPrimType);
+GENERATE_FIELD(PrimName, "Name", DrawPrimName);
+GENERATE_FIELD_WITH_BUTTON(PrimKind, SdfFieldKeys->Kind, "Kind", DrawPrimKind);
+GENERATE_FIELD_WITH_BUTTON(PrimActive, SdfFieldKeys->Active, "Active", DrawPrimActive);
+GENERATE_FIELD_WITH_BUTTON(PrimInstanceable, SdfFieldKeys->Instanceable, "Instanceable", DrawPrimInstanceable);
+GENERATE_FIELD_WITH_BUTTON(PrimHidden, SdfFieldKeys->Hidden, "Hidden", DrawPrimHidden);
 
-struct Specifier {};
-template <> const char *NameForMetadataField<Specifier>() { return "Specifier"; }
-template <> void DrawMetadataFieldValue<Specifier>(SdfPrimSpecHandle &primSpec) { DrawPrimSpecifierCombo(primSpec); }
-
-struct PrimType {};
-template <> const char *NameForMetadataField<PrimType>() { return "Type"; }
-template <> void DrawMetadataFieldValue<PrimType>(SdfPrimSpecHandle &primSpec) { DrawPrimType(primSpec); }
-
-struct PrimKind {};
-template <> const char *NameForMetadataField<PrimKind>() { return "Kind"; }
-template <> void DrawMetadataFieldValue<PrimKind>(SdfPrimSpecHandle &primSpec) { DrawPrimKind(primSpec); }
-
-struct PrimActive {};
-template <> const char *NameForMetadataField<PrimActive>() { return "Active"; }
-template <> void DrawMetadataFieldValue<PrimActive>(SdfPrimSpecHandle &primSpec) { DrawPrimActive(primSpec); }
-
-struct Instanceable {};
-template <> const char *NameForMetadataField<Instanceable>() { return "Instanceable"; }
-template <> void DrawMetadataFieldValue<Instanceable>(SdfPrimSpecHandle &primSpec) { DrawPrimInstanceable(primSpec); }
-
-struct PrimHidden {};
-template <> const char *NameForMetadataField<PrimHidden>() { return "Hidden"; }
-template <> void DrawMetadataFieldValue<PrimHidden>(SdfPrimSpecHandle &primSpec) { DrawPrimHidden(primSpec); }
 
 void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
-
         int rowId = 0;
-
-        if (ImGui::BeginTable("##DrawPrimSpecMetadata", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-
-            TableSetupColumns("", "Metadata", "Value");
-            ImGui::TableHeadersRow();
-
-            DrawMetadataRow<Specifier>(primSpec, rowId++);
-            DrawMetadataRow<PrimType>(primSpec, rowId++);
-            DrawMetadataRow<PrimName>(primSpec, rowId++);
-            DrawMetadataRow<PrimKind>(primSpec, rowId++);
-            DrawMetadataRow<PrimActive>(primSpec, rowId++);
-            DrawMetadataRow<Instanceable>(primSpec, rowId++);
-            DrawMetadataRow<PrimHidden>(primSpec, rowId++);
-
-            ImGui::EndTable();
-
-            ImGui::Separator();
+        if (BeginFieldValueTable("##DrawPrimSpecMetadata")) {
+            FieldValueTableSetupColumns(true, "", "Metadata", "Value");
+            DrawFieldValueTableRow<Specifier>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimType>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimName>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimKind>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimActive>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimInstanceable>(rowId++, primSpec);
+            DrawFieldValueTableRow<PrimHidden>(rowId++, primSpec);
+            EndFieldValueTable();
         }
+        ImGui::Separator();
     }
 }
 
@@ -499,8 +450,6 @@ static void DrawAssetInfo(const SdfPrimSpecHandle prim) {
 void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
-    ImGui::Text("%s", primSpec->GetLayer()->GetDisplayName().c_str());
-    ImGui::Text("%s", primSpec->GetPath().GetString().c_str());
     if (ImGui::Button("Create Attribute")) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
     }

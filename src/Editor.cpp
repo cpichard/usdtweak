@@ -480,7 +480,7 @@ void Editor::Draw() {
     if (_settings._showLayerStackEditor) {
         const std::string title("Layer stack " + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
         ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor, layerWindowFlag);
-        DrawLayerSublayers(rootLayer);
+        DrawLayerSublayerStack(rootLayer);
         ImGui::End();
     }
 
@@ -493,11 +493,27 @@ void Editor::Draw() {
 
     if (_settings._showPrimSpecEditor) {
         ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor, layerWindowFlag);
+        auto headerSize = ImGui::GetWindowSize();
+        headerSize.y = TableRowDefaultHeight * 2; // 4 fields in the header
+
         if (GetSelectedPrimSpec()) {
-            DrawPrimSpecEditor(GetSelectedPrimSpec());
+            ImGui::BeginChild("##LayerHeader", headerSize);
+            DrawLayerHeader(GetCurrentLayer(), GetSelectedPrimSpec()->GetPath());
+            ImGui::EndChild();
+            ImGui::Separator();
+            ImGui::BeginChild("##LayerBody");
+            DrawSdfPrimSpecEditor(GetSelectedPrimSpec());
+            ImGui::EndChild();
         } else {
-            DrawLayerHeader(GetCurrentLayer());
+            ImGui::BeginChild("##LayerHeader", headerSize);
+            DrawLayerHeader(GetCurrentLayer(), SdfPath::AbsoluteRootPath());
+            ImGui::EndChild();
+            ImGui::Separator();
+            ImGui::BeginChild("##LayerBody");
+            DrawLayerMetadata(GetCurrentLayer());
+            ImGui::EndChild();
         }
+
         ImGui::End();
     }
     

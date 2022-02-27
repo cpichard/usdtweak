@@ -350,7 +350,7 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
     // Draw the description column
     ImGui::TableSetColumnIndex(1);
     ImGui::PushItemWidth(-FLT_MIN); // removes the combo label. The col needs to have a fixed size
-    DrawPrimSpecifierCombo(primSpec, ImGuiComboFlags_NoArrowButton);
+    DrawPrimSpecifier(primSpec, ImGuiComboFlags_NoArrowButton);
     ImGui::PopItemWidth();
     ImGui::TableSetColumnIndex(2);
     ImGui::PushItemWidth(-FLT_MIN); // removes the combo label. The col needs to have a fixed size

@@ -27,6 +27,7 @@
 #include "ImGuiHelpers.h"
 #include "Constants.h"
 #include "VtValueEditor.h"
+#include "FieldValueTable.h"
 
 struct AddSublayer : public ModalDialog {
 
@@ -67,10 +68,8 @@ struct AddSublayer : public ModalDialog {
 };
 
 
-void DrawDefaultPrim(SdfLayerRefPtr layer) {
-    auto rootPrims = layer->GetRootPrims();
+void DrawDefaultPrim(const SdfLayerRefPtr &layer) {
     auto defautPrim = layer->GetDefaultPrim();
-
     if (ImGui::BeginCombo("Default Prim", defautPrim.GetString().c_str())) {
         bool isSelected = defautPrim == "";
         if (ImGui::Selectable("##defaultprim", isSelected)) {
@@ -78,6 +77,7 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
             if (isSelected)
                 ImGui::SetItemDefaultFocus();
         }
+        const auto &rootPrims = layer->GetRootPrims();
         for (const auto &prim : rootPrims) {
             isSelected = (defautPrim == prim->GetNameToken());
             if (ImGui::Selectable(prim->GetName().c_str(), isSelected)) {
@@ -94,7 +94,6 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
                 ExecuteAfterDraw(&SdfLayer::ClearDefaultPrim, layer);
             }
         }
-
         ImGui::EndCombo();
     }
 }
@@ -102,10 +101,8 @@ void DrawDefaultPrim(SdfLayerRefPtr layer) {
 /// Draw the up axis orientation.
 /// It should normally be set by the stage, not the layer, so the code bellow follows what the api is doing
 /// inside
-void DrawUpAxis(SdfLayerRefPtr layer) {
-
+void DrawUpAxis(const SdfLayerRefPtr &layer) {
     VtValue upAxis = layer->GetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->upAxis);
-
     std::string upAxisStr("Default");
     if (!upAxis.IsEmpty()) {
         upAxisStr = upAxis.Get<TfToken>().GetString();
@@ -126,31 +123,114 @@ void DrawUpAxis(SdfLayerRefPtr layer) {
     }
 }
 
-// TODO: move in the property editor
-void DrawLayerHeader(SdfLayerRefPtr layer) {
+void DrawLayerMetersPerUnit(const SdfLayerRefPtr &layer) {
+    VtValue metersPerUnit = layer->HasField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->metersPerUnit)
+                                ? layer->GetField(SdfPath::AbsoluteRootPath(), UsdGeomTokens->metersPerUnit)
+                                : VtValue(1.0); // Should be the default value
+    VtValue result = DrawVtValue("Meters per unit", metersPerUnit);
+    if (result != VtValue()) {
+        ExecuteAfterDraw(&SdfLayer::SetField<VtValue>, layer, SdfPath::AbsoluteRootPath(), UsdGeomTokens->metersPerUnit, result);
+    }
+}
+
+#define GENERATE_DRAW_FUNCTION(Name_, Type_, Label_)                                                                             \
+    void DrawLayer##Name_(const SdfLayerRefPtr &layer) {                                                                         \
+        auto value = layer->Get##Name_();                                                                                        \
+        ImGui::Input##Type_(Label_, &value);                                                                                     \
+        if (ImGui::IsItemDeactivatedAfterEdit()) {                                                                               \
+            ExecuteAfterDraw(&SdfLayer::Set##Name_, layer, value);                                                               \
+        }                                                                                                                        \
+    }\
+
+GENERATE_DRAW_FUNCTION(StartTimeCode, Double, "Start Time Code");
+GENERATE_DRAW_FUNCTION(EndTimeCode, Double, "End Time Code");
+GENERATE_DRAW_FUNCTION(FramesPerSecond, Double, "Frame per second");
+GENERATE_DRAW_FUNCTION(FramePrecision, Int, "Frame precision");
+GENERATE_DRAW_FUNCTION(TimeCodesPerSecond, Double, "TimeCodes per second");
+GENERATE_DRAW_FUNCTION(Documentation, TextMultiline, "##DrawLayerDocumentation");
+GENERATE_DRAW_FUNCTION(Comment, TextMultiline, "##DrawLayerComment");
+
+
+// To avoid repeating the same code, we let the preprocessor do the work
+#define GENERATE_METADATA_FIELD(ClassName_, Token_, DrawFun_, FieldName_)                                                        \
+    struct ClassName_ {                                                                                                          \
+        static constexpr const char *fieldName = FieldName_;                                                                     \
+    };                                                                                                                           \
+    template <> inline void DrawFieldValue<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                           \
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
+        DrawFun_(owner);                                                                                                         \
+    }                                                                                                                            \
+    template <> inline bool HasEdits<ClassName_>(const SdfLayerRefPtr &owner) {                                                  \
+        return !owner->GetField(SdfPath::AbsoluteRootPath(), Token_).IsEmpty();                                                  \
+    }                                                                                                                            \
+    template <> inline void DrawFieldButton<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                          \
+        ImGui::PushID(rowId);                                                                                                    \
+        if (ImGui::Button(ICON_FA_TRASH) && HasEdits<ClassName_>(owner)) {                                                       \
+            ExecuteAfterDraw(&SdfLayer::EraseField, owner, SdfPath::AbsoluteRootPath(), Token_);                                 \
+        }                                                                                                                        \
+        ImGui::PopID();                                                                                                          \
+    }\
+
+
+// Draw the layer path
+struct LayerFieldFilename {
+    static constexpr const char *fieldName = "Path";
+};
+
+template <> inline void DrawFieldValue<LayerFieldFilename>(const int rowId, const SdfPath &path) {
+    ImGui::Text("%s", path.GetString().c_str());
+}
+
+
+// Draw the layer identifier
+struct LayerFieldIdentity {
+    static constexpr const char *fieldName = "Layer";
+};
+
+template <> inline void DrawFieldValue<LayerFieldIdentity>(const int rowId, const SdfLayerRefPtr &owner) {
+    ImGui::Text("%s", owner->GetIdentifier().c_str());
+}
+
+GENERATE_METADATA_FIELD(LayerFieldDefaultPrim, SdfFieldKeys->DefaultPrim, DrawDefaultPrim, "Default prim");
+GENERATE_METADATA_FIELD(LayerFieldUpAxis, UsdGeomTokens->upAxis, DrawUpAxis, "Up axis");
+GENERATE_METADATA_FIELD(LayerFieldStartTimeCode, SdfFieldKeys->StartTimeCode, DrawLayerStartTimeCode, "Start timecode");
+GENERATE_METADATA_FIELD(LayerFieldEndTimeCode, SdfFieldKeys->EndTimeCode, DrawLayerEndTimeCode, "End timecode");
+GENERATE_METADATA_FIELD(LayerFieldFramesPerSecond, SdfFieldKeys->FramesPerSecond, DrawLayerFramesPerSecond, "Frames per second");
+GENERATE_METADATA_FIELD(LayerFieldFramePrecision, SdfFieldKeys->FramePrecision, DrawLayerFramePrecision, "Frame precision");
+GENERATE_METADATA_FIELD(LayerFieldTimeCodesPerSecond, SdfFieldKeys->TimeCodesPerSecond, DrawLayerTimeCodesPerSecond, "TimeCodes per second");
+GENERATE_METADATA_FIELD(LayerFieldMetersPerUnit, UsdGeomTokens->metersPerUnit, DrawLayerMetersPerUnit, "Meters per unit");
+GENERATE_METADATA_FIELD(LayerFieldDocumentation, SdfFieldKeys->Documentation, DrawLayerDocumentation, "Documentation");
+GENERATE_METADATA_FIELD(LayerFieldComment, SdfFieldKeys->Comment, DrawLayerComment, "Comment");
+
+void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &path) {
     if (!layer)
         return;
-
-    DrawDefaultPrim(layer);
-
-    // DrawComments();
-
-    DrawUpAxis(layer);
-
-    // Time
-    auto startTimeCode = layer->GetStartTimeCode();
-    if (ImGui::InputDouble("Start Time Code", &startTimeCode)) {
-        ExecuteAfterDraw(&SdfLayer::SetStartTimeCode, layer, startTimeCode);
+    int rowId = 0;
+    if (BeginFieldValueTable("##DrawLayerHeader")) {
+        FieldValueTableSetupColumns(false);
+        DrawFieldValueTableRow<LayerFieldIdentity>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldFilename>(rowId++, path);
+        EndFieldValueTable();
     }
-    auto endTimeCode = layer->GetEndTimeCode();
-    if (ImGui::InputDouble("End Time Code", &endTimeCode)) {
-        ExecuteAfterDraw(&SdfLayer::SetEndTimeCode, layer, endTimeCode);
-    }
+}
 
-    auto framesPerSecond = layer->GetFramesPerSecond();
-    ImGui::InputDouble("Frame per second", &framesPerSecond);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        ExecuteAfterDraw(&SdfLayer::SetFramesPerSecond, layer, framesPerSecond);
+void DrawLayerMetadata(const SdfLayerRefPtr &layer) {
+    if (!layer)
+        return;
+    int rowId = 0;
+    if (BeginFieldValueTable("##DrawLayerMetadata")) {
+        FieldValueTableSetupColumns(true);
+        DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldStartTimeCode>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldEndTimeCode>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldFramesPerSecond>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldFramePrecision>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldTimeCodesPerSecond>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldDocumentation>(rowId++, layer);
+        DrawFieldValueTableRow<LayerFieldComment>(rowId++, layer);
+        EndFieldValueTable();
     }
 }
 
@@ -211,7 +291,7 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
     ImGui::PopID();
 }
 
-void DrawLayerSublayers(SdfLayerRefPtr layer) {
+void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
     if (!layer)
         return;
 

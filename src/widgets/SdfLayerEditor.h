@@ -3,11 +3,14 @@
 #include <pxr/usd/sdf/primSpec.h>
 
 //
-void DrawLayerHeader(SdfLayerRefPtr layer);
+void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &);
+
+//
+void DrawLayerMetadata(const SdfLayerRefPtr &layer);
 
 ///
 void DrawLayerActionPopupMenu(SdfLayerHandle layer);
 
 void DrawLayerNavigation(SdfLayerRefPtr layer);
 
-void DrawLayerSublayers(SdfLayerRefPtr layer);
+void DrawLayerSublayerStack(SdfLayerRefPtr layer);
