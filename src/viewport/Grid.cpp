@@ -66,8 +66,8 @@ void Grid::Render(Viewport &viewport) {
     glBindVertexArray(_vertexArrayObject);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
-    glDisable(GL_BLEND);
     glUseProgram(0);
+    glDisable(GL_BLEND);
 }
 
 // TODO: this must be refactored along with TranslationEditor::CompileShader in a dedicated class

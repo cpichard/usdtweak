@@ -92,6 +92,10 @@ RotationManipulator::RotationManipulator() : _selectedAxis(None) {
     }
 
     glBindVertexArray(0);
+
+    GLfloat aLineWidthRange[2];
+    glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
+    _lineWidth = std::min(_lineWidth, aLineWidthRange[1]);
 }
 
 RotationManipulator::~RotationManipulator() { glDeleteBuffers(1, &_arrayBuffer); }
@@ -243,7 +247,7 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
 
         glEnable(GL_DEPTH_TEST);
         glClear(GL_DEPTH_BUFFER_BIT);
-        glLineWidth(3);
+        glLineWidth(_lineWidth);
         glUseProgram(_programShader);
         GfMatrix4f mvp(mv);
         GfMatrix4f projp(proj);

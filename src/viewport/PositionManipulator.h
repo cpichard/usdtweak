@@ -65,4 +65,6 @@ class PositionManipulator : public Manipulator {
     unsigned int _scaleFactorUniform;
     unsigned int _objectMatrixUniform;
     unsigned int _highlightUniform;
+    
+    float _lineWidth = 1.f;
 };
