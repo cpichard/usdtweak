@@ -528,7 +528,6 @@ void Editor::Draw() {
     // Top level shortcuts functions
     AddShortcut<UndoCommand, ImGuiKey_LeftCtrl, ImGuiKey_Z>();
     AddShortcut<RedoCommand, ImGuiKey_LeftCtrl, ImGuiKey_R>();
-    AddShortcut<EditorShutdown, ImGuiKey_LeftCtrl, ImGuiKey_Q>();
     EndBackgroundDock();
 
 }
