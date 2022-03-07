@@ -321,4 +321,18 @@ void DrawFileBrowser() {
 bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
-void ResetFileBrowserFilePath() { filePath = ""; lineEditBuffer = ""; }
+
+void EnsureFileBrowserDefaultExtension(const std::string &ext) {
+    fs::path path(filePath);
+    if (!path.empty() && !path.has_extension()) {
+        path.replace_extension(ext);
+        filePath = path.generic_string();
+        fileExists = fs::exists(filePath);
+    }
+}
+
+
+void ResetFileBrowserFilePath() {
+    filePath = "";
+    lineEditBuffer = "";
+}

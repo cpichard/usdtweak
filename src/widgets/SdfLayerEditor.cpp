@@ -35,6 +35,7 @@ struct AddSublayer : public ModalDialog {
 
     void Draw() override {
         DrawFileBrowser();
+        EnsureFileBrowserDefaultExtension("usd");
         auto filePath = GetFileBrowserFilePath();
         const bool filePathExits = FilePathExists();
         ImGui::BeginDisabled(filePathExits);

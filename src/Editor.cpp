@@ -90,6 +90,7 @@ void Editor::ConfirmShutdown(std::string why) {
 
     void Draw() override {
         DrawFileBrowser();
+        EnsureFileBrowserDefaultExtension("usd");
         auto filePath = GetFileBrowserFilePath();
         ImGui::Checkbox("Open as stage", &createStage);
         if (FilePathExists()) {
@@ -160,6 +161,7 @@ struct SaveLayerAs : public ModalDialog {
     ~SaveLayerAs() override {}
     void Draw() override {
         DrawFileBrowser();
+        EnsureFileBrowserDefaultExtension("usd");
         auto filePath = GetFileBrowserFilePath();
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
