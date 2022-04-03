@@ -208,7 +208,7 @@ void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &path) {
         return;
     int rowId = 0;
     if (BeginFieldValueTable("##DrawLayerHeader")) {
-        FieldValueTableSetupColumns(false);
+        FieldValueTableSetupColumns(true, "", "Identity", "Value");
         DrawFieldValueTableRow<LayerFieldIdentity>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldFilename>(rowId++, path);
         EndFieldValueTable();
