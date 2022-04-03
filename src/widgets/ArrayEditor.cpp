@@ -108,7 +108,7 @@ void DrawAttributeValuesAtTime(const SdfAttributeSpecHandle &attr, double timeCo
     if (std::isnan(timeCode)) { // NOTE: this might change in the API
         value = attr->GetDefaultValue();
     } else {
-        auto &layer = attr->GetLayer();
+        auto layer = attr->GetLayer();
         layer->QueryTimeSample(attr->GetPath(), timeCode, &value);
     }
     VtValue newValue;
