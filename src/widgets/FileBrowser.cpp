@@ -137,10 +137,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
 inline
 static bool DrawRefreshButton() {
     ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
-    ImGui::SameLine();
-    const float buttonPosX = ImGui::GetWindowContentRegionMax().x - 20; // 20 == button size
-    ImGui::SetCursorPosX(buttonPosX);
-    if (ImGui::Button(ICON_FA_REDO_ALT)) {
+    if (ImGui::Button(ICON_FA_SYNC_ALT)) {
         return true;
     }
     return false;
@@ -247,8 +244,10 @@ void DrawFileBrowser() {
     // We scan the line buffer edit every second, no need to do it at every frame
     EverySecond(ParseLineBufferEdit);
 
-    mustUpdateDirectoryContent |= DrawNavigationBar(displayedDirectory);
     mustUpdateDirectoryContent |= DrawRefreshButton();
+    ImGui::SameLine();
+    mustUpdateDirectoryContent |= DrawNavigationBar(displayedDirectory);
+
     if (mustUpdateDirectoryContent) {
         UpdateDirectoryContent();
     }
