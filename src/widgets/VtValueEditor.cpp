@@ -144,7 +144,7 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         std::string assetPath = sdfAssetPath.GetAssetPath();
         ImGui::InputText(label.c_str(), &assetPath);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
-            return VtValue(assetPath);
+            return VtValue(SdfAssetPath(assetPath));
         }
     } else if (value.IsHolding<GfMatrix4d>()) { // Matrices are in row order
         return DrawGfMatrix<GfMatrix4d, ImGuiDataType_Double, 4, 4>(label, value);
