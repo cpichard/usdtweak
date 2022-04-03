@@ -391,8 +391,9 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
 
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-        ImGui::TableSetupColumn("Field");
+        ImGui::TableSetupColumn("Identity");
         ImGui::TableSetupColumn("Value");
+        ImGui::TableHeadersRow();
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("Stage");
@@ -441,7 +442,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = TableRowDefaultHeight*4; // 4 fields in the header
+        headerSize.y = TableRowDefaultHeight*5; // 5 rows (4 + header)
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);
         ImGui::EndChild();

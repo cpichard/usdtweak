@@ -498,7 +498,7 @@ void Editor::Draw() {
     if (_settings._showPrimSpecEditor) {
         ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor, layerWindowFlag);
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = TableRowDefaultHeight * 2; // 4 fields in the header
+        headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
 
         if (GetSelectedPrimSpec()) {
             ImGui::BeginChild("##LayerHeader", headerSize);
