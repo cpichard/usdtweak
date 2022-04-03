@@ -230,6 +230,15 @@ void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags)
         ImGui::EndCombo();
     }
 }
+template<typename T>
+static inline void DrawArrayEditorButton(T attribute) {
+    if ((*attribute)->GetDefaultValue().IsArrayValued()) {
+        if (ImGui::Button(ICON_FA_LIST)) {
+            ExecuteAfterDraw<EditorSelectAttributePath>((*attribute)->GetPath());
+        }
+        ImGui::SameLine();
+    }
+}
 
 void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
@@ -256,6 +265,7 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
             // MiniButton
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(deleteButtonCounter++);
+
             if (ImGui::Button(ICON_FA_TRASH)) {
                 ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath((*attribute)->GetPath()));
             }
@@ -271,7 +281,9 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
                 ImGui::TableSetColumnIndex(2);
                 const std::string defaultValueLabel = "Default";
                 ImGui::Text("%s", defaultValueLabel.c_str());
+
                 ImGui::TableSetColumnIndex(3);
+                DrawArrayEditorButton(attribute);
                 ImGui::PushItemWidth(-FLT_MIN);
                 VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
                 if (modified != VtValue()) {
@@ -297,6 +309,7 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec) {
                     ImGui::Text("%s", sampleValueLabel.c_str());
                     // Value
                     ImGui::TableSetColumnIndex(3);
+                    DrawArrayEditorButton(attribute);
                     ImGui::PushItemWidth(-FLT_MIN);
                     VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
                     if (modified != VtValue()) {

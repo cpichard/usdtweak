@@ -55,6 +55,9 @@ public:
     SdfPrimSpecHandle &GetSelectedPrimSpec() { return _selectedPrimSpec; }
     void SetSelectedPrimSpec(const SdfPath& primPath);
 
+    inline SdfPath GetSelectedAttribute() const { return _selectedAttribute; }
+    inline void SetSelectedAttribute(const SdfPath &primPath) { _selectedAttribute = primPath; }
+
     /// Create a new layer in file path
     void CreateLayer(const std::string &path);
     void ImportLayer(const std::string &path);
@@ -118,4 +121,7 @@ private:
 
     /// Selected prim spec. This variable might move somewhere else
     SdfPrimSpecHandle _selectedPrimSpec;
+
+    /// Selected attribute, for showing in the spreadsheet or metadata
+    SdfPath _selectedAttribute;
 };

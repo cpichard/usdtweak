@@ -25,6 +25,7 @@
 #include "Constants.h"
 #include "Commands.h"
 #include "ResourcesLoader.h"
+#include "ArrayEditor.h"
 #include "TextEditor.h"
 #include "Shortcuts.h"
 
@@ -417,6 +418,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem("Layer property editor", nullptr, &_settings._showPrimSpecEditor);
             ImGui::MenuItem("Layer text editor", nullptr, &_settings._textEditor);
+            ImGui::MenuItem("Array editor", nullptr, &_settings._showArrayEditor);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -524,6 +526,13 @@ void Editor::Draw() {
             DrawTextEditor(GetCurrentLayer());
         ImGui::End();
     }
+
+    if (_settings._showArrayEditor) {
+        ImGui::Begin("Array editor", &_settings._showArrayEditor);
+        DrawArrayEditor(GetCurrentLayer(), GetSelectedAttribute());
+        ImGui::End();
+    }
+
     DrawCurrentModal();
 
     ///////////////////////

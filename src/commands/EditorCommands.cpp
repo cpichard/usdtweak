@@ -49,6 +49,26 @@ struct EditorSelectPrimPath : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSelectPrimPath>(SdfPath *selectionObject, SdfPath selectedPath);
 
+struct EditorSelectAttributePath : public EditorCommand {
+
+    EditorSelectAttributePath(SdfPath attributePath)
+        : _attributePath(attributePath) {}
+
+    ~EditorSelectAttributePath() override {}
+
+    // TODO: wip, we want an "Selection" object to be passed around
+    // At the moment it is just the pointer to the current selection held by the editor
+    bool DoIt() override {
+        if (_editor) {
+            _editor->SetSelectedAttribute(_attributePath);
+        }
+        return true;
+    }
+    SdfPath _attributePath;
+};
+template void ExecuteAfterDraw<EditorSelectAttributePath>(SdfPath attributePath);
+
+
 struct EditorOpenStage : public EditorCommand {
 
     EditorOpenStage(std::string stagePath) : _stagePath(std::move(stagePath)) {}

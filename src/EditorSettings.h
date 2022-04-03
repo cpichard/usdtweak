@@ -14,4 +14,5 @@ struct EditorSettings {
     bool _showPrimSpecEditor = false;
     bool _showViewport = false;
     bool _textEditor = false;
+    bool _showArrayEditor = false;
 };
