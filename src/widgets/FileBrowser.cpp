@@ -83,11 +83,21 @@ static void EverySecond(const std::function<void()> &deferedFunction) {
 
 inline void ConvertToDirectory(const fs::path &path, std::string &directory) {
     if (!path.empty() && path == path.root_name()) { // this is a drive
-        directory = path / path.root_directory();
+        auto path_ = path / path.root_directory();
+        directory = path_.string();
     } else {
-        directory = path;
+        directory = path.string();;
     }
 }
+
+constexpr char preferred_separator_char_windows = '\\';
+constexpr char preferred_separator_char_unix = '/';
+
+#ifdef GHC_OS_WINDOWS
+    static constexpr char preferred_separator_char = preferred_separator_char_windows;
+#else
+    static constexpr char preferred_separator_char = preferred_separator_char_unix;
+#endif
 
 static bool DrawNavigationBar(fs::path &displayedDirectory) {
     // Split the path navigator ??
@@ -96,7 +106,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
     const std::string &directoryPath = displayedDirectory.string();
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
-    len = directoryPath.find(fs::path::preferred_separator, pos);
+    len = directoryPath.find(preferred_separator_char, pos);
 
     while (len != std::string::npos) {
         if (pos == 0 && !drivesList.empty()) {
@@ -118,12 +128,12 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
         }
         const std::string dirLabel = directoryPath.substr(pos, len - pos);
         if (ImGui::Button(dirLabel.empty() ? "###emptydirlabel" : dirLabel.c_str())) {
-            lineEditBuffer = directoryPath.substr(0, len) + fs::path::preferred_separator;
+            lineEditBuffer = directoryPath.substr(0, len) + preferred_separator_char;
             displayedDirectory = fs::path(lineEditBuffer);
             return true;
         }
         pos = len + 1;
-        len = directoryPath.find(fs::path::preferred_separator, pos);
+        len = directoryPath.find(preferred_separator_char, pos);
         ImGui::SameLine();
         ImGui::Text(">");
         ImGui::SameLine();
@@ -143,10 +153,14 @@ static bool DrawRefreshButton() {
     return false;
 }
 
+static inline bool FileNameStartsWithDot(const fs::path &path) {
+    const std::string &filename = path.filename().string();
+    return filename.size() > 0 && filename[0] == '.';
+}
+
 static bool ShouldBeDisplayed(const fs::directory_entry &p) {
     const auto &filename = p.path().filename();
-    // TODO: startsWith is defined in ghc/filesystem.hpp and won't compile with c++17
-    const auto startsWithDot = fs::detail::startsWith(p.path().filename(), ".");
+    const auto startsWithDot = FileNameStartsWithDot(p.path());
     bool endsWithValidExt = true;
     if (!validExts.empty()) {
         endsWithValidExt = false;
@@ -233,7 +247,8 @@ void DrawFileBrowser() {
     if (mustUpdateChosenFileName) {
         if (!displayedDirectory.empty() && !displayedFileName.empty() && fs::exists(displayedDirectory) &&
             fs::is_directory(displayedDirectory)) {
-            filePath = displayedDirectory / displayedFileName;
+            const auto path_ = displayedDirectory / displayedFileName;
+            filePath = path_.string();
         } else {
             filePath = "";
         }
@@ -287,12 +302,12 @@ void DrawFileBrowser() {
                 ImGui::SameLine();
                 if (isDirectory) {
                     ImGui::TextColored(ImVec4(1.0, 1.0, 0.0, 1.0), "%s ", ICON_FA_FOLDER);
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().c_str());
+                    ImGui::TableSetColumnIndex(1); // the following line is allocating string for each directory/files, this is BAD
+                    ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().string().c_str());
                 } else {
                     ImGui::TextColored(ImVec4(0.9, 0.9, 0.9, 1.0), "%s ", ICON_FA_FILE);
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().c_str());
+                    ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().string().c_str());
                 }
                 ImGui::TableSetColumnIndex(2);
                 try {
