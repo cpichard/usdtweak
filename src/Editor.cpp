@@ -114,6 +114,8 @@ void Editor::ConfirmShutdown(std::string why) {
         } else {
             if (!filePath.empty()) {
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "New stage: ");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Empty filename");
             }
         }
 
@@ -524,13 +526,7 @@ void Editor::Draw() {
         headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
 
         if (GetSelectedPrimSpec()) {
-            ImGui::BeginChild("##LayerHeader", headerSize);
-            DrawLayerHeader(GetCurrentLayer(), GetSelectedPrimSpec()->GetPath());
-            ImGui::EndChild();
-            ImGui::Separator();
-            ImGui::BeginChild("##LayerBody");
             DrawSdfPrimSpecEditor(GetSelectedPrimSpec());
-            ImGui::EndChild();
         } else {
             ImGui::BeginChild("##LayerHeader", headerSize);
             DrawLayerHeader(GetCurrentLayer(), SdfPath::AbsoluteRootPath());

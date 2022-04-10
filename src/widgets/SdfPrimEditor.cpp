@@ -461,8 +461,12 @@ static void DrawAssetInfo(const SdfPrimSpecHandle prim) {
 }
 
 void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
+
     if (!primSpec)
         return;
+    auto headerSize = ImGui::GetWindowSize();
+    headerSize.y = TableRowDefaultHeight * 3 + 30; // 3 fields in the header + button size (=30 arbitrary)
+    ImGui::BeginChild("##LayerHeader", headerSize);
     if (ImGui::Button("Create Attribute")) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
     }
@@ -470,10 +474,17 @@ void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
     if (ImGui::Button("Create Relationship")) {
         DrawModalDialog<CreateRelationDialog>(primSpec);
     }
+    DrawLayerHeader(primSpec->GetLayer(), primSpec->GetPath()); // TODO rename to DrawUsdObjectInfo()
+    ImGui::EndChild();
+    ImGui::Separator();
+    ImGui::BeginChild("##LayerBody");
     DrawPrimSpecMetadata(primSpec);
     DrawAssetInfo(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec);
     DrawPrimSpecRelations(primSpec);
+    ImGui::EndChild();
+
+
 }
