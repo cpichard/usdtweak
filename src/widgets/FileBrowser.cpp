@@ -24,30 +24,55 @@ namespace fs = ghc::filesystem;
 #include "Gui.h"
 
 namespace clk = std::chrono;
+using DrivesListT = std::vector<std::pair<std::string, std::string>>;
 
 #ifdef _WIN64
 /*
 Windows specific implementation
 */
 #include <Fileapi.h>
-std::vector<std::string> InitDrivesList() {
+#include <cstdlib> // wcstombs
+
+std::string GetVolumeName(const std::wstring &currentDrive) {
+    constexpr size_t volumeNameMaxSize = 512;
+    WCHAR volumeName[volumeNameMaxSize];
+    volumeName[0] = L'\0';
+    GetVolumeInformationW(currentDrive.c_str(), volumeName, volumeNameMaxSize, nullptr, nullptr, nullptr, nullptr, 0);
+    if (volumeName[0] != 0) {
+        char volumeNameMultiBytes[volumeNameMaxSize];
+        volumeNameMultiBytes[0] = '\0';
+        std::wcstombs(volumeNameMultiBytes, volumeName, volumeNameMaxSize);
+        return volumeNameMultiBytes;
+    } else {
+        return "Local disk";
+    }
+}
+
+DrivesListT InitDrivesList() {
+    std::setlocale(LC_ALL, "en_US.utf8");
     constexpr size_t drivesListBufferSize = 256;
     wchar_t drivesList[drivesListBufferSize];
-    std::vector<std::string> drivesVector;
+    DrivesListT drivesVector;
     DWORD totalSize = GetLogicalDriveStringsW(drivesListBufferSize, (LPWSTR)drivesList);
     std::wstring currentDrive;
+    std::string volumeNameStr;
     for (DWORD i = 0; i < totalSize; ++i) {
         if (drivesList[i] != '\0') {
             currentDrive.push_back(drivesList[i]);
         } else {
-            drivesVector.emplace_back(currentDrive.begin(), currentDrive.end());
+            drivesVector.emplace_back(
+                std::string(
+                    currentDrive.begin(),
+                    currentDrive.end()), // conversion works because we expect just a drive letter, otherwise this is incorrect
+                GetVolumeName(currentDrive.c_str()));
             currentDrive = L"";
         }
     }
     return drivesVector;
 }
 
-static std::vector<std::string> drivesList = InitDrivesList();
+// TODO: FIX if a new drive is added, it won't be taken into account;
+static DrivesListT drivesList = InitDrivesList();
 
 // Calling a thread safe localtime function instead of std::locatime
 // (even if the overall code is not thread safe)
@@ -57,7 +82,7 @@ inline void localtime_(struct tm *result, const time_t *timep) { localtime_s(res
 /*
 Posix specific implementation
 */
-static std::vector<std::string> drivesList;
+static DrivesListT drivesList;
 
 inline void localtime_(struct tm *result, const time_t *timep) { localtime_r(timep, result); }
 
@@ -114,9 +139,12 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
                 ImGui::OpenPopup("driveslist");
             }
             if (ImGui::BeginPopup("driveslist")) {
-                for (auto driveLetter : drivesList) {
-                    if (ImGui::Selectable(driveLetter.c_str(), false)) {
-                        lineEditBuffer = driveLetter + fs::path::preferred_separator;
+                for (auto driveInfo: drivesList) {
+                    const std::string& driveLetter = driveInfo.first;
+                    const std::string& driveVolumeName = driveInfo.second;
+                    const std::string driveText = driveVolumeName + " (" + driveLetter + ")";
+                    if (ImGui::Selectable(driveText.c_str(), false)) {
+                        lineEditBuffer = driveLetter + preferred_separator_char;
                         displayedDirectory = fs::path(lineEditBuffer);
                         ImGui::EndPopup();
                         return true;
