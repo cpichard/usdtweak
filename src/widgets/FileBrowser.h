@@ -9,6 +9,9 @@ void DrawFileBrowser();
 /// Returns the current stored file browser path
 std::string GetFileBrowserFilePath();
 
+/// Returns the current stored file browser path, relative to root
+std::string GetFileBrowserFilePathRelativeTo(const std::string& root, bool unixify=false);
+
 /// Make sure the file path has an extension, if not "ext" is append as an extension
 void EnsureFileBrowserDefaultExtension(const std::string& ext);
 

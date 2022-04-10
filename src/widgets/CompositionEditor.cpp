@@ -69,15 +69,21 @@ struct CreateAssetPathModalDialog : public ModalDialog {
             return;
         }
         ImGui::Text("%s", _primSpec->GetPath().GetString().c_str());
-        if (fileBrowser) {
-            if (ImGui::Button(ICON_FA_FILE)) {
-                fileBrowser = !fileBrowser;
+        if (_showFileBrowser) {
+            DrawFileBrowser();
+            ImGui::Checkbox("Use relative path", &_relative);
+            ImGui::Checkbox("Unix compatible", &_unixify);
+            if (ImGui::Button("Use selected file")) {
+                _showFileBrowser = !_showFileBrowser;
+                if (_relative) {
+                    _assetPath = GetFileBrowserFilePathRelativeTo(_primSpec->GetLayer()->GetRealPath(), _unixify);
+                } else {
+                    _assetPath = GetFileBrowserFilePath();
+                }
             }
             ImGui::SameLine();
-            DrawFileBrowser();
-            if (ImGui::Button("Use selected file")) {
-                fileBrowser = !fileBrowser;
-                _assetPath = GetFileBrowserFilePath();
+            if (ImGui::Button("Close")) {
+                _showFileBrowser = !_showFileBrowser;
             }
         } else {
             if (ImGui::BeginCombo("Operation", GetListEditorOperationName(_operation))) {
@@ -91,7 +97,7 @@ struct CreateAssetPathModalDialog : public ModalDialog {
             ImGui::InputText("File path", &_assetPath);
             ImGui::SameLine();
             if (ImGui::Button(ICON_FA_FILE)) {
-                fileBrowser = !fileBrowser;
+                _showFileBrowser = !_showFileBrowser;
             }
             ImGui::InputText("Target prim path", &_primPath);
             DrawOkCancelModal([=]() { OnOkCallBack(); });
@@ -107,7 +113,9 @@ struct CreateAssetPathModalDialog : public ModalDialog {
     std::string _primPath;
     // SdfLayerOffset layerOffset; // TODO
     int _operation = 0;
-    bool fileBrowser = false;
+    bool _showFileBrowser = false;
+    bool _relative = false;
+    bool _unixify = false;
 };
 
 // Inheriting, but could also be done with templates, would the code be cleaner ?

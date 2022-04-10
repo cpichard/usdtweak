@@ -336,6 +336,22 @@ bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
 
+std::string GetFileBrowserFilePathRelativeTo(const std::string &root, bool unixify) {
+    fs::path rootPath(root);
+    const fs::path originalPath(filePath);
+    if (rootPath.is_absolute() && originalPath.is_absolute()) {
+        rootPath.remove_filename();
+        const fs::path relativePath = fs::relative(originalPath, rootPath);
+        auto relativePathStr = relativePath.string();
+        if (unixify) {
+            std::replace(relativePathStr.begin(), relativePathStr.end(), preferred_separator_char_windows,
+                         preferred_separator_char_unix);
+        }
+        return relativePathStr;
+    }
+    return filePath;
+}
+
 void EnsureFileBrowserDefaultExtension(const std::string &ext) {
     fs::path path(filePath);
     if (!path.empty() && !path.has_extension()) {
