@@ -11,12 +11,12 @@
 #define GUI_CONFIG_FILE "usdtweak_gui.ini"
 
 #ifdef _WIN64
-#include <sstream>
-#include <locale>
 #include <codecvt>
-#include <winerror.h>
+#include <locale>
 #include <shlobj_core.h>
 #include <shlwapi.h>
+#include <sstream>
+#include <winerror.h>
 
 std::string GetConfigFilePath() {
     PWSTR localAppDataDir = nullptr;
@@ -24,7 +24,8 @@ std::string GetConfigFilePath() {
         std::wstringstream configFilePath;
         configFilePath << localAppDataDir << L"\\" GUI_CONFIG_FILE;
         CoTaskMemFree(localAppDataDir);
-        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter; // TODO: this is deprecated in C++17, find another solution
+        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>>
+            converter; // TODO: this is deprecated in C++17, find another solution
         return converter.to_bytes(configFilePath.str());
     }
     return GUI_CONFIG_FILE;
@@ -69,12 +70,25 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
         settings._showDebugWindow = static_cast<bool>(value);
     } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
         settings._showArrayEditor = static_cast<bool>(value);
+    } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
+        // TODO: should the following code goes in EditorSettings::DecodeRecentFiles(string) ? or something similar ?
+        //       same for EncodeRecentFiles()
+        std::string recentFiles(line + 12);
+        settings._recentFiles.push_back("");
+        for (auto c : recentFiles) {
+            if (c == '\0')
+                break;
+            else if (c == ';') {
+                settings._recentFiles.push_back("");
+            } else {
+                settings._recentFiles.back().push_back(c);
+            }
+        }
     }
 }
 
 static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHandler, ImGuiTextBuffer *buf) {
-    // ResourcesLoader *loader = static_cast<ResourcesLoader *>(iniHandler->UserData);
-    buf->reserve(2048); // ballpark reserve
+    buf->reserve(4096); // ballpark reserve
 
     // Saving the editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
@@ -89,6 +103,15 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
     buf->appendf("ShowViewport=%d\n", settings._showViewport);
     buf->appendf("ShowDebugWindow=%d\n", settings._showDebugWindow);
     buf->appendf("ShowArrayEditor=%d\n", settings._showArrayEditor);
+
+    std::string recentFileString;
+    for (std::list<std::string>::iterator it = settings._recentFiles.begin(); it != settings._recentFiles.end(); ++it) {
+        recentFileString += *it;
+        if (it != std::prev(settings._recentFiles.end())) {
+            recentFileString.push_back(';');
+        }
+    }
+    buf->appendf("RecentFiles=%s\n", recentFileString.c_str());
 }
 
 EditorSettings ResourcesLoader::_editorSettings = EditorSettings();

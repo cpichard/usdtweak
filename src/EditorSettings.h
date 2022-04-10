@@ -1,5 +1,6 @@
 #pragma once
-
+#include <list>
+#include <string>
 /// EditorSettings contains all the settings we want to persist between sessions
 
 struct EditorSettings {
@@ -15,4 +16,7 @@ struct EditorSettings {
     bool _showViewport = false;
     bool _textEditor = false;
     bool _showArrayEditor = false;
+
+    /// Recent files
+    std::list<std::string> _recentFiles;
 };

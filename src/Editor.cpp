@@ -43,6 +43,20 @@ static const std::vector<std::string> GetUsdValidExtensions() {
     return validExtensions;
 }
 
+
+static void UpdateRecentFiles(std::list<std::string>& recentFiles, const std::string& newFile) {
+    auto found = find(recentFiles.begin(), recentFiles.end(), newFile);
+    if (found != recentFiles.end()) {
+        recentFiles.erase(found);
+    }
+    recentFiles.push_front(newFile); // obviously we don't want this behaviour
+    if (recentFiles.size() > 10) {
+        std::list<std::string>::iterator begin = recentFiles.begin();
+        std::advance(begin, 10);
+        recentFiles.erase(begin, recentFiles.end());
+    }
+}
+
 struct CloseEditorModalDialog : public ModalDialog {
     CloseEditorModalDialog(Editor &editor, std::string confirmReasons) : editor(editor), confirmReasons(confirmReasons) {}
 
@@ -329,6 +343,7 @@ void Editor::ImportStage(const std::string &path, bool openLoaded) {
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
         _settings._showViewport = true;
+        UpdateRecentFiles(_settings._recentFiles, path);
     }
 }
 
@@ -374,7 +389,15 @@ void Editor::DrawMainMenuBar() {
                 DrawModalDialog<CreateUsdFileModalDialog>(*this);
             }
             if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " Open")) {
-                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
+                DrawModalDialog<OpenUsdFileModalDialog>(*this);
+            }
+            if (ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " Open Recent (as stage)")) {
+                for (const auto& recentFile : _settings._recentFiles) {
+                    if (ImGui::MenuItem(recentFile.c_str())) {
+                        ExecuteAfterDraw<EditorOpenStage>(recentFile);
+                    }
+                }
+                ImGui::EndMenu();
             }
             ImGui::Separator();
             const bool hasLayer = GetCurrentLayer() != SdfLayerRefPtr();
