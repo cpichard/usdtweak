@@ -14,9 +14,9 @@
 static constexpr GLfloat axisSize = 1.2f;
 
 static constexpr int nbSegments = 200;      // nb segments per circle
-static constexpr int nbCircles = 3;         // 3 color = 3 axis
+static constexpr int nbCircles = 4;         // 4 colors = 3 axis + 1 facing camera
 static constexpr int pointNbComponents = 3; // 3 float
-static constexpr int colorNbComponents = 4; // 3 float
+static constexpr int colorNbComponents = 4; // 4 float
 
 static void CreateCircles(std::vector<GLfloat> &points, std::vector<GLfloat> &colors) {
     points.resize(nbSegments * nbCircles * pointNbComponents, 0.f);
@@ -25,17 +25,21 @@ static void CreateCircles(std::vector<GLfloat> &points, std::vector<GLfloat> &co
         const float angle = 2.f * PI_F * static_cast<float>(i) / static_cast<float>(nbSegments);
         const float cosAngle = cos(angle);
         const float sinAngle = sin(angle);
-        points[i * 3 + 0] = 0.f;
-        points[i * 3 + 1] = cosAngle;
-        points[i * 3 + 2] = sinAngle;
+        points[(i + 0 * nbSegments) * 3 + 0] = 0.f;
+        points[(i + 0 * nbSegments) * 3 + 1] = cosAngle;
+        points[(i + 0 * nbSegments) * 3 + 2] = sinAngle;
 
-        points[(i + nbSegments) * 3 + 0] = cosAngle;
-        points[(i + nbSegments) * 3 + 1] = 0.f;
-        points[(i + nbSegments) * 3 + 2] = sinAngle;
+        points[(i + 1 * nbSegments) * 3 + 0] = cosAngle;
+        points[(i + 1 * nbSegments) * 3 + 1] = 0.f;
+        points[(i + 1 * nbSegments) * 3 + 2] = sinAngle;
 
         points[(i + 2 * nbSegments) * 3 + 0] = cosAngle;
         points[(i + 2 * nbSegments) * 3 + 1] = sinAngle;
         points[(i + 2 * nbSegments) * 3 + 2] = 0.f;
+
+        points[(i + 3 * nbSegments) * 3 + 0] = cosAngle;
+        points[(i + 3 * nbSegments) * 3 + 1] = sinAngle;
+        points[(i + 3 * nbSegments) * 3 + 2] = 0.0;
 
         colors[i * 4 + 0] = 1.f;
         colors[i * 4 + 1] = 0.f;
@@ -51,6 +55,11 @@ static void CreateCircles(std::vector<GLfloat> &points, std::vector<GLfloat> &co
         colors[(i + 2 * nbSegments) * 4 + 1] = 0.f;
         colors[(i + 2 * nbSegments) * 4 + 2] = 1.f;
         colors[(i + 2 * nbSegments) * 4 + 3] = 1.f;
+
+        colors[(i + 3 * nbSegments) * 4 + 0] = 0.5;
+        colors[(i + 3 * nbSegments) * 4 + 1] = 0.5;
+        colors[(i + 3 * nbSegments) * 4 + 2] = 0.5;
+        colors[(i + 3 * nbSegments) * 4 + 3] = 0.5;
     }
 }
 
@@ -265,8 +274,8 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
             glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
         glBindVertexArray(_vertexArrayObject);
 
-        const int first[nbCircles] = {0, nbSegments, nbSegments * 2};
-        const int count[nbCircles] = {nbSegments, nbSegments, nbSegments};
+        const int first[nbCircles] = {0, nbSegments, nbSegments * 2, nbSegments * 3};
+        const int count[nbCircles] = {nbSegments, nbSegments, nbSegments, nbSegments};
         glMultiDrawArrays(GL_LINE_STRIP, first, count, nbCircles);
         glBindVertexArray(0);
         // glDisable(GL_DEPTH_TEST);
