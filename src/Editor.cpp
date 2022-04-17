@@ -524,7 +524,7 @@ void Editor::Draw() {
         ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor, layerWindowFlag);
         auto headerSize = ImGui::GetWindowSize();
         headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
-
+        headerSize.x = -FLT_MIN;
         if (GetSelectedPrimSpec()) {
             DrawSdfPrimSpecEditor(GetSelectedPrimSpec());
         } else {

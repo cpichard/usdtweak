@@ -443,6 +443,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
         headerSize.y = TableRowDefaultHeight*5; // 5 rows (4 + header)
+        headerSize.x = -FLT_MIN; // expand as much as possible
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);
         ImGui::EndChild();

@@ -466,6 +466,7 @@ void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
         return;
     auto headerSize = ImGui::GetWindowSize();
     headerSize.y = TableRowDefaultHeight * 3 + 30; // 3 fields in the header + button size (=30 arbitrary)
+    headerSize.x = -FLT_MIN;
     ImGui::BeginChild("##LayerHeader", headerSize);
     if (ImGui::Button("Create Attribute")) {
         DrawModalDialog<CreateAttributeDialog>(primSpec);
