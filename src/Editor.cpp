@@ -423,6 +423,9 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Redo", "CTRL+R")) {
                 ExecuteAfterDraw<RedoCommand>();
             }
+            if (ImGui::MenuItem("Clear Undo/Redo")) {
+                ExecuteAfterDraw<ClearUndoRedoCommand>();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Cut", "CTRL+X", false, false)) {
             }

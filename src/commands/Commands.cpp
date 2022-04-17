@@ -87,7 +87,7 @@ void ExecuteCommands() {
         else {
             delete lastCmd;
         }
-       lastCmd = nullptr;   // Reset the command
+        lastCmd = nullptr;   // Reset the command
     }
 }
 

@@ -42,6 +42,25 @@ struct RedoCommand : public Command {
 };
 template void ExecuteAfterDraw<RedoCommand>();
 
+struct ClearUndoRedoCommand : public Command {
+
+    ClearUndoRedoCommand() {}
+
+    ~ClearUndoRedoCommand() override {}
+
+    /// Undo the last command in the stack
+    bool DoIt() override {
+        undoStackPos=0;
+        undoStack.clear();
+        delete lastCmd;
+        lastCmd = nullptr;
+        return false; // Should never be stored in the stack
+    }
+
+    bool UndoIt() override { return false; }
+};
+template void ExecuteAfterDraw<ClearUndoRedoCommand>();
+
 
 struct UsdFunctionCall : public Command {
 

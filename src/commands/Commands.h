@@ -51,6 +51,7 @@ struct LayerTextEdit;
 
 struct UndoCommand;
 struct RedoCommand;
+struct ClearUndoRedoCommand;
 
 struct AttributeSet;
 struct AttributeCreateDefaultValue;
