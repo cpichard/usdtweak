@@ -426,6 +426,10 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Clear Undo/Redo")) {
                 ExecuteAfterDraw<ClearUndoRedoCommand>();
             }
+            if (ImGui::MenuItem("Clear History")) {
+                _layerHistory.clear();
+                _layerHistoryPointer = 0;
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Cut", "CTRL+X", false, false)) {
             }
