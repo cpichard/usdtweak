@@ -13,6 +13,7 @@
 #include "Commands.h"
 #include "ModalDialogs.h"
 #include "ImGuiHelpers.h"
+#include "FieldValueTable.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -513,6 +514,63 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     }
 }
 
+struct XformCommonTranslateField {
+    static constexpr const char *fieldName = "Translate";
+};
+template <>
+inline void DrawFieldValue<XformCommonTranslateField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,
+                                                      const GfVec3d &translation, const UsdTimeCode &currentTime) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    GfVec3d translationf(translation[0], translation[1], translation[2]);
+    ImGui::InputScalarN("Translate", ImGuiDataType_Double, translationf.data(), 3, nullptr, nullptr, DecimalPrecision);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translationf, currentTime);
+    }
+}
+
+struct XformCommonRotateField {
+    static constexpr const char *fieldName = "Rotate";
+};
+template <>
+inline void DrawFieldValue<XformCommonRotateField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,
+                                                   const GfVec3f &rotation, const UsdGeomXformCommonAPI::RotationOrder &rotOrder,
+                                                   const UsdTimeCode &currentTime) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    GfVec3f rotationf(rotation[0], rotation[1], rotation[2]);
+    ImGui::InputScalarN("Rotate", ImGuiDataType_Float, rotationf.data(), 3, nullptr, nullptr, DecimalPrecision);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotationf, rotOrder, currentTime);
+    }
+}
+
+struct XformCommonScaleField {
+    static constexpr const char *fieldName = "Scale";
+};
+template <>
+inline void DrawFieldValue<XformCommonScaleField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI, const GfVec3f &value,
+                                                  const UsdTimeCode &currentTime) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    GfVec3f valueLocal(value[0], value[1], value[2]);
+    ImGui::InputScalarN("Scale", ImGuiDataType_Float, valueLocal.data(), 3, nullptr, nullptr, DecimalPrecision);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, valueLocal, currentTime);
+    }
+}
+
+struct XformCommonPivotField {
+    static constexpr const char *fieldName = "Pivot";
+};
+template <>
+inline void DrawFieldValue<XformCommonPivotField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI, const GfVec3f &value,
+                                                  const UsdTimeCode &currentTime) {
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    GfVec3f valueLocal(value[0], value[1], value[2]);
+    ImGui::InputScalarN("Pivot", ImGuiDataType_Float, valueLocal.data(), 3, nullptr, nullptr, DecimalPrecision);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, valueLocal, currentTime);
+    }
+}
+
 // Draw a xform common api in a table
 // I am not sure this is really useful
 bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
@@ -526,77 +584,15 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
         GfVec3f rotation;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
         xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
-        GfVec3f translationf(translation[0], translation[1], translation[2]);
-        if (ImGui::BeginTable("##DrawXformsCommon", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
-            ImGui::TableSetupColumn("Transform");
-            ImGui::TableSetupColumn("Value");
 
-            ImGui::TableHeadersRow();
-            // Translate
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton("(x)");
-
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("translation");
-
-            ImGui::TableSetColumnIndex(2);
-            ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::InputFloat3("Translation", translationf.data(), DecimalPrecision);
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                translation[0] = translationf[0]; // TODO: InputDouble3 instead, we don't want to loose values
-                translation[1] = translationf[1];
-                translation[2] = translationf[2];
-                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translation, currentTime);
-            }
-            ImGui::PopItemWidth();
-            // Rotation
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton("(x)");
-
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("rotation");
-
-            ImGui::TableSetColumnIndex(2);
-            ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::InputFloat3("Rotation", rotation.data(), DecimalPrecision);
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotation, rotOrder, currentTime);
-            }
-            ImGui::PopItemWidth();
-            // Scale
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton("(x)");
-
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("scale");
-
-            ImGui::TableSetColumnIndex(2);
-            ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::InputFloat3("Scale", scale.data(), DecimalPrecision);
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, scale, currentTime);
-            }
-            ImGui::PopItemWidth();
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            DrawPropertyMiniButton("(x)");
-
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("pivot");
-
-            ImGui::TableSetColumnIndex(2);
-            ImGui::PushItemWidth(-FLT_MIN);
-            ImGui::InputFloat3("Pivot", pivot.data(), DecimalPrecision);
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, pivot, currentTime);
-            }
-            ImGui::PopItemWidth();
-            // TODO rotation order
-            ImGui::EndTable();
+        int rowId = 0;
+        if (BeginFieldValueTable("##DrawXformsCommon")) {
+            FieldValueTableSetupColumns(true, "", "UsdGeomXformCommonAPI", "");
+            DrawFieldValueTableRow<XformCommonTranslateField>(rowId++, xformAPI, translation, currentTime);
+            DrawFieldValueTableRow<XformCommonRotateField>(rowId++, xformAPI, rotation, rotOrder, currentTime);
+            DrawFieldValueTableRow<XformCommonScaleField>(rowId++, xformAPI, scale, currentTime);
+            DrawFieldValueTableRow<XformCommonPivotField>(rowId++, xformAPI, pivot, currentTime);
+            EndFieldValueTable();
         }
         return true;
     }
