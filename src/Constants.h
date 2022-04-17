@@ -32,6 +32,27 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorGreyish {0.5, 0.5, 0.5, 1.0}
 #define ColorButtonHighlight {0.5, 0.7, 0.5, 0.7}
 
+/// Predefined colors for dark mode ui components
+#define ColorPrimaryLight {0.900f, 0.900f, 0.900f, 1.000f}
+
+#define ColorSecondaryLight {0.450f, 0.450f, 0.450f, 1.000f}
+#define ColorSecondaryLightLighten {0.586f, 0.586f, 0.586f, 1.000f}
+#define ColorSecondaryLightDarken {0.400f, 0.400f, 0.400f, 1.000f}
+
+#define ColorPrimaryDark {0.148f, 0.148f, 0.148f, 1.000f}
+#define ColorPrimaryDarkLighten {0.195f, 0.195f, 0.195f, 1.000f}
+#define ColorPrimaryDarkDarken {0.098f, 0.098f, 0.098f, 1.000f}
+
+#define ColorSecondaryDark {0.340f, 0.340f, 0.340f, 1.000f}
+#define ColorSecondaryDarkLighten {0.391f, 0.391f, 0.391f, 1.000f}
+#define ColorSecondaryDarkDarken {0.280f, 0.280f, 0.280f, 1.000f}
+
+#define ColorHighlight {1.000f, 0.391f, 0.000f, 1.000f}
+#define ColorHighlightDarken {1.000f, 0.391f, 0.000f, 0.781f}
+
+#define ColorBackgroundDim {0.000f, 0.000f, 0.000f, 0.586f}
+#define ColorInvisible {0.000f, 0.000f, 0.000f, 0.000f}
+
 /// Decimal Precision shown in the floating point values UI
 constexpr const char * DecimalPrecision = "%.5f";
 

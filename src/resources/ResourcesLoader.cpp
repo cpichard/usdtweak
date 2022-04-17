@@ -3,6 +3,7 @@
 #include "DefaultImGuiIni.h"
 #include "Gui.h"
 #include "ResourcesLoader.h"
+#include "Constants.h"
 // Fonts
 #include "FontAwesomeFree5.h"
 #include "IBMPlexMonoFree.h"
@@ -122,78 +123,57 @@ static void ApplyDarkStyle() {
     ImGuiStyle *style = &ImGui::GetStyle();
     ImVec4 *colors = style->Colors;
 
-    ImVec4 PRIMARY_LIGHT_COLOR =  ImVec4(0.900f, 0.900f, 0.900f, 1.000f);
-
-    ImVec4 SECONDARY_LIGHT_COLOR_DARKEN = ImVec4(0.400f, 0.400f, 0.400f, 1.000f);
-    ImVec4 SECONDARY_LIGHT_COLOR = ImVec4(0.450f, 0.450f, 0.450f, 1.000f);
-    ImVec4 SECONDARY_LIGHT_COLOR_LIGHTEN = ImVec4(0.586f, 0.586f, 0.586f, 1.000f);
-
-    ImVec4 PRIMARY_DARK_COLOR_LIGHTEN = ImVec4(0.195f, 0.195f, 0.195f, 1.000f);
-    ImVec4 PRIMARY_DARK_COLOR = ImVec4(0.148f, 0.148f, 0.148f, 1.000f);
-    ImVec4 PRIMARY_DARK_COLOR_DARKEN = ImVec4(0.098f, 0.098f, 0.098f, 1.000f);
-
-    ImVec4 SECONDARY_DARK_COLOR_DARKEN = ImVec4(0.280f, 0.280f, 0.280f, 1.000f);
-    ImVec4 SECONDARY_DARK_COLOR = ImVec4(0.340f, 0.340f, 0.340f, 1.000f);
-    ImVec4 SECONDARY_DARK_COLOR_LIGHTEN = ImVec4(0.391f, 0.391f, 0.391f, 1.000f);
-
-    ImVec4 HIGHLIGHT_COLOR = ImVec4(1.000f, 0.391f, 0.000f, 1.000f);
-    ImVec4 HIGHLIGHT_COLOR_DARKEN = ImVec4(1.000f, 0.391f, 0.000f, 0.781f);
-
-    ImVec4 BACKGROUND_DIM_COLOR = ImVec4(0.000f, 0.000f, 0.000f, 0.586f);
-    ImVec4 INVISIBLE_COLOR = ImVec4(0.000f, 0.000f, 0.000f, 0.000f);
-
-
-    colors[ImGuiCol_Text] = PRIMARY_LIGHT_COLOR;
-    colors[ImGuiCol_TextDisabled] = SECONDARY_LIGHT_COLOR;
-    colors[ImGuiCol_WindowBg] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_ChildBg] = INVISIBLE_COLOR;
-    colors[ImGuiCol_PopupBg] = SECONDARY_DARK_COLOR;
-    colors[ImGuiCol_Border] = INVISIBLE_COLOR;
-    colors[ImGuiCol_BorderShadow] = INVISIBLE_COLOR;
-    colors[ImGuiCol_FrameBg] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_FrameBgHovered] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_FrameBgActive] = SECONDARY_DARK_COLOR_DARKEN;
-    colors[ImGuiCol_TitleBg] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_TitleBgActive] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_TitleBgCollapsed] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_MenuBarBg] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_ScrollbarBg] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_ScrollbarGrab] = SECONDARY_DARK_COLOR;
-    colors[ImGuiCol_ScrollbarGrabHovered] = SECONDARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_ScrollbarGrabActive] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_CheckMark] = PRIMARY_LIGHT_COLOR;
-    colors[ImGuiCol_SliderGrab] = SECONDARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_SliderGrabActive] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_Button] = SECONDARY_LIGHT_COLOR;
-    colors[ImGuiCol_ButtonHovered] = SECONDARY_LIGHT_COLOR_DARKEN;
-    colors[ImGuiCol_ButtonActive] = SECONDARY_LIGHT_COLOR_LIGHTEN;
-    colors[ImGuiCol_Header] = SECONDARY_DARK_COLOR;
-    colors[ImGuiCol_HeaderHovered] = SECONDARY_LIGHT_COLOR;
-    colors[ImGuiCol_HeaderActive] = SECONDARY_LIGHT_COLOR;
+    colors[ImGuiCol_Text] = ImVec4(ColorPrimaryLight);
+    colors[ImGuiCol_TextDisabled] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_WindowBg] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_ChildBg] = ImVec4(ColorInvisible);
+    colors[ImGuiCol_PopupBg] = ImVec4(ColorSecondaryDark);
+    colors[ImGuiCol_Border] = ImVec4(ColorInvisible);
+    colors[ImGuiCol_BorderShadow] = ImVec4(ColorInvisible);
+    colors[ImGuiCol_FrameBg] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(ColorSecondaryDarkDarken);
+    colors[ImGuiCol_TitleBg] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(ColorSecondaryDark);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(ColorSecondaryDarkLighten);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_CheckMark] = ImVec4(ColorPrimaryLight);
+    colors[ImGuiCol_SliderGrab] = ImVec4(ColorSecondaryDarkLighten);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_Button] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(ColorSecondaryLightDarken);
+    colors[ImGuiCol_ButtonActive] = ImVec4(ColorSecondaryLightLighten);
+    colors[ImGuiCol_Header] = ImVec4(ColorSecondaryDark);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_HeaderActive] = ImVec4(ColorSecondaryLight);
     colors[ImGuiCol_Separator] = colors[ImGuiCol_BorderShadow];
-    colors[ImGuiCol_SeparatorHovered] = SECONDARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_SeparatorActive] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_ResizeGrip] = SECONDARY_LIGHT_COLOR;
-    colors[ImGuiCol_ResizeGripHovered] = SECONDARY_LIGHT_COLOR_LIGHTEN;
-    colors[ImGuiCol_ResizeGripActive] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_Tab] = PRIMARY_DARK_COLOR_DARKEN;
-    colors[ImGuiCol_TabHovered] = SECONDARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_TabActive] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_TabUnfocused] = PRIMARY_DARK_COLOR_DARKEN;
-    colors[ImGuiCol_TabUnfocusedActive] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_TableHeaderBg] = SECONDARY_LIGHT_COLOR_DARKEN;
-    colors[ImGuiCol_DockingPreview] = HIGHLIGHT_COLOR_DARKEN;
-    colors[ImGuiCol_DockingEmptyBg] = PRIMARY_DARK_COLOR_LIGHTEN;
-    colors[ImGuiCol_PlotLines] = SECONDARY_LIGHT_COLOR;
-    colors[ImGuiCol_PlotLinesHovered] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_PlotHistogram] = SECONDARY_LIGHT_COLOR_LIGHTEN;
-    colors[ImGuiCol_PlotHistogramHovered] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_TextSelectedBg] = PRIMARY_DARK_COLOR;
-    colors[ImGuiCol_DragDropTarget] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_NavHighlight] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_NavWindowingHighlight] = HIGHLIGHT_COLOR;
-    colors[ImGuiCol_NavWindowingDimBg] = BACKGROUND_DIM_COLOR;
-    colors[ImGuiCol_ModalWindowDimBg] = BACKGROUND_DIM_COLOR;
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(ColorSecondaryDarkLighten);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_ResizeGrip] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(ColorSecondaryLightLighten);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_Tab] = ImVec4(ColorPrimaryDarkDarken);
+    colors[ImGuiCol_TabHovered] = ImVec4(ColorSecondaryDarkLighten);
+    colors[ImGuiCol_TabActive] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_TabUnfocused] = ImVec4(ColorPrimaryDarkDarken);
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_TableHeaderBg] = ImVec4(ColorSecondaryLightDarken);
+    colors[ImGuiCol_DockingPreview] = ImVec4(ColorHighlightDarken);
+    colors[ImGuiCol_DockingEmptyBg] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_PlotLines] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_PlotLinesHovered] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_PlotHistogram] = ImVec4(ColorSecondaryLightLighten);
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_TextSelectedBg] = ImVec4(ColorPrimaryDark);
+    colors[ImGuiCol_DragDropTarget] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_NavHighlight] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(ColorHighlight);
+    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(ColorBackgroundDim);
+    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(ColorBackgroundDim);
 
     style->ChildRounding = 4.0f;
     style->FrameBorderSize = 1.0f;
