@@ -34,6 +34,19 @@
 // Reloading model.stage doesn't work but reloading stage separately does
 // https://groups.google.com/u/1/g/usd-interest/c/lRTmWgq78dc/m/HOZ6x9EdCQAJ
 
+constexpr const char *DebugWindowTitle = "Debug window";
+constexpr const char *ContentBrowserWindowTitle = "Content browser";
+constexpr const char *UsdStageHierarchyWindowTitle = "Stage outliner";        // replace by "UsdStage hierarchy" ?
+constexpr const char *UsdPrimPropertiesWindowTitle = "Stage property editor"; // replace by "UsdPrim properties" ?
+constexpr const char *SdfLayerHierarchyWindowTitle = "Layer hierarchy";       // replace by "SdfLayer hierarchy" ?
+constexpr const char *SdfLayerStackWindowTitle = "Layer stack";               // replace by "SdfLayer stack" ?
+constexpr const char *SdfPrimPropertiesWindowTitle = "Layer property editor"; // replace by SdfPrim properties
+constexpr const char *SdfLayerAsciiEditorWindowTitle = "Layer text editor";   // replace by Usd Ascii ?
+constexpr const char *SdfAttributeWindowTitle = "Array editor";               // replace by SdfAttribute values ?
+constexpr const char *TimelineWindowTitle = "Timeline";
+constexpr const char *ViewportWindowTitle = "Viewport";
+
+
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
     const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
@@ -440,17 +453,17 @@ void Editor::DrawMainMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Windows")) {
-            ImGui::MenuItem("Debug window", nullptr, &_settings._showDebugWindow);
-            ImGui::MenuItem("Content browser", nullptr, &_settings._showContentBrowser);
-            ImGui::MenuItem("Stage outliner", nullptr, &_settings._showOutliner);
-            ImGui::MenuItem("Stage property editor", nullptr, &_settings._showPropertyEditor);
-            ImGui::MenuItem("Stage timeline", nullptr, &_settings._showTimeline);
-            ImGui::MenuItem("Stage viewport", nullptr, &_settings._showViewport);
-            ImGui::MenuItem("Layer hierarchy", nullptr, &_settings._showLayerHierarchyEditor);
-            ImGui::MenuItem("Layer stack", nullptr, &_settings._showLayerStackEditor);
-            ImGui::MenuItem("Layer property editor", nullptr, &_settings._showPrimSpecEditor);
-            ImGui::MenuItem("Layer text editor", nullptr, &_settings._textEditor);
-            ImGui::MenuItem("Array editor", nullptr, &_settings._showArrayEditor);
+            ImGui::MenuItem(DebugWindowTitle, nullptr, &_settings._showDebugWindow);
+            ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
+            ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
+            ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
+            ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
+            ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
+            ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
+            ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
+            ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showArrayEditor);
+            ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
+            ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -474,7 +487,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showDebugWindow) {
-        ImGui::Begin("Debug window", &_settings._showDebugWindow);
+        ImGui::Begin(DebugWindowTitle, &_settings._showDebugWindow);
         // DrawDebugInfo();
         ImGui::Text("\xee\x81\x99" " %.3f ms/frame  (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
@@ -483,7 +496,7 @@ void Editor::Draw() {
     if (_settings._showPropertyEditor) {
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
-        ImGui::Begin("Stage property editor", &_settings._showPropertyEditor, windowFlags);
+        ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
@@ -492,13 +505,13 @@ void Editor::Draw() {
     }
 
     if (_settings._showOutliner) {
-        ImGui::Begin("Stage outliner", &_settings._showOutliner);
+        ImGui::Begin(UsdStageHierarchyWindowTitle, &_settings._showOutliner);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }
 
     if (_settings._showTimeline) {
-        ImGui::Begin("Timeline", &_settings._showTimeline);
+        ImGui::Begin(TimelineWindowTitle, &_settings._showTimeline);
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
         GetViewport().SetCurrentTimeCode(tc);
@@ -506,7 +519,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerHierarchyEditor) {
-        const std::string title("Layer hierarchy " + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
+        const std::string title(SdfLayerHierarchyWindowTitle + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
                                 "###Layer hierarchy");
         ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor, layerWindowFlag);
         DrawLayerPrimHierarchy(rootLayer, GetSelectedPrimSpec());
@@ -514,7 +527,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerStackEditor) {
-        const std::string title("Layer stack " + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
+        const std::string title(SdfLayerStackWindowTitle + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
         ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor, layerWindowFlag);
         DrawLayerSublayerStack(rootLayer);
         ImGui::End();
@@ -522,13 +535,13 @@ void Editor::Draw() {
 
     if (_settings._showContentBrowser) {
         const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
-        ImGui::Begin("Content browser", &_settings._showContentBrowser, windowFlags);
+        ImGui::Begin(ContentBrowserWindowTitle, &_settings._showContentBrowser, windowFlags);
         DrawContentBrowser(*this);
         ImGui::End();
     }
 
     if (_settings._showPrimSpecEditor) {
-        ImGui::Begin("Layer property editor", &_settings._showPrimSpecEditor, layerWindowFlag);
+        ImGui::Begin(SdfPrimPropertiesWindowTitle, &_settings._showPrimSpecEditor, layerWindowFlag);
         auto headerSize = ImGui::GetWindowSize();
         headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
         headerSize.x = -FLT_MIN;
@@ -548,13 +561,13 @@ void Editor::Draw() {
     }
     
     if (_settings._textEditor) {
-        ImGui::Begin("Layer text editor", &_settings._textEditor);
+        ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
             DrawTextEditor(GetCurrentLayer());
         ImGui::End();
     }
 
     if (_settings._showArrayEditor) {
-        ImGui::Begin("Array editor", &_settings._showArrayEditor);
+        ImGui::Begin(SdfAttributeWindowTitle, &_settings._showArrayEditor);
         DrawArrayEditor(GetCurrentLayer(), GetSelectedAttribute());
         ImGui::End();
     }
