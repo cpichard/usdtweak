@@ -514,19 +514,25 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     }
 }
 
-struct XformCommonTranslateField {
-    static constexpr const char *fieldName = "Translate";
-};
-template <>
-inline void DrawFieldValue<XformCommonTranslateField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,
-                                                      const GfVec3d &translation, const UsdTimeCode &currentTime) {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    GfVec3d translationf(translation[0], translation[1], translation[2]);
-    ImGui::InputScalarN("Translate", ImGuiDataType_Double, translationf.data(), 3, nullptr, nullptr, DecimalPrecision);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetTranslate, xformAPI, translationf, currentTime);
+
+#define GENERATE_XFORMCOMMON_FIELD(OpName_, OpType_, OpRawType_)                                                                 \
+    struct XformCommon##OpName_##Field {                                                                                         \
+        static constexpr const char *fieldName = "" #OpName_ "";                                                                 \
+    };                                                                                                                           \
+    template <>                                                                                                                  \
+    inline void DrawFieldValue<XformCommon##OpName_##Field>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,              \
+                                                            const OpType_ &value, const UsdTimeCode &currentTime) {              \
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
+        OpType_ valueLocal(value[0], value[1], value[2]);                                                                        \
+        ImGui::InputScalarN("" #OpName_ "", OpRawType_, valueLocal.data(), 3, nullptr, nullptr, DecimalPrecision);               \
+        if (ImGui::IsItemDeactivatedAfterEdit()) {                                                                               \
+            ExecuteAfterDraw(&UsdGeomXformCommonAPI::Set##OpName_, xformAPI, valueLocal, currentTime);                           \
+        }                                                                                                                        \
     }
-}
+
+GENERATE_XFORMCOMMON_FIELD(Translate, GfVec3d, ImGuiDataType_Double);
+GENERATE_XFORMCOMMON_FIELD(Scale, GfVec3f, ImGuiDataType_Float);
+GENERATE_XFORMCOMMON_FIELD(Pivot, GfVec3f, ImGuiDataType_Float);
 
 struct XformCommonRotateField {
     static constexpr const char *fieldName = "Rotate";
@@ -540,34 +546,6 @@ inline void DrawFieldValue<XformCommonRotateField>(const int rowId, const UsdGeo
     ImGui::InputScalarN("Rotate", ImGuiDataType_Float, rotationf.data(), 3, nullptr, nullptr, DecimalPrecision);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetRotate, xformAPI, rotationf, rotOrder, currentTime);
-    }
-}
-
-struct XformCommonScaleField {
-    static constexpr const char *fieldName = "Scale";
-};
-template <>
-inline void DrawFieldValue<XformCommonScaleField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI, const GfVec3f &value,
-                                                  const UsdTimeCode &currentTime) {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    GfVec3f valueLocal(value[0], value[1], value[2]);
-    ImGui::InputScalarN("Scale", ImGuiDataType_Float, valueLocal.data(), 3, nullptr, nullptr, DecimalPrecision);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetScale, xformAPI, valueLocal, currentTime);
-    }
-}
-
-struct XformCommonPivotField {
-    static constexpr const char *fieldName = "Pivot";
-};
-template <>
-inline void DrawFieldValue<XformCommonPivotField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI, const GfVec3f &value,
-                                                  const UsdTimeCode &currentTime) {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-    GfVec3f valueLocal(value[0], value[1], value[2]);
-    ImGui::InputScalarN("Pivot", ImGuiDataType_Float, valueLocal.data(), 3, nullptr, nullptr, DecimalPrecision);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        ExecuteAfterDraw(&UsdGeomXformCommonAPI::SetPivot, xformAPI, valueLocal, currentTime);
     }
 }
 
