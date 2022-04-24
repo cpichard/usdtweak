@@ -145,8 +145,10 @@ Viewport::~Viewport() {
     for (auto &renderer : _renderers) {
         // Warning, InvalidateBuffers might be defered ... :S to check
         // removed in 20.11: renderer.second->InvalidateBuffers();
-        delete renderer.second;
-        renderer.second = nullptr;
+        if (renderer.second) {
+            delete renderer.second;
+            renderer.second = nullptr;
+        }
     }
     _drawTarget->Unbind();
     _renderers.clear();
