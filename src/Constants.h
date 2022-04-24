@@ -35,7 +35,7 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 /// Predefined colors for dark mode ui components
 #define ColorPrimaryLight {0.900f, 0.900f, 0.900f, 1.000f}
 
-#define ColorSecondaryLight {0.450f, 0.450f, 0.450f, 1.000f}
+#define ColorSecondaryLight {0.490f, 0.490f, 0.490f, 1.000f}
 #define ColorSecondaryLightLighten {0.586f, 0.586f, 0.586f, 1.000f}
 #define ColorSecondaryLightDarken {0.400f, 0.400f, 0.400f, 1.000f}
 
@@ -47,8 +47,8 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorSecondaryDarkLighten {0.391f, 0.391f, 0.391f, 1.000f}
 #define ColorSecondaryDarkDarken {0.280f, 0.280f, 0.280f, 1.000f}
 
-#define ColorHighlight {1.000f, 0.391f, 0.000f, 1.000f}
-#define ColorHighlightDarken {1.000f, 0.391f, 0.000f, 0.781f}
+#define ColorHighlight {0.880f, 0.620f, 0.170f, 1.000f}
+#define ColorHighlightDarken {0.880f, 0.620f, 0.170f, 0.781f}
 
 #define ColorBackgroundDim {0.000f, 0.000f, 0.000f, 0.586f}
 #define ColorInvisible {0.000f, 0.000f, 0.000f, 0.000f}

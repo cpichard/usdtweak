@@ -124,14 +124,14 @@ static void ApplyDarkStyle() {
     ImVec4 *colors = style->Colors;
 
     colors[ImGuiCol_Text] = ImVec4(ColorPrimaryLight);
-    colors[ImGuiCol_TextDisabled] = ImVec4(ColorSecondaryLight);
+    colors[ImGuiCol_TextDisabled] = ImVec4(ColorHighlightDarken);
     colors[ImGuiCol_WindowBg] = ImVec4(ColorPrimaryDarkLighten);
     colors[ImGuiCol_ChildBg] = ImVec4(ColorInvisible);
     colors[ImGuiCol_PopupBg] = ImVec4(ColorSecondaryDark);
     colors[ImGuiCol_Border] = ImVec4(ColorInvisible);
     colors[ImGuiCol_BorderShadow] = ImVec4(ColorInvisible);
     colors[ImGuiCol_FrameBg] = ImVec4(ColorPrimaryDark);
-    colors[ImGuiCol_FrameBgHovered] = ImVec4(ColorPrimaryDarkLighten);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(ColorSecondaryLightDarken);
     colors[ImGuiCol_FrameBgActive] = ImVec4(ColorSecondaryDarkDarken);
     colors[ImGuiCol_TitleBg] = ImVec4(ColorPrimaryDark);
     colors[ImGuiCol_TitleBgActive] = ImVec4(ColorPrimaryDark);
