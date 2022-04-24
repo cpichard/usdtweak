@@ -305,11 +305,15 @@ double Viewport::ComputeScaleFactor(const GfVec3d& objectPos, const double multi
     return scale;
 }
 
+inline bool IsModifierDown() {
+    return ImGui::GetIO().KeyMods != 0;
+}
+
 void Viewport::HandleKeyboardShortcut() {
     if (ImGui::IsItemHovered()) {
         ImGuiIO &io = ImGui::GetIO();
         static bool SelectionManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) {
+        if (ImGui::IsKeyDown(ImGuiKey_Q) && ! IsModifierDown() ) {
             if (SelectionManipulatorPressedOnce) {
                 ChooseManipulator<MouseHoverManipulator>();
                 SelectionManipulatorPressedOnce = false;
@@ -319,7 +323,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool PositionManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_W)) {
+        if (ImGui::IsKeyDown(ImGuiKey_W) && ! IsModifierDown() ) {
             if (PositionManipulatorPressedOnce) {
                 ChooseManipulator<PositionManipulator>();
                 PositionManipulatorPressedOnce = false;
@@ -329,7 +333,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool RotationManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_E)) {
+        if (ImGui::IsKeyDown(ImGuiKey_E) && ! IsModifierDown() ) {
             if (RotationManipulatorPressedOnce) {
                 ChooseManipulator<RotationManipulator>();
                 RotationManipulatorPressedOnce = false;
@@ -339,7 +343,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool ScaleManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_R)) {
+        if (ImGui::IsKeyDown(ImGuiKey_R) && ! IsModifierDown() ) {
             if (ScaleManipulatorPressedOnce) {
                 ChooseManipulator<ScaleManipulator>();
                 ScaleManipulatorPressedOnce = false;
