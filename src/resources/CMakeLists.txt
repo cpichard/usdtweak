@@ -6,6 +6,11 @@ target_sources(usdtweak PRIVATE
 )
 target_include_directories(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Application icon on windows
+if(MSVC)
+    target_sources(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/resources.rc)
+endif()
+
 # glsl to cpp
 list(APPEND GLSL_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/ManipulatorVert.glsl
