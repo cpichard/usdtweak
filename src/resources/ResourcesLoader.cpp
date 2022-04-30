@@ -147,9 +147,9 @@ static void ApplyDarkStyle() {
     colors[ImGuiCol_Button] = ImVec4(ColorSecondaryLight);
     colors[ImGuiCol_ButtonHovered] = ImVec4(ColorSecondaryLightDarken);
     colors[ImGuiCol_ButtonActive] = ImVec4(ColorSecondaryLightLighten);
-    colors[ImGuiCol_Header] = ImVec4(1.0,1.0,1.0,0.6);
+    colors[ImGuiCol_Header] = ImVec4(ColorSecondaryDark);
     colors[ImGuiCol_HeaderHovered] = ImVec4(ColorSecondaryLight);
-    colors[ImGuiCol_HeaderActive] = ImVec4(1.0,1.0,1.0,1.0);
+    colors[ImGuiCol_HeaderActive] = ImVec4(ColorSecondaryLight);
     colors[ImGuiCol_Separator] = colors[ImGuiCol_BorderShadow];
     colors[ImGuiCol_SeparatorHovered] = ImVec4(ColorSecondaryDarkLighten);
     colors[ImGuiCol_SeparatorActive] = ImVec4(ColorHighlight);
@@ -168,7 +168,7 @@ static void ApplyDarkStyle() {
     colors[ImGuiCol_PlotLinesHovered] = ImVec4(ColorHighlight);
     colors[ImGuiCol_PlotHistogram] = ImVec4(ColorSecondaryLightLighten);
     colors[ImGuiCol_PlotHistogramHovered] = ImVec4(ColorHighlight);
-    colors[ImGuiCol_TextSelectedBg] = ImVec4(1.0, 1.0,1.0, 1.0);
+    colors[ImGuiCol_TextSelectedBg] = ImVec4(ColorPrimaryDark);
     colors[ImGuiCol_DragDropTarget] = ImVec4(ColorHighlight);
     colors[ImGuiCol_NavHighlight] = ImVec4(ColorHighlight);
     colors[ImGuiCol_NavWindowingHighlight] = ImVec4(ColorHighlight);
@@ -193,9 +193,9 @@ ResourcesLoader::ResourcesLoader() {
     ImFontConfig fontConfig;
 
     // Load primary font
-    auto fontDefault = io.Fonts->AddFontDefault(&fontConfig); // DroidSans
-    //auto font = io.Fonts->AddFontFromMemoryCompressedTTF(ibmplexsansmediumfree_compressed_data,
-    //                                                     ibmplexsansmediumfree_compressed_size, 16.0f, &fontConfig, nullptr);
+    //auto fontDefault = io.Fonts->AddFontDefault(&fontConfig); // DroidSans
+    auto font = io.Fonts->AddFontFromMemoryCompressedTTF(ibmplexsansmediumfree_compressed_data,
+                                                         ibmplexsansmediumfree_compressed_size, 16.0f, &fontConfig, nullptr);
     // Merge Icons in primary font
     static const ImWchar iconRanges[] = {ICON_MIN_FA, ICON_MAX_FA, 0};
     ImFontConfig iconsConfig;
