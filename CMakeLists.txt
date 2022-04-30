@@ -33,6 +33,11 @@ target_compile_definitions(usdtweak PRIVATE NOMINMAX)
 target_link_libraries(usdtweak glfw resources ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES})
 target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS})
 
+# Installer on windows
+if(WIN32)
+    include("cmake/windows_installer.cmake")
+endif()
+
 # Remove warnings coming from usd and enable default multithreaded compilation on windows
 target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
