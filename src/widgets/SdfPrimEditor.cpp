@@ -214,20 +214,13 @@ static inline TfToken ClassTokenFromChar(const char *classChar) {
 void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
     const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
     const auto &allSpecTypes = GetAllSpecTypeNames();
-    if (ImGui::BeginCombo("Prim Type", currentItem, comboFlags)) {
-        for (int n = 0; n < allSpecTypes.size(); n++) {
-            const auto typeAsChar = allSpecTypes[n].c_str();
-            const bool isSelected = strcmp(currentItem, typeAsChar) == 0;
-            if (ImGui::Selectable(typeAsChar[0] == '\0' ? "##notype" : typeAsChar, isSelected)) {
-                currentItem = typeAsChar;
-            }
-            FocusLastItemOnKeyPressed(typeAsChar);
+    static int selected = 0;
+    
+    if (ComboWithFilter("Prim Type", currentItem, allSpecTypes, &selected, comboFlags)) {
+        const auto newSelection = allSpecTypes[selected].c_str();
+        if (primSpec->GetTypeName() != ClassTokenFromChar(newSelection)) {
+            ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, ClassTokenFromChar(newSelection));
         }
-
-        if (primSpec->GetTypeName() != ClassTokenFromChar(currentItem)) {
-            ExecuteAfterDraw(&SdfPrimSpec::SetTypeName, primSpec, ClassTokenFromChar(currentItem));
-        }
-        ImGui::EndCombo();
     }
 }
 template<typename T>
