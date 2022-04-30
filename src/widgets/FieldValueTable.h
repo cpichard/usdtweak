@@ -37,7 +37,7 @@ inline bool BeginFieldValueTable(const char *strId) {
 
 inline void EndFieldValueTable() { ImGui::EndTable(); }
 
-inline void FieldValueTableSetupColumns(const bool showHeaders, const char *button = "", const char *field = "Field",
+inline void SetupFieldValueTableColumns(const bool showHeaders, const char *button = "", const char *field = "Field",
                                         const char *value = "Value") {
     ImGui::TableSetupColumn(button, ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
     ImGui::TableSetupColumn(field, ImGuiTableColumnFlags_WidthFixed);

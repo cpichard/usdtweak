@@ -369,7 +369,7 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
         return;
     int rowId = 0;
     if (BeginFieldValueTable("##DrawPrimSpecRelations")) {
-        FieldValueTableSetupColumns(true, "", "Relations", "");
+        SetupFieldValueTableColumns(true, "", "Relations", "");
         auto relations = primSpec->GetRelationships();
         for (const SdfRelationshipSpecHandle &relation : relations) {
             DrawFieldValueTableRow<RelationField>(rowId, primSpec, relation);
@@ -413,7 +413,7 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
         int rowId = 0;
         if (BeginFieldValueTable("##DrawPrimSpecMetadata")) {
-            FieldValueTableSetupColumns(true, "", "Metadata", "Value");
+            SetupFieldValueTableColumns(true, "", "Metadata", "Value");
             DrawFieldValueTableRow<Specifier>(rowId++, primSpec);
             DrawFieldValueTableRow<PrimType>(rowId++, primSpec);
             DrawFieldValueTableRow<PrimName>(rowId++, primSpec);

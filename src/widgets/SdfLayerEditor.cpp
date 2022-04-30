@@ -208,7 +208,7 @@ void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &path) {
         return;
     int rowId = 0;
     if (BeginFieldValueTable("##DrawLayerHeader")) {
-        FieldValueTableSetupColumns(true, "", "Identity", "Value");
+        SetupFieldValueTableColumns(true, "", "Identity", "Value");
         DrawFieldValueTableRow<LayerFieldIdentity>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldFilename>(rowId++, path);
         EndFieldValueTable();
@@ -220,7 +220,7 @@ void DrawLayerMetadata(const SdfLayerRefPtr &layer) {
         return;
     int rowId = 0;
     if (BeginFieldValueTable("##DrawLayerMetadata")) {
-        FieldValueTableSetupColumns(true);
+        SetupFieldValueTableColumns(true);
         DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);

@@ -565,7 +565,7 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
 
         int rowId = 0;
         if (BeginFieldValueTable("##DrawXformsCommon")) {
-            FieldValueTableSetupColumns(true, "", "UsdGeomXformCommonAPI", "");
+            SetupFieldValueTableColumns(true, "", "UsdGeomXformCommonAPI", "");
             DrawFieldValueTableRow<XformCommonTranslateField>(rowId++, xformAPI, translation, currentTime);
             DrawFieldValueTableRow<XformCommonRotateField>(rowId++, xformAPI, rotation, rotOrder, currentTime);
             DrawFieldValueTableRow<XformCommonScaleField>(rowId++, xformAPI, scale, currentTime);
