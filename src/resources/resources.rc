@@ -1,0 +1,16 @@
+// Microsoft Visual C++ generated resource script.
+//
+/////////////////////////////////////////////////////////////////////////////
+// English (United Kingdom) resources
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+GLFW_ICON              ICON             DISCARDABLE "app.ico"
+
+
+
