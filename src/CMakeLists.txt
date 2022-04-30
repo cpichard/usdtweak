@@ -10,6 +10,7 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/GeometricFunctions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Gui.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImGuiHelpers.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ImGuiHelpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ProxyHelpers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.h

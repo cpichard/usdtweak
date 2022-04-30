@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include "Gui.h"
 
 /// One liner for creating multiple calls to ImGui::TableSetupColumn
@@ -42,31 +43,9 @@ inline ImVec2 operator-(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lh
 
 /// Creates a splitter
 /// This is coming right from the imgui github repo
-inline bool Splitter(bool splitVertically, float thickness, float *size1, float *size2, float minSize1, float minSize2,
-                     float splitterLongAxisSize = -1.0f) {
-    ImGuiContext &g = *GImGui;
-    ImGuiWindow *window = g.CurrentWindow;
-    ImGuiID id = window->GetID("##Splitter");
-    ImRect bb;
-    bb.Min = window->DC.CursorPos + (splitVertically ? ImVec2(*size1, 0.0f) : ImVec2(0.0f, *size1));
-    bb.Max = bb.Min + ImGui::CalcItemSize(splitVertically ? ImVec2(thickness, splitterLongAxisSize)
-                                                          : ImVec2(splitterLongAxisSize, thickness),
-                                          0.0f, 0.0f);
-    return ImGui::SplitterBehavior(bb, id, splitVertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, minSize1, minSize2, 0.0f);
-}
+bool Splitter(bool splitVertically, float thickness, float *size1, float *size2, float minSize1, float minSize2,
+              float splitterLongAxisSize = -1.0f);
 
-// To use in a list, this will focus on the lastItem starting with the key pressed letter
-inline void FocusLastItemOnKeyPressed(const char *label) {
-    if (!label || label[0] == '\0')
-        return;
-    int keyOffset = -1;
-    if (label[0] >= 'a' && label[0] <= 'z')
-        keyOffset = label[0] - 'a';
-    if (label[0] >= 'A' && label[0] <= 'Z')
-        keyOffset = label[0] - 'A';
-    if (keyOffset != -1 && ImGui::IsKeyPressed(ImGuiKey_A + keyOffset) && !ImGui::IsItemVisible()) {
-        ImGuiContext &g = *GImGui;
-        ImGuiWindow *window = g.CurrentWindow;
-        ImGui::ScrollToRectEx(window, g.LastItemData.Rect, ImGuiScrollFlags_None);
-    }
-}
+/// Creates a combo box with a search bar filtering the list elements
+bool ComboWithFilter(const char *label, const char *preview_value, const std::vector<std::string> &items, int *current_item,
+                     ImGuiComboFlags combo_flags, int popup_max_height_in_items = -1) ;

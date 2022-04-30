@@ -398,7 +398,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, SdfPrimSpecHandle &selectedPri
     if (ImGui::BeginTable("##DrawPrimSpecTree", 4, tableFlags)) {
         ImGui::TableSetupColumn("Hierarchy");
         ImGui::TableSetupColumn("Spec", ImGuiTableColumnFlags_WidthFixed, 40);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 100);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 150);
         ImGui::TableSetupColumn("Composition");
         ImGui::TableSetupScrollFreeze(4, 1);
         ImGui::TableHeadersRow();
