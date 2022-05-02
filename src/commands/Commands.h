@@ -42,6 +42,8 @@ struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
 struct EditorInspectLayerLocation;
 struct EditorShutdown;
+struct EditorStartPlayback;
+struct EditorStopPlayback;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

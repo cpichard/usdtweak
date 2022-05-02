@@ -5,6 +5,7 @@
 /// has grown too much and doing too many thing
 ///
 #include <map>
+#include <chrono>
 #include "Manipulator.h"
 #include "CameraManipulator.h"
 #include "PositionManipulator.h"
@@ -104,6 +105,10 @@ class Viewport final {
     void HandleManipulationEvents();
     void HandleKeyboardShortcut();
 
+    /// Playback controls
+    void StartPlayback();
+    void StopPlayback();
+
   private:
     // GL Lights
     GlfSimpleLightVector _lights;
@@ -143,6 +148,10 @@ class Viewport final {
     UsdImagingGLEngine *_renderer = nullptr;
     UsdImagingGLRenderParams *_renderparams = nullptr;
     GlfDrawTargetRefPtr _drawTarget;
+
+    // Playback controls
+    bool _playing = false;
+    std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }

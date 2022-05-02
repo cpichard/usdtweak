@@ -87,6 +87,11 @@ public:
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
 
+    /// Playback controls
+    void StartPlayback() { GetViewport().StartPlayback(); };
+    void StopPlayback() { GetViewport().StopPlayback(); };
+
+
 private:
 
     /// Make sure the layer is correctly in the list of layers,

@@ -14,6 +14,8 @@
 #include "Constants.h"
 #include "RendererSettings.h"
 
+namespace clk = std::chrono;
+
 // TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
 
 template <typename BasicShaderT>
@@ -489,6 +491,25 @@ void Viewport::Update() {
             // TODO: the selection is also different per stage
             //_selection =
         }
+
+        // This should be extracted in a Playback module,
+        // also the current code is not providing the exact frame rate, it doesn't take into account when the frame is
+        // displayed. This is a first implementation to get an idea of how it should interact with the rest of the application.
+        if (_playing && _renderparams) {
+            auto current = clk::steady_clock::now();
+            const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
+            const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
+            double newFrame =
+                _renderparams->frame.GetValue() + timesCodePerSec * timeDifference.count(); // for now just increment the frame
+            if (newFrame > GetCurrentStage()->GetEndTimeCode()) {
+                newFrame = GetCurrentStage()->GetStartTimeCode();
+            } else if (newFrame < GetCurrentStage()->GetStartTimeCode()) {
+                newFrame = GetCurrentStage()->GetStartTimeCode();
+            }
+            _renderparams->frame = UsdTimeCode(newFrame);
+            _lastFrameTime = current;
+        }
+
         // Camera -- TODO: is it slow to query the camera at each frame ?
         //                 the manipulator does is as well
         const auto stageCameraPrim = GetUsdGeomCamera();
@@ -535,4 +556,14 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
             pixelFrustum.ComputeProjectionMatrix(),
             GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint, &outHitNormal,
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
+}
+
+
+void Viewport::StartPlayback() {
+    _playing = true;
+    _lastFrameTime = clk::steady_clock::now();
+}
+
+void Viewport::StopPlayback() {
+    _playing = false;
 }

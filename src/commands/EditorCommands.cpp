@@ -217,3 +217,29 @@ struct EditorSetNextLayer : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetNextLayer>();
 
+struct EditorStartPlayback : public EditorCommand {
+    EditorStartPlayback() {}
+    ~EditorStartPlayback() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->StartPlayback();
+        }
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorStartPlayback>();
+
+
+struct EditorStopPlayback : public EditorCommand {
+    EditorStopPlayback() {}
+    ~EditorStopPlayback() override {}
+    bool DoIt() override {
+        if (_editor) {
+            _editor->StopPlayback();
+        }
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorStopPlayback>();
+
