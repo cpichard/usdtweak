@@ -1,9 +1,9 @@
 
 # usdtweak
 
-usdtweak is a free and open source Pixar's USD editor, still in early development, but it can already be used for small and simple tasks like cleaning asset coming from blender, creating new layers or even inspecting existing usd files.
+usdtweak is a free and open source editor for Pixar's [USD](https://graphics.pixar.com/usd/release/index.html#) format. The project is still in early stage, but usdtweak can already be used for small and simple tasks like cleaning assets, creating and editing layers or inspecting and fixing existing usd stages.
 
-This project is fully C++/OpenGL and relies on [ImGUI](https://github.com/ocornut/imgui) for the UI.
+This project is written in C++ and relies on [ImGUI](https://github.com/ocornut/imgui) for the UI and [GLFW](https://github.com/glfw/glfw) for the windowing system.
 
 ## Sneak peek
 
@@ -11,18 +11,22 @@ This project is fully C++/OpenGL and relies on [ImGUI](https://github.com/ocornu
 
 ## Status
 
-The editor allows
+There is no roadmap at the moment, as it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. However the original idea was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So the current goal driving the developments is providing the same functionalities as usdview but with edition capabilities.
 
-- to edit multiple stages and layers at the same time, copying and pasting prims between layers.
-- to edit the layer hierarchy: adding, deleting, reparenting, and renaming prims
-- to create and delete variants, references and payloads, inherits, ...
-- to change property values in layers or stage. The arrays are not editable yet
-- to adding and deleting keys
+As of today usdtweak allows
+
+- to edit multiple stages and layers at the same time, copying and pasting prims between layers,
+- to edit stages properties selecting the edit target
+- to edit layer hierarchy: adding, deleting, reparenting, and renaming prims
+- to edit layer stack: adding, deleting new sublayers
+- to create and delete compositions like variants, references and payloads, inherits, ...
+- to change property values in layers or stages
+- to add and delete keys
 - a minimal viewport interaction: translating, rotating, scaling objects.
-- text editing for small files
+- text editing (for small files)
 - and more ...
 
-The original idea was to be able to edit layers without knowing the USD syntax, and the layer editors have some of the basic functionalities for that. As this is my side project and I can only work on it a few hours during the week-end, the development is slow, but steady. Drop me an email if you are interested in beta testing or if you can't compile it.
+Drop me an email if you are interested in beta testing on windows or if you can't compile it.
 
 ## Building
 
@@ -30,13 +34,15 @@ The original idea was to be able to edit layers without knowing the USD syntax, 
 
 The project is almost self contained and only needs:
 
-- cmake installed (version > 3.14)
-- a C++14 compiler installed: MSVC 19 or 17, gcc or llvm.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v21.11) version 21.11
+- [cmake](https://cmake.org/) installed (version > 3.14)
+- a C++14 compiler installed: MSVC 19 or 17, g++ or clang++.
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v22.05) version >= 20.11
 
-If you managed to build USD, compiling usdtweak should be straightforward, cmake needs only 1 required variables:
+If you managed to build USD, compiling usdtweak should be easy, cmake needs only 1 required variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
+
+Note that usdtweak hasn't been compiled with the usd libraries provided with maya, houdini or omniverse, even if it might be possible to do so.
 
 ### Compiling on linux
 
@@ -47,7 +53,7 @@ On linux it should compile with:
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-21.11 ..
+    cmake -Dpxr_DIR=/installs/usd-22.05 ..
     make
 
 ### Compiling on MacOs
@@ -59,26 +65,34 @@ It compiles on MacOs Catalina. The viewport doesn't work as the required OpenGL 
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-21.11 ..
+    cmake -Dpxr_DIR=/installs/usd-22.05 ..
     make
 
 ### Compiling on Windows
 
-It should compile successfully on Windows 10 with MSVC 19 or 17. Make sure you open/use the x64 Native Tools commands prompt before typing the following commands:
+It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWithDbInfo config. Make sure you open/use the x64 Native Tools commands prompt before typing the following commands:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-22.05 ..
     cmake --build . --config RelWithDebInfo
+
+### Installing on Windows
+
+You can install usdtweak with its dependencies on windows, it copies the required files in a directory with the following command:
+
+    cmake --install . --prefix <where_you_want_to_install_usdtweak> --config RelWithDebInfo
+
+ Note that it is not really tested on anything else than my machine/setup so it might not work for you, feel free to get in touch if you have any issue.
 
 ### Compiling with your version of glfw
 
-Under the hood usdtweak is using [GLFW](https://www.glfw.org/). Cmake should normally download, compile and install glfw without any intervention. However, if you already have a compiled version you want to use, and you'll need to disable the automatic build of glfw, by passing an additional cmake variable:
+usdtweak is using [GLFW](https://www.glfw.org/) for its windowing system. cmake should normally download, compile and install glfw without any user intervention. However, if you already have a compiled version you want to use instead, and you'll need to disable the automatic build of glfw, by passing an additional cmake variable:
 
-- __glfw3_DIR__  pointing to the GLFW installation directory containing the file glfw3Config.cmake
+- __glfw3_DIR__  pointing to your GLFW installation directory and containing the file glfw3Config.cmake
 
 A cmake command will then look like:
 
@@ -86,4 +100,4 @@ A cmake command will then look like:
 
 ## Contact
 
-If you want to know more, drop me an email: cpichard.github@gmail.com
+If you want to know more, or have any issues, questions, drop me an email: cpichard.github@gmail.com
