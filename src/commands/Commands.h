@@ -35,6 +35,7 @@ struct EditorSelectPrimPath;
 struct EditorSelectAttributePath;
 struct EditorOpenStage;
 struct EditorOpenLayer;
+struct EditorSaveLayerAs;
 struct EditorSetEditTarget;
 struct EditorSetCurrentLayer;
 struct EditorSetCurrentStage;

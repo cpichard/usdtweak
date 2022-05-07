@@ -63,7 +63,7 @@ public:
     void ImportLayer(const std::string &path);
     void CreateStage(const std::string &path);
     void ImportStage(const std::string &path, bool openLoaded = true);
-    void SaveCurrentLayerAs(const std::string &path);
+    void SaveLayerAs(SdfLayerRefPtr layer, const std::string &path);
 
     /// Render the hydra viewport
     void HydraRender();
@@ -90,6 +90,8 @@ public:
     /// Playback controls
     void StartPlayback() { GetViewport().StartPlayback(); };
     void StopPlayback() { GetViewport().StopPlayback(); };
+
+    void ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs);
 
 
 private:

@@ -188,6 +188,23 @@ struct EditorOpenLayer : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorOpenLayer>(std::string layerPath);
 
+struct EditorSaveLayerAs : public EditorCommand {
+
+    EditorSaveLayerAs(SdfLayerHandle layer) : _layer(layer) {}
+    EditorSaveLayerAs(SdfLayerRefPtr layer) : _layer(layer) {}
+    ~EditorSaveLayerAs() override {}
+
+    bool DoIt() override {
+        if (_editor) {
+            _editor->ShowDialogSaveLayerAs(_layer);
+        }
+        return false;
+    }
+    SdfLayerRefPtr _layer;
+};
+template void ExecuteAfterDraw<EditorSaveLayerAs>(SdfLayerHandle layer);
+template void ExecuteAfterDraw<EditorSaveLayerAs>(SdfLayerRefPtr layer);
+
 
 struct EditorSetPreviousLayer : public EditorCommand {
 

@@ -185,29 +185,30 @@ struct OpenUsdFileModalDialog : public ModalDialog {
     bool openLoaded = true;
 };
 
-struct SaveLayerAs : public ModalDialog {
+struct SaveLayerAsDialog : public ModalDialog {
 
-    SaveLayerAs(Editor &editor) : editor(editor){};
-    ~SaveLayerAs() override {}
+    SaveLayerAsDialog(Editor &editor, SdfLayerRefPtr layer) : editor(editor), _layer(layer) {};
+    ~SaveLayerAsDialog() override {}
     void Draw() override {
         DrawFileBrowser();
         EnsureFileBrowserDefaultExtension("usd");
-        auto filePath = GetFileBrowserFilePath();
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
         } else {
             ImGui::Text("Save to: ");
         }
+        auto filePath = GetFileBrowserFilePath();
         ImGui::Text("%s", filePath.c_str());
         DrawOkCancelModal([&]() { // On Ok ->
             if (!filePath.empty() && !FilePathExists()) {
-                editor.SaveCurrentLayerAs(filePath);
+                editor.SaveLayerAs(_layer, filePath);
             }
         });
     }
 
     const char *DialogId() const override { return "Save layer as"; }
     Editor &editor;
+    SdfLayerRefPtr _layer;
 };
 
 
@@ -362,10 +363,10 @@ void Editor::ImportStage(const std::string &path, bool openLoaded) {
     }
 }
 
-void Editor::SaveCurrentLayerAs(const std::string &path) {
+void Editor::SaveLayerAs(SdfLayerRefPtr layer, const std::string &path) {
     auto newLayer = SdfLayer::CreateNew(path);
-    if (newLayer && GetCurrentLayer()) {
-        newLayer->TransferContent(GetCurrentLayer());
+    if (newLayer && layer) {
+        newLayer->TransferContent(layer);
         newLayer->Save();
         UseLayer(newLayer);
     }
@@ -396,6 +397,8 @@ void Editor::HydraRender() {
 #endif
 }
 
+void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDialog<SaveLayerAsDialog>(*this, layerToSaveAs); }
+
 void Editor::DrawMainMenuBar() {
 
     if (ImGui::BeginMenuBar()) {
@@ -419,8 +422,8 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem(ICON_FA_SAVE " Save layer", "CTRL+S", false, hasLayer)) {
                 GetCurrentLayer()->Save(true);
             }
-            if (ImGui::MenuItem(ICON_FA_SAVE " Save layer as", "CTRL+F", false, hasLayer)) {
-                DrawModalDialog<SaveLayerAs>(*this);
+            if (ImGui::MenuItem(ICON_FA_SAVE " Save current layer as", "CTRL+F", false, hasLayer)) {
+                ExecuteAfterDraw<EditorSaveLayerAs>(GetCurrentLayer());
             }
 
             ImGui::Separator();

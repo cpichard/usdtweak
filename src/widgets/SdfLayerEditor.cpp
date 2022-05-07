@@ -358,7 +358,7 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
 void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (!layer)
         return;
-    if (ImGui::MenuItem("Edit")) {
+    if (ImGui::MenuItem("Edit layer")) {
         ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
     }
     if (!layer->IsAnonymous() && ImGui::MenuItem("Reload")) {
@@ -370,7 +370,12 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (layer->IsDirty() && !layer->IsAnonymous() && ImGui::MenuItem("Save layer")) {
         ExecuteAfterDraw(&SdfLayer::Save, layer, true);
     }
+    if (ImGui::MenuItem("Save layer as")) {
+        ExecuteAfterDraw<EditorSaveLayerAs>(layer);
+    }
+
     ImGui::Separator();
+
     // Not sure how safe this is with the undo/redo
     if (layer->IsMuted() && ImGui::MenuItem("Unmute")) {
         ExecuteAfterDraw<LayerUnmute>(layer);
