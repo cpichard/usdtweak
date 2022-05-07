@@ -385,12 +385,6 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     }
 
     ImGui::Separator();
-    // TODO: Remove set edit target as default action for layers, it should be only
-    // on the layer stack of the stage
-    if (ImGui::MenuItem("Set Edit target")) {
-        ExecuteAfterDraw<EditorSetEditTarget>(layer);
-    }
-    ImGui::Separator();
     if (ImGui::MenuItem("Copy layer path")) {
         ImGui::SetClipboardText(layer->GetRealPath().c_str());
     }

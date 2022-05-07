@@ -102,22 +102,6 @@ struct EditorSetCurrentStage : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetCurrentStage>(SdfLayerHandle layer);
 
-struct EditorSetEditTarget : public EditorCommand {
-
-    EditorSetEditTarget(SdfLayerHandle layer) : _layer(layer) {}
-    ~EditorSetEditTarget() override {}
-
-    bool DoIt() override {
-        if (_editor) {
-            // TODO: we should check if the stage is already imported ?
-            _editor->SetCurrentEditTarget(_layer);
-        }
-
-        return false;
-    }
-    SdfLayerHandle _layer;
-};
-template void ExecuteAfterDraw<EditorSetEditTarget>(SdfLayerHandle layer);
 
 // Shutting down the editor
 struct EditorShutdown : public EditorCommand {
