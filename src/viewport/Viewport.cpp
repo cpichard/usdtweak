@@ -13,6 +13,7 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "RendererSettings.h"
+#include "Shortcuts.h"
 
 namespace clk = std::chrono;
 
@@ -354,6 +355,11 @@ void Viewport::HandleKeyboardShortcut() {
             }
         } else {
             ScaleManipulatorPressedOnce = true;
+        }
+        if (_playing) {
+            AddShortcut<EditorStopPlayback, ImGuiKey_Space>();
+        } else {
+            AddShortcut<EditorStartPlayback, ImGuiKey_Space>();
         }
     }
 }
