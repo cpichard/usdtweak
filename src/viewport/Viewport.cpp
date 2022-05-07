@@ -572,4 +572,6 @@ void Viewport::StartPlayback() {
 
 void Viewport::StopPlayback() {
     _playing = false;
+    // cast to nearest frame
+    _renderparams->frame = UsdTimeCode(int(_renderparams->frame.GetValue()));
 }
