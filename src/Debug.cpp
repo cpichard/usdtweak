@@ -45,7 +45,7 @@ static void DrawDebugCodes() {
         for (auto &code : TfDebug::GetDebugSymbolNames()) {
             bool isEnabled = TfDebug::IsDebugSymbolNameEnabled(code);
             if (ImGui::Checkbox(code.c_str(), &isEnabled)) {
-                TfDebug::SetDebugSymbolsByName(code, true);
+                TfDebug::SetDebugSymbolsByName(code, isEnabled);
             }
         }
         ImGui::EndListBox();
