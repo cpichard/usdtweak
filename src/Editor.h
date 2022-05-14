@@ -78,11 +78,9 @@ public:
     /// Draw the UI
     void Draw();
 
-    /// glfw callback to handle drag and drop from external applications
-    static void DropCallback(GLFWwindow *window, int count, const char **paths);
-
-    /// glfw callback to close the application
-    static void WindowCloseCallback(GLFWwindow *window);
+    // GLFW callbacks
+    void InstallCallbacks(GLFWwindow *window);
+    void RemoveCallbacks(GLFWwindow *window);
 
     /// There is only one viewport for now, but could have multiple in the future
     Viewport &GetViewport();
@@ -104,6 +102,15 @@ private:
     void LoadSettings();
     void SaveSettings() const;
 
+
+    /// glfw callback to handle drag and drop from external applications
+    static void DropCallback(GLFWwindow *window, int count, const char **paths);
+
+    /// glfw callback to close the application
+    static void WindowCloseCallback(GLFWwindow *window);
+
+    /// glfw resize callback
+    static void WindowSizeCallback(GLFWwindow* window, int width, int height);
 
     /// Using a stage cache to store the stages, seems to work well
     UsdStageCache _stageCache;
@@ -131,4 +138,5 @@ private:
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
+
 };

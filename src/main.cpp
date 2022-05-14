@@ -18,6 +18,9 @@ int main(int argc, const char **argv) {
 
     CommandLineOptions options(argc, argv);
 
+    // ResourceLoader will load the settings/fonts/textures and create an imgui context
+    ResourcesLoader loader;
+
     // Initialize python
 #ifdef WANTS_PYTHON
     Py_SetProgramName(argv[0]);
@@ -37,9 +40,11 @@ int main(int argc, const char **argv) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
 #endif
 
+
     /* Create a windowed mode window and its OpenGL context */
-    int width = InitialWindowWidth;
-    int height = InitialWindowHeight;
+    int width = loader.GetApplicationWidth();
+    int height = loader.GetApplicationHeight();
+
 #ifdef DISABLE_DOUBLE_BUFFER
     glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
 #endif
@@ -63,29 +68,15 @@ int main(int argc, const char **argv) {
     std::cout << "Hydra enabled : " << UsdImagingGLEngine::IsHydraEnabled() << std::endl;
     // GlfRegisterDefaultDebugOutputMessageCallback();
 
-    // Create a context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    io.IniFilename = nullptr;
+    // Init ImGui for glfw and opengl
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
-    //ImGuiStyle& style = ImGui::GetStyle();
-    //style.Colors[ImGuiCol_Tab] = style.Colors[ImGuiCol_FrameBg];
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigWindowsMoveFromTitleBarOnly = true;
-
-
-
-    { // Scope as the editor should be deleted before imgui and glfw, to release correctly the memory
-        // Resource will load the font/textures/settings
-        ResourcesLoader resources; // Assuming resources will be destroyed after editor
+    {   // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
         Editor editor;
 
-        glfwSetWindowUserPointer(window, &editor);
-        glfwSetDropCallback(window, Editor::DropCallback);
-        glfwSetWindowCloseCallback(window, Editor::WindowCloseCallback);
+        // Connect the window callbacks to the editor
+        editor.InstallCallbacks(window);
 
         // Process command line options
         for (auto& stage : options.stages()) {
@@ -126,14 +117,12 @@ int main(int argc, const char **argv) {
             // Process edition commands
             ExecuteCommands();
         }
-
-        glfwSetWindowUserPointer(window, nullptr);
+        editor.RemoveCallbacks(window);
     }
 
     // Shutdown imgui
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
 
     // Shutdown glfw
     glfwDestroyWindow(window);

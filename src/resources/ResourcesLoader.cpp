@@ -87,6 +87,10 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
                 settings._recentFiles.back().push_back(c);
             }
         }
+    } else if (sscanf(line, "MainWindowWidth=%i", &value) == 1) {
+        settings._mainWindowWidth = value;
+    } else if (sscanf(line, "MainWindowHeight=%i", &value) == 1) {
+        settings._mainWindowHeight = value;
     }
 }
 
@@ -116,7 +120,11 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
         }
     }
     buf->appendf("RecentFiles=%s\n", recentFileString.c_str());
+    buf->appendf("MainWindowWidth=%d\n", settings._mainWindowWidth);
+    buf->appendf("MainWindowHeight=%d\n", settings._mainWindowHeight);
 }
+
+bool ResourcesLoader::_resourcesLoaded = false;
 
 EditorSettings ResourcesLoader::_editorSettings = EditorSettings();
 
@@ -195,8 +203,22 @@ static void ApplyDarkStyle() {
 }
 
 ResourcesLoader::ResourcesLoader() {
-    // Font
+    // There should be only one object of this class, we make sure the constructor is only called once
+    if (_resourcesLoaded) {
+        std::cerr << "Coding error, ResourcesLoader is called twice" << std::endl;
+        exit(-2);
+    } else {
+        _resourcesLoaded = true;
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext(); // TODO: I am not sure this is a good idea to create an imgui context without windows, double check
     ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
+
+    // Font
     ImFontConfig fontConfig;
 
     // Load primary font
@@ -233,7 +255,7 @@ ResourcesLoader::ResourcesLoader() {
     // This bit of code adds a default configuration
     ImFileHandle f;
     const std::string configFilePath = GetConfigFilePath();
-    std::cout << "Config file : " << configFilePath << std::endl;
+    std::cout << "Settings: " << configFilePath << std::endl;
     if ((f = ImFileOpen(configFilePath.c_str(), "rb")) == nullptr) {
         ImGui::LoadIniSettingsFromMemory(imgui, 0);
     } else {
@@ -242,8 +264,12 @@ ResourcesLoader::ResourcesLoader() {
     }
 }
 
+int ResourcesLoader :: GetApplicationWidth() { return ResourcesLoader::GetEditorSettings()._mainWindowWidth; }
+int ResourcesLoader :: GetApplicationHeight() { return ResourcesLoader::GetEditorSettings()._mainWindowHeight; }
+
 ResourcesLoader::~ResourcesLoader() {
     // Save the configuration file when the application closes the resources
     const std::string configFilePath = GetConfigFilePath();
     ImGui::SaveIniSettingsToDisk(configFilePath.c_str());
+    ImGui::DestroyContext();
 }

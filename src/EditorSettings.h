@@ -4,6 +4,9 @@
 /// EditorSettings contains all the settings we want to persist between sessions
 
 struct EditorSettings {
+
+    EditorSettings();
+
     /// Editor Windows state
     bool _showDebugWindow = false;
     bool _showPropertyEditor = true;
@@ -17,7 +20,8 @@ struct EditorSettings {
     bool _showStatusBar = true;
     bool _textEditor = false;
     bool _showArrayEditor = false;
-
+    int _mainWindowWidth;
+    int _mainWindowHeight;
     /// Recent files
     std::list<std::string> _recentFiles;
 };

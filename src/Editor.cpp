@@ -271,6 +271,14 @@ void Editor::WindowCloseCallback(GLFWwindow *window) {
     }
 }
 
+void Editor::WindowSizeCallback(GLFWwindow *window, int width, int height) {
+    void *userPointer = glfwGetWindowUserPointer(window);
+    if (userPointer) {
+        Editor *editor = static_cast<Editor *>(userPointer);
+        editor->_settings._mainWindowWidth = width;
+        editor->_settings._mainWindowHeight = height;
+    }
+}
 
 Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
@@ -280,6 +288,17 @@ Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer
 Editor::~Editor(){
     SaveSettings();
 }
+
+void Editor::InstallCallbacks(GLFWwindow *window) {
+    // Install glfw callbacks
+    glfwSetWindowUserPointer(window, this);
+    glfwSetDropCallback(window, Editor::DropCallback);
+    glfwSetWindowCloseCallback(window, Editor::WindowCloseCallback);
+    glfwSetWindowSizeCallback(window, Editor::WindowSizeCallback);
+}
+
+void Editor::RemoveCallbacks(GLFWwindow *window) { glfwSetWindowUserPointer(window, nullptr); }
+
 
 void Editor::SetCurrentStage(UsdStageCache::Id current) {
     SetCurrentStage(_stageCache.Find(current));
