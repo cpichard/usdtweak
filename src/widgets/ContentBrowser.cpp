@@ -106,15 +106,17 @@ template <typename SdfLayerSetT>
 void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer,
                   const ContentBrowserOptions &options, const ImVec2 &listSize = ImVec2(0, -10)) {
 
-    // Sort the layer set
-    std::vector<SdfLayerHandle> sortedSet(layerSet.begin(), layerSet.end());
-    std::sort(sortedSet.begin(), sortedSet.end(), [&](const auto &t1, const auto &t2) {
-        return LayerNameFromOptions(t1, options) < LayerNameFromOptions(t2, options);
-    });
     static TextFilter filter;
     filter.Draw();
+
     ImGui::PushItemWidth(-1);
     if (ImGui::BeginListBox("##DrawLayerSet", listSize)) {
+        // Sort the layer set
+        std::vector<SdfLayerHandle> sortedSet(layerSet.begin(), layerSet.end());
+        std::sort(sortedSet.begin(), sortedSet.end(), [&](const auto &t1, const auto &t2) {
+            return LayerNameFromOptions(t1, options) < LayerNameFromOptions(t2, options);
+        });
+        //
         for (const auto &layer : sortedSet) {
             if (!layer)
                 continue;
