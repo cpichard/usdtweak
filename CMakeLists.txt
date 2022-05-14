@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.14)
-project(UsdTweak)
+project(usdtweak)
 set(CMAKE_CXX_STANDARD 14)
 find_package(OpenGL REQUIRED)
 find_package(pxr REQUIRED)
