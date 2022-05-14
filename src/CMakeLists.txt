@@ -3,6 +3,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Constants.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandLineOptions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandLineOptions.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Debug.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Debug.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Editor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Editor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/EditorSettings.cpp
