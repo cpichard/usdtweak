@@ -67,6 +67,8 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
         settings._showPrimSpecEditor = static_cast<bool>(value);
     } else if (sscanf(line, "ShowViewport=%i", &value) == 1) {
         settings._showViewport = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowStatusBar=%i", &value) == 1) {
+        settings._showStatusBar = static_cast<bool>(value);
     } else if (sscanf(line, "ShowDebugWindow=%i", &value) == 1) {
         settings._showDebugWindow = static_cast<bool>(value);
     } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
@@ -102,6 +104,7 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
     buf->appendf("ShowContentBrowser=%d\n", settings._showContentBrowser);
     buf->appendf("ShowPrimSpecEditor=%d\n", settings._showPrimSpecEditor);
     buf->appendf("ShowViewport=%d\n", settings._showViewport);
+    buf->appendf("ShowStatusBar=%d\n", settings._showStatusBar);
     buf->appendf("ShowDebugWindow=%d\n", settings._showDebugWindow);
     buf->appendf("ShowArrayEditor=%d\n", settings._showArrayEditor);
 

@@ -11,8 +11,10 @@
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usd/usdGeom/gprim.h>
+#include <pxr/base/trace/trace.h>
 #include "Gui.h"
 #include "Editor.h"
+#include "Debug.h"
 #include "SdfLayerEditor.h"
 #include "LayerHierarchyEditor.h"
 #include "FileBrowser.h"
@@ -34,18 +36,20 @@
 // Reloading model.stage doesn't work but reloading stage separately does
 // https://groups.google.com/u/1/g/usd-interest/c/lRTmWgq78dc/m/HOZ6x9EdCQAJ
 
-constexpr const char *DebugWindowTitle = "Debug window";
-constexpr const char *ContentBrowserWindowTitle = "Content browser";
-constexpr const char *UsdStageHierarchyWindowTitle = "Stage outliner";        // replace by "UsdStage hierarchy" ?
-constexpr const char *UsdPrimPropertiesWindowTitle = "Stage property editor"; // replace by "UsdPrim properties" ?
-constexpr const char *SdfLayerHierarchyWindowTitle = "Layer hierarchy";       // replace by "SdfLayer hierarchy" ?
-constexpr const char *SdfLayerStackWindowTitle = "Layer stack";               // replace by "SdfLayer stack" ?
-constexpr const char *SdfPrimPropertiesWindowTitle = "Layer property editor"; // replace by SdfPrim properties
-constexpr const char *SdfLayerAsciiEditorWindowTitle = "Layer text editor";   // replace by Usd Ascii ?
-constexpr const char *SdfAttributeWindowTitle = "Array editor";               // replace by SdfAttribute values ?
-constexpr const char *TimelineWindowTitle = "Timeline";
-constexpr const char *ViewportWindowTitle = "Viewport";
-
+// Using define instead of constexpr because the TRACE_SCOPE doesn't work without string literals.
+// TODO: find a way to use constexpr and add trace
+#define DebugWindowTitle "Debug window"
+#define ContentBrowserWindowTitle "Content browser"
+#define UsdStageHierarchyWindowTitle "Stage outliner"
+#define UsdPrimPropertiesWindowTitle "Stage property editor"
+#define SdfLayerHierarchyWindowTitle "Layer hierarchy"
+#define SdfLayerStackWindowTitle "Layer stack"
+#define SdfPrimPropertiesWindowTitle "Layer property editor"
+#define SdfLayerAsciiEditorWindowTitle "Layer text editor"
+#define SdfAttributeWindowTitle "Array editor"
+#define TimelineWindowTitle "Timeline"
+#define ViewportWindowTitle "Viewport"
+#define StatusBarWindowTitle "Status bar"
 
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
@@ -467,6 +471,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showArrayEditor);
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
+            ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -484,19 +489,33 @@ void Editor::Draw() {
     const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
 
     if (_settings._showViewport) {
-        ImGui::Begin("Viewport", &_settings._showViewport);
+        TRACE_SCOPE(ViewportWindowTitle);
+        ImGui::Begin(ViewportWindowTitle, &_settings._showViewport);
         GetViewport().Draw();
         ImGui::End();
     }
 
     if (_settings._showDebugWindow) {
+        TRACE_SCOPE(DebugWindowTitle);
         ImGui::Begin(DebugWindowTitle, &_settings._showDebugWindow);
-        // DrawDebugInfo();
-        ImGui::Text("\xee\x81\x99" " %.3f ms/frame  (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        DrawDebugUI();
+        ImGui::End();
+    }
+    if (_settings._showStatusBar) {
+        ImGuiWindowFlags statusFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+        if (ImGui::BeginViewportSideBar("##StatusBar", NULL, ImGuiDir_Down, ImGui::GetFrameHeight(), statusFlags)) {
+            if (ImGui::BeginMenuBar()) { // Drawing only the framerate
+                ImGui::Text("\xee\x81\x99"
+                            " %.3f ms/frame  (%.1f FPS)",
+                            1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+                ImGui::EndMenuBar();
+            }
+        }
         ImGui::End();
     }
 
     if (_settings._showPropertyEditor) {
+        TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
@@ -508,12 +527,14 @@ void Editor::Draw() {
     }
 
     if (_settings._showOutliner) {
+        TRACE_SCOPE(UsdStageHierarchyWindowTitle);
         ImGui::Begin(UsdStageHierarchyWindowTitle, &_settings._showOutliner);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }
 
     if (_settings._showTimeline) {
+        TRACE_SCOPE(TimelineWindowTitle);
         ImGui::Begin(TimelineWindowTitle, &_settings._showTimeline);
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
@@ -522,6 +543,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerHierarchyEditor) {
+        TRACE_SCOPE(SdfLayerHierarchyWindowTitle);
         const std::string title(SdfLayerHierarchyWindowTitle + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
                                 "###Layer hierarchy");
         ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor, layerWindowFlag);
@@ -530,6 +552,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showLayerStackEditor) {
+        TRACE_SCOPE(SdfLayerStackWindowTitle);
         const std::string title(SdfLayerStackWindowTitle + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
         ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor, layerWindowFlag);
         DrawLayerSublayerStack(rootLayer);
@@ -537,6 +560,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showContentBrowser) {
+        TRACE_SCOPE(ContentBrowserWindowTitle);
         const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         ImGui::Begin(ContentBrowserWindowTitle, &_settings._showContentBrowser, windowFlags);
         DrawContentBrowser(*this);
@@ -544,6 +568,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showPrimSpecEditor) {
+        TRACE_SCOPE(SdfPrimPropertiesWindowTitle);
         ImGui::Begin(SdfPrimPropertiesWindowTitle, &_settings._showPrimSpecEditor, layerWindowFlag);
         auto headerSize = ImGui::GetWindowSize();
         headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
@@ -564,12 +589,14 @@ void Editor::Draw() {
     }
     
     if (_settings._textEditor) {
+        TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
         ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
             DrawTextEditor(GetCurrentLayer());
         ImGui::End();
     }
 
     if (_settings._showArrayEditor) {
+        TRACE_SCOPE(SdfAttributeWindowTitle);
         ImGui::Begin(SdfAttributeWindowTitle, &_settings._showArrayEditor);
         DrawArrayEditor(GetCurrentLayer(), GetSelectedAttribute());
         ImGui::End();

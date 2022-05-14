@@ -1,8 +1,9 @@
-#include "DebugUI.h"
 #include "Gui.h"
+#include "Debug.h"
 #include "pxr/base/trace/reporter.h"
 #include "pxr/base/trace/trace.h"
 #include <pxr/base/tf/debug.h>
+
 PXR_NAMESPACE_USING_DIRECTIVE
 
 static void DrawTraceReporter() {
@@ -34,7 +35,6 @@ static void DrawTraceReporter() {
     ImGui::PushFont(io.Fonts->Fonts[1]);
     const ImVec2 size(-FLT_MIN, -10);
     ImGui::InputTextMultiline("##TraceReport", &reportStr, size);
-    // ImGui::Text("%s", report.str().c_str());
     ImGui::PopFont();
 }
 
@@ -54,7 +54,6 @@ static void DrawDebugCodes() {
 
 // Draw a preference like panel
 void DrawDebugUI() {
-    TRACE_SCOPE("Debug draw");
     static const char *const panels[] = {"Timings", "Debug codes", "Trace reporter"};
     static int current_item = 0;
     ImGui::PushItemWidth(100);
