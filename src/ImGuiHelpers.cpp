@@ -79,7 +79,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
                 items_filtered.push_back(i);
                 if (i == focus_idx) { // if we find the previous focus index, we just keep it
                     chosen_focus_idx = focus_idx;
-                    focus_filtered_idx = items_filtered.size() - 1; // last element pushed
+                    focus_filtered_idx = static_cast<int>(items_filtered.size()) - 1; // last element pushed
                 }
             }
         }
@@ -128,7 +128,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
     if (move_delta != 0) {
         if (is_filtering) {
             if (focus_filtered_idx >= 0) {
-                const int count = items_filtered.size();
+                const int count = static_cast<int>(items_filtered.size());
                 focus_filtered_idx = (focus_filtered_idx + move_delta + count) % count;
                 focus_idx = items_filtered[focus_filtered_idx];
             }
