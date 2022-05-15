@@ -67,13 +67,6 @@ static bool PassOptionsFilter(SdfLayerHandle layer, const ContentBrowserOptions 
     return true;
 }
 
-static inline void DrawSaveButton(SdfLayerHandle layer) {
-    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
-    if (ImGui::SmallButton(layer->IsDirty() ? ICON_FA_SAVE "###Save" : "  ###Save")) {
-        ExecuteAfterDraw(&SdfLayer::Save, layer, true);
-    }
-}
-
 static inline std::string LayerNameFromOptions(SdfLayerHandle layer, const ContentBrowserOptions &options) {
     if (options._showAssetName) {
         return layer->GetAssetName();
@@ -85,9 +78,29 @@ static inline std::string LayerNameFromOptions(SdfLayerHandle layer, const Conte
     return layer->GetIdentifier();
 }
 
-static inline void DrawLayerDescriptionRow(SdfLayerHandle layer, bool isStage, std::string &layerName, bool selected,
-                                           SdfLayerHandle *selectedLayer) {
-    ScopedStyleColor style(ImGuiCol_Text, isStage ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(0.6, 0.6, 0.6, 1.0));
+static inline void DrawSaveButton(SdfLayerHandle layer) {
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_Text,
+                           layer->IsDirty() ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(ColorTransparent));
+    if (ImGui::SmallButton(ICON_FA_SAVE "###Save")) {
+        ExecuteAfterDraw(&SdfLayer::Save, layer, true);
+    }
+}
+
+static inline void DrawSelectStageButton(SdfLayerHandle layer, bool isStage, SdfLayerHandle *selectedStage) {
+    ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_Text,
+        isStage ? ((selectedStage && *selectedStage == layer) ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(0.6, 0.6, 0.6, 1.0)) : ImVec4(ColorTransparent));
+    if (ImGui::SmallButton(ICON_FA_DESKTOP "###Stage")) {
+        ExecuteAfterDraw<EditorSetCurrentStage>(layer);
+    }
+}
+
+
+static inline void DrawLayerDescriptionRow(SdfLayerHandle layer, bool isStage, std::string &layerName,
+                                           SdfLayerHandle *selectedLayer, SdfLayerHandle *selectedStage) {
+    ScopedStyleColor style(ImGuiCol_Text, isStage ? (selectedStage && *selectedStage == layer ? ImVec4(1.0, 1.0, 1.0, 1.0)
+                                                                                              : ImVec4(1.0, 1.0, 1.0, 1.0))
+                                                  : ImVec4(0.6, 0.6, 0.6, 1.0));
+    bool selected = selectedLayer && *selectedLayer == layer;
     if (ImGui::Selectable(layerName.c_str(), selected)) {
         if (selectedLayer) {
             *selectedLayer = layer;
@@ -102,8 +115,7 @@ static inline void DrawLayerDescriptionRow(SdfLayerHandle layer, bool isStage, s
     }
 }
 
-template <typename SdfLayerSetT>
-void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *selectedLayer,
+void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHandle *selectedLayer, SdfLayerHandle *selectedStage,
                   const ContentBrowserOptions &options, const ImVec2 &listSize = ImVec2(0, -10)) {
 
     static TextFilter filter;
@@ -120,7 +132,6 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *
         for (const auto &layer : sortedSet) {
             if (!layer)
                 continue;
-            bool selected = selectedLayer && *selectedLayer == layer;
             std::string layerName = LayerNameFromOptions(layer, options);
             const bool passSearchFilter = filter.PassFilter(layerName.c_str());
             if (passSearchFilter) {
@@ -128,10 +139,15 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *
                 if (!PassOptionsFilter(layer, options, isStage)) {
                     continue;
                 }
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
                 ImGui::PushID(layer->GetUniqueIdentifier());
-                DrawSaveButton(layer);
+                DrawSelectStageButton(layer, isStage, selectedStage);
                 ImGui::SameLine();
-                DrawLayerDescriptionRow(layer, isStage, layerName, selected, selectedLayer);
+                DrawSaveButton(layer);
+                ImGui::PopStyleVar();
+                ImGui::SameLine();
+                DrawLayerDescriptionRow(layer, isStage, layerName, selectedLayer, selectedStage);
+
                 if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 2) {
                     DrawLayerTooltip(layer);
                 }
@@ -147,8 +163,7 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerSetT &layerSet, SdfLayerHandle *
     ImGui::PopItemWidth();
 }
 
-void DrawContentBrowser(Editor &editor) {
-    static ContentBrowserOptions options;
+void DrawContentBrowserMenuBar(ContentBrowserOptions& options) {
     if (ImGui::BeginMenuBar()) {
         bool selected = true;
         if (ImGui::BeginMenu("Filter")) {
@@ -179,12 +194,18 @@ void DrawContentBrowser(Editor &editor) {
         }
         ImGui::EndMenuBar();
     }
+}
 
+
+void DrawContentBrowser(Editor &editor) {
+    static ContentBrowserOptions options;
+    DrawContentBrowserMenuBar(options);
     // TODO: we might want to remove completely the editor here, just pass as selected layer and a selected stage
-    SdfLayerHandle selected(editor.GetCurrentLayer());
+    SdfLayerHandle selectedLayer(editor.GetCurrentLayer());
+    SdfLayerHandle selectedStage(editor.GetCurrentStage() ? editor.GetCurrentStage()->GetRootLayer() : SdfLayerHandle());
     auto layers = SdfLayer::GetLoadedLayers();
-    DrawLayerSet(editor.GetStageCache(), layers, &selected, options);
-    if (selected != editor.GetCurrentLayer()) {
-        editor.SetCurrentLayer(selected);
+    DrawLayerSet(editor.GetStageCache(), layers, &selectedLayer, &selectedStage, options);
+    if (selectedLayer != editor.GetCurrentLayer()) {
+        editor.SetCurrentLayer(selectedLayer);
     }
 }
