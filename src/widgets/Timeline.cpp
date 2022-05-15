@@ -5,17 +5,16 @@
 
 // The easiest version of a timeline: a slider
 void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode) {
-    if (!stage)
-        return;
+    const bool hasStage = stage;
     constexpr int widgetWidth = 80;
-    int startTime = static_cast<int>(stage->GetStartTimeCode());
-    int endTime = static_cast<int>(stage->GetEndTimeCode());
+    int startTime = hasStage ? static_cast<int>(stage->GetStartTimeCode()) : 0;
+    int endTime = hasStage ? static_cast<int>(stage->GetEndTimeCode()) : 0;
 
     // Start time
     ImGui::PushItemWidth(widgetWidth);
     ImGui::InputInt("##Start", &startTime, 0);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
-        if (stage->GetStartTimeCode() != static_cast<double>(startTime)) {
+        if (hasStage && stage->GetStartTimeCode() != static_cast<double>(startTime)) {
             ExecuteAfterDraw(&UsdStage::SetStartTimeCode, stage, static_cast<double>(startTime));
         }
     }
@@ -34,7 +33,7 @@ void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode) {
     ImGui::PushItemWidth(widgetWidth);
     ImGui::InputInt("##End", &endTime, 0);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
-        if (stage->GetEndTimeCode() != static_cast<double>(endTime)) {
+        if (hasStage && stage->GetEndTimeCode() != static_cast<double>(endTime)) {
             ExecuteAfterDraw(&UsdStage::SetEndTimeCode, stage, static_cast<double>(endTime));
         }
     }
