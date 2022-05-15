@@ -53,7 +53,7 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
     if (ImGui::MenuItem("Copy prim path")) {
         ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
     }
-    if (ImGui::BeginMenu("Inspect")) {
+    if (ImGui::BeginMenu("Edit layer")) {
         ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
         if (pcpIndex.IsValid()) {
