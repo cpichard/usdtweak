@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstdlib>
 #include <Python.h>
 #include <pxr/base/plug/registry.h>
 #include <pxr/imaging/glf/contextCaps.h>
@@ -14,9 +15,24 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+
+void InstallApplicationPluginPath() {
+#ifdef _WIN64
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string::size_type pos = std::string(path).find_last_of("\\/");
+    std::string pluginPath = std::string(path).substr(0, pos) += "\\..\\plugin";
+    PlugRegistry::GetInstance().RegisterPlugins(pluginPath);
+    std::cout << "usdtweak plugin path: " << pluginPath << std::endl;
+#endif
+}
+
+
 int main(int argc, const char **argv) {
 
     CommandLineOptions options(argc, argv);
+
+    InstallApplicationPluginPath();
 
     // ResourceLoader will load the settings/fonts/textures and create an imgui context
     ResourcesLoader loader;
@@ -63,10 +79,11 @@ int main(int argc, const char **argv) {
     GlfContextCaps::InitInstance();
     std::cout << glGetString(GL_VENDOR) << std::endl;
     std::cout << glGetString(GL_RENDERER) << std::endl;
-    std::cout << glGetString(GL_VERSION) << std::endl;
+    std::cout << "OpenGL " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-    std::cout << "Hydra enabled : " << UsdImagingGLEngine::IsHydraEnabled() << std::endl;
-    // GlfRegisterDefaultDebugOutputMessageCallback();
+    std::cout << "Hydra " << (UsdImagingGLEngine::IsHydraEnabled() ? "enabled" : "disabled") << std::endl;
+    const char* pluginPathName = std::getenv("PXR_PLUGINPATH_NAME");
+    std::cout << "PXR_PLUGINPATH_NAME: " << (pluginPathName ? pluginPathName : "") << std::endl;
 
     // Init ImGui for glfw and opengl
     ImGui_ImplGlfw_InitForOpenGL(window, true);

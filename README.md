@@ -11,7 +11,7 @@ This project is written in C++ and relies on [ImGUI](https://github.com/ocornut/
 
 ## Status
 
-There is no roadmap at the moment, as it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. However the original idea was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So the current goal driving the developments is providing the same functionalities as usdview but with edition capabilities.
+There is no roadmap at the moment, as it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. The original idea behind this project was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So my current goal driving the developments is to provide at least the same functionalities as usdview and some ability to edit the stages and layers.
 
 As of today usdtweak allows
 
@@ -36,13 +36,11 @@ The project is almost self contained and only needs:
 
 - [cmake](https://cmake.org/) installed (version > 3.14)
 - a C++14 compiler installed: MSVC 19 or 17, g++ or clang++.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v22.05) version >= 20.11
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v22.05) version >= 20.11. (I am not sure the USD libraries provided with maya, houdini or omniverse would work)
 
 If you managed to build USD, compiling usdtweak should be easy, cmake needs only 1 required variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
-
-Note that usdtweak hasn't been compiled with the usd libraries provided with maya, houdini or omniverse, even if it might be possible to do so.
 
 ### Compiling on linux
 
@@ -87,6 +85,12 @@ You can install usdtweak with its dependencies on windows, it copies the require
     cmake --install . --prefix <where_you_want_to_install_usdtweak> --config RelWithDebInfo
 
  Note that it is not really tested on anything else than my machine/setup so it might not work for you, feel free to get in touch if you have any issue.
+
+### Creating a Windows installer
+
+There is an experimental packaging system using cpack/NSIS on windows which creates an installer. You have to make sure the nsis application is available on you system, you can download it from here [NSIS](https://nsis.sourceforge.io/Download). The command to create the installer is then:
+
+    cmake --build . --target package --config RelWithDebInfo
 
 ### Compiling with your version of glfw
 
