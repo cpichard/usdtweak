@@ -82,58 +82,6 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
     return ImVec4(ColorPrimDefault);
 }
 
-///// Recursive function to draw a prim and its descendants
-// static void DrawPrimTreeNode(const UsdPrim &prim, Selection &selectedPaths) {
-//    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
-//    const auto &children = prim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
-//    if (children.empty()) {
-//        flags |= ImGuiTreeNodeFlags_Leaf;
-//    }
-//    if (IsSelected(selectedPaths, prim.GetPath())) {
-//        flags |= ImGuiTreeNodeFlags_Selected;
-//    }
-//
-//    bool unfolded = true;
-//    {
-//        ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
-//        unfolded = ImGui::TreeNodeEx(prim.GetName().GetText(), flags);
-//        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-//            SetSelected(selectedPaths, prim.GetPath());
-//        }
-//        {
-//            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
-//            if (ImGui::BeginPopupContextItem()) {
-//                DrawUsdPrimEditMenuItems(prim);
-//                ImGui::EndPopup();
-//            }
-//        }
-//        ImGui::NextColumn();
-//
-//        // Get visibility parameter.
-//        // Is it really useful ???
-//        UsdGeomImageable imageable(prim);
-//        const char* icon = "";
-//        if (imageable) {
-//            VtValue visible;
-//            imageable.GetVisibilityAttr().Get(&visible);
-//            icon = visible == TfToken("invisible") ? ICON_FA_EYE_SLASH : ICON_FA_EYE;
-//        }
-//
-//        ImGui::Text("%s %s", icon, prim.GetTypeName().GetText());
-//    }
-//
-//    ImGui::NextColumn(); // Back to the first column
-//
-//    if (unfolded) {
-//        if (prim.IsActive()) {
-//            for (const auto &child : children) {
-//                DrawPrimTreeNode(child, selectedPaths);
-//            }
-//        }
-//        ImGui::TreePop();
-//    }
-//}
-
 static void DrawVisibilityButton(const UsdPrim &prim) {
     constexpr const char *inheritedIcon = ICON_FA_QUESTION_CIRCLE;
     UsdGeomImageable imageable(prim);
@@ -150,8 +98,6 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
 
             const TfToken &visibilityToken = visibleValue.Get<TfToken>();
             const bool invisible = visibilityToken == UsdGeomTokens->visible;
-            // const char *icon =  invisible ? ICON_FA_EYE_SLASH : ICON_FA_EYE;
-
             const char *icon = visibilityToken == UsdGeomTokens->invisible
                                    ? ICON_FA_EYE_SLASH
                                    : (visibilityToken == UsdGeomTokens->visible ? ICON_FA_EYE : inheritedIcon);
@@ -193,7 +139,6 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
     {
         ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
         const ImGuiID pathHash = ToImGuiID(prim.GetPath().GetHash());
-        // std::cout << pathHash << std::endl;
         unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
             SetSelected(selectedPaths, prim.GetPath());
@@ -281,7 +226,7 @@ static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &path
 
 // Correctly indent the tree nodes using the path
 // It allocates a SdfPathVector which might not be optimal, but is called only on the visible paths, that should mitigate the
-// allocation
+// number of allocations
 struct TreeIndenter {
     TreeIndenter(const SdfPath &path) {
         path.GetPrefixes(&prefixes);
@@ -300,8 +245,8 @@ struct TreeIndenter {
 static void FocusedOnFirstSelectedPath(const Selection &selectedPaths, const std::vector<SdfPath> &paths,
                                        ImGuiListClipper &clipper) {
     const auto &selectedPath = GetSelectedPath(selectedPaths);
-    // linear search! it happens only when the selection has changed. But we might want to maintain a map instead
-    // if the scenes are big.
+    // linear search! it happens only when the selection has changed. We might want to maintain a map instead
+    // if the hierarchies are big.
     for (int i = 0; i < paths.size(); ++i) {
         if (paths[i] == selectedPath) {
             // scroll only if the item is not visible
@@ -344,7 +289,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         // Find all the opened paths
         std::vector<SdfPath> paths;
         paths.reserve(1024);
-        TraverseOpenedPaths(stage, paths); // This must be inside the table to get the correct treenode hash table
+        TraverseOpenedPaths(stage, paths); // This must be inside the table scope to get the correct treenode hash table
 
         // Draw the tree root node, the layer
         DrawStageTreeRow(stage, selectedPaths);
@@ -368,7 +313,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         }
         ImGui::EndTable();
         
-        // Debug info
+        // Debug info. Uncomment to see the number of processed paths
         //ImGui::SetCursorPos(ImVec2(500 + cursorPos.x, 25 + cursorPos.y));
         //ImGui::Text("%d paths", paths.size());
     }
