@@ -9,3 +9,6 @@ void DrawUsdPrimProperties(UsdPrim &obj, UsdTimeCode currentTime = UsdTimeCode::
 
 /// Should go in TransformEditor.h
 bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime = UsdTimeCode::Default());
+
+/// Should go in a UsdPrimEditors file instead
+void DrawUsdPrimEditTarget(UsdPrim &prim);

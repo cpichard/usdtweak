@@ -14,6 +14,7 @@
 #include "Constants.h"
 #include "RendererSettings.h"
 #include "Shortcuts.h"
+#include "PropertyEditor.h"
 #include "Playblast.h"
 
 namespace clk = std::chrono;
@@ -212,6 +213,21 @@ void Viewport::Draw() {
         }
     }
     ImGui::EndDisabled();
+
+
+    if (GetCurrentStage()) {
+        ImGui::SameLine();
+        ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
+        ImGui::SameLine();
+        ImGui::SmallButton(ICON_FA_PEN);
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            UsdPrim& selected = IsSelectionEmpty(GetSelection()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelectedPath(GetSelection()));
+            DrawUsdPrimEditTarget(selected);
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
+    }
 
 
     // Set the size of the texture here as we need the current window size
