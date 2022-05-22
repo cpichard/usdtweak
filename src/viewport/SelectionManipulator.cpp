@@ -63,8 +63,8 @@ void SelectionManipulator::OnDrawFrame(const Viewport &) {
 }
 
 void DrawPickMode(SelectionManipulator &manipulator) {
-    static const char *PickModeStr[3] = {"Prim", "Model", "Assembly"};
-    if (ImGui::BeginCombo("Pick mode", PickModeStr[int(manipulator.GetPickMode())])) {
+    static const char *PickModeStr[3] = {ICON_FA_HAND_POINTER "      Prim  ", ICON_FA_HAND_POINTER "    Model  ", ICON_FA_HAND_POINTER " Assembly"};
+    if (ImGui::BeginCombo("##Pick mode", PickModeStr[int(manipulator.GetPickMode())], ImGuiComboFlags_NoArrowButton)) {
         if (ImGui::Selectable(PickModeStr[0])) {
             manipulator.SetPickMode(SelectionManipulator::PickMode::Prim);
         }
