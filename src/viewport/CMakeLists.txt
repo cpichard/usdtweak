@@ -10,6 +10,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Manipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/MouseHoverManipulator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MouseHoverManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Playblast.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Playblast.h
     ${CMAKE_CURRENT_SOURCE_DIR}/PositionManipulator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PositionManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/RotationManipulator.cpp

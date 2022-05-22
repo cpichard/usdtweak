@@ -14,6 +14,7 @@
 #include "Constants.h"
 #include "RendererSettings.h"
 #include "Shortcuts.h"
+#include "Playblast.h"
 
 namespace clk = std::chrono;
 
@@ -203,6 +204,15 @@ void Viewport::Draw() {
         ImGui::EndPopup();
     }
     ImGui::SameLine();
+    // disable perspective camera as the camera needs to be in the stage
+    ImGui::BeginDisabled(GetCameraPath() == perspectiveCameraPath);
+    if (ImGui::Button(ICON_FA_IMAGES " Playblast")) {
+        if (_renderer) {
+            DrawModalDialog<PlayblastModalDialog>(GetCurrentStage(), GetCameraPath());
+        }
+    }
+    ImGui::EndDisabled();
+
 
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
