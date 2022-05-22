@@ -203,8 +203,6 @@ void Viewport::Draw() {
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
-    DrawPickMode(_selectionManipulator);
 
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
@@ -234,8 +232,15 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
     const ImVec4 selectedColor(ColorButtonHighlight);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    ImGui::SetNextItemWidth(80);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
+    DrawPickMode(_selectionManipulator);
+    ImGui::PopStyleColor();
+
+    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
+    //ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
     if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
         ChooseManipulator<MouseHoverManipulator>();
     }
