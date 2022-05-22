@@ -229,7 +229,7 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::TableSetColumnIndex(2);
     ImGui::SmallButton(ICON_FA_PEN);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        UsdPrim &selected =
+        const UsdPrim &selected =
             IsSelectionEmpty(selectedPaths) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(GetSelectedPath(selectedPaths));
         DrawUsdPrimEditTarget(selected);
         ImGui::EndPopup();
@@ -369,7 +369,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         ImGui::EndTable();
         
         // Debug info
-        ImGui::SetCursorPos(ImVec2(500 + cursorPos.x, 25 + cursorPos.y));
-        ImGui::Text("%d paths", paths.size());
+        //ImGui::SetCursorPos(ImVec2(500 + cursorPos.x, 25 + cursorPos.y));
+        //ImGui::Text("%d paths", paths.size());
     }
 }
