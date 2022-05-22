@@ -342,7 +342,7 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 }
 
 // First version of an edit target selector
-void DrawUsdPrimEditTarget(UsdPrim &prim) {
+void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim) return;
     using Query = pxr::UsdPrimCompositionQuery;
     auto filter = UsdPrimCompositionQuery::Filter();

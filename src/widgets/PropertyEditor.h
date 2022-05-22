@@ -11,4 +11,4 @@ void DrawUsdPrimProperties(UsdPrim &obj, UsdTimeCode currentTime = UsdTimeCode::
 bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime = UsdTimeCode::Default());
 
 /// Should go in a UsdPrimEditors file instead
-void DrawUsdPrimEditTarget(UsdPrim &prim);
+void DrawUsdPrimEditTarget(const UsdPrim &prim);
