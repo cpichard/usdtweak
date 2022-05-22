@@ -49,3 +49,7 @@ bool Splitter(bool splitVertically, float thickness, float *size1, float *size2,
 /// Creates a combo box with a search bar filtering the list elements
 bool ComboWithFilter(const char *label, const char *preview_value, const std::vector<std::string> &items, int *current_item,
                      ImGuiComboFlags combo_flags, int popup_max_height_in_items = -1) ;
+
+/// Function to convert values to ImGuiID. It is used to convert usd hashed (64bits) to ImGuiID (32bits). It works fine at the moment.
+template <typename T>
+ImGuiID ToImGuiID(const T &val) { return static_cast<ImGuiID>(val); }
