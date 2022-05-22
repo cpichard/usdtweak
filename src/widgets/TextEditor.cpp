@@ -10,6 +10,10 @@
 void DrawTextEditor(SdfLayerRefPtr layer) {
     static std::string layerText;
     ImGuiIO &io = ImGui::GetIO();
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) {
+        return;
+    }
     ImGui::Text("WARNING: this will slow down the application if the layer is big");
     ImGui::Text("        and will consume lots of memory. Use with care for now");
     if (layer) {
