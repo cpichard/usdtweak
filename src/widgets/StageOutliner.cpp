@@ -83,7 +83,11 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
 }
 
 static void DrawVisibilityButton(const UsdPrim &prim) {
+#if PXR_VERSION >= 2205
     constexpr const char *inheritedIcon = ICON_FA_QUESTION_CIRCLE;
+#else
+    constexpr const char *inheritedIcon = ICON_FA_EYE;
+#endif
     UsdGeomImageable imageable(prim);
     if (imageable) {
         // 4 possible states:
@@ -97,16 +101,21 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
             attr.Get(&visibleValue);
 
             const TfToken &visibilityToken = visibleValue.Get<TfToken>();
-            const bool invisible = visibilityToken == UsdGeomTokens->visible;
             const char *icon = visibilityToken == UsdGeomTokens->invisible
                                    ? ICON_FA_EYE_SLASH
+#if PXR_VERSION >= 2205
                                    : (visibilityToken == UsdGeomTokens->visible ? ICON_FA_EYE : inheritedIcon);
+#else
+                                   : inheritedIcon;
+#endif
             ScopedStyleColor buttonColor(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0));
             if (ImGui::SmallButton(icon)) {
                 UsdTimeCode tc = UsdTimeCode::Default();
                 if (visibilityToken == UsdGeomTokens->inherited) {
+#if PXR_VERSION >= 2205
                     ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->visible), tc);
                 } else if (visibilityToken == UsdGeomTokens->visible) {
+#endif
                     ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->invisible), tc);
                 } else if (visibilityToken == UsdGeomTokens->invisible) {
                     ExecuteAfterDraw(&UsdPrim::RemoveProperty, prim, attr.GetName());
