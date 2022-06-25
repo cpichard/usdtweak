@@ -551,7 +551,7 @@ void Editor::Draw() {
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            auto prim = GetCurrentStage()->GetPrimAtPath(GetSelectedPath(_selection));
+            auto prim = GetCurrentStage()->GetPrimAtPath(GetFirstSelectedPath(_selection));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();
@@ -578,7 +578,7 @@ void Editor::Draw() {
         const std::string title(SdfLayerHierarchyWindowTitle + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
                                 "###Layer hierarchy");
         ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor, layerWindowFlag);
-        DrawLayerPrimHierarchy(rootLayer, GetSelectedPrimSpec());
+        DrawLayerPrimHierarchy(rootLayer, GetLayerSelection());
         ImGui::End();
     }
 
@@ -645,11 +645,6 @@ void Editor::Draw() {
 }
 
 
-void Editor::SetSelectedPrimSpec(const SdfPath& primPath) {
-    if (GetCurrentLayer()) {
-        _selectedPrimSpec = GetCurrentLayer()->GetPrimAtPath(primPath);
-    }
-}
 
 void Editor::LoadSettings() {
     _settings = ResourcesLoader::GetEditorSettings();
