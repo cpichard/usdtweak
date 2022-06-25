@@ -102,6 +102,35 @@ struct EditorSetCurrentStage : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetCurrentStage>(SdfLayerHandle layer);
 
+// Sets the current stage edit target and change the current layer to the edit target
+struct EditorSetEditTarget : public EditorCommand {
+
+    EditorSetEditTarget(UsdStageRefPtr stage, UsdEditTarget editTarget) : _stage(stage), _editTarget(editTarget) {}
+    EditorSetEditTarget(UsdStageWeakPtr stage, UsdEditTarget editTarget) : _stage(stage), _editTarget(editTarget) {}
+    EditorSetEditTarget(UsdStageRefPtr stage, UsdEditTarget editTarget, SdfPath dstPath)
+        : _stage(stage), _editTarget(editTarget), _dstPath(dstPath) {}
+    EditorSetEditTarget(UsdStageWeakPtr stage, UsdEditTarget editTarget, SdfPath dstPath)
+        : _stage(stage), _editTarget(editTarget), _dstPath(dstPath) {}
+    bool DoIt() override {
+        if (_editor && _stage) {
+            _stage->SetEditTarget(_editTarget);
+            if (_editTarget.GetLayer()) {
+                _editor->SetCurrentLayer(_editTarget.GetLayer());
+                if (_dstPath != SdfPath()) {
+                    _editor->SetLayerPathSelection(_dstPath);
+                }
+            }
+        }
+        return false; // never store this command
+    }
+    UsdStageWeakPtr _stage;
+    UsdEditTarget _editTarget;
+    SdfPath _dstPath;
+};
+template void ExecuteAfterDraw<EditorSetEditTarget>(UsdStageRefPtr stage, UsdEditTarget editTarget);
+template void ExecuteAfterDraw<EditorSetEditTarget>(UsdStageWeakPtr stage, UsdEditTarget editTarget);
+template void ExecuteAfterDraw<EditorSetEditTarget>(UsdStageRefPtr stage, UsdEditTarget editTarget, SdfPath srcPath);
+template void ExecuteAfterDraw<EditorSetEditTarget>(UsdStageWeakPtr stage, UsdEditTarget editTarget, SdfPath srcPath);
 
 // Shutting down the editor
 struct EditorShutdown : public EditorCommand {

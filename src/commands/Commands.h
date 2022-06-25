@@ -38,6 +38,7 @@ struct EditorOpenLayer;
 struct EditorSaveLayerAs;
 struct EditorSetCurrentLayer;
 struct EditorSetCurrentStage;
+struct EditorSetEditTarget;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
 struct EditorInspectLayerLocation;
@@ -47,6 +48,7 @@ struct EditorStopPlayback;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;
+struct LayerRenameSubLayer;
 struct LayerMute;
 struct LayerUnmute;
 struct LayerTextEdit;
