@@ -153,7 +153,7 @@ bool ScaleManipulator::IsMouseOver(const Viewport &viewport) {
 // Same as rotation manipulator now -- TODO : share in a common class
 void ScaleManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
-    auto primPath = GetSelectedPath(selection);
+    auto primPath = GetFirstSelectedPath(selection);
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 }
 

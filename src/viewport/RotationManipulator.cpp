@@ -207,7 +207,7 @@ bool RotationManipulator::IsMouseOver(const Viewport &viewport) {
 void RotationManipulator::OnSelectionChange(Viewport &viewport) {
     // TODO: we should set here if the new selection will be editable or not
     auto &selection = viewport.GetSelection();
-    auto primPath = GetSelectedPath(selection);
+    auto primPath = GetFirstSelectedPath(selection);
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 }
 

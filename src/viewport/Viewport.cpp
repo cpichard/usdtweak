@@ -223,7 +223,7 @@ void Viewport::Draw() {
         ImGui::SameLine();
         ImGui::SmallButton(ICON_FA_PEN);
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            const UsdPrim& selected = IsSelectionEmpty(GetSelection()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelectedPath(GetSelection()));
+            const UsdPrim& selected = IsSelectionEmpty(GetSelection()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetFirstSelectedPath(GetSelection()));
             DrawUsdPrimEditTarget(selected);
             ImGui::EndPopup();
         }

@@ -149,15 +149,17 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawBackgroundSelection(const SdfPrimSpecHandle &currentPrim, SdfPrimSpecHandle &selectedPrim) {
-    const bool selected = currentPrim == selectedPrim;
-    const auto selectedColor = ImGui::GetColorU32(ImGuiCol_Header);
-    ScopedStyleColor scopedStyle(ImGuiCol_HeaderHovered, selected ? selectedColor : 0 /*transparent color*/,
-                                 ImGuiCol_HeaderActive, selectedColor);
+static void DrawBackgroundSelection(const SdfPrimSpecHandle &currentPrim, Selection &selection, bool selected) {
+
+    ImVec4 colorSelected = selected ? ImVec4(0.75, 0.60, 0.33, 0.6): ImVec4(0.75, 0.60, 0.33, 0.2);
+    ScopedStyleColor scopedStyle(ImGuiCol_HeaderHovered, selected ? colorSelected : ImVec4(ColorTransparent),
+                                 ImGuiCol_HeaderActive, ImVec4(ColorTransparent), ImGuiCol_Header, colorSelected);
     ImVec2 sizeArg(0.0, 20);
     const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
     if (ImGui::Selectable("##backgroundSelectedPrim", selected, selectableFlags, sizeArg)) {
-        selectedPrim = currentPrim;
+        if (currentPrim) {
+            selection.SetSelected(currentPrim->GetLayer(), currentPrim->GetPath());
+        }
     }
 
     ImGui::SetItemAllowOverlap();
@@ -225,7 +227,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, SdfPrimSpecHandle &prim) {
     DrawTooltip("Paste");
 }
 
-static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
+static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec, Selection &selection) {
     static SdfPath payload;
     // Drag and drop
     ImGuiDragDropFlags srcFlags = 0;
@@ -236,7 +238,6 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
     if (ImGui::BeginDragDropSource(srcFlags)) {
         if (!(srcFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
             ImGui::Text("Moving %s", primSpec->GetPath().GetString().c_str());
-
         payload = SdfPath(primSpec->GetPath());
         ImGui::SetDragDropPayload("DND", &payload, sizeof(SdfPath), ImGuiCond_Once);
         ImGui::EndDragDropSource();
@@ -248,21 +249,25 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec) {
         // target) to do something target_flags |= ImGuiDragDropFlags_AcceptNoDrawDefaultRect; // Don't display the yellow
         // rectangle
         if (const ImGuiPayload *pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
-            SdfPath source(*(SdfPath *)pl->Data);
-            ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
+            if (selection.IsSelectionEmpty(primSpec->GetLayer())) {
+                SdfPath source(*(SdfPath *)pl->Data);
+                ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
+            } else {
+                std::vector<SdfPath> source(selection.GetSelectedPaths(primSpec->GetLayer()));
+                ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
+            }
         }
         ImGui::EndDragDropTarget();
     }
 }
 
-
-static void HandleDragAndDrop(SdfLayerHandle layer) {
+static void HandleDragAndDrop(SdfLayerHandle layer, Selection &selection) {
     static SdfPath payload;
     // Drop on the layer
     if (ImGui::BeginDragDropTarget()) {
         ImGuiDragDropFlags targetFlags = 0;
-        if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
-            SdfPath source(*(SdfPath*)pl->Data);
+        if (const ImGuiPayload *pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
+            SdfPath source(*(SdfPath *)pl->Data);
             ExecuteAfterDraw<PrimReparent>(layer, source, SdfPath::AbsoluteRootPath());
         }
         ImGui::EndDragDropTarget();
@@ -270,7 +275,7 @@ static void HandleDragAndDrop(SdfLayerHandle layer) {
 }
 
 // Returns unfolded
-static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &primSpec, SdfPrimSpecHandle &selectedPrim,
+static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &primSpec, Selection &selection,
                                  bool hasChildren) {
     // Format text differently when the prim is a variant
     std::string primSpecName;
@@ -291,8 +296,8 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
     // Edition of the prim name
     static SdfPrimSpecHandle editNamePrim;
     if (!ImGui::IsItemToggledOpen() && ImGui::IsItemClicked()) {
-        selectedPrim = primSpec;
-        if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != selectedPrim) {
+        selection.SetSelected(primSpec->GetLayer(), primSpec->GetPath()); // TODO SetSelected(primSpec)
+        if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != primSpec) {
             editNamePrim = SdfPrimSpecHandle();
         }
         if (!primIsVariant && ImGui::IsMouseDoubleClicked(0)) {
@@ -334,10 +339,10 @@ static void DrawPrimSpecRow(SdfPrimSpecHandle primSpec, SdfPrimSpecHandle &selec
         selectedPosY = ImGui::GetCursorPosY();
     }
 
-    DrawBackgroundSelection(primSpec, selectedPrim);
+    DrawBackgroundSelection(primSpec, selection, selectedPrim == primSpec);
 
     // Drag and drop on Selectable
-    HandleDragAndDrop(primSpec);
+    HandleDragAndDrop(primSpec, selection);
 
     // Draw the tree column
     auto childrenNames = primSpec->GetNameChildren();

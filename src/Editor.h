@@ -35,7 +35,6 @@ public:
 
     /// Sets the current edited layer
     void SetCurrentLayer(SdfLayerRefPtr layer);
-    //void SetCurrentLayerAndPrim(SdfLayerRefPtr layer, SdfPrimSpecHandle sdfPrim);
     SdfLayerRefPtr GetCurrentLayer();
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();    // go forward in the layer history
@@ -52,8 +51,9 @@ public:
 
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
-    SdfPrimSpecHandle &GetSelectedPrimSpec() { return _selectedPrimSpec; }
-    void SetSelectedPrimSpec(const SdfPath& primPath);
+    Selection &GetLayerSelection() { return _selection; }
+    void SetLayerPathSelection(const SdfPath& primPath);
+    void AddLayerPathSelection(const SdfPath& primPath);
 
     inline SdfPath GetSelectedAttribute() const { return _selectedAttribute; }
     inline void SetSelectedAttribute(const SdfPath &primPath) { _selectedAttribute = primPath; }
@@ -130,11 +130,8 @@ private:
     UsdStageRefPtr _currentStage;
     Viewport _viewport;
 
-    // Editor owns the selection for the application
+    /// Selection for stages and layers
     Selection _selection;
-
-    /// Selected prim spec. This variable might move somewhere else
-    SdfPrimSpecHandle _selectedPrimSpec;
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;

@@ -131,7 +131,14 @@ struct PrimCreateSpecialize : public PrimCreateListEditorOperation<SdfPathKeyPol
 
 struct PrimReparent : public SdfLayerCommand {
     PrimReparent(SdfLayerHandle layer, SdfPath source, SdfPath destination)
-        : _layer(std::move(layer)), _source(source), _destination(destination) {}
+        : _layer(std::move(layer)), _source{source}, _destination(destination) {}
+
+    PrimReparent(SdfLayerHandle layer, std::vector<SdfPath> source, SdfPath destination)
+        : _layer(std::move(layer)), _source(std::move(source)), _destination(destination) {
+        // Move the farthest paths first
+        std::sort(_source.begin(), _source.end(),
+                  [](const SdfPath &a, const SdfPath &b) { return a.GetString().size() > b.GetString().size(); });
+    }
 
     ~PrimReparent() override {}
 
@@ -139,18 +146,26 @@ struct PrimReparent : public SdfLayerCommand {
         if (!_layer)
             return false;
         SdfUndoRecorder recorder(_undoCommands, _layer);
-        SdfNamespaceEdit reparentEdit = SdfNamespaceEdit::Reparent(_source, _destination, 0);
         SdfBatchNamespaceEdit batchEdit;
-        batchEdit.Add(reparentEdit);
-        if (_layer->CanApply(batchEdit)) {
+        for (const auto &source : _source) {
+            SdfNamespaceEdit reparentEdit = SdfNamespaceEdit::Reparent(source, _destination, 0);
+            batchEdit.Add(reparentEdit);
+        }
+        SdfNamespaceEditDetailVector details;
+        if (_layer->CanApply(batchEdit, &details)) {
             _layer->Apply(batchEdit);
             return true;
+        } else { // TODO in a USD log
+            std::cout << "Unable to reparent, reasons are:" << std::endl;
+            for (const auto &detail : details) {
+                std::cout <<  detail.edit.currentPath.GetString() << " " << detail.reason << std::endl;
+            }
         }
         return false;
     }
 
     SdfLayerHandle _layer;
-    SdfPath _source;
+    std::vector<SdfPath> _source;
     SdfPath _destination;
 };
 
@@ -322,6 +337,7 @@ template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newNam
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
 template void ExecuteAfterDraw<PrimRemove>(SdfPrimSpecHandle primSpec);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
+template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, std::vector<SdfPath> source, SdfPath destination);
 template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, int operation, SdfReference reference);
 template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, int operation, SdfPayload payload);
 template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);

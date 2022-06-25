@@ -422,6 +422,17 @@ void Editor::HydraRender() {
 
 void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDialog<SaveLayerAsDialog>(*this, layerToSaveAs); }
 
+
+void Editor::AddLayerPathSelection(const SdfPath &primPath) {
+    _selection.AddSelected(GetCurrentLayer(), primPath);
+}
+
+void Editor::SetLayerPathSelection(const SdfPath &primPath) {
+    _selection.SetSelected(GetCurrentLayer(), primPath);
+}
+
+
+
 void Editor::DrawMainMenuBar() {
 
     if (ImGui::BeginMenuBar()) {
