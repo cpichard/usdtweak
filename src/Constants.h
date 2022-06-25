@@ -62,5 +62,7 @@ constexpr const char *const SdfPrimSpecDefaultName = "prim";
 /// Return error codes
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 
-constexpr const char* ICON_DELETE = "\xef\x87\xb8"; // ICON_FA_TRASH;
-
+/// A set of icons for the application.
+/// _UT_ stands for Usd Tweak
+#define ICON_UT_DELETE ICON_FA_TRASH
+#define ICON_UT_STAGE ICON_FA_DESKTOP

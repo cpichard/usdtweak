@@ -217,6 +217,8 @@ void Viewport::Draw() {
 
     if (GetCurrentStage()) {
         ImGui::SameLine();
+        ImGui::SmallButton(ICON_UT_STAGE);
+        ImGui::SameLine();
         ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
         ImGui::SameLine();
         ImGui::SmallButton(ICON_FA_PEN);

@@ -10,7 +10,7 @@
 static void DrawVariantSelectionMiniButton(const SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
     ScopedStyleColor style(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0), ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(buttonId++);
-    if (ImGui::SmallButton(ICON_DELETE)) {
+    if (ImGui::SmallButton(ICON_UT_DELETE)) {
         // ExecuteAfterDraw(&SdfPrimSpec::BlockVariantSelection, primSpec); // TODO in 21.02
         ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSetName, "");
     }
@@ -68,7 +68,7 @@ static void DrawVariantEditListItem(const char *operation, const std ::string &v
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
     ImGui::PushID(buttonId++);
-    if (ImGui::SmallButton(ICON_DELETE)) {
+    if (ImGui::SmallButton(ICON_UT_DELETE)) {
         if (!primSpec)
             return;
         std::function<void()> removeVariantSetName = [=]() { primSpec->GetVariantSetNameList().RemoveItemEdits(variantName); };
