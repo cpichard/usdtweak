@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include "Gui.h"
+#include <vector>
 
 /// One liner for creating multiple calls to ImGui::TableSetupColumn
 template <typename T, typename... Args> inline void TableSetupColumns(T t, Args... args) {
@@ -48,8 +48,37 @@ bool Splitter(bool splitVertically, float thickness, float *size1, float *size2,
 
 /// Creates a combo box with a search bar filtering the list elements
 bool ComboWithFilter(const char *label, const char *preview_value, const std::vector<std::string> &items, int *current_item,
-                     ImGuiComboFlags combo_flags, int popup_max_height_in_items = -1) ;
+                     ImGuiComboFlags combo_flags, int popup_max_height_in_items = -1);
 
-/// Function to convert values to ImGuiID. It is used to convert usd hashed (64bits) to ImGuiID (32bits). It works fine at the moment.
-template <typename T>
-ImGuiID ToImGuiID(const T &val) { return static_cast<ImGuiID>(val); }
+template <typename PathT> inline size_t GetHash(const PathT &path) {
+    // The original implementation of GetHash can return inconsistent hashes for the same path at different frames
+    // This makes the stage tree flicker and look terribly buggy on version > 21.11
+    // This issue appears on point instancers. I don't think this is expected.
+    return path.GetHash();
+    // The following is terribly unefficient but works.
+    // return std::hash<std::string>()(path.GetString());
+    // For now we store the paths in StageOutliner.cpp TraverseOpenedPaths which seems to work as well. Waiting for a fix
+}
+
+/// Function to convert a hash from usd to ImGuiID with a seed, to avoid collision with path coming from layer and stages.
+template <ImU32 seed, typename T> inline ImGuiID ToImGuiID(const T &val) {
+    return ImHashData(static_cast<const void *>(&val), sizeof(T), seed);
+}
+
+//// Correctly indent the tree nodes using a path. This is used when we are iterating in a list of paths as opposed to a tree.
+//// It allocates a vector which might not be optimal, but it should be used only on visible items, that should mitigate the
+//// allocation cost
+template <ImU32 seed, typename PathT> struct TreeIndenter {
+    TreeIndenter(const PathT &path) {
+        path.GetPrefixes(&prefixes);
+        for (int i = 0; i < prefixes.size(); ++i) {
+            ImGui::TreePushOverrideID(ToImGuiID<seed>(GetHash(prefixes[i])));
+        }
+    }
+    ~TreeIndenter() {
+        for (int i = 0; i < prefixes.size(); ++i) {
+            ImGui::TreePop();
+        }
+    }
+    std::vector<PathT> prefixes;
+};
