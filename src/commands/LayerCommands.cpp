@@ -78,6 +78,37 @@ struct LayerMoveSubLayer : public SdfLayerCommand {
 };
 template void ExecuteAfterDraw<LayerMoveSubLayer>(SdfLayerRefPtr layer, std::string subLayerPath, bool movingUp);
 
+/// Rename a sublayer
+struct LayerRenameSubLayer : public SdfLayerCommand {
+
+    // Removes a sublayer
+    LayerRenameSubLayer(SdfLayerRefPtr layer, std::string oldName, std::string newName)
+        : _layer(layer), _oldName(std::move(oldName)), _newName(std::move(newName)) {}
+
+    ~LayerRenameSubLayer() override {}
+
+    bool DoIt() override {
+        SdfUndoRecorder recorder(_undoCommands, _layer);
+        if (!_layer)
+            return false;
+        std::vector<std::string> layers = _layer->GetSubLayerPaths();
+        for (size_t i = 0; i < layers.size(); i++) {
+            if (layers[i] == _oldName) {
+                layers[i] = _newName;
+                _layer->SetSubLayerPaths(layers);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    SdfLayerRefPtr _layer;
+    std::string _oldName;
+    std::string _newName;
+};
+template void ExecuteAfterDraw<LayerRenameSubLayer>(SdfLayerRefPtr layer, std::string oldName, std::string newName);
+
+
 /// Mute and Unmute seem to keep so additional data outside of Sdf, so they need their own commands
 struct LayerMute : public Command {
     LayerMute(SdfLayerRefPtr layer) : _layer(layer) {}
