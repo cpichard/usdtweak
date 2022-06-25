@@ -13,7 +13,6 @@
 #include "PropertyEditor.h" // for DrawUsdPrimEditTarget
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
-#include "SelectionBehavior.h"
 
 
 #define StageOutlinerSeed 2342934
