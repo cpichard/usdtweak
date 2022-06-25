@@ -602,20 +602,28 @@ void Editor::Draw() {
     }
 
     if (_settings._showPrimSpecEditor) {
+        const ImGuiWindowFlags windowFlagsWithMenu = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         TRACE_SCOPE(SdfPrimPropertiesWindowTitle);
-        ImGui::Begin(SdfPrimPropertiesWindowTitle, &_settings._showPrimSpecEditor, layerWindowFlag);
-        auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
-        headerSize.x = -FLT_MIN;
-        if (GetSelectedPrimSpec()) {
-            DrawSdfPrimSpecEditor(GetSelectedPrimSpec());
+        ImGui::Begin(SdfPrimPropertiesWindowTitle, &_settings._showPrimSpecEditor, windowFlagsWithMenu);
+        const SdfPath &primPath = _selection.GetFirstSelectedPath(GetCurrentLayer());
+        // Ideally this condition should be moved in a function like DrawLayerProperties()
+        if (primPath != SdfPath() && primPath != SdfPath::AbsoluteRootPath()) {
+            auto selectedPrimSpec = GetCurrentLayer()->GetPrimAtPath(primPath);
+            DrawSdfPrimEditorMenuBar(selectedPrimSpec);
+            DrawSdfPrimEditor(selectedPrimSpec);
         } else {
+            auto headerSize = ImGui::GetWindowSize();
+            headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
+            headerSize.x = -FLT_MIN;
+            DrawSdfLayerEditorMenuBar(GetCurrentLayer()); // TODO: write a menu for layer
             ImGui::BeginChild("##LayerHeader", headerSize);
-            DrawLayerHeader(GetCurrentLayer(), SdfPath::AbsoluteRootPath());
+            DrawSdfLayerIdentity(GetCurrentLayer(), SdfPath::AbsoluteRootPath());
             ImGui::EndChild();
             ImGui::Separator();
             ImGui::BeginChild("##LayerBody");
-            DrawLayerMetadata(GetCurrentLayer());
+            DrawLayerSublayerStack(GetCurrentLayer());
+            DrawSdfLayerMetadata(GetCurrentLayer());
+
             ImGui::EndChild();
         }
 

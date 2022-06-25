@@ -98,6 +98,54 @@ struct CreateRelationDialog : public ModalDialog {
     bool _custom = true;
 };
 
+struct CreateVariantModalDialog : public ModalDialog {
+
+    CreateVariantModalDialog(const SdfPrimSpecHandle &primSpec) : _primSpec(primSpec){};
+    ~CreateVariantModalDialog() override {}
+
+    void Draw() override {
+        if (!_primSpec) {
+            CloseModal();
+            return;
+        }
+        bool isVariant = _primSpec->GetPath().IsPrimVariantSelectionPath();
+        ImGui::InputText("VariantSet name", &_variantSet);
+        ImGui::InputText("Variant name", &_variant);
+        if (isVariant) {
+            ImGui::Checkbox("Add to variant edit list", &_addToEditList);
+        }
+        //
+        if (ImGui::Button("Add")) {
+            // TODO The call might not be safe as _primSpec is copied, so create an actual command instead
+            std::function<void()> func = [=]() {
+                SdfCreateVariantInLayer(_primSpec->GetLayer(), _primSpec->GetPath(), _variantSet, _variant);
+                if (isVariant && _addToEditList) {
+                    auto ownerPath = _primSpec->GetPath().StripAllVariantSelections();
+                    // This won't work on doubly nested variants,
+                    // when there is a Prim between the variants
+                    auto ownerPrim = _primSpec->GetPrimAtPath(ownerPath);
+                    if (ownerPrim) {
+                        auto nameList = ownerPrim->GetVariantSetNameList();
+                        if (!nameList.ContainsItemEdit(_variantSet)) {
+                            ownerPrim->GetVariantSetNameList().Add(_variantSet);
+                        }
+                    }
+                }
+            };
+            ExecuteAfterDraw<UsdFunctionCall>(_primSpec->GetLayer(), func);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) {
+            CloseModal();
+        }
+    }
+
+    const char *DialogId() const override { return "Add variant"; }
+    SdfPrimSpecHandle _primSpec;
+    std::string _variantSet;
+    std::string _variant;
+    bool _addToEditList = false;
+};
 
 
 void DrawPrimSpecifier(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
@@ -427,7 +475,7 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawAssetInfo(const SdfPrimSpecHandle prim) {
+static void DrawPrimAssetInfo(const SdfPrimSpecHandle prim) {
     if (!prim)
         return;
     const auto &assetInfo = prim->GetAssetInfo();
@@ -453,32 +501,75 @@ static void DrawAssetInfo(const SdfPrimSpecHandle prim) {
     }
 }
 
-void DrawSdfPrimSpecEditor(const SdfPrimSpecHandle &primSpec) {
+void DrawPrimCreateCompositionMenu(const SdfPrimSpecHandle &primSpec) {
+    if (primSpec) {
+        if (ImGui::MenuItem("Reference")) {
+            DrawPrimCreateReference(primSpec);
+        }
+        if (ImGui::MenuItem("Payload")) {
+            DrawPrimCreatePayload(primSpec);
+        }
+        if (ImGui::MenuItem("Inherit")) {
+            DrawPrimCreateInherit(primSpec);
+        }
+        if (ImGui::MenuItem("Specialize")) {
+            DrawPrimCreateSpecialize(primSpec);
+        }
+        if (ImGui::MenuItem("Variant")) {
+            DrawModalDialog<CreateVariantModalDialog>(primSpec);
+        }
+    }
+}
 
+void DrawPrimCreatePropertyMenu(const SdfPrimSpecHandle &primSpec) {
+    if (primSpec) {
+        if (ImGui::MenuItem("Attribute")) {
+            DrawModalDialog<CreateAttributeDialog>(primSpec);
+        }
+        if (ImGui::MenuItem("Relation")) {
+            DrawModalDialog<CreateRelationDialog>(primSpec);
+        }
+    }
+}
+
+
+void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
+
+    bool enabled = primSpec;
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Create", enabled)) {
+            DrawPrimCreateCompositionMenu(primSpec);
+            ImGui::Separator();
+            DrawPrimCreatePropertyMenu(primSpec); // attributes and relation
+            ImGui::EndMenu();
+        }
+        // TODO
+        if (ImGui::BeginMenu("View", enabled)) {
+            ImGui::MenuItem("Sublayers", nullptr);
+            ImGui::MenuItem("Metadata", nullptr);
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+}
+
+
+void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     auto headerSize = ImGui::GetWindowSize();
-    headerSize.y = TableRowDefaultHeight * 3 + 30; // 3 fields in the header + button size (=30 arbitrary)
+    headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
     headerSize.x = -FLT_MIN;
     ImGui::BeginChild("##LayerHeader", headerSize);
-    if (ImGui::Button("Create Attribute")) {
-        DrawModalDialog<CreateAttributeDialog>(primSpec);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Create Relationship")) {
-        DrawModalDialog<CreateRelationDialog>(primSpec);
-    }
-    DrawLayerHeader(primSpec->GetLayer(), primSpec->GetPath()); // TODO rename to DrawUsdObjectInfo()
+    DrawSdfLayerIdentity(primSpec->GetLayer(), primSpec->GetPath()); // TODO rename to DrawUsdObjectInfo()
     ImGui::EndChild();
     ImGui::Separator();
     ImGui::BeginChild("##LayerBody");
     DrawPrimSpecMetadata(primSpec);
-    DrawAssetInfo(primSpec);
+    DrawPrimAssetInfo(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec);
     DrawPrimSpecRelations(primSpec);
     ImGui::EndChild();
-
-
 }
