@@ -175,7 +175,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
 }
 
 static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec, Selection &selection) {
-    static SdfPath payload;
+    static SdfPathVector payload;
     // Drag and drop
     ImGuiDragDropFlags srcFlags = 0;
     srcFlags |= ImGuiDragDropFlags_SourceNoDisableHover;     // Keep the source displayed as hovered
@@ -183,10 +183,18 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec, Selection &selection)
                                                              // foreign treenodes/tabs while dragging
     // src_flags |= ImGuiDragDropFlags_SourceNoPreviewTooltip; // Hide the tooltip
     if (ImGui::BeginDragDropSource(srcFlags)) {
-        if (!(srcFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip))
+        payload.clear();
+        if (selection.IsSelected(primSpec)) {
+            for (const auto &selectedPath : selection.GetSelectedPaths(primSpec->GetLayer())) {
+                payload.push_back(selectedPath);
+            }
+        } else {
+            payload.push_back(primSpec->GetPath());
+        }
+        if (!(srcFlags & ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
             ImGui::Text("Moving %s", primSpec->GetPath().GetString().c_str());
-        payload = SdfPath(primSpec->GetPath());
-        ImGui::SetDragDropPayload("DND", &payload, sizeof(SdfPath), ImGuiCond_Once);
+        }
+        ImGui::SetDragDropPayload("DND", &payload, sizeof(SdfPathVector), ImGuiCond_Once);
         ImGui::EndDragDropSource();
     }
 
@@ -196,25 +204,20 @@ static void HandleDragAndDrop(SdfPrimSpecHandle &primSpec, Selection &selection)
         // target) to do something target_flags |= ImGuiDragDropFlags_AcceptNoDrawDefaultRect; // Don't display the yellow
         // rectangle
         if (const ImGuiPayload *pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
-            if (selection.IsSelectionEmpty(primSpec->GetLayer())) {
-                SdfPath source(*(SdfPath *)pl->Data);
-                ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
-            } else {
-                std::vector<SdfPath> source(selection.GetSelectedPaths(primSpec->GetLayer()));
-                ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
-            }
+            SdfPathVector source(*(SdfPathVector *)pl->Data);
+            ExecuteAfterDraw<PrimReparent>(primSpec->GetLayer(), source, primSpec->GetPath());
         }
         ImGui::EndDragDropTarget();
     }
 }
 
 static void HandleDragAndDrop(SdfLayerHandle layer, Selection &selection) {
-    static SdfPath payload;
+    static SdfPathVector payload;
     // Drop on the layer
     if (ImGui::BeginDragDropTarget()) {
         ImGuiDragDropFlags targetFlags = 0;
         if (const ImGuiPayload *pl = ImGui::AcceptDragDropPayload("DND", targetFlags)) {
-            SdfPath source(*(SdfPath *)pl->Data);
+            SdfPathVector source(*(SdfPathVector *)pl->Data);
             ExecuteAfterDraw<PrimReparent>(layer, source, SdfPath::AbsoluteRootPath());
         }
         ImGui::EndDragDropTarget();
