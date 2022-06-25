@@ -13,6 +13,11 @@
 #include "PropertyEditor.h" // for DrawUsdPrimEditTarget
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
+#include "SelectionBehavior.h"
+
+
+#define StageOutlinerSeed 2342934
+#define IdOf ToImGuiID<StageOutlinerSeed, size_t>
 
 static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
     if (!tree)
@@ -133,7 +138,9 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
 
 static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
     ImGuiTreeNodeFlags flags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap; // for testing worse case scenario add | ImGuiTreeNodeFlags_DefaultOpen;
+        ImGuiTreeNodeFlags_OpenOnArrow |
+        ImGuiTreeNodeFlags_AllowItemOverlap; // for testing worse case scenario add | ImGuiTreeNodeFlags_DefaultOpen;
+
     // Another way ???
     const auto &children = prim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
     if (children.empty()) {
@@ -146,20 +153,32 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
     ImGui::TableSetColumnIndex(0);
     bool unfolded = true;
     {
-        ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
-        const ImGuiID pathHash = ToImGuiID(prim.GetPath().GetHash());
-        unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-            SetSelected(selectedPaths, prim.GetPath());
-        }
         {
-            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
-            if (ImGui::BeginPopupContextItem()) {
-                DrawUsdPrimEditMenuItems(prim);
-                ImGui::EndPopup();
+            TreeIndenter<StageOutlinerSeed, SdfPath> indenter(prim.GetPath());
+            ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
+            const ImGuiID pathHash = IdOf(GetHash(prim.GetPath()));
+
+            unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
+            // TreeSelectionBehavior(selectedPaths, &prim);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+                    if (IsSelected(selectedPaths, prim.GetPath())) {
+                        RemoveSelection(selectedPaths, prim.GetPath());
+                    } else {
+                        AddSelected(selectedPaths, prim.GetPath());
+                    }
+                } else {
+                    SetSelected(selectedPaths, prim.GetPath());
+                }
+            }
+            {
+                ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
+                if (ImGui::BeginPopupContextItem()) {
+                    DrawUsdPrimEditMenuItems(prim);
+                    ImGui::EndPopup();
+                }
             }
         }
-
         // Visibility
         ImGui::TableSetColumnIndex(1);
         DrawVisibilityButton(prim);
@@ -178,13 +197,13 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::TableSetColumnIndex(0);
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
     std::string stageDisplayName(stage->GetRootLayer()->GetDisplayName());
-    auto unfolded = ImGui::TreeNodeBehavior(ToImGuiID(SdfPath::AbsoluteRootPath().GetHash()), nodeflags, stageDisplayName.c_str());
+    auto unfolded = ImGui::TreeNodeBehavior(IdOf(GetHash(SdfPath::AbsoluteRootPath())), nodeflags, stageDisplayName.c_str());
 
     ImGui::TableSetColumnIndex(2);
     ImGui::SmallButton(ICON_FA_PEN);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         const UsdPrim &selected =
-            IsSelectionEmpty(selectedPaths) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(GetSelectedPath(selectedPaths));
+            IsSelectionEmpty(selectedPaths) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(GetFirstSelectedPath(selectedPaths));
         DrawUsdPrimEditTarget(selected);
         ImGui::EndPopup();
     }
@@ -203,7 +222,7 @@ static void OpenSelectedPaths(Selection &selectedPaths) {
     ImGuiStorage *storage = window->DC.StateStorage;
     for (const auto &path : GetSelectedPaths(selectedPaths)) {
         for (const auto &element : path.GetParentPath().GetPrefixes()) {
-            ImGuiID id = ToImGuiID(element.GetHash()); // This has changed with the optim one
+            ImGuiID id = IdOf(GetHash(element)); // This has changed with the optim one
             storage->SetInt(id, true);
         }
     }
@@ -211,6 +230,7 @@ static void OpenSelectedPaths(Selection &selectedPaths) {
 
 // Traverse the stage skipping the paths closed by the tree ui.
 static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &paths) {
+    static std::set<SdfPath> retainedPath; // to fix a bug with instanced prim which recreates the path at every call and give a different hash
     if (!stage)
         return;
     ImGuiContext &g = *GImGui;
@@ -218,42 +238,35 @@ static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &path
     ImGuiStorage *storage = window->DC.StateStorage;
     paths.clear();
     const SdfPath &rootPath = SdfPath::AbsoluteRootPath();
-    const bool rootPathIsOpen = storage->GetInt(ToImGuiID(rootPath.GetHash()), 0) != 0;
+    const bool rootPathIsOpen = storage->GetInt(IdOf(GetHash(rootPath)), 0) != 0;
+
     if (rootPathIsOpen) {
         auto range = UsdPrimRange::Stage(stage, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
         for (auto iter = range.begin(); iter != range.end(); ++iter) {
             const auto path = iter->GetPath();
-            const ImGuiID pathHash = ToImGuiID(path.GetHash());
+            const ImGuiID pathHash = IdOf(GetHash(path));
             const bool isOpen = storage->GetInt(pathHash, 0) != 0;
             if (!isOpen) {
                 iter.PruneChildren();
+            }
+            // This bit of code is to avoid a bug. It appears that the SdfPath of instance proxies are not kept and the underlying memory 
+            // is deleted and recreated between each frame, invalidating the hash value. So for the same path we have different hash every frame :s not cool.
+            // This problems appears on versions > 21.11
+            // a look at the changelog shows that they were lots of changes on the SdfPath side:
+            // https://github.com/PixarAnimationStudios/USD/commit/46c26f63d2a6e9c6c5dbfbcefa0235c3265457bb
+            // 
+            // In the end we workaround this issue by keeping the instance proxy paths alive:
+            if (iter->IsInstanceProxy()) {
+                retainedPath.insert(path);
             }
             paths.push_back(path);
         }
     }
 }
 
-// Correctly indent the tree nodes using the path
-// It allocates a SdfPathVector which might not be optimal, but is called only on the visible paths, that should mitigate the
-// number of allocations
-struct TreeIndenter {
-    TreeIndenter(const SdfPath &path) {
-        path.GetPrefixes(&prefixes);
-        for (int i = 0; i < prefixes.size(); ++i) {
-            ImGui::TreePushOverrideID(ToImGuiID(prefixes[i].GetHash()));
-        }
-    }
-    ~TreeIndenter() {
-        for (int i = 0; i < prefixes.size(); ++i) {
-            ImGui::TreePop();
-        }
-    }
-    SdfPathVector prefixes;
-};
-
 static void FocusedOnFirstSelectedPath(const Selection &selectedPaths, const std::vector<SdfPath> &paths,
                                        ImGuiListClipper &clipper) {
-    const auto &selectedPath = GetSelectedPath(selectedPaths);
+    const auto &selectedPath = GetFirstSelectedPath(selectedPaths);
     // linear search! it happens only when the selection has changed. We might want to maintain a map instead
     // if the hierarchies are big.
     for (int i = 0; i < paths.size(); ++i) {
@@ -271,7 +284,7 @@ static void FocusedOnFirstSelectedPath(const Selection &selectedPaths, const std
 void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     if (!stage)
         return;
-
+    //ImGui::PushID("StageOutliner");
     constexpr unsigned int textBufferSize = 512;
     static char buf[textBufferSize];
     bool addprimclicked = false;
@@ -311,7 +324,6 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
                 const auto &prim = stage->GetPrimAtPath(path);
-                TreeIndenter indenter(path);
                 DrawPrimTreeRow(prim, selectedPaths);
                 ImGui::PopID();
             }
@@ -326,4 +338,5 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         //ImGui::SetCursorPos(ImVec2(500 + cursorPos.x, 25 + cursorPos.y));
         //ImGui::Text("%d paths", paths.size());
     }
+    //ImGui::PopID();
 }
