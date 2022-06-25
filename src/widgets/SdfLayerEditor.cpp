@@ -29,45 +29,6 @@
 #include "VtValueEditor.h"
 #include "FieldValueTable.h"
 
-struct AddSublayer : public ModalDialog {
-
-    AddSublayer(SdfLayerRefPtr &layer) : layer(layer){};
-
-    void Draw() override {
-        DrawFileBrowser();
-        EnsureFileBrowserDefaultExtension("usd");
-        auto filePath = GetFileBrowserFilePath();
-        const bool filePathExits = FilePathExists();
-        ImGui::BeginDisabled(filePathExits);
-        ImGui::Checkbox("Create new", &_createNew);
-        ImGui::EndDisabled();
-        if (filePathExits) {
-            ImGui::Text("Import layer: ");
-        } else {
-            if (_createNew) {
-                ImGui::Text("Create new layer: ");
-            } else {
-                ImGui::Text("Not found: ");
-            }
-        } // ... other messages like permission denied, or incorrect extension
-
-        ImGui::Text("%s", filePath.c_str());
-        DrawOkCancelModal([&]() {
-            if (!filePath.empty()) {
-                if (_createNew && !filePathExits) {
-                    // TODO: Check extension
-                    SdfLayer::CreateNew(filePath);
-                }
-                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, filePath, 0);
-            }
-        });
-    }
-
-    const char *DialogId() const override { return "Import sublayer"; }
-    SdfLayerRefPtr layer;
-    bool _createNew = true;
-};
-
 
 void DrawDefaultPrim(const SdfLayerRefPtr &layer) {
     auto defautPrim = layer->GetDefaultPrim();
@@ -179,7 +140,11 @@ struct LayerFieldFilename {
 };
 
 template <> inline void DrawFieldValue<LayerFieldFilename>(const int rowId, const SdfPath &path) {
-    ImGui::Text("%s", path.GetString().c_str());
+    if (path == SdfPath() || path == SdfPath::AbsoluteRootPath()) {
+        ImGui::Text("Layer root");
+    } else {
+        ImGui::Text("%s", path.GetString().c_str());
+    }
 }
 
 
@@ -203,7 +168,8 @@ GENERATE_METADATA_FIELD(LayerFieldMetersPerUnit, UsdGeomTokens->metersPerUnit, D
 GENERATE_METADATA_FIELD(LayerFieldDocumentation, SdfFieldKeys->Documentation, DrawLayerDocumentation, "Documentation");
 GENERATE_METADATA_FIELD(LayerFieldComment, SdfFieldKeys->Comment, DrawLayerComment, "Comment");
 
-void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &path) {
+
+void DrawSdfLayerIdentity(const SdfLayerRefPtr &layer, const SdfPath &path) {
     if (!layer)
         return;
     int rowId = 0;
@@ -215,12 +181,13 @@ void DrawLayerHeader(const SdfLayerRefPtr &layer, const SdfPath &path) {
     }
 }
 
-void DrawLayerMetadata(const SdfLayerRefPtr &layer) {
+void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
     if (!layer)
         return;
     int rowId = 0;
+
     if (BeginFieldValueTable("##DrawLayerMetadata")) {
-        SetupFieldValueTableColumns(true);
+        SetupFieldValueTableColumns(true, "", "Metadata");
         DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
@@ -235,89 +202,88 @@ void DrawLayerMetadata(const SdfLayerRefPtr &layer) {
     }
 }
 
-static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, std::string layerPath,  SdfLayerRefPtr &selectedParent, std::string &selectedLayerPath, int nodeID=0) {
-    // Note: layer can be null if it wasn't found
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-    if (!layer || !layer->GetNumSubLayerPaths()) {
-        treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
-    }
-    ImGui::PushID(nodeID);
 
-    bool selected = parent == selectedParent && layerPath == selectedLayerPath;
-    const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
-    if (ImGui::Selectable("##backgroundSelectedLayer", selected, selectableFlags)) {
-        selectedParent = parent;
-        selectedLayerPath = layerPath;
-    }
-    ImGui::SameLine();
 
-    std::string label =
-        layer ? (layer->IsMuted() ? ICON_FA_EYE_SLASH " " : ICON_FA_EYE " ") + layer->GetDisplayName() : "Not found " + layerPath;
-    bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
 
-    if (ImGui::BeginPopupContextItem()) {
-        if (layer && ImGui::MenuItem("Add sublayer")) {
-            DrawModalDialog<AddSublayer>(layer);
+static void DrawSubLayerActionPopupMenu(const SdfLayerRefPtr &layer, const std::string &path) {
+    auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, path);
+    if (subLayer) {
+        if (ImGui::MenuItem("Open as Stage")) {
+            ExecuteAfterDraw<EditorOpenStage>(subLayer->GetRealPath());
         }
-        if (parent && !layerPath.empty()) {
-            if (ImGui::MenuItem("Remove sublayer")) {
-                ExecuteAfterDraw<LayerRemoveSubLayer>(parent, layerPath);
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Move up")) {
-                ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, true);
-            }
-            if (ImGui::MenuItem("Move down")) {
-                ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, false);
-            }
-            ImGui::Separator();
+        if (ImGui::MenuItem("Open as Layer")) {
+            ExecuteAfterDraw<EditorOpenLayer>(subLayer->GetRealPath());
         }
-        if (layer)
-            DrawLayerActionPopupMenu(layer);
+    } else {
+        ImGui::Text("Unable to resolve layer path");
+    }
+}
+
+struct SublayerPath {
+    static constexpr const char *fieldName = "";
+};
+
+template <> inline void DrawFieldValue<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+        std::string newPath(path);
+    ImGui::PushID(rowId);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-2*28);
+    ImGui::InputText("##sublayername", &newPath);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        ExecuteAfterDraw<LayerRenameSubLayer>(layer, path, newPath);
+    }
+    if (ImGui::BeginPopupContextItem("sublayer")) {
+        DrawSubLayerActionPopupMenu(layer, path);
         ImGui::EndPopup();
     }
-
-    if (unfolded) {
-        if (layer) {
-            std::vector<std::string> subLayers = layer->GetSubLayerPaths();
-            for (auto subLayerPath : subLayers) {
-                auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, subLayerPath);
-                DrawLayerSublayerTree(subLayer, layer, subLayerPath, selectedParent, selectedLayerPath, nodeID++);
-            }
-        }
-        ImGui::TreePop();
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_ARROW_UP)) {
+        ExecuteAfterDraw<LayerMoveSubLayer>(layer, path, true);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_ARROW_DOWN)) {
+        ExecuteAfterDraw<LayerMoveSubLayer>(layer, path, false);
     }
     ImGui::PopID();
 }
 
+template <> inline void DrawFieldButton<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+    ImGui::PushID(rowId);
+    if (ImGui::SmallButton(ICON_FA_TRASH)) {
+        ExecuteAfterDraw<LayerRemoveSubLayer>(layer, path);
+    }
+    ImGui::PopID();
+}
+
+void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer) {
+    bool enabled = layer;
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Create", enabled)) {
+            if (ImGui::MenuItem("Sublayer path")) {
+                std::string newName = "sublayer_" + std::to_string(layer->GetNumSubLayerPaths() + 1) + ".usd";
+                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, newName, 0); // TODO find proper name that is not in the list of sublayer
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+}
+
+// TODO that Should move to layerproperty
 void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
     if (!layer)
         return;
-
-    static SdfLayerRefPtr selectedParent;
-    static std::string selectedLayerPath;
-    DrawLayerNavigation(layer);
-
-    if (ImGui::Button("Add sublayer")) {
-        DrawModalDialog<AddSublayer>(layer);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Move up")) {
-        ExecuteAfterDraw<LayerMoveSubLayer>(selectedParent, selectedLayerPath, true);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Move down")) {
-        ExecuteAfterDraw<LayerMoveSubLayer>(selectedParent, selectedLayerPath, false);
-    }
-    ImGui::Separator();
-    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("##DrawLayerSublayers", 1, tableFlags)) {
-        ImGui::TableSetupColumn("Layers");
-        ImGui::TableHeadersRow();
-        DrawLayerSublayerTree(layer, SdfLayerRefPtr(), std::string(), selectedParent, selectedLayerPath);
-        ImGui::EndTable();
+    int rowId = 0;
+    bool hasUpdate = false;
+    if (layer && layer->GetNumSubLayerPaths() > 0) {
+        if (BeginValueTable("##DrawLayerSublayerStack")) {
+            SetupValueTableColumns(true, "", "Sublayers");
+            auto subLayersProxy = layer->GetSubLayerPaths();
+            for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
+                const std::string& path = subLayersProxy[i];
+                DrawValueTableRow<SublayerPath>(rowId++, layer, path);
+            }
+            EndValueTable();
+        }
     }
 }
 

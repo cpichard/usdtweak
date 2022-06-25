@@ -30,6 +30,7 @@
 #include "ArrayEditor.h"
 #include "TextEditor.h"
 #include "Shortcuts.h"
+#include "StageLayerEditor.h"
 
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
@@ -43,7 +44,7 @@
 #define UsdStageHierarchyWindowTitle "Stage outliner"
 #define UsdPrimPropertiesWindowTitle "Stage property editor"
 #define SdfLayerHierarchyWindowTitle "Layer hierarchy"
-#define SdfLayerStackWindowTitle "Layer stack"
+#define SdfLayerStackWindowTitle "Stage layer editor"
 #define SdfPrimPropertiesWindowTitle "Layer property editor"
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Array editor"
@@ -583,9 +584,10 @@ void Editor::Draw() {
 
     if (_settings._showLayerStackEditor) {
         TRACE_SCOPE(SdfLayerStackWindowTitle);
-        const std::string title(SdfLayerStackWindowTitle + (rootLayer ? (" - " + rootLayer->GetDisplayName()) : "") + "###Layer stack");
+        const std::string title(SdfLayerStackWindowTitle "###Layer stack");
         ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor, layerWindowFlag);
-        DrawLayerSublayerStack(rootLayer);
+        //DrawLayerSublayerStack(rootLayer);
+        DrawStageLayerEditor(GetCurrentStage());
         ImGui::End();
     }
 
