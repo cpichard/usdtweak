@@ -354,17 +354,25 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (ImGui::MenuItem("Root layer")) {
         ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
     }
+    ImGui::Separator();
     for (auto a : compositionArcs) {
         // NOTE: we can use GetIntroducingLayer() and GetIntroducingPrimPath() to add more information
         if (a.GetTargetNode()) {
             std::string arcName = a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer->GetDisplayName() + " " +
                                   a.GetTargetNode().GetPath().GetString();
             if (ImGui::MenuItem(arcName.c_str())) {
-                ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(),
-                                 UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()));
+                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(),
+                    UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()), a.GetTargetNode().GetPath());
             }
         }
     }
+    ImGui::Separator();
+    for (const auto &layer : prim.GetStage()->GetLayerStack(false)) {
+        if (ImGui::MenuItem(layer->GetDisplayName().c_str())) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(layer));
+        }
+    }
+
 }
 
 // Testing
