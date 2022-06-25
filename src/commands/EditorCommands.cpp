@@ -156,7 +156,7 @@ struct EditorInspectLayerLocation : public EditorCommand {
     bool DoIt() override {
         if (_editor && _layer) {
             _editor->SetCurrentLayer(_layer);
-            _editor->SetSelectedPrimSpec(_path);
+            _editor->SetLayerPathSelection(_path);
         }
 
         return false;
