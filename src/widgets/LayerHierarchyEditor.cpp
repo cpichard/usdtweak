@@ -30,7 +30,6 @@
 #include "ModalDialogs.h"
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
-#include "SelectionBehavior.h"
 #include "Shortcuts.h"
 
 //
