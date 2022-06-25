@@ -100,6 +100,8 @@ struct CreateAssetPathModalDialog : public ModalDialog {
                 _showFileBrowser = !_showFileBrowser;
             }
             ImGui::InputText("Target prim path", &_primPath);
+            ImGui::InputDouble("Layer time offset", &_timeOffset);
+            ImGui::InputDouble("Layer time scale", &_timeScale);
             DrawOkCancelModal([=]() { OnOkCallBack(); });
         }
     }
@@ -108,14 +110,19 @@ struct CreateAssetPathModalDialog : public ModalDialog {
 
     const char *DialogId() const override { return "Asset path"; }
 
+    SdfLayerOffset GetLayerOffset() const {
+        return (_timeScale != 1.0 || _timeOffset != 0.0) ? SdfLayerOffset(_timeOffset, _timeScale) : SdfLayerOffset();
+    }
+
     SdfPrimSpecHandle _primSpec;
     std::string _assetPath;
     std::string _primPath;
-    // SdfLayerOffset layerOffset; // TODO
     int _operation = 0;
     bool _showFileBrowser = false;
     bool _relative = false;
     bool _unixify = false;
+    double _timeScale = 1.0;
+    double _timeOffset = 0.0;
 };
 
 // Inheriting, but could also be done with templates, would the code be cleaner ?
@@ -123,7 +130,7 @@ struct CreateReferenceModalDialog : public CreateAssetPathModalDialog {
     CreateReferenceModalDialog(const SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create reference"; }
     void OnOkCallBack() override {
-        SdfReference reference(_assetPath, SdfPath(_primPath));
+        SdfReference reference(_assetPath, SdfPath(_primPath), GetLayerOffset());
         ExecuteAfterDraw<PrimCreateReference>(_primSpec, _operation, reference);
     }
 };
@@ -132,7 +139,7 @@ struct CreatePayloadModalDialog : public CreateAssetPathModalDialog {
     CreatePayloadModalDialog(const SdfPrimSpecHandle &primSpec) : CreateAssetPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create payload"; }
     void OnOkCallBack() override {
-        SdfPayload payload(_assetPath, SdfPath(_primPath));
+        SdfPayload payload(_assetPath, SdfPath(_primPath), GetLayerOffset());
         ExecuteAfterDraw<PrimCreatePayload>(_primSpec, _operation, payload);
     }
 };
@@ -251,20 +258,25 @@ static void DrawAssetPathRow(const char *operationName, const AssetPathT &item,
     ImGui::TableSetColumnIndex(1);
     ImGui::Text("%s", operationName);
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text("%s", item.GetAssetPath().c_str());
+    std::string pathFormated;
+    if (!item.GetAssetPath().empty()) {
+        pathFormated += "@" + item.GetAssetPath() + "@";
+    }
+    if (!item.GetPrimPath().GetString().empty()) {
+        pathFormated += "<" + item.GetPrimPath().GetString() + ">";
+    }
+    ImGui::Text("%s", pathFormated.c_str());
     if (ImGui::BeginPopupContextItem(item.GetPrimPath().GetString().c_str())) {
         DrawAssetPathMenuItems(primSpec, item);
         ImGui::EndPopup();
     }
-    ImGui::TableSetColumnIndex(3);
-    ImGui::Text("%s", item.GetPrimPath().GetString().c_str());
 }
 
 void DrawPrimPayloads(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasPayloads())
         return;
     if (ImGui::BeginTable("##DrawPrimPayloads", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "", "Payloads", "");
+        TableSetupColumns("", "Payloads", "", "");
         ImGui::TableHeadersRow();
         IterateListEditorItems(primSpec->GetPayloadList(), DrawAssetPathRow<SdfPayload>, primSpec);
         ImGui::EndTable();
@@ -275,7 +287,7 @@ void DrawPrimReferences(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasReferences())
         return;
     if (ImGui::BeginTable("##DrawPrimReferences", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "", "References", "");
+        TableSetupColumns("", "References", "", "");
         ImGui::TableHeadersRow();
         IterateListEditorItems(primSpec->GetReferenceList(), DrawAssetPathRow<SdfReference>, primSpec);
         ImGui::EndTable();
@@ -286,7 +298,7 @@ void DrawPrimInherits(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasInheritPaths())
         return;
     if (ImGui::BeginTable("##DrawPrimInherits", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "", "Inherit");
+        TableSetupColumns("", "Inherit", "");
         ImGui::TableHeadersRow();
         IterateListEditorItems(primSpec->GetInheritPathList(), DrawSdfPathRow<Inherit>, primSpec);
         ImGui::EndTable();
@@ -297,7 +309,7 @@ void DrawPrimSpecializes(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasSpecializes())
         return;
     if (ImGui::BeginTable("##DrawPrimSpecializes", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "", "Specialize");
+        TableSetupColumns("", "Specialize", "");
         ImGui::TableHeadersRow();
         IterateListEditorItems(primSpec->GetSpecializesList(), DrawSdfPathRow<Specialize>, primSpec);
         ImGui::EndTable();
