@@ -221,7 +221,7 @@ static void BeginBackgoundDock() {
     // Setup dockspace using experimental imgui branch
     static bool alwaysOpened = true;
     static ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_None;
-    static ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+    static ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDocking;
     windowFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
     windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
     ImGuiViewport *viewport = ImGui::GetMainViewport();
@@ -436,7 +436,8 @@ void Editor::SetLayerPathSelection(const SdfPath &primPath) {
 
 void Editor::DrawMainMenuBar() {
 
-    if (ImGui::BeginMenuBar()) {
+    //ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 8));
+    if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem(ICON_FA_FILE " New")) {
                 DrawModalDialog<CreateUsdFileModalDialog>(*this);
@@ -505,17 +506,18 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::EndMenu();
         }
-        ImGui::EndMenuBar();
+
+        ImGui::EndMainMenuBar();
     }
 }
 
 void Editor::Draw() {
-    // Dock
-    BeginBackgoundDock();
 
     // Main Menu bar
     DrawMainMenuBar();
 
+    // Dock
+    BeginBackgoundDock();
     const auto &rootLayer = GetCurrentLayer();
     const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
 
