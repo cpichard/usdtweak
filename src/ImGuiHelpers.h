@@ -53,11 +53,12 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
 template <typename PathT> inline size_t GetHash(const PathT &path) {
     // The original implementation of GetHash can return inconsistent hashes for the same path at different frames
     // This makes the stage tree flicker and look terribly buggy on version > 21.11
-    // This issue appears on point instancers. I don't think this is expected.
+    // This issue appears on point instancers.
+    // It is expected: https://github.com/PixarAnimationStudios/USD/issues/1922
     return path.GetHash();
     // The following is terribly unefficient but works.
     // return std::hash<std::string>()(path.GetString());
-    // For now we store the paths in StageOutliner.cpp TraverseOpenedPaths which seems to work as well. Waiting for a fix
+    // For now we store the paths in StageOutliner.cpp TraverseOpenedPaths which seems to work as well.
 }
 
 /// Function to convert a hash from usd to ImGuiID with a seed, to avoid collision with path coming from layer and stages.
