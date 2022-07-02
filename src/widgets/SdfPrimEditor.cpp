@@ -543,12 +543,6 @@ void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
             DrawPrimCreatePropertyMenu(primSpec); // attributes and relation
             ImGui::EndMenu();
         }
-        // TODO
-        if (ImGui::BeginMenu("View", enabled)) {
-            ImGui::MenuItem("Sublayers", nullptr);
-            ImGui::MenuItem("Metadata", nullptr);
-            ImGui::EndMenu();
-        }
         ImGui::EndMenuBar();
     }
 }
