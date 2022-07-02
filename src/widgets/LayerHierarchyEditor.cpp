@@ -364,6 +364,11 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     if (unfolded) {
         ImGui::TreePop();
     }
+    if (!layer->GetSubLayerPaths().empty()) {
+        ImGui::TableSetColumnIndex(3);
+        ImGui::Text("Has sublayers");
+    }
+
     if (selectedPosY != -1) {
         ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ColorButtonHighlight));
         ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 160);
@@ -372,7 +377,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     }
 }
 
-/// Traverse all the path of the layer and store them in paths. Apply a filter to only traverse the path
+/// Traverse all the path of the layer and store them in a vector. Apply a filter to only traverse the path
 /// that should be displayed, the ones inside the collapsed part of the tree view
 void TraverseOpenedPaths(const SdfLayerRefPtr &layer, std::vector<SdfPath> &paths) {
     paths.clear();
@@ -428,7 +433,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
 
     if (ImGui::BeginTable("##DrawArrayEditor", 4, flags)) {
         ImGui::TableSetupScrollFreeze(4, 1);
-        ImGui::TableSetupColumn("Hierarchy");
+        ImGui::TableSetupColumn("Prim hierarchy");
         ImGui::TableSetupColumn("Spec", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 150);
         ImGui::TableSetupColumn("Composition");
