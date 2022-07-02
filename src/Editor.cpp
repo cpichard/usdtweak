@@ -553,7 +553,7 @@ void Editor::Draw() {
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            auto prim = GetCurrentStage()->GetPrimAtPath(GetFirstSelectedPath(_selection));
+            auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPath(GetCurrentStage()));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();
@@ -605,7 +605,7 @@ void Editor::Draw() {
         const ImGuiWindowFlags windowFlagsWithMenu = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         TRACE_SCOPE(SdfPrimPropertiesWindowTitle);
         ImGui::Begin(SdfPrimPropertiesWindowTitle, &_settings._showPrimSpecEditor, windowFlagsWithMenu);
-        const SdfPath &primPath = _selection.GetFirstSelectedPath(GetCurrentLayer());
+        const SdfPath &primPath = _selection.GetAnchorPath(GetCurrentLayer());
         // Ideally this condition should be moved in a function like DrawLayerProperties()
         if (primPath != SdfPath() && primPath != SdfPath::AbsoluteRootPath()) {
             auto selectedPrimSpec = GetCurrentLayer()->GetPrimAtPath(primPath);

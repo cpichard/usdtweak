@@ -276,7 +276,7 @@ static void DrawSdfPrimRow(const SdfLayerRefPtr &layer, const SdfPath &primPath,
 
     SdfPrimSpecHandle previousSelectedPrim;
 
-    auto selectedPrim = layer->GetPrimAtPath(selection.GetFirstSelectedPath(layer)); // TODO should we have a function for that ?
+    auto selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPath(layer)); // TODO should we have a function for that ?
     bool primIsVariant = primPath.IsPrimVariantSelectionPath();
 
     ImGui::TableNextRow();
@@ -368,7 +368,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
         ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ColorButtonHighlight));
         ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 160);
         ImGui::SetCursorPosY(selectedPosY);
-        DrawMiniToolbar(layer, layer->GetPrimAtPath(selection.GetFirstSelectedPath(layer)));
+        DrawMiniToolbar(layer, layer->GetPrimAtPath(selection.GetAnchorPath(layer)));
     }
 }
 
@@ -420,7 +420,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
     if (!layer)
         return;
 
-    SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetFirstSelectedPath(layer));
+    SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPath(layer));
     DrawLayerNavigation(layer);
     DrawMiniToolbar(layer, selectedPrim);
 

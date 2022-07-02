@@ -223,7 +223,7 @@ void Viewport::Draw() {
         ImGui::SameLine();
         ImGui::SmallButton(ICON_FA_PEN);
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            const UsdPrim& selected = IsSelectionEmpty(GetSelection()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetFirstSelectedPath(GetSelection()));
+            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPath(GetCurrentStage()));
             DrawUsdPrimEditTarget(selected);
             ImGui::EndPopup();
         }
@@ -298,10 +298,10 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
 
 /// Frane the viewport using the bounding box of the selection
 void Viewport::FrameSelection(const Selection &selection) { // Camera manipulator ???
-    if (GetCurrentStage() && !IsSelectionEmpty(selection)) {
+    if (GetCurrentStage() && !selection.IsSelectionEmpty(GetCurrentStage())) {
         UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
         GfBBox3d bbox;
-        for (const auto &primPath : GetSelectedPaths(selection)) {
+        for (const auto &primPath : selection.GetSelectedPaths(GetCurrentStage())) {
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
@@ -569,9 +569,9 @@ void Viewport::Update() {
     GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_textureSize[0]) / double(_textureSize[1]),
                                                                    _renderCamera->GetFieldOfView(GfCamera::FOVHorizontal),
                                                                    GfCamera::FOVHorizontal);
-    if (_renderer && UpdateSelectionHash(_selection, _lastSelectionHash)) {
+    if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {
         _renderer->ClearSelected();
-        _renderer->SetSelected(GetSelectedPaths(_selection));
+        _renderer->SetSelected(_selection.GetSelectedPaths(GetCurrentStage()));
 
         // Tell the manipulators the selection has changed
         _positionManipulator.OnSelectionChange(*this);

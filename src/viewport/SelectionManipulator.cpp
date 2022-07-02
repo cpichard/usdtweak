@@ -47,13 +47,12 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
         }
 
         if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
-            AddSelected(selection, outHitPrimPath);
+            selection.AddSelected(viewport.GetCurrentStage(), outHitPrimPath);
         } else {
-            SetSelected(selection, outHitPrimPath);
+            selection.SetSelected(viewport.GetCurrentStage(), outHitPrimPath);
         }
     } else if (outHitInstancerPath.IsEmpty()) {
-        /// TODO: manage selection
-        ClearSelection(selection);
+        selection.Clear(viewport.GetCurrentStage());
     }
     return viewport.GetManipulator<MouseHoverManipulator>();
 }

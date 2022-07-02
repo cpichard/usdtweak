@@ -145,7 +145,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
     if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
-    if (IsSelected(selectedPaths, prim.GetPath())) {
+    if (selectedPaths.IsSelected(prim.GetStage(), prim.GetPath())) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
     ImGui::TableNextRow();
@@ -161,13 +161,13 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
             // TreeSelectionBehavior(selectedPaths, &prim);
             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
-                    if (IsSelected(selectedPaths, prim.GetPath())) {
-                        RemoveSelection(selectedPaths, prim.GetPath());
+                    if (selectedPaths.IsSelected(prim.GetStage(), prim.GetPath())) {
+                        selectedPaths.RemoveSelected(prim.GetStage(), prim.GetPath());
                     } else {
-                        AddSelected(selectedPaths, prim.GetPath());
+                        selectedPaths.AddSelected(prim.GetStage(), prim.GetPath());
                     }
                 } else {
-                    SetSelected(selectedPaths, prim.GetPath());
+                    selectedPaths.SetSelected(prim.GetStage(), prim.GetPath());
                 }
             }
             {
@@ -194,6 +194,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
 static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPaths) {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
+
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
     std::string stageDisplayName(stage->GetRootLayer()->GetDisplayName());
     auto unfolded = ImGui::TreeNodeBehavior(IdOf(GetHash(SdfPath::AbsoluteRootPath())), nodeflags, stageDisplayName.c_str());
@@ -202,7 +203,7 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::SmallButton(ICON_FA_PEN);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         const UsdPrim &selected =
-            IsSelectionEmpty(selectedPaths) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(GetFirstSelectedPath(selectedPaths));
+            selectedPaths.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selectedPaths.GetAnchorPath(stage));
         DrawUsdPrimEditTarget(selected);
         ImGui::EndPopup();
     }
@@ -215,11 +216,11 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
 
 /// This function should be called only when the Selection has changed
 /// It modifies the internal imgui tree graph state.
-static void OpenSelectedPaths(Selection &selectedPaths) {
+static void OpenSelectedPaths(const UsdStageRefPtr &stage, Selection &selectedPaths) {
     ImGuiContext &g = *GImGui;
     ImGuiWindow *window = g.CurrentWindow;
     ImGuiStorage *storage = window->DC.StateStorage;
-    for (const auto &path : GetSelectedPaths(selectedPaths)) {
+    for (const auto &path : selectedPaths.GetSelectedPaths(stage)) {
         for (const auto &element : path.GetParentPath().GetPrefixes()) {
             ImGuiID id = IdOf(GetHash(element)); // This has changed with the optim one
             storage->SetInt(id, true);
@@ -263,9 +264,8 @@ static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &path
     }
 }
 
-static void FocusedOnFirstSelectedPath(const Selection &selectedPaths, const std::vector<SdfPath> &paths,
+static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::vector<SdfPath> &paths,
                                        ImGuiListClipper &clipper) {
-    const auto &selectedPath = GetFirstSelectedPath(selectedPaths);
     // linear search! it happens only when the selection has changed. We might want to maintain a map instead
     // if the hierarchies are big.
     for (int i = 0; i < paths.size(); ++i) {
@@ -301,9 +301,9 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         ImGui::TableSetupColumn("Type");
 
         // Unfold the selected path
-        const bool selectionHasChanged = UpdateSelectionHash(selectedPaths, lastSelectionHash);
+        const bool selectionHasChanged = selectedPaths.UpdateSelectionHash(stage, lastSelectionHash);
         if (selectionHasChanged) {            // We could use the imgui id as well instead of a static ??
-            OpenSelectedPaths(selectedPaths); // Also we could have a UsdTweakFrame which contains all the changes that happened
+            OpenSelectedPaths(stage, selectedPaths); // Also we could have a UsdTweakFrame which contains all the changes that happened
                                               // between the last frame and the new one
         }
 
@@ -329,7 +329,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         }
         if (selectionHasChanged) {
             // This function can only be called in this context and after the clipper.Step()
-            FocusedOnFirstSelectedPath(selectedPaths, paths, clipper);
+            FocusedOnFirstSelectedPath(selectedPaths.GetAnchorPath(stage), paths, clipper);
         }
         ImGui::EndTable();
         
