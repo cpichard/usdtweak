@@ -10,7 +10,7 @@
 
 struct AddSublayer : public ModalDialog {
 
-    AddSublayer(SdfLayerRefPtr &layer) : layer(layer){};
+    AddSublayer(const SdfLayerRefPtr &layer) : layer(layer){};
 
     void Draw() override {
         DrawFileBrowser();
@@ -47,33 +47,13 @@ struct AddSublayer : public ModalDialog {
     bool _createNew = true;
 };
 
-static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, std::string layerPath,  const UsdStageRefPtr &stage, SdfLayerRefPtr &selectedParent, std::string &selectedLayerPath, int nodeID=0) {
-    // Note: layer can be null if it wasn't found
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-    if (!layer || !layer->GetNumSubLayerPaths()) {
-        treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
-    }
-    ImGui::PushID(nodeID);
-
-    bool selected = parent == selectedParent && layerPath == selectedLayerPath;
-    const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
-    if (ImGui::Selectable("##backgroundSelectedLayer", selected, selectableFlags)) {
-        selectedParent = parent;
-        selectedLayerPath = layerPath;
-    }
-    ImGui::SameLine();
-
-    std::string label =
-        layer ? (layer->IsMuted() ? ICON_FA_EYE_SLASH " " : ICON_FA_EYE " ") + layer->GetDisplayName() : "Not found " + layerPath;
-    bool unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
-
+static void DrawSublayerTreeNodePopupMenu(const SdfLayerRefPtr &layer, const SdfLayerRefPtr &parent, const std::string &layerPath,
+                                          const UsdStageRefPtr &stage) {
     if (ImGui::BeginPopupContextItem()) {
         // Creating anonymous layers means that we need a structure to hold the layers alive as only the path is stored
         // Testing with a static showed that using the identifier as the path works, but it also means more data handling,
         // making sure that the layers are saved before closing, having visual clew for anonymous layers, etc.
-        //if (layer && ImGui::MenuItem("Add anonymous sublayer")) {
+        // if (layer && ImGui::MenuItem("Add anonymous sublayer")) {
         //    static auto sublayer = SdfLayer::CreateAnonymous("NewLayer");
         //    ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, sublayer->GetIdentifier(), 0);
         //}
@@ -100,21 +80,92 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
             ImGui::Separator();
             DrawLayerActionPopupMenu(layer);
         }
-
-        // TODO: set Edit target
-
         ImGui::EndPopup();
     }
+}
+
+static void DrawLayerSublayerTreeNodeButtons(const SdfLayerRefPtr &layer, const SdfLayerRefPtr &parent,
+                                             const std::string &layerPath, const UsdStageRefPtr &stage, int nodeID) {
+    if (!layer)
+        return;
+
+    ScopedStyleColor transparentButtons(ImGuiCol_Button, ImVec4(ColorTransparent));
+
+    ImGui::BeginDisabled(!layer || !layer->IsDirty() || layer->IsAnonymous());
+    if (ImGui::SmallButton(ICON_FA_SAVE)) {
+        //ExecuteAfterDraw<LayerRemoveSubLayer>(parent, layerPath);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!parent);
+    if (ImGui::SmallButton(ICON_FA_TRASH)) {
+        ExecuteAfterDraw<LayerRemoveSubLayer>(parent, layerPath);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+
+    if (layer->IsMuted() && ImGui::SmallButton(ICON_FA_EYE_SLASH)) {
+        ExecuteAfterDraw<LayerUnmute>(layer);
+    }
+
+    if (!layer->IsMuted() && ImGui::SmallButton(ICON_FA_EYE)) {
+        ExecuteAfterDraw<LayerMute>(layer);
+    }
+
+    ImGui::SameLine();
+
+    ImGui::BeginDisabled(!parent||nodeID == 0);
+
+    if (ImGui::SmallButton(ICON_FA_ARROW_UP)) {
+        ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, true);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!parent || nodeID == parent->GetNumSubLayerPaths() - 1);
+    if (ImGui::SmallButton(ICON_FA_ARROW_DOWN)) {
+        ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, false);
+    }
+    ImGui::EndDisabled();
+}
+
+static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, std::string layerPath, const UsdStageRefPtr &stage,
+                                  int nodeID = 0) {
+    // Note: layer can be null if it wasn't found
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+
+    ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanFullWidth;
+    if (!layer || !layer->GetNumSubLayerPaths()) {
+        treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
+    }
+    ImGui::PushID(nodeID);
+
+    bool unfolded = false;
+    std::string label =
+        layer ? (layer->IsAnonymous() ? std::string(ICON_FA_ATOM " ") : std::string(ICON_FA_FILE " ")) + layer->GetDisplayName()
+              : "Not found " + layerPath;
+    {
+        ScopedStyleColor color(ImGuiCol_Text,
+                               layer ? (layer->IsMuted() ? ImVec4(0.5, 0.5, 0.5, 1.0) : ImGui::GetStyleColorVec4(ImGuiCol_Text))
+                                     : ImVec4(1.0, 0.2, 0.2, 1.0));
+        unfolded = ImGui::TreeNodeEx(label.c_str(), treeNodeFlags);
+    }
+    DrawSublayerTreeNodePopupMenu(layer, parent, layerPath, stage);
+
+    ImGui::TableSetColumnIndex(1);
+    DrawLayerSublayerTreeNodeButtons(layer, parent, layerPath, stage, nodeID);
 
     if (unfolded) {
         if (layer) {
             std::vector<std::string> subLayers = layer->GetSubLayerPaths();
-            for (auto subLayerPath : subLayers) {
+            for (int layerId = 0; layerId < subLayers.size(); ++layerId) {
+                const std::string &subLayerPath = subLayers[layerId];
                 auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, subLayerPath);
                 if (!subLayer) { // Try for anonymous layers
                     subLayer = SdfLayer::FindOrOpen(subLayerPath);
                 }
-                DrawLayerSublayerTree(subLayer, layer, subLayerPath, stage, selectedParent, selectedLayerPath, nodeID++);
+                DrawLayerSublayerTree(subLayer, layer, subLayerPath, stage, layerId);
             }
         }
         ImGui::TreePop();
@@ -136,28 +187,19 @@ template <> inline void DrawFieldValue<SublayerRow>(const int rowId, const UsdSt
 
 
 void DrawStageLayerEditor(UsdStageRefPtr stage) {
-    // First try the layers returned by the stages ...
-    // It actually list all sublayers used in the compositions !
     if (!stage) return;
-    int rowId = 0;
-    //if(BeginValueTable("##StageSublayers")) {
-    //    SetupValueTableColumns(true);
-    //    for (const auto& layer : stage->GetLayerStack()) {
-    //        DrawValueTableRow<SublayerRow>(rowId++, stage, layer);
-    //    }
-    //    EndValueTable();
-    //}
 
-    SdfLayerRefPtr selectedParent; 
-    std::string selectedLayerPath;
-
-    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("##DrawLayerSublayers", 1, tableFlags)) {
-        ImGui::TableSetupColumn("Stage sublayers");
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+    if (ImGui::BeginTable("##DrawLayerSublayers", 2, tableFlags)) {
+        ImGui::TableSetupColumn("Stage sublayers",ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("",ImGuiTableColumnFlags_WidthFixed, 28*5);
         ImGui::TableHeadersRow();
-        DrawLayerSublayerTree(stage->GetRootLayer(), SdfLayerRefPtr(), std::string(), stage, selectedParent, selectedLayerPath);
+        ImGui::PushID(0);
+        DrawLayerSublayerTree(stage->GetSessionLayer(), SdfLayerRefPtr(), std::string(), stage, 0);
+        ImGui::PopID();
+        ImGui::PushID(1);
+        DrawLayerSublayerTree(stage->GetRootLayer(), SdfLayerRefPtr(), std::string(), stage, 0);
+        ImGui::PopID();
         ImGui::EndTable();
     }
-
-
 }
