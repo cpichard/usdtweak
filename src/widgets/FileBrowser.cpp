@@ -366,7 +366,7 @@ bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
 
-std::string GetFileBrowserDirectory() { return displayedDirectory; }
+std::string GetFileBrowserDirectory() { return displayedDirectory.string(); }
 
 
 
