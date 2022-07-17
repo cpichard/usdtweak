@@ -97,7 +97,7 @@ int main(int argc, const char **argv) {
 
         // Process command line options
         for (auto& stage : options.stages()) {
-            editor.ImportStage(stage);
+            editor.OpenStage(stage);
         }
 
         // Loop until the user closes the window
