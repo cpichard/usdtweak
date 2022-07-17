@@ -16,35 +16,39 @@ struct AddSublayer : public ModalDialog {
         DrawFileBrowser();
         EnsureFileBrowserDefaultExtension("usd");
         auto filePath = GetFileBrowserFilePath();
+        auto insertedFilePath = _relative ? GetFileBrowserFilePathRelativeTo(layer->GetRealPath(), _unixify) : filePath;
         const bool filePathExits = FilePathExists();
-        ImGui::BeginDisabled(filePathExits);
-        ImGui::Checkbox("Create new", &_createNew);
-        ImGui::EndDisabled();
-        if (filePathExits) {
+        const bool relativePathValid = _relative ? insertedFilePath != "" : true;
+        ImGui::Checkbox("Use relative path", &_relative);
+        ImGui::Checkbox("Unix compatible", &_unixify);
+
+        if (filePathExits && relativePathValid) {
             ImGui::Text("Import layer: ");
         } else {
-            if (_createNew) {
+            if (relativePathValid && !filePathExits) {
                 ImGui::Text("Create new layer: ");
             } else {
                 ImGui::Text("Not found: ");
             }
         } // ... other messages like permission denied, or incorrect extension
-
-        ImGui::Text("%s", filePath.c_str());
+        ImGui::SameLine();
+        ImGui::Text("%s", insertedFilePath.c_str());
         DrawOkCancelModal([&]() {
             if (!filePath.empty()) {
-                if (_createNew && !filePathExits) {
+                if (!filePathExits) {
                     // TODO: Check extension
                     SdfLayer::CreateNew(filePath); // SHould that be in a command ??
                 }
-                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, filePath, 0);
+
+                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, insertedFilePath, 0);
             }
         });
     }
 
     const char *DialogId() const override { return "Import or create sublayer"; }
     SdfLayerRefPtr layer;
-    bool _createNew = true;
+    bool _relative = false;
+    bool _unixify = false;
 };
 
 static void DrawSublayerTreeNodePopupMenu(const SdfLayerRefPtr &layer, const SdfLayerRefPtr &parent, const std::string &layerPath,
