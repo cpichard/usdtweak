@@ -1,11 +1,14 @@
 #include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include "VariantEditor.h"
+#include "ImGuiHelpers.h"
 #include "Gui.h"
 #include "Constants.h"
+#include "FieldValueTable.h"
+
 #include "Commands.h"
 #include "ProxyHelpers.h"
-#include "ImGuiHelpers.h"
+
 
 static void DrawVariantSelectionMiniButton(const SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
     ScopedStyleColor style(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0), ImGuiCol_Button, ImVec4(ColorTransparent));
@@ -63,34 +66,46 @@ static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawVariantEditListItem(const char *operation, const std ::string &variantName, SdfPrimSpecHandle &primSpec,
-                                    int &buttonId) {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::PushID(buttonId++);
-    if (ImGui::SmallButton(ICON_UT_DELETE)) {
+struct VariantSetNamesItem {};
+
+template <>
+inline void DrawFieldButton<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+                                                const SdfPrimSpecHandle &primSpec) {
+    ImGui::PushID(rowId);
+    if (ImGui::Button(ICON_UT_DELETE)) {
         if (!primSpec)
             return;
         std::function<void()> removeVariantSetName = [=]() { primSpec->GetVariantSetNameList().RemoveItemEdits(variantName); };
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeVariantSetName);
     }
     ImGui::PopID();
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%s", operation);
-    ImGui::TableSetColumnIndex(2);
+}
+template <>
+inline void DrawFieldName<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+                                              const SdfPrimSpecHandle &primSpec) {
+    ImGui::Text(operation);
+}
+template <>
+inline void DrawFieldValue<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+                                               const SdfPrimSpecHandle &primSpec) {
     ImGui::Text("%s", variantName.c_str());
 }
 
+static void DrawVariantSetNamesItem(const char *operation, const std ::string &variantName, SdfPrimSpecHandle &primSpec,
+                                    int &rowId) {
+    // This looks over complicated, but DrawFieldValueTableRow does the layout
+    DrawFieldValueTableRow<VariantSetNamesItem>(rowId++, operation, variantName, primSpec);
+}
+
+
 /// Draw the variantSet names edit list
 static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
-    int buttonId = 0;
     auto nameList = primSpec->GetVariantSetNameList();
-    if (ImGui::BeginTable("##DrawPrimVariantSets", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "VariantSet names", "");
-        ImGui::TableHeadersRow();
-        IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantEditListItem, primSpec, buttonId);
-        ImGui::EndTable();
-        ImGui::Separator();
+    int rowId = 0;
+    if (BeginFieldValueTable("##DrawPrimVariantSets")) {
+        SetupFieldValueTableColumns(true, "", "VariantSet names", "");
+        IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantSetNamesItem, primSpec, rowId);
+        EndFieldValueTable();
     }
 }
 
