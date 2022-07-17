@@ -18,6 +18,12 @@ void EnsureFileBrowserDefaultExtension(const std::string& ext);
 /// Reset currently stored path in the file browser
 void ResetFileBrowserFilePath();
 
+/// Set the filebrowser directory to look at
+void SetFileBrowserDirectory(const std::string &directory);
+
+/// Set the filebrowser directory to look at
+std::string GetFileBrowserDirectory();
+
 /// Returns true if the current file browser path exists
 bool FilePathExists();
 

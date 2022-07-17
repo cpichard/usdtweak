@@ -31,7 +31,36 @@ std::string GetConfigFilePath() {
     }
     return GUI_CONFIG_FILE;
 }
-#else // Not Win64
+#elif defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+
+#include <pwd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+std::string GetConfigFilePath() {
+    std::string configPath;
+    const char *home = getenv("HOME");
+    if (!home) {
+        uid_t uid = getuid();
+        auto *pwd = getpwuid(uid);
+        if (pwd) {
+            home = pwd->pw_dir;
+        }
+    }
+    if (home) {
+        configPath += home;
+#if defined(__APPLE__)
+        configPath += "/Library/Preferences/";
+#else
+        configPath += "/."; // hide the ini in the home dir
+#endif
+    }
+    configPath += GUI_CONFIG_FILE;
+    return configPath;
+}
+
+#else // Not unix and not windows64
 
 std::string GetConfigFilePath() { return GUI_CONFIG_FILE; }
 
@@ -42,11 +71,14 @@ static void *UsdTweakDataReadOpen(ImGuiContext *, ImGuiSettingsHandler *iniHandl
     return loader;
 }
 
+
 static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandler, void *loaderPtr, const char *line) {
     // Loader could be retrieved with
     // ResourcesLoader *loader = static_cast<ResourcesLoader *>(loaderPtr);
     int value = 0;
-
+    char strBuffer[1024];
+    strBuffer[0] = 0;
+    
     // Editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
     if (sscanf(line, "ShowLayerEditor=%i", &value) == 1) {
@@ -73,6 +105,8 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
         settings._showDebugWindow = static_cast<bool>(value);
     } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
         settings._showArrayEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
+        settings._lastFileBrowserDirectory = strBuffer;
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
         // TODO: should the following code goes in EditorSettings::DecodeRecentFiles(string) ? or something similar ?
         //       same for EncodeRecentFiles()
@@ -111,7 +145,9 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
     buf->appendf("ShowStatusBar=%d\n", settings._showStatusBar);
     buf->appendf("ShowDebugWindow=%d\n", settings._showDebugWindow);
     buf->appendf("ShowArrayEditor=%d\n", settings._showArrayEditor);
-
+    if (!settings._lastFileBrowserDirectory.empty()) {
+        buf->appendf("LastFileBrowserDirectory=%s\n", settings._lastFileBrowserDirectory.c_str());
+    }
     std::string recentFileString;
     for (std::list<std::string>::iterator it = settings._recentFiles.begin(); it != settings._recentFiles.end(); ++it) {
         recentFileString += *it;

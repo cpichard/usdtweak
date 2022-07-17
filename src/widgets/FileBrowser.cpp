@@ -93,6 +93,7 @@ static std::string filePath;
 static bool fileExists = false;
 static std::vector<std::string> validExts;
 static std::string lineEditBuffer;
+static fs::path displayedDirectory = fs::current_path();
 
 void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
 
@@ -227,7 +228,7 @@ static void DrawFileSize(uintmax_t fileSize) {
 
 void DrawFileBrowser() {
 
-    static fs::path displayedDirectory = fs::current_path();
+
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
     static bool mustUpdateDirectoryContent = true;
@@ -365,6 +366,10 @@ bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
 
+std::string GetFileBrowserDirectory() { return displayedDirectory; }
+
+
+
 std::string GetFileBrowserFilePathRelativeTo(const std::string &root, bool unixify) {
     fs::path rootPath(root);
     const fs::path originalPath(filePath);
@@ -395,3 +400,11 @@ void ResetFileBrowserFilePath() {
     filePath = "";
     lineEditBuffer = "";
 }
+
+
+void SetFileBrowserDirectory(const std::string &directory) {
+    if (fs::exists(directory) && fs::is_directory(directory)) {
+        displayedDirectory = directory;
+    }
+}
+

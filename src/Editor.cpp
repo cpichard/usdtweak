@@ -284,9 +284,11 @@ void Editor::WindowSizeCallback(GLFWwindow *window, int width, int height) {
 Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
+    SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
 }
 
 Editor::~Editor(){
+    _settings._lastFileBrowserDirectory = GetFileBrowserDirectory();
     SaveSettings();
 }
 
