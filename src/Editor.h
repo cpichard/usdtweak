@@ -34,7 +34,7 @@ public:
     bool HasUnsavedWork();
 
     /// Sets the current edited layer
-    void SetCurrentLayer(SdfLayerRefPtr layer);
+    void SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser=false);
     SdfLayerRefPtr GetCurrentLayer();
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();    // go forward in the layer history
@@ -93,10 +93,6 @@ public:
 
 
 private:
-
-    /// Make sure the layer is correctly in the list of layers,
-    /// makes it current and show the appropriate windows
-    void UseLayer(SdfLayerRefPtr layer);
 
     /// Interface with the settings
     void LoadSettings();

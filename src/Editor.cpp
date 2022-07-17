@@ -316,7 +316,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     _viewport.SetCurrentStage(stage);
 }
 
-void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
+void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
     if (!layer)
         return;
     if (!_layerHistory.empty()) {
@@ -330,6 +330,9 @@ void Editor::SetCurrentLayer(SdfLayerRefPtr layer) {
     } else {
         _layerHistory.push_back(layer);
         _layerHistoryPointer = _layerHistory.size() - 1;
+    }
+    if (showContentBrowser) {
+        _settings._showContentBrowser = true;
     }
 }
 
@@ -356,23 +359,14 @@ void Editor::SetNextLayer() {
     }
 }
 
-
-void Editor::UseLayer(SdfLayerRefPtr layer) {
-    if (layer) {
-        SetCurrentLayer(layer);
-        _settings._showContentBrowser = true;
-    }
-}
-
-
 void Editor::CreateNewLayer(const std::string &path) {
     auto newLayer = SdfLayer::CreateNew(path);
-    UseLayer(newLayer);
+    SetCurrentLayer(newLayer, true);
 }
 
 void Editor::FindOrOpenLayer(const std::string &path) {
     auto newLayer = SdfLayer::FindOrOpen(path);
-    UseLayer(newLayer);
+    SetCurrentLayer(newLayer, true);
 }
 
 //
@@ -392,7 +386,7 @@ void Editor::SaveLayerAs(SdfLayerRefPtr layer, const std::string &path) {
     if (newLayer && layer) {
         newLayer->TransferContent(layer);
         newLayer->Save();
-        UseLayer(newLayer);
+        SetCurrentLayer(newLayer, true);
     }
 }
 
