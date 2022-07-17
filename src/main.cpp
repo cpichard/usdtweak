@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cstdlib>
+#ifdef WANTS_PYTHON
 #include <Python.h>
+#endif
 #include <pxr/base/plug/registry.h>
 #include <pxr/imaging/glf/contextCaps.h>
 #include <pxr/imaging/glf/simpleLight.h>
