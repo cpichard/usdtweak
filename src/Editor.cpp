@@ -143,7 +143,7 @@ void Editor::ConfirmShutdown(std::string why) {
                 if (createStage) {
                     editor.CreateStage(filePath);
                 } else {
-                    editor.CreateLayer(filePath);
+                    editor.CreateNewLayer(filePath);
                 }
             }
         });
@@ -176,9 +176,9 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         DrawOkCancelModal([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 if (openAsStage) {
-                    editor.ImportStage(filePath, openLoaded);
+                    editor.OpenStage(filePath, openLoaded);
                 } else {
-                    editor.ImportLayer(filePath);
+                    editor.FindOrOpenLayer(filePath);
                 }
             }
         });
@@ -257,7 +257,7 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
                     // if the file is empty, this is considered a new file
                     editor->CreateStage(std::string(paths[i]));
                 } else {
-                    editor->ImportLayer(std::string(paths[i]));
+                    editor->FindOrOpenLayer(std::string(paths[i]));
                 }
             }
         }
@@ -365,18 +365,18 @@ void Editor::UseLayer(SdfLayerRefPtr layer) {
 }
 
 
-void Editor::CreateLayer(const std::string &path) {
+void Editor::CreateNewLayer(const std::string &path) {
     auto newLayer = SdfLayer::CreateNew(path);
     UseLayer(newLayer);
 }
 
-void Editor::ImportLayer(const std::string &path) {
+void Editor::FindOrOpenLayer(const std::string &path) {
     auto newLayer = SdfLayer::FindOrOpen(path);
     UseLayer(newLayer);
 }
 
 //
-void Editor::ImportStage(const std::string &path, bool openLoaded) {
+void Editor::OpenStage(const std::string &path, bool openLoaded) {
     auto newStage = UsdStage::Open(path, openLoaded ? UsdStage::LoadAll : UsdStage::LoadNone); // TODO: as an option
     if (newStage) {
         _stageCache.Insert(newStage);

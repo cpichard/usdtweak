@@ -196,7 +196,7 @@ template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHand
 
     if (ImGui::MenuItem("Inspect")) {
         auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
-        ExecuteAfterDraw<EditorOpenLayer>(realPath);
+        ExecuteAfterDraw<EditorFindOrOpenLayer>(realPath);
     }
     if (ImGui::MenuItem("Open as Stage")) {
         auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());

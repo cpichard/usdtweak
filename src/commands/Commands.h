@@ -34,7 +34,7 @@ struct EditorSetDataPointer;
 struct EditorSelectPrimPath;
 struct EditorSelectAttributePath;
 struct EditorOpenStage;
-struct EditorOpenLayer;
+struct EditorFindOrOpenLayer;
 struct EditorSaveLayerAs;
 struct EditorSetCurrentLayer;
 struct EditorSetCurrentStage;

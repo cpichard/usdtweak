@@ -59,10 +59,10 @@ public:
     inline void SetSelectedAttribute(const SdfPath &primPath) { _selectedAttribute = primPath; }
 
     /// Create a new layer in file path
-    void CreateLayer(const std::string &path);
-    void ImportLayer(const std::string &path);
+    void CreateNewLayer(const std::string &path);
+    void FindOrOpenLayer(const std::string &path);
     void CreateStage(const std::string &path);
-    void ImportStage(const std::string &path, bool openLoaded = true);
+    void OpenStage(const std::string &path, bool openLoaded = true);
     void SaveLayerAs(SdfLayerRefPtr layer, const std::string &path);
 
     /// Render the hydra viewport

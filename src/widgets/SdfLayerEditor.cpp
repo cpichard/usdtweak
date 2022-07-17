@@ -212,7 +212,7 @@ static void DrawSubLayerActionPopupMenu(const SdfLayerRefPtr &layer, const std::
             ExecuteAfterDraw<EditorOpenStage>(subLayer->GetRealPath());
         }
         if (ImGui::MenuItem("Open as Layer")) {
-            ExecuteAfterDraw<EditorOpenLayer>(subLayer->GetRealPath());
+            ExecuteAfterDraw<EditorFindOrOpenLayer>(subLayer->GetRealPath());
         }
     } else {
         ImGui::Text("Unable to resolve layer path");

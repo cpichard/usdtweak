@@ -76,7 +76,7 @@ struct EditorOpenStage : public EditorCommand {
 
     bool DoIt() override {
         if (_editor) {
-            _editor->ImportStage(_stagePath);
+            _editor->OpenStage(_stagePath);
         }
 
         return false;
@@ -185,21 +185,21 @@ struct EditorSetCurrentLayer : public EditorCommand {
 template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
 
 
-struct EditorOpenLayer : public EditorCommand {
+struct EditorFindOrOpenLayer : public EditorCommand {
 
-    EditorOpenLayer(std::string layerPath) : _layerPath(std::move(layerPath)) {}
-    ~EditorOpenLayer() override {}
+    EditorFindOrOpenLayer(std::string layerPath) : _layerPath(std::move(layerPath)) {}
+    ~EditorFindOrOpenLayer() override {}
 
     bool DoIt() override {
         if (_editor) {
-            _editor->ImportLayer(_layerPath);
+            _editor->FindOrOpenLayer(_layerPath);
         }
 
         return false;
     }
     std::string _layerPath;
 };
-template void ExecuteAfterDraw<EditorOpenLayer>(std::string layerPath);
+template void ExecuteAfterDraw<EditorFindOrOpenLayer>(std::string layerPath);
 
 struct EditorSaveLayerAs : public EditorCommand {
 
