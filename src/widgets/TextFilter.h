@@ -16,6 +16,7 @@ struct TextFilter {
         Build();
     }
     bool IsActive() const { return !Filters.empty(); }
+    ImGuiID GetHash() const;
 
     // [Internal]
     struct TextRange {
@@ -30,7 +31,8 @@ struct TextFilter {
         bool empty() const { return b == e; }
         void split(char separator, ImVector<TextRange> *out) const;
     };
-    char InputBuf[256];
+    static constexpr size_t InputBufSize = 256;
+    char InputBuf[InputBufSize];
     ImVector<TextRange> Filters;
     int CountGrep;
     

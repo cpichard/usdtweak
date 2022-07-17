@@ -1,4 +1,5 @@
 #include "TextFilter.h"
+#include <functional>
 
 //
 // Using a more performant algorithm for wildcard matching:
@@ -64,7 +65,7 @@ TextFilter::TextFilter(const char *default_filter) {
         ImStrncpy(InputBuf, default_filter, IM_ARRAYSIZE(InputBuf));
         Build();
     } else {
-        InputBuf[0] = 0;
+        memset(InputBuf, 0, InputBufSize);
         CountGrep = 0;
     }
 }
@@ -114,6 +115,10 @@ void TextFilter::Build() {
         if (Filters[i].b[0] != '-')
             CountGrep += 1;
     }
+}
+
+ImGuiID TextFilter ::GetHash() const {
+    return ImHashData(static_cast<const void *>(InputBuf), InputBufSize, UseWildcards ? 1000 : 2000);
 }
 
 bool TextFilter::PassFilter(const char *text, const char *text_end) const {
