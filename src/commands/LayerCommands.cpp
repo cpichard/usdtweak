@@ -8,8 +8,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 struct LayerRemoveSubLayer : public SdfLayerCommand {
 
     // Removes a sublayer
-    LayerRemoveSubLayer(SdfLayerRefPtr layer, std::string subLayerPath)
-        : _layer(layer), _subLayerPath(std::move(subLayerPath)) {}
+    LayerRemoveSubLayer(SdfLayerRefPtr layer, std::string subLayerPath) : _layer(layer), _subLayerPath(std::move(subLayerPath)) {}
 
     ~LayerRemoveSubLayer() override {}
 
@@ -62,7 +61,7 @@ struct LayerMoveSubLayer : public SdfLayerCommand {
         if (!_layer)
             return false;
         std::vector<std::string> layers = _layer->GetSubLayerPaths();
-        for (size_t i = 0; i < layers.size()-1; i++) {
+        for (size_t i = 0; i < layers.size() - 1; i++) {
             if (layers[i] == _subLayerPath) {
                 std::swap(layers[i], layers[i + 1]);
                 _layer->SetSubLayerPaths(layers);
@@ -108,7 +107,6 @@ struct LayerRenameSubLayer : public SdfLayerCommand {
 };
 template void ExecuteAfterDraw<LayerRenameSubLayer>(SdfLayerRefPtr layer, std::string oldName, std::string newName);
 
-
 /// Mute and Unmute seem to keep so additional data outside of Sdf, so they need their own commands
 struct LayerMute : public Command {
     LayerMute(SdfLayerRefPtr layer) : _layer(layer) {}
@@ -148,30 +146,31 @@ struct LayerUnmute : public Command {
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerRefPtr layer);
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerHandle layer);
 
-
 /* WARNING: this is a brute force and dumb implementation of storing text modification.
  It basically stores the previous and new layer as text in a string. So .... this will eat up the memory
  quite quickly if used intensively.
  But for now it's a quick way to test if text editing is worth in the application.
  */
 struct LayerTextEdit : public SdfLayerCommand {
-    
+
     LayerTextEdit(SdfLayerRefPtr layer, std::string newText) : _layer(layer), _newText(newText) {}
-    
+
     ~LayerTextEdit() override {}
-    
+
     bool DoIt() override {
-        if(!_layer) return false;
+        if (!_layer)
+            return false;
         SdfUndoRecorder recorder(_undoCommands, _layer);
-        if(_oldText.empty()) {
+        if (_oldText.empty()) {
             _layer->ExportToString(&_oldText);
         }
         return _layer->ImportFromString(_newText);
         //_layer->SetDirty();
     };
-    
+
     bool UndoIt() override {
-        if(!_layer) return false;
+        if (!_layer)
+            return false;
         return _layer->ImportFromString(_oldText);
     }
 

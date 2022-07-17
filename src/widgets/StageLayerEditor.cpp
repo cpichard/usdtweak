@@ -187,12 +187,13 @@ template <> inline void DrawFieldValue<SublayerRow>(const int rowId, const UsdSt
 
 
 void DrawStageLayerEditor(UsdStageRefPtr stage) {
-    if (!stage) return;
+    if (!stage)
+        return;
 
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
     if (ImGui::BeginTable("##DrawLayerSublayers", 2, tableFlags)) {
-        ImGui::TableSetupColumn("Stage sublayers",ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("",ImGuiTableColumnFlags_WidthFixed, 28*5);
+        ImGui::TableSetupColumn("Stage sublayers", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 28 * 5);
         ImGui::TableHeadersRow();
         ImGui::PushID(0);
         DrawLayerSublayerTree(stage->GetSessionLayer(), SdfLayerRefPtr(), std::string(), stage, 0);
