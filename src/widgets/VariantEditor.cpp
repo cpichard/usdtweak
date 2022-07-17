@@ -83,7 +83,7 @@ inline void DrawFieldButton<VariantSetNamesItem>(const int rowId, const char *co
 template <>
 inline void DrawFieldName<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
                                               const SdfPrimSpecHandle &primSpec) {
-    ImGui::Text(operation);
+    ImGui::Text("%s", operation);
 }
 template <>
 inline void DrawFieldValue<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
