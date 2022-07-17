@@ -359,6 +359,9 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
         if (ImGui::MenuItem("Add root prim")) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
         }
+        if (ImGui::GetClipboardText()!="" && ImGui::MenuItem("Paste path as Overs")) {
+            ExecuteAfterDraw<LayerCreateOversFromPath>(layer, std::string(ImGui::GetClipboardText()));
+        }
         ImGui::EndPopup();
     }
     if (unfolded) {

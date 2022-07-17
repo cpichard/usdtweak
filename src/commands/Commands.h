@@ -52,6 +52,7 @@ struct LayerRenameSubLayer;
 struct LayerMute;
 struct LayerUnmute;
 struct LayerTextEdit;
+struct LayerCreateOversFromPath;
 
 struct UndoCommand;
 struct RedoCommand;

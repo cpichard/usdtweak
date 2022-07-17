@@ -180,3 +180,38 @@ struct LayerTextEdit : public SdfLayerCommand {
     std::string _newText;
 };
 template void ExecuteAfterDraw<LayerTextEdit>(SdfLayerRefPtr layer, std::string newText);
+
+struct LayerCreateOversFromPath : public SdfLayerCommand {
+
+    LayerCreateOversFromPath(SdfLayerRefPtr layer, std::string path) : _layer(layer), _path(std::move(path)) {}
+    ~LayerCreateOversFromPath() {}
+
+    bool DoIt() override {
+        if (!_layer)
+            return false;
+
+        SdfPath path(_path);
+        if (path == SdfPath()) {
+            return false;
+        }
+        SdfUndoRecorder recorder(_undoCommands, _layer);
+
+        for (auto &prefix : path.GetPrefixes()) {
+            if (!_layer->HasSpec(prefix)) {
+                if (prefix.GetParentPath().IsAbsoluteRootPath()) {
+                    SdfPrimSpec::New(_layer, prefix.GetName(), SdfSpecifierOver);
+                } else if (prefix.IsPrimVariantSelectionPath()) {
+                    auto variant = prefix.GetVariantSelection();
+                    SdfCreateVariantInLayer(_layer, prefix.GetParentPath(), variant.first, variant.second);
+                } else {
+                    SdfPrimSpec::New(_layer->GetPrimAtPath(prefix.GetParentPath()), prefix.GetName(), SdfSpecifierOver);
+                }
+            }
+        }
+        return true;
+    }
+
+    SdfLayerRefPtr _layer;
+    std::string _path;
+};
+template void ExecuteAfterDraw<LayerCreateOversFromPath>(SdfLayerRefPtr layer, std::string path);
