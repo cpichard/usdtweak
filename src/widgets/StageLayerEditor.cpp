@@ -90,26 +90,25 @@ static void DrawLayerSublayerTreeNodeButtons(const SdfLayerRefPtr &layer, const 
         return;
 
     ScopedStyleColor transparentButtons(ImGuiCol_Button, ImVec4(ColorTransparent));
-
     ImGui::BeginDisabled(!layer || !layer->IsDirty() || layer->IsAnonymous());
-    if (ImGui::SmallButton(ICON_FA_SAVE)) {
+    if (ImGui::Button(ICON_FA_SAVE)) {
         //ExecuteAfterDraw<LayerRemoveSubLayer>(parent, layerPath);
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(!parent);
-    if (ImGui::SmallButton(ICON_FA_TRASH)) {
+    if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw<LayerRemoveSubLayer>(parent, layerPath);
     }
     ImGui::EndDisabled();
 
     ImGui::SameLine();
 
-    if (layer->IsMuted() && ImGui::SmallButton(ICON_FA_EYE_SLASH)) {
+    if (layer->IsMuted() && ImGui::Button(ICON_FA_VOLUME_MUTE)) {
         ExecuteAfterDraw<LayerUnmute>(layer);
     }
 
-    if (!layer->IsMuted() && ImGui::SmallButton(ICON_FA_EYE)) {
+    if (!layer->IsMuted() && ImGui::Button(ICON_FA_VOLUME_OFF)) {
         ExecuteAfterDraw<LayerMute>(layer);
     }
 
@@ -117,13 +116,13 @@ static void DrawLayerSublayerTreeNodeButtons(const SdfLayerRefPtr &layer, const 
 
     ImGui::BeginDisabled(!parent||nodeID == 0);
 
-    if (ImGui::SmallButton(ICON_FA_ARROW_UP)) {
+    if (ImGui::Button(ICON_FA_ARROW_UP)) {
         ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, true);
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(!parent || nodeID == parent->GetNumSubLayerPaths() - 1);
-    if (ImGui::SmallButton(ICON_FA_ARROW_DOWN)) {
+    if (ImGui::Button(ICON_FA_ARROW_DOWN)) {
         ExecuteAfterDraw<LayerMoveSubLayer>(parent, layerPath, false);
     }
     ImGui::EndDisabled();
