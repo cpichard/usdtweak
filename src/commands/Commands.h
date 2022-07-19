@@ -145,19 +145,6 @@ void ExecuteAfterDraw(FuncT &&func, const UsdVariantSet &variantSet, ArgsT &&...
     ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
 }
 
-// NOTE: UsdGeomImageable and all other schema class will share the same code
-// TODO: template it if needed
-template <typename FuncT, typename... ArgsT>
-void ExecuteAfterDraw(FuncT &&func, const UsdGeomImageable &geom, ArgsT &&...arguments) {
-    const auto &path = geom.GetPrim().GetPath();
-    UsdStageWeakPtr stage = geom.GetPrim().GetStage();
-    std::function<void()> usdApiFunc = [=]() {
-        UsdGeomImageable geomPrim = UsdGeomImageable::Get(stage, path);
-        std::function<void()> primFunc = std::bind(func, &geomPrim, arguments...);
-        primFunc();
-    };
-    ExecuteAfterDraw<UsdFunctionCall>(stage->GetEditTarget().GetLayer(), usdApiFunc);
-}
 
 template <typename FuncT, typename... ArgsT>
 void ExecuteAfterDraw(FuncT &&func, SdfAttributeSpecHandle att, ArgsT &&...arguments) {
