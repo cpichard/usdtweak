@@ -24,8 +24,22 @@ endif (DEFINED glfw3_DIR)
 # Use folders in the generated xcode/vs projects
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+if (APPLE)
+    set(MACOSX_BUNDLE_ICON_FILE icon.icns)
 
-add_executable(usdtweak "")
+# And this part tells CMake where to find and install the file itself
+    set(myApp_ICON ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icon.icns)
+    set_source_files_properties(${myApp_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+
+add_executable(usdtweak MACOSX_BUNDLE "" ${myApp_ICON})
+
+set_target_properties(usdtweak PROPERTIES
+    OUTPUT_NAME "usdtweak"
+    MACOSX_BUNDLE TRUE)
+else()
+    add_executable(usdtweak "")
+endif()
+
 add_subdirectory(src)
 
 
