@@ -31,6 +31,7 @@
 #include "TextEditor.h"
 #include "Shortcuts.h"
 #include "StageLayerEditor.h"
+#include "LauncherBar.h"
 
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
@@ -51,6 +52,7 @@
 #define TimelineWindowTitle "Timeline"
 #define ViewportWindowTitle "Viewport"
 #define StatusBarWindowTitle "Status bar"
+#define LauncherBarWindowTitle "Launcher bar"
 
 // Get usd known file format extensions and returns then prefixed with a dot and in a vector
 static const std::vector<std::string> GetUsdValidExtensions() {
@@ -62,18 +64,6 @@ static const std::vector<std::string> GetUsdValidExtensions() {
 }
 
 
-static void UpdateRecentFiles(std::list<std::string>& recentFiles, const std::string& newFile) {
-    auto found = find(recentFiles.begin(), recentFiles.end(), newFile);
-    if (found != recentFiles.end()) {
-        recentFiles.erase(found);
-    }
-    recentFiles.push_front(newFile); // obviously we don't want this behaviour
-    if (recentFiles.size() > 10) {
-        std::list<std::string>::iterator begin = recentFiles.begin();
-        std::advance(begin, 10);
-        recentFiles.erase(begin, recentFiles.end());
-    }
-}
 
 struct CloseEditorModalDialog : public ModalDialog {
     CloseEditorModalDialog(Editor &editor, std::string confirmReasons) : editor(editor), confirmReasons(confirmReasons) {}
@@ -379,7 +369,7 @@ void Editor::OpenStage(const std::string &path, bool openLoaded) {
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
         _settings._showViewport = true;
-        UpdateRecentFiles(_settings._recentFiles, path);
+        _settings.UpdateRecentFiles(path);
     }
 }
 
@@ -442,7 +432,7 @@ void Editor::DrawMainMenuBar() {
                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
             }
             if (ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " Open Recent (as stage)")) {
-                for (const auto& recentFile : _settings._recentFiles) {
+                for (const auto& recentFile : _settings.GetRecentFiles()) {
                     if (ImGui::MenuItem(recentFile.c_str())) {
                         ExecuteAfterDraw<EditorOpenStage>(recentFile);
                     }
@@ -500,6 +490,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
+            ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::EndMenu();
         }
 
@@ -543,6 +534,13 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+    if (_settings._showLauncherBar) {
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
+        ImGui::Begin(LauncherBarWindowTitle, &_settings._showLauncherBar, windowFlags);
+        DrawLauncherBar(this);
+        ImGui::End();
+    }
+    
     if (_settings._showPropertyEditor) {
         TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
@@ -596,7 +594,7 @@ void Editor::Draw() {
         DrawContentBrowser(*this);
         ImGui::End();
     }
-
+    
     if (_settings._showPrimSpecEditor) {
         const ImGuiWindowFlags windowFlagsWithMenu = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         TRACE_SCOPE(SdfPrimPropertiesWindowTitle);
@@ -648,6 +646,28 @@ void Editor::Draw() {
     AddShortcut<RedoCommand, ImGuiKey_LeftCtrl, ImGuiKey_R>();
     EndBackgroundDock();
 
+}
+
+
+void Editor::RunLauncher(const std::string &launcherName) {
+    std::string commandLine = _settings.GetLauncherCommandLine(launcherName);
+    if (commandLine == "")
+        return;
+    // Process the command line
+    auto pos = commandLine.find("__STAGE_PATH__");
+    if (pos != std::string::npos) {
+        commandLine.replace(pos, 14, GetCurrentStage() ? GetCurrentStage()->GetRootLayer()->GetRealPath() : "");
+    }
+
+    pos = commandLine.find("__LAYER_PATH__");
+    if (pos != std::string::npos) {
+        commandLine.replace(pos, 14, GetCurrentLayer() ? GetCurrentLayer()->GetRealPath() : "");
+    }
+
+    auto command = [commandLine]() -> int { return std::system(commandLine.c_str()); };
+    // TODO: we are just storing the tasks in a vector, we shoud do some
+    // cleaning when the tasks are done
+    _launcherTasks.emplace_back(std::async(std::launch::async, command));
 }
 
 

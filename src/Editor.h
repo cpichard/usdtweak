@@ -1,11 +1,13 @@
 #pragma once
-#include <set>
-#include <pxr/usd/usd/stageCache.h>
-#include <pxr/usd/sdf/layer.h>
-#include <pxr/usd/sdf/primSpec.h>
+#include "EditorSettings.h"
 #include "Selection.h"
 #include "Viewport.h"
-#include "EditorSettings.h"
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/usd/stageCache.h>
+
+#include <set>
+#include <future>
 
 struct GLFWwindow;
 
@@ -34,10 +36,10 @@ public:
     bool HasUnsavedWork();
 
     /// Sets the current edited layer
-    void SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser=false);
+    void SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser = false);
     SdfLayerRefPtr GetCurrentLayer();
     void SetPreviousLayer(); // go backward in the layer history
-    void SetNextLayer();    // go forward in the layer history
+    void SetNextLayer();     // go forward in the layer history
 
     /// List of stages
     /// Using a stage cache to store the stages, seems to work well
@@ -46,14 +48,13 @@ public:
     void SetCurrentStage(UsdStageRefPtr stage);
     void SetCurrentEditTarget(SdfLayerHandle layer);
 
-
-    UsdStageCache & GetStageCache() { return _stageCache; }
+    UsdStageCache &GetStageCache() { return _stageCache; }
 
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
     Selection &GetLayerSelection() { return _selection; }
-    void SetLayerPathSelection(const SdfPath& primPath);
-    void AddLayerPathSelection(const SdfPath& primPath);
+    void SetLayerPathSelection(const SdfPath &primPath);
+    void AddLayerPathSelection(const SdfPath &primPath);
 
     inline SdfPath GetSelectedAttribute() const { return _selectedAttribute; }
     inline void SetSelectedAttribute(const SdfPath &primPath) { _selectedAttribute = primPath; }
@@ -91,13 +92,18 @@ public:
 
     void ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs);
 
+    // Launcher functions
+    const std::vector<std::string> &GetLauncherNameList() const { return _settings.GetLauncheNameList(); }
+    bool AddLauncher(const std::string &launcherName, const std::string &commandLine) {
+        return _settings.AddLauncher(launcherName, commandLine);
+    }
+    bool RemoveLauncher(std::string launcherName) { return _settings.RemoveLauncher(launcherName); };
+    void RunLauncher(const std::string &launcherName);
 
-private:
-
+  private:
     /// Interface with the settings
     void LoadSettings();
     void SaveSettings() const;
-
 
     /// glfw callback to handle drag and drop from external applications
     static void DropCallback(GLFWwindow *window, int count, const char **paths);
@@ -106,7 +112,7 @@ private:
     static void WindowCloseCallback(GLFWwindow *window);
 
     /// glfw resize callback
-    static void WindowSizeCallback(GLFWwindow* window, int width, int height);
+    static void WindowSizeCallback(GLFWwindow *window, int width, int height);
 
     /// Using a stage cache to store the stages, seems to work well
     UsdStageCache _stageCache;
@@ -119,7 +125,7 @@ private:
     bool _isShutdown = false;
 
     ///
-    /// Editor settings contains the windows states
+    /// Editor settings contains the persisted data
     ///
     EditorSettings _settings;
 
@@ -131,5 +137,8 @@ private:
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
+    
+    /// Storing the tasks created by launchers.
+    std::vector<std::future<int>> _launcherTasks;
 
 };

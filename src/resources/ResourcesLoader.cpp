@@ -75,89 +75,16 @@ static void *UsdTweakDataReadOpen(ImGuiContext *, ImGuiSettingsHandler *iniHandl
 static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandler, void *loaderPtr, const char *line) {
     // Loader could be retrieved with
     // ResourcesLoader *loader = static_cast<ResourcesLoader *>(loaderPtr);
-    int value = 0;
-    char strBuffer[1024];
-    strBuffer[0] = 0;
-    
-    // Editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
-    if (sscanf(line, "ShowLayerEditor=%i", &value) == 1) {
-        // Discarding old preference
-    } else if (sscanf(line, "ShowLayerHierarchyEditor=%i", &value) == 1) {
-        settings._showLayerHierarchyEditor = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowLayerStackEditor=%i", &value) == 1) {
-        settings._showLayerStackEditor = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowPropertyEditor=%i", &value) == 1) {
-        settings._showPropertyEditor = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowOutliner=%i", &value) == 1) {
-        settings._showOutliner = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowTimeline=%i", &value) == 1) {
-        settings._showTimeline = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowContentBrowser=%i", &value) == 1) {
-        settings._showContentBrowser = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowPrimSpecEditor=%i", &value) == 1) {
-        settings._showPrimSpecEditor = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowViewport=%i", &value) == 1) {
-        settings._showViewport = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowStatusBar=%i", &value) == 1) {
-        settings._showStatusBar = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowDebugWindow=%i", &value) == 1) {
-        settings._showDebugWindow = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
-        settings._showArrayEditor = static_cast<bool>(value);
-    } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
-        settings._lastFileBrowserDirectory = strBuffer;
-    } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
-        // TODO: should the following code goes in EditorSettings::DecodeRecentFiles(string) ? or something similar ?
-        //       same for EncodeRecentFiles()
-        std::string recentFiles(line + 12);
-        settings._recentFiles.push_back("");
-        for (auto c : recentFiles) {
-            if (c == '\0')
-                break;
-            else if (c == ';') {
-                settings._recentFiles.push_back("");
-            } else {
-                settings._recentFiles.back().push_back(c);
-            }
-        }
-    } else if (sscanf(line, "MainWindowWidth=%i", &value) == 1) {
-        settings._mainWindowWidth = value;
-    } else if (sscanf(line, "MainWindowHeight=%i", &value) == 1) {
-        settings._mainWindowHeight = value;
-    }
+    settings.ParseLine(line);
 }
 
 static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHandler, ImGuiTextBuffer *buf) {
-    buf->reserve(4096); // ballpark reserve
-
     // Saving the editor settings
     auto &settings = ResourcesLoader::GetEditorSettings();
+    buf->reserve(4096);
     buf->appendf("[%s][%s]\n", iniHandler->TypeName, "Editor");
-    buf->appendf("ShowLayerHierarchyEditor=%d\n", settings._showLayerHierarchyEditor);
-    buf->appendf("ShowLayerStackEditor=%d\n", settings._showLayerStackEditor);
-    buf->appendf("ShowPropertyEditor=%d\n", settings._showPropertyEditor);
-    buf->appendf("ShowOutliner=%d\n", settings._showOutliner);
-    buf->appendf("ShowTimeline=%d\n", settings._showTimeline);
-    buf->appendf("ShowContentBrowser=%d\n", settings._showContentBrowser);
-    buf->appendf("ShowPrimSpecEditor=%d\n", settings._showPrimSpecEditor);
-    buf->appendf("ShowViewport=%d\n", settings._showViewport);
-    buf->appendf("ShowStatusBar=%d\n", settings._showStatusBar);
-    buf->appendf("ShowDebugWindow=%d\n", settings._showDebugWindow);
-    buf->appendf("ShowArrayEditor=%d\n", settings._showArrayEditor);
-    if (!settings._lastFileBrowserDirectory.empty()) {
-        buf->appendf("LastFileBrowserDirectory=%s\n", settings._lastFileBrowserDirectory.c_str());
-    }
-    std::string recentFileString;
-    for (std::list<std::string>::iterator it = settings._recentFiles.begin(); it != settings._recentFiles.end(); ++it) {
-        recentFileString += *it;
-        if (it != std::prev(settings._recentFiles.end())) {
-            recentFileString.push_back(';');
-        }
-    }
-    buf->appendf("RecentFiles=%s\n", recentFileString.c_str());
-    buf->appendf("MainWindowWidth=%d\n", settings._mainWindowWidth);
-    buf->appendf("MainWindowHeight=%d\n", settings._mainWindowHeight);
+    settings.Dump(buf);
 }
 
 bool ResourcesLoader::_resourcesLoaded = false;

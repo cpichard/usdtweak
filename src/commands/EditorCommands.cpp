@@ -7,9 +7,9 @@
 /// Work in progress, this is not used yet
 ///
 
-#include <string>
 #include "Commands.h"
 #include "Editor.h"
+#include <string>
 
 ///
 /// Base class for an editor command, contai ns only a pointer of the editor
@@ -29,7 +29,6 @@ struct EditorSetDataPointer : public EditorCommand {
     bool DoIt() override { return false; }
 };
 template void ExecuteAfterDraw<EditorSetDataPointer>(Editor *editor);
-
 
 struct EditorSelectPrimPath : public EditorCommand {
 
@@ -51,8 +50,7 @@ template void ExecuteAfterDraw<EditorSelectPrimPath>(SdfPath *selectionObject, S
 
 struct EditorSelectAttributePath : public EditorCommand {
 
-    EditorSelectAttributePath(SdfPath attributePath)
-        : _attributePath(attributePath) {}
+    EditorSelectAttributePath(SdfPath attributePath) : _attributePath(attributePath) {}
 
     ~EditorSelectAttributePath() override {}
 
@@ -67,7 +65,6 @@ struct EditorSelectAttributePath : public EditorCommand {
     SdfPath _attributePath;
 };
 template void ExecuteAfterDraw<EditorSelectAttributePath>(SdfPath attributePath);
-
 
 struct EditorOpenStage : public EditorCommand {
 
@@ -180,10 +177,8 @@ struct EditorSetCurrentLayer : public EditorCommand {
         return false;
     }
     SdfLayerRefPtr _layer;
-
 };
 template void ExecuteAfterDraw<EditorSetCurrentLayer>(SdfLayerHandle layer);
-
 
 struct EditorFindOrOpenLayer : public EditorCommand {
 
@@ -217,7 +212,6 @@ struct EditorSaveLayerAs : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSaveLayerAs>(SdfLayerHandle layer);
 template void ExecuteAfterDraw<EditorSaveLayerAs>(SdfLayerRefPtr layer);
-
 
 struct EditorSetPreviousLayer : public EditorCommand {
 
@@ -260,7 +254,6 @@ struct EditorStartPlayback : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorStartPlayback>();
 
-
 struct EditorStopPlayback : public EditorCommand {
     EditorStopPlayback() {}
     ~EditorStopPlayback() override {}
@@ -273,3 +266,44 @@ struct EditorStopPlayback : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorStopPlayback>();
 
+// Launchers, for the moment we don't make the add/remove commands undoable, but they could be in the future
+struct EditorRunLauncher : public EditorCommand {
+    EditorRunLauncher(const std::string launcherName) : _launcherName(launcherName) {}
+    ~EditorRunLauncher() override {}
+    bool DoIt() override {
+        if (_editor) {
+            _editor->RunLauncher(_launcherName);
+        }
+        return false;
+    }
+    std::string _launcherName;
+};
+template void ExecuteAfterDraw<EditorRunLauncher>(const std::string);
+
+struct EditorAddLauncher : public EditorCommand {
+    EditorAddLauncher(const std::string launcherName, const std::string commandLine)
+        : _launcherName(launcherName), _commandLine(commandLine) {}
+    ~EditorAddLauncher() override {}
+    bool DoIt() override {
+        if (_editor) {
+            _editor->AddLauncher(_launcherName, _commandLine);
+        }
+        return false;
+    }
+    std::string _launcherName;
+    std::string _commandLine;
+};
+template void ExecuteAfterDraw<EditorAddLauncher>(const std::string, const std::string);
+
+struct EditorRemoveLauncher : public EditorCommand {
+    EditorRemoveLauncher(const std::string launcherName) : _launcherName(launcherName) {}
+    ~EditorRemoveLauncher() override {}
+    bool DoIt() override {
+        if (_editor) {
+            _editor->RemoveLauncher(_launcherName);
+        }
+        return false;
+    }
+    std::string _launcherName;
+};
+template void ExecuteAfterDraw<EditorRemoveLauncher>(const std::string);
