@@ -1,6 +1,8 @@
 #include "Constants.h"
 #include "EditorSettings.h"
 
+#include <algorithm>
+
 #include <imgui.h> // for ImGuiTextBuffer
 
 EditorSettings::EditorSettings() : _mainWindowWidth(InitialWindowWidth), _mainWindowHeight(InitialWindowHeight) {}
