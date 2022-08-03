@@ -52,9 +52,13 @@ void EditorSettings::ParseLine(const char *line) {
             }
         }
     } else if (sscanf(line, "MainWindowWidth=%i", &value) == 1) {
-        _mainWindowWidth = value;
+        if (value > 0) {
+            _mainWindowWidth = value;
+        }
     } else if (sscanf(line, "MainWindowHeight=%i", &value) == 1) {
-        _mainWindowHeight = value;
+        if (value > 0) {
+            _mainWindowHeight = value;
+        }
     } else if (strlen(line) > 9 && std::equal(line, line + 9, "Launcher=")) {
         std::string launcher(line + 9);
         auto semiColonPos = std::find(launcher.begin(), launcher.end(), ';');
@@ -91,8 +95,12 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
         }
     }
     buf->appendf("RecentFiles=%s\n", recentFileString.c_str());
-    buf->appendf("MainWindowWidth=%d\n", _mainWindowWidth);
-    buf->appendf("MainWindowHeight=%d\n", _mainWindowHeight);
+    if (_mainWindowWidth > 0) {
+        buf->appendf("MainWindowWidth=%d\n", _mainWindowWidth);
+    }
+    if (_mainWindowHeight > 0) {
+        buf->appendf("MainWindowHeight=%d\n", _mainWindowHeight);
+    }
     for (int i = 0; i < _launcherNames.size(); ++i) {
         buf->appendf("Launcher=%s;%s\n", _launcherNames[i].c_str(), _launcherCommandLines[i].c_str());
     }
