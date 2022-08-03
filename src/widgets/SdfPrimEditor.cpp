@@ -404,7 +404,7 @@ inline void DrawFieldValue<RelationField>(const int rowId, const SdfPrimSpecHand
 template <>
 inline void DrawFieldButton<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                            const SdfRelationshipSpecHandle &relation) {
-    if (ImGui::Button(ICON_FA_COG)) {
+    if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
     }
 };
