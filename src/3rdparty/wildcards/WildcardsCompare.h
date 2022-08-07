@@ -19,6 +19,7 @@
 // For each '*' wildcard, seeks out a matching sequence of any characters
 // beyond it.  Otherwise compares the strings a character at a time.
 //
+inline
 bool FastWildCompare(char *pWild, char *pTame)
 {
     char *pWildSequence;  // Points to prospective wild string match after '*'
@@ -179,6 +180,7 @@ bool FastWildCompare(char *pWild, char *pTame)
 // For each '*' wildcard, seeks out a matching sequence of any characters
 // beyond it.  Otherwise compares the strings a character at a time.
 //
+inline
 bool FastWildComparePortable(const char *strWild, const char *strTame)
 {
     int  iWild = 0;     // Index for both tame and wild strings in upper loop

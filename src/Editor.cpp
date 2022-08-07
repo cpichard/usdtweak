@@ -574,7 +574,7 @@ void Editor::Draw() {
         const std::string title(SdfLayerHierarchyWindowTitle + (rootLayer ? " - " + rootLayer->GetDisplayName() : "") +
                                 "###Layer hierarchy");
         ImGui::Begin(title.c_str(), &_settings._showLayerHierarchyEditor, layerWindowFlag);
-        DrawLayerPrimHierarchy(rootLayer, GetLayerSelection());
+        DrawLayerPrimHierarchy(rootLayer, GetSelection());
         ImGui::End();
     }
 

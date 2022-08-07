@@ -52,7 +52,7 @@ public:
 
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
-    Selection &GetLayerSelection() { return _selection; }
+    Selection &GetSelection() { return _selection; }
     void SetLayerPathSelection(const SdfPath &primPath);
     void AddLayerPathSelection(const SdfPath &primPath);
 

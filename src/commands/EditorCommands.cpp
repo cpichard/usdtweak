@@ -9,8 +9,9 @@
 
 #include "Commands.h"
 #include "Editor.h"
+#include <pxr/usd/usd/primRange.h>
 #include <string>
-
+#include "WildcardsCompare.h"
 ///
 /// Base class for an editor command, contai ns only a pointer of the editor
 ///
@@ -307,3 +308,54 @@ struct EditorRemoveLauncher : public EditorCommand {
     std::string _launcherName;
 };
 template void ExecuteAfterDraw<EditorRemoveLauncher>(const std::string);
+
+// This will try to find the next matching prim after the selection
+struct EditorFindPrim : public EditorCommand {
+    EditorFindPrim(const std::string pattern, bool useRegex) : _pattern(pattern) {
+        if (useRegex) {
+            _matches = [&](const std::string &str) { return FastWildComparePortable(_pattern.c_str(), str.c_str()); };
+        } else {
+            _matches = [&](const std::string &str) { return str == _pattern; };
+        }
+    }
+    ~EditorFindPrim() override{};
+
+    bool DoIt() override {
+        if (_editor) {
+            const auto &stage = _editor->GetCurrentStage();
+            auto &selection = _editor->GetSelection();
+            auto anchor = selection.GetAnchorPath(stage);
+            SdfPath found;
+            bool selectedFound = false;
+            // Traverse the stage and set the new selection
+            auto range = UsdPrimRange::Stage(stage, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+            for (auto iter = range.begin(); iter != range.end(); ++iter) {
+                if (iter->GetPath() == anchor) {
+                    selectedFound = true;
+                } else if (_matches(iter->GetName())) {
+                    // Store the first matching path in case we don't find the one
+                    // after the anchor
+                    if (found == SdfPath()) {
+                        found = iter->GetPath();
+                        // We don't have an anchor, so the first match is the correct one
+                        if (anchor == SdfPath())
+                            break;
+                    }
+                    if (selectedFound) {
+                        found = iter->GetPath();
+                        break;
+                    }
+                }
+            }
+            if (found != SdfPath()) {
+                selection.SetSelected(stage, found);
+            }
+        }
+        return false;
+    }
+    std::function<bool(const std::string &)> _matches;
+    std::string _pattern;
+};
+template void ExecuteAfterDraw<EditorFindPrim>(const std::string, bool useRegex);
+
+

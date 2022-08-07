@@ -292,9 +292,10 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
 
     static SelectionHash lastSelectionHash = 0;
 
-    const auto cursorPos = ImGui::GetCursorPos();
+    ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
+    ImVec2 tableOuterSize(0, currentWindow->Size[1] - 70); // TODO: set the correct size
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | /*ImGuiTableFlags_RowBg |*/ ImGuiTableFlags_ScrollY;
-    if (ImGui::BeginTable("##DrawStageOutliner", 3, tableFlags)) {
+    if (ImGui::BeginTable("##DrawStageOutliner", 3, tableFlags, tableOuterSize)) {
         ImGui::TableSetupScrollFreeze(3, 1); // Freeze the root node of the tree (the layer)
         ImGui::TableSetupColumn("Hierarchy");
         ImGui::TableSetupColumn("V", ImGuiTableColumnFlags_WidthFixed, 40);
@@ -333,9 +334,17 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         }
         ImGui::EndTable();
         
-        // Debug info. Uncomment to see the number of processed paths
-        //ImGui::SetCursorPos(ImVec2(500 + cursorPos.x, 25 + cursorPos.y));
-        //ImGui::Text("%d paths", paths.size());
     }
-    //ImGui::PopID();
+
+    // Search prim bar
+    static char patternBuffer[256];
+    static bool useRegex = false;
+    auto enterPressed = ImGui::InputTextWithHint("##SearchPrims", "Find prim", patternBuffer, 256, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    ImGui::Checkbox("use regex", &useRegex);
+    ImGui::SameLine();
+    if (ImGui::Button("Select next") || enterPressed) {
+        ExecuteAfterDraw<EditorFindPrim>(std::string(patternBuffer), useRegex);
+    }
+
 }
