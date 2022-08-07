@@ -288,7 +288,8 @@ void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
 }
 
 void DrawLayerNavigation(SdfLayerRefPtr layer) {
-    if (!layer) return;
+    if (!layer)
+        return;
     if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
         ExecuteAfterDraw<EditorSetPreviousLayer>();
     }
@@ -315,8 +316,17 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
     {
         ScopedStyleColor textBackground(ImGuiCol_Header, ImU32(ImColor{ColorPrimHasComposition}));
         ImGui::Selectable("##LayerNavigation");
+        if (ImGui::BeginPopupContextItem()) {
+            DrawLayerActionPopupMenu(layer);
+            ImGui::EndPopup();
+        }
         ImGui::SameLine();
-        ImGui::Text("Layer: %s", layer->GetRealPath().c_str());
+        ImGui::Text("Layer: %s", layer->GetDisplayName().c_str());
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("%s", layer->GetRealPath().c_str());
+            ImGui::EndTooltip();
+        }
     }
 }
 
