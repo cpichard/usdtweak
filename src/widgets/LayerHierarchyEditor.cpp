@@ -374,7 +374,22 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     }
     if (!layer->GetSubLayerPaths().empty()) {
         ImGui::TableSetColumnIndex(3);
-        ImGui::Text("Has sublayers");
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 0.0));
+        ImGui::PushItemWidth(-FLT_MIN); // removes the combo label.
+        if (ImGui::BeginCombo("Sublayers", "Sublayers", ImGuiComboFlags_NoArrowButton)) {
+            for (const auto &pathIt : layer->GetSubLayerPaths()) {
+                const std::string &path = pathIt;
+                if (ImGui::MenuItem(path.c_str())) {
+                    auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, path);
+                    if (subLayer) {
+                        ExecuteAfterDraw<EditorFindOrOpenLayer>(subLayer->GetRealPath());
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
+        ImGui::PopStyleColor();
     }
 
     if (selectedPosY != -1) {
