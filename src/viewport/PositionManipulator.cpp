@@ -65,7 +65,6 @@ PositionManipulator::PositionManipulator() : _selectedAxis(None) {
         exit(ERROR_UNABLE_TO_COMPILE_SHADER);
     }
 
-    glBindVertexArray(0);
     
     GLfloat aLineWidthRange[2];
     glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
@@ -231,7 +230,6 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
             glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
         glBindVertexArray(_vertexArrayObject);
         glDrawArrays(GL_LINES, 0, 6);
-        glBindVertexArray(0);
         if (depthTestStatus)
             glEnable(GL_DEPTH_TEST);
     }

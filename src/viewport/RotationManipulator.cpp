@@ -100,7 +100,6 @@ RotationManipulator::RotationManipulator() : _selectedAxis(None) {
         exit(ERROR_UNABLE_TO_COMPILE_SHADER);
     }
 
-    glBindVertexArray(0);
 
     GLfloat aLineWidthRange[2];
     glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
@@ -277,7 +276,6 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         const int first[nbCircles] = {0, nbSegments, nbSegments * 2, nbSegments * 3};
         const int count[nbCircles] = {nbSegments, nbSegments, nbSegments, nbSegments};
         glMultiDrawArrays(GL_LINE_STRIP, first, count, nbCircles);
-        glBindVertexArray(0);
         // glDisable(GL_DEPTH_TEST);
     }
 }
