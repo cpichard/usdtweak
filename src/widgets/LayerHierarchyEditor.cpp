@@ -304,6 +304,8 @@ static void DrawSdfPrimRow(const SdfLayerRefPtr &layer, const SdfPath &primPath,
 
     // Right click will open the quick edit popup menu
     if (ImGui::BeginPopupContextItem()) {
+        DrawMiniToolbar(layer, primSpec);
+        ImGui::Separator();
         DrawTreeNodePopup(primSpec);
         ImGui::EndPopup();
     }
@@ -356,6 +358,8 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     }
 
     if (ImGui::BeginPopupContextItem()) {
+        DrawMiniToolbar(layer, SdfPrimSpec());
+        ImGui::Separator();
         if (ImGui::MenuItem("Add root prim")) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
         }
@@ -364,7 +368,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
         if (!clipboardEmpty && ImGui::MenuItem("Paste path as Overs")) {
             ExecuteAfterDraw<LayerCreateOversFromPath>(layer, std::string(ImGui::GetClipboardText()));
         }
-        ImGui::SameLine();
+        ImGui::Separator();
         DrawLayerActionPopupMenu(layer);
 
         ImGui::EndPopup();
@@ -450,7 +454,6 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
 
     SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPath(layer));
     DrawLayerNavigation(layer);
-    DrawMiniToolbar(layer, selectedPrim);
 
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY;
 
