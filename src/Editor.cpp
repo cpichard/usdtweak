@@ -301,7 +301,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     _currentStage = stage;
     // NOTE: We set the default layer to the current stage root
     // this might have side effects
-    if (!GetCurrentLayer() && _currentStage) {
+    if (_currentStage) {
         SetCurrentLayer(_currentStage->GetRootLayer());
     }
     // TODO multiple viewport management
