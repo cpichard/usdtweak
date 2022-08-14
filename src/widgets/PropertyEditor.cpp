@@ -369,11 +369,9 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
 
 // Second version of an edit target selector
 void DrawUsdPrimEditTarget(const UsdPrim &prim) {
-    if (!prim) return;
-    using Query = pxr::UsdPrimCompositionQuery;
-    auto filter = UsdPrimCompositionQuery::Filter();
-    pxr::UsdPrimCompositionQuery arc(prim, filter);
-    auto compositionArcs = arc.GetCompositionArcs();
+    if (!prim)
+        return;
+
     if (ImGui::MenuItem("Session layer")) {
         ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
     }
@@ -405,14 +403,8 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
                 }
             }
         }
+        ImGui::EndMenu();
     }
-    ImGui::Separator();
-    for (const auto &layer : prim.GetStage()->GetLayerStack(false)) {
-        if (ImGui::MenuItem(layer->GetDisplayName().c_str())) {
-            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(layer));
-        }
-    }
-
 }
 
 // Testing
