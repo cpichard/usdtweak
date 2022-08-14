@@ -341,7 +341,33 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
     }
 }
 
-// First version of an edit target selector
+/// Draws a menu list of all the sublayers, indented to reveal the parenting
+static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHandle layer, int indent = 0) {
+    if (layer) {
+        std::vector<std::string> subLayers = layer->GetSubLayerPaths();
+        for (int layerId = 0; layerId < subLayers.size(); ++layerId) {
+            const std::string &subLayerPath = subLayers[layerId];
+            auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, subLayerPath);
+            if (!subLayer) {
+                subLayer = SdfLayer::FindOrOpen(subLayerPath);
+            }
+            const std::string layerName = std::string(indent, ' ') + (subLayer ? subLayer->GetDisplayName() : subLayerPath);
+            if (subLayer) {
+                if (ImGui::MenuItem(layerName.c_str())) {
+                    ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(subLayer));
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0, 0.0, 0.0, 1.0), "%s", layerName.c_str());
+            }
+
+            ImGui::PushID(layerName.c_str());
+            DrawEditTargetSubLayersMenuItems(stage, subLayer, indent + 4);
+            ImGui::PopID();
+        }
+    }
+}
+
+// Second version of an edit target selector
 void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim) return;
     using Query = pxr::UsdPrimCompositionQuery;
@@ -354,15 +380,29 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (ImGui::MenuItem("Root layer")) {
         ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
     }
-    ImGui::Separator();
-    for (auto a : compositionArcs) {
-        // NOTE: we can use GetIntroducingLayer() and GetIntroducingPrimPath() to add more information
-        if (a.GetTargetNode()) {
-            std::string arcName = a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer->GetDisplayName() + " " +
-                                  a.GetTargetNode().GetPath().GetString();
-            if (ImGui::MenuItem(arcName.c_str())) {
-                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(),
-                    UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()), a.GetTargetNode().GetPath());
+
+    if (ImGui::BeginMenu("Sublayers")) {
+        const auto &layer = prim.GetStage()->GetRootLayer();
+        DrawEditTargetSubLayersMenuItems(prim.GetStage(), layer);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Selected prim arcs")) {
+        using Query = pxr::UsdPrimCompositionQuery;
+        auto filter = UsdPrimCompositionQuery::Filter();
+        pxr::UsdPrimCompositionQuery arc(prim, filter);
+        auto compositionArcs = arc.GetCompositionArcs();
+        for (auto a : compositionArcs) {
+            // NOTE: we can use GetIntroducingLayer() and GetIntroducingPrimPath() to add more information
+            if (a.GetTargetNode()) {
+                std::string arcName = a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer->GetDisplayName() + " " +
+                                      a.GetTargetNode().GetPath().GetString();
+                if (ImGui::MenuItem(arcName.c_str())) {
+                    ExecuteAfterDraw<EditorSetEditTarget>(
+                        prim.GetStage(),
+                        UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()),
+                        a.GetTargetNode().GetPath());
+                }
             }
         }
     }
