@@ -294,7 +294,7 @@ void Editor::RemoveCallbacks(GLFWwindow *window) { glfwSetWindowUserPointer(wind
 
 
 void Editor::SetCurrentStage(UsdStageCache::Id current) {
-    SetCurrentStage(_stageCache.Find(current));
+    SetCurrentStage(GetStageCache().Find(current));
 }
 
 void Editor::SetCurrentStage(UsdStageRefPtr stage) {
@@ -365,7 +365,7 @@ void Editor::FindOrOpenLayer(const std::string &path) {
 void Editor::OpenStage(const std::string &path, bool openLoaded) {
     auto newStage = UsdStage::Open(path, openLoaded ? UsdStage::LoadAll : UsdStage::LoadNone); // TODO: as an option
     if (newStage) {
-        _stageCache.Insert(newStage);
+        GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
         _settings._showViewport = true;
@@ -388,7 +388,7 @@ void Editor::CreateStage(const std::string &path) {
     if (layer) {
         auto newStage = UsdStage::Open(layer);
         if (newStage) {
-            _stageCache.Insert(newStage);
+            GetStageCache().Insert(newStage);
             SetCurrentStage(newStage);
             _settings._showContentBrowser = true;
             _settings._showViewport = true;

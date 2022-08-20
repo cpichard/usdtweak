@@ -4,7 +4,7 @@
 #include "Viewport.h"
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
-#include <pxr/usd/usd/stageCache.h>
+#include <pxr/usd/usdUtils/stageCache.h>
 
 #include <set>
 #include <future>
@@ -48,7 +48,7 @@ public:
     void SetCurrentStage(UsdStageRefPtr stage);
     void SetCurrentEditTarget(SdfLayerHandle layer);
 
-    UsdStageCache &GetStageCache() { return _stageCache; }
+    UsdStageCache &GetStageCache() { return _stageCache.Get(); }
 
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
@@ -115,7 +115,7 @@ public:
     static void WindowSizeCallback(GLFWwindow *window, int width, int height);
 
     /// Using a stage cache to store the stages, seems to work well
-    UsdStageCache _stageCache;
+    UsdUtilsStageCache _stageCache;
 
     /// List of layers.
     SdfLayerRefPtrVector _layerHistory;

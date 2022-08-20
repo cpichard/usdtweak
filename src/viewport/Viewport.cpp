@@ -7,6 +7,7 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdUtils/stageCache.h>
 
 #include "Gui.h"
 #include "Viewport.h"
@@ -164,6 +165,17 @@ Viewport::~Viewport() {
     }
 }
 
+static void DrawOpenedStages() {
+    const UsdStageCache &stageCache = UsdUtilsStageCache::Get();
+    const auto allStages = stageCache.GetAllStages();
+    for (const auto &stagePtr : allStages) {
+        if (ImGui::MenuItem(stagePtr->GetRootLayer()->GetIdentifier().c_str())) {
+            ExecuteAfterDraw<EditorSetCurrentStage>(stagePtr->GetRootLayer());
+        }
+    }
+}
+
+
 /// Draw the viewport widget
 void Viewport::Draw() {
     const ImVec2 wsize = ImGui::GetWindowSize();
@@ -218,6 +230,10 @@ void Viewport::Draw() {
     if (GetCurrentStage()) {
         ImGui::SameLine();
         ImGui::SmallButton(ICON_UT_STAGE);
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            DrawOpenedStages();
+            ImGui::EndPopup();
+        }
         ImGui::SameLine();
         ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
         ImGui::SameLine();
