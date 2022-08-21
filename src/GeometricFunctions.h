@@ -34,3 +34,10 @@ inline GfVec2d ProjectToNormalizedScreen(const GfMatrix4d &mv, const GfMatrix4d 
     return GfVec2d(projected[0], projected[1]);
 }
 
+inline GfVec2d ProjectToTextureScreenSpace(const GfMatrix4d &mv, const GfMatrix4d &proj, const GfVec2d &texSize, const GfVec3d &point) {
+    auto projected = proj.Transform(mv.Transform(point));
+    projected[0] = (projected[0] *0.5 * texSize[0]) + texSize[0]/2;
+    projected[1] = -(projected[1] *0.5 * texSize[1]) + texSize[1]/2;
+    return GfVec2d(projected[0], projected[1]);
+}
+

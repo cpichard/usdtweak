@@ -475,6 +475,33 @@ template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &
     object.SetPosition(lightPos);
 }
 
+
+void Viewport ::BeginHydraUI(int width, int height) {
+    // Create a ImGui windows to render the gizmos in
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui::NewFrame();
+    ImGuiIO &io = ImGui::GetIO();
+    io.DisplaySize = ImVec2((float)width, (float)height);
+    static bool alwaysOpened = true;
+    constexpr ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_None;
+    constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+                                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                             ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    ImGuiViewport *viewport = ImGui::GetMainViewport();
+    // Full screen invisible window
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::SetNextWindowBgAlpha(0.0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("HydraHUD", &alwaysOpened, windowFlags);
+    ImGui::PopStyleVar(3);
+}
+
+void Viewport ::EndHydraUI() { ImGui::End(); }
+
 void Viewport::Render() {
     GfVec2i renderSize = _drawTarget->GetSize();
     int width = renderSize[0];
@@ -483,12 +510,17 @@ void Viewport::Render() {
     if (width == 0 || height == 0)
         return;
 
+    // Draw active manipulator and HUD
+    BeginHydraUI(width, height);
+    GetActiveManipulator().OnDrawFrame(*this);
+    // DrawHUD(this);
+    EndHydraUI();
+
     _drawTarget->Bind();
     glEnable(GL_DEPTH_TEST);
     glClearColor(_renderparams->clearColor[0], _renderparams->clearColor[1], _renderparams->clearColor[2],
                  _renderparams->clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     glViewport(0, 0, width, height);
 
     if (_renderer && GetCurrentStage()) {
@@ -504,16 +536,17 @@ void Viewport::Render() {
         // else set camera state
         _renderer->SetCameraState(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
                                   GetCurrentCamera().GetFrustum().ComputeProjectionMatrix());
+
         _renderer->Render(GetCurrentStage()->GetPseudoRoot(), *_renderparams);
     } else {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    // Draw grid
+    // Draw grid. TODO: this should be in a usd render task
     _grid.Render(*this);
 
-    // Draw active manipulator
-    GetActiveManipulator().OnDrawFrame(*this);
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     _drawTarget->Unbind();
 }

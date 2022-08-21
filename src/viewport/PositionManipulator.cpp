@@ -1,13 +1,11 @@
+#include "PositionManipulator.h"
+#include "Commands.h"
+#include "Constants.h"
+#include "GeometricFunctions.h"
+#include "Gui.h"
+#include "Viewport.h"
 #include <iostream>
 #include <pxr/base/gf/matrix4f.h>
-#include <pxr/imaging/garch/glApi.h>
-#include "Constants.h"
-#include "PositionManipulator.h"
-#include "GeometricFunctions.h"
-#include "Viewport.h"
-#include "Gui.h"
-#include "Commands.h"
-#include "GlslCode.h"
 
 /*
     TODO:  we ultimately want to be compatible with Vulkan / Metal, the following opengl/glsl code should really be using the
@@ -27,97 +25,12 @@
     // Reference on manipulators:
     // http://ed.ilogues.com/2018/06/27/translate-rotate-and-scale-manipulators-in-3d-modelling-programs
 */
-static constexpr GLfloat axisSize = 100.f;
-static constexpr const GLfloat axisPoints[] = {0.f, 0.f,      0.f, axisSize, 0.f, 0.f, 0.f, 0.f, 0.f,
-                                               0.f, axisSize, 0.f, 0.f,      0.f, 0.f, 0.f, 0.f, axisSize};
 
-static constexpr const GLfloat axisColors[] = {1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f,
-                                               0.f, 1.f, 0.f, 1.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f, 1.f, 1.f};
+static constexpr float axisSize = 100.f;
 
-PositionManipulator::PositionManipulator() : _selectedAxis(None) {
+PositionManipulator::PositionManipulator() : _selectedAxis(None) {}
 
-    // Vertex array object
-    glGenVertexArrays(1, &_vertexArrayObject);
-    glBindVertexArray(_vertexArrayObject);
-
-    if (CompileShaders()) {
-        _scaleFactorUniform = glGetUniformLocation(_programShader, "scale");
-        _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
-        _projectionUniform = glGetUniformLocation(_programShader, "projection");
-        _objectMatrixUniform = glGetUniformLocation(_programShader, "objectMatrix");
-        _highlightUniform = glGetUniformLocation(_programShader, "highlight");
-
-        // We store points and colors in the same buffer
-        glGenBuffers(1, &_axisGLBuffers);
-        glBindBuffer(GL_ARRAY_BUFFER, _axisGLBuffers);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(axisPoints) + sizeof(axisColors), nullptr, GL_STATIC_DRAW);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(axisPoints), axisPoints);
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(axisPoints), sizeof(axisColors), axisColors);
-
-        GLint vertexAttr = glGetAttribLocation(_programShader, "aPos");
-        glVertexAttribPointer(vertexAttr, 3, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)nullptr);
-        glEnableVertexAttribArray(vertexAttr);
-
-        GLint colorAttr = glGetAttribLocation(_programShader, "inColor");
-        glVertexAttribPointer(colorAttr, 4, GL_FLOAT, GL_TRUE, 0, (GLvoid *)sizeof(axisPoints));
-        glEnableVertexAttribArray(colorAttr);
-    } else {
-        exit(ERROR_UNABLE_TO_COMPILE_SHADER);
-    }
-
-    
-    GLfloat aLineWidthRange[2];
-    glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
-    _lineWidth = std::min(_lineWidth, aLineWidthRange[1]);
-}
-
-PositionManipulator::~PositionManipulator() { glDeleteBuffers(1, &_axisGLBuffers); }
-
-bool PositionManipulator::CompileShaders() {
-
-    // Associate shader source with shader id
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &ManipulatorVert, nullptr);
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &ManipulatorFrag, nullptr);
-
-    // Compile shaders
-    int success = 0;
-    constexpr size_t logSize = 512;
-    char logStr[logSize];
-    glCompileShader(vertexShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(vertexShader, logSize, nullptr, logStr);
-        std::cout << "Compilation failed\n" << logStr << std::endl;
-        return false;
-    }
-    glCompileShader(fragmentShader);
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(fragmentShader, logSize, nullptr, logStr);
-        std::cout << "Compilation failed\n" << logStr << std::endl;
-        return false;
-    }
-    _programShader = glCreateProgram();
-
-    glAttachShader(_programShader, vertexShader);
-    glAttachShader(_programShader, fragmentShader);
-    glBindAttribLocation(_programShader, 0, "aPos");
-    glBindAttribLocation(_programShader, 1, "inColor");
-    glLinkProgram(_programShader);
-    glGetProgramiv(_programShader, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(_programShader, logSize, nullptr, logStr);
-        std::cout << "Program linking failed\n" << logStr << std::endl;
-        return false;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    return true;
-}
+PositionManipulator::~PositionManipulator() {}
 
 bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
 
@@ -191,47 +104,54 @@ GfMatrix4d PositionManipulator::ComputeManipulatorToWorldTransform(const Viewpor
     return GfMatrix4d();
 }
 
+
+inline void DrawArrow(ImDrawList *drawList, ImVec2 ori, ImVec2 tip, const ImVec4 &color, float thickness) {
+    constexpr float arrowThickness = 20.f;
+    drawList->AddLine(ori, tip, ImColor(color), thickness);
+    const float len = sqrt((tip[0] - ori[0]) * (tip[0] - ori[0]) + (tip[1] - ori[1]) * (tip[1] - ori[1]));
+    if (len <= arrowThickness) return;
+    const ImVec2 vec(arrowThickness * (tip[0] - ori[0])/len, arrowThickness * (tip[1] - ori[1])/len);
+    const ImVec2 pt1(tip[0] - vec[0] - 0.5*vec[1], tip[1] - vec[1] + 0.5* vec[0]);
+    const ImVec2 pt2(tip[0] - vec[0] +  0.5*vec[1], tip[1] - vec[1] -  0.5*vec[0]);
+    drawList->AddTriangleFilled(pt1, pt2, tip, ImColor(color));
+}
+
 // TODO: same as rotation manipulator, share in a base class
 void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformAPI) {
-        const auto &camera = viewport.GetCurrentCamera();
-        const auto mv = camera.GetFrustum().ComputeViewMatrix();
-        const auto proj = camera.GetFrustum().ComputeProjectionMatrix();
-        const auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
-        const auto origin = manipulatorCoordinates.ExtractTranslation();
-        const double scale = viewport.ComputeScaleFactor(origin, axisSize);
+        const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
+        const auto mv = frustum.ComputeViewMatrix();
+        const auto proj = frustum.ComputeProjectionMatrix();
 
-        float toWorldf[16];
-        for (int i = 0; i < 16; ++i) {
-            toWorldf[i] = static_cast<float>(manipulatorCoordinates.data()[i]);
-        }
+        const auto toWorld = ComputeManipulatorToWorldTransform(viewport);
 
-        GLboolean depthTestStatus;
-        glGetBooleanv(GL_DEPTH_TEST, &depthTestStatus);
-        if (depthTestStatus)
-            glDisable(GL_DEPTH_TEST);
+        // World position for origin is the pivot
+        const auto pivot = toWorld.ExtractTranslation();
 
-        glLineWidth(_lineWidth);
-        glUseProgram(_programShader);
-        GfMatrix4f mvp(mv);
-        GfMatrix4f projp(proj);
-        glUniformMatrix4fv(_modelViewUniform, 1, GL_FALSE, mvp.data());
-        glUniformMatrix4fv(_projectionUniform, 1, GL_FALSE, projp.data());
-        glUniformMatrix4fv(_objectMatrixUniform, 1, GL_FALSE, toWorldf);
-        glUniform3f(_scaleFactorUniform, scale, scale, scale);
-        if (_selectedAxis == XAxis)
-            glUniform3f(_highlightUniform, 1.0, 0.0, 0.0);
-        else if (_selectedAxis == YAxis)
-            glUniform3f(_highlightUniform, 0.0, 1.0, 0.0);
-        else if (_selectedAxis == ZAxis)
-            glUniform3f(_highlightUniform, 0.0, 0.0, 1.0);
-        else
-            glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
-        glBindVertexArray(_vertexArrayObject);
-        glDrawArrays(GL_LINES, 0, 6);
-        if (depthTestStatus)
-            glEnable(GL_DEPTH_TEST);
+        // Axis are scaled to keep the same screen size
+        const double axisLength = axisSize * viewport.ComputeScaleFactor(pivot, axisSize);
+
+        // Local axis as draw in opengl
+        const GfVec4d xAxis3d = GfVec4d(axisLength, 0.0, 0.0, 1.0) * toWorld;
+        const GfVec4d yAxis3d = GfVec4d(0.0, axisLength, 0.0, 1.0) * toWorld;
+        const GfVec4d zAxis3d = GfVec4d(0.0, 0.0, axisLength, 1.0) * toWorld;
+
+        ImDrawList *drawList = ImGui::GetWindowDrawList();
+        ImGuiViewport *viewport = ImGui::GetMainViewport();
+        auto textureSize = GfVec2d(viewport->WorkSize[0], viewport->WorkSize[1]);
+
+        const auto originOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, pivot);
+        const auto xAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(xAxis3d.data()));
+        const auto yAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(yAxis3d.data()));
+        const auto zAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(zAxis3d.data()));
+
+        DrawArrow(drawList, ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(xAxisOnScreen[0], xAxisOnScreen[1]),
+                           ImColor(ImVec4(1.0, 0, 0, 0.8)), 3);
+        DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]),
+                           ImColor(ImVec4(0.0, 1.0, 0, 0.8)), 3);
+        DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]),
+                           ImColor(ImVec4(0.0, 0.0, 1.0, 0.8)), 3);
     }
 }
 

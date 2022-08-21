@@ -40,8 +40,6 @@ class ScaleManipulator : public Manipulator {
     } SelectedAxis;
 
   private:
-    bool CompileShaders();
-
     void ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint);
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
 
@@ -54,18 +52,4 @@ class ScaleManipulator : public Manipulator {
     GfLine _axisLine;
 
     UsdGeomXformCommonAPI _xformAPI;
-
-    // OpenGL identifiers
-    unsigned int _axisGLBuffers;
-    unsigned int _vertexShader;
-    unsigned int _fragmentShader;
-    unsigned int _programShader;
-    unsigned int _vertexArrayObject;
-    unsigned int _modelViewUniform;
-    unsigned int _projectionUniform;
-    unsigned int _scaleFactorUniform;
-    unsigned int _objectMatrixUniform;
-    unsigned int _highlightUniform;
-    
-    float _lineWidth = 2.f;
 };

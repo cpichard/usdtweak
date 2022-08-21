@@ -1,159 +1,32 @@
 #include <iostream>
-#include <vector>
 #include <pxr/base/gf/line.h>
-#include <pxr/imaging/garch/glApi.h>
+#include <pxr/base/gf/math.h>
+#include <vector>
 
-#include "Constants.h"
-#include "RotationManipulator.h"
-#include "GeometricFunctions.h"
-#include "Viewport.h"
-#include "Gui.h"
 #include "Commands.h"
-#include "GlslCode.h"
+#include "Constants.h"
+#include "GeometricFunctions.h"
+#include "Gui.h"
+#include "RotationManipulator.h"
+#include "Viewport.h"
 
-static constexpr GLfloat axisSize = 1.2f;
+static constexpr float axisSize = 1.2f;
+static constexpr int nbSegments = 1024; // nb segments per circle
 
-static constexpr int nbSegments = 200;      // nb segments per circle
-static constexpr int nbCircles = 4;         // 4 colors = 3 axis + 1 facing camera
-static constexpr int pointNbComponents = 3; // 3 float
-static constexpr int colorNbComponents = 4; // 4 float
-
-static void CreateCircles(std::vector<GLfloat> &points, std::vector<GLfloat> &colors) {
-    points.resize(nbSegments * nbCircles * pointNbComponents, 0.f);
-    colors.resize(nbSegments * nbCircles * colorNbComponents, 0.f);
-    for (size_t i = 0; i < nbSegments; ++i) {
-        const float angle = 2.f * PI_F * static_cast<float>(i) / static_cast<float>(nbSegments);
-        const float cosAngle = cos(angle);
-        const float sinAngle = sin(angle);
-        points[(i + 0 * nbSegments) * 3 + 0] = 0.f;
-        points[(i + 0 * nbSegments) * 3 + 1] = cosAngle;
-        points[(i + 0 * nbSegments) * 3 + 2] = sinAngle;
-
-        points[(i + 1 * nbSegments) * 3 + 0] = cosAngle;
-        points[(i + 1 * nbSegments) * 3 + 1] = 0.f;
-        points[(i + 1 * nbSegments) * 3 + 2] = sinAngle;
-
-        points[(i + 2 * nbSegments) * 3 + 0] = cosAngle;
-        points[(i + 2 * nbSegments) * 3 + 1] = sinAngle;
-        points[(i + 2 * nbSegments) * 3 + 2] = 0.f;
-
-        points[(i + 3 * nbSegments) * 3 + 0] = cosAngle;
-        points[(i + 3 * nbSegments) * 3 + 1] = sinAngle;
-        points[(i + 3 * nbSegments) * 3 + 2] = 0.0;
-
-        colors[i * 4 + 0] = 1.f;
-        colors[i * 4 + 1] = 0.f;
-        colors[i * 4 + 2] = 0.f;
-        colors[i * 4 + 3] = 1.f;
-
-        colors[(i + nbSegments) * 4 + 0] = 0.f;
-        colors[(i + nbSegments) * 4 + 1] = 1.f;
-        colors[(i + nbSegments) * 4 + 2] = 0.f;
-        colors[(i + nbSegments) * 4 + 3] = 1.f;
-
-        colors[(i + 2 * nbSegments) * 4 + 0] = 0.f;
-        colors[(i + 2 * nbSegments) * 4 + 1] = 0.f;
-        colors[(i + 2 * nbSegments) * 4 + 2] = 1.f;
-        colors[(i + 2 * nbSegments) * 4 + 3] = 1.f;
-
-        colors[(i + 3 * nbSegments) * 4 + 0] = 0.5;
-        colors[(i + 3 * nbSegments) * 4 + 1] = 0.5;
-        colors[(i + 3 * nbSegments) * 4 + 2] = 0.5;
-        colors[(i + 3 * nbSegments) * 4 + 3] = 0.5;
+static void CreateCircle(std::vector<GfVec2d> &points) {
+    points.clear();
+    points.reserve(3 * nbSegments);
+    for (int i = 0; i < nbSegments; ++i) {
+        points.emplace_back(cos(2.f * PI_F * i / nbSegments), sin(2.f * PI_F * i / nbSegments));
     }
 }
 
 RotationManipulator::RotationManipulator() : _selectedAxis(None) {
-
-    // Vertex array object
-    glGenVertexArrays(1, &_vertexArrayObject);
-    glBindVertexArray(_vertexArrayObject);
-
-    if (CompileShaders()) {
-        _scaleFactorUniform = glGetUniformLocation(_programShader, "scale");
-        _modelViewUniform = glGetUniformLocation(_programShader, "modelView");
-        _projectionUniform = glGetUniformLocation(_programShader, "projection");
-        _objectMatrixUniform = glGetUniformLocation(_programShader, "objectMatrix");
-        _highlightUniform = glGetUniformLocation(_programShader, "highlight");
-
-        // Create 3 circles
-        std::vector<GLfloat> points;
-        std::vector<GLfloat> colors;
-        CreateCircles(points, colors);
-
-        // We store points and colors in the same buffer
-        glGenBuffers(1, &_arrayBuffer);
-        glBindBuffer(GL_ARRAY_BUFFER, _arrayBuffer);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * (points.size() + colors.size()), nullptr, GL_STATIC_DRAW);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * points.size(), points.data());
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(GLfloat) * points.size(), sizeof(GLfloat) * colors.size(), colors.data());
-
-
-        GLint vertexAttr = glGetAttribLocation(_programShader, "aPos");
-        glVertexAttribPointer(vertexAttr, pointNbComponents, GL_FLOAT, GL_FALSE, 0, (const GLvoid *)0);
-        glEnableVertexAttribArray(vertexAttr);
-
-        GLint colorAttr = glGetAttribLocation(_programShader, "inColor");
-        glVertexAttribPointer(colorAttr, colorNbComponents, GL_FLOAT, GL_TRUE, 0, (GLvoid *)(points.size() * sizeof(GLfloat)));
-        glEnableVertexAttribArray(colorAttr);
-    } else {
-        exit(ERROR_UNABLE_TO_COMPILE_SHADER);
-    }
-
-
-    GLfloat aLineWidthRange[2];
-    glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, aLineWidthRange);
-    _lineWidth = std::min(_lineWidth, aLineWidthRange[1]);
+    CreateCircle(_manipulatorCircles);
+    _manipulator2dPoints.reserve(3 * nbSegments);
 }
 
-RotationManipulator::~RotationManipulator() { glDeleteBuffers(1, &_arrayBuffer); }
-
-bool RotationManipulator::CompileShaders() {
-
-    // Associate shader source with shader id
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &ManipulatorVert, nullptr);
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &ManipulatorFrag, nullptr);
-
-    // Compile shaders
-    int success = 0;
-    constexpr size_t logSize = 512;
-    char logStr[logSize];
-    glCompileShader(vertexShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(vertexShader, logSize, nullptr, logStr);
-        std::cout << "Compilation failed\n" << logStr << std::endl;
-        return false;
-    }
-    glCompileShader(fragmentShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(fragmentShader, logSize, nullptr, logStr);
-        std::cout << "Compilation failed\n" << logStr << std::endl;
-        return false;
-    }
-    _programShader = glCreateProgram();
-
-    glAttachShader(_programShader, vertexShader);
-    glAttachShader(_programShader, fragmentShader);
-    glBindAttribLocation(_programShader, 0, "aPos");
-    glBindAttribLocation(_programShader, 1, "inColor");
-    glLinkProgram(_programShader);
-
-    glGetProgramiv(_programShader, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(_programShader, logSize, nullptr, logStr);
-        std::cout << "Program linking failed\n" << logStr << std::endl;
-        return false;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    return true;
-}
+RotationManipulator::~RotationManipulator() {}
 
 static bool IntersectsUnitCircle(const GfVec3d &planeNormal3d, const GfVec3d &planeOrigin3d, const GfRay &ray, float scale) {
     if (scale == 0)
@@ -236,6 +109,45 @@ GfMatrix4d RotationManipulator::ComputeManipulatorToWorldTransform(const Viewpor
     return GfMatrix4d(1.0);
 }
 
+// Probably not the most efficient implementation, but it avoids sin/cos/arctan and works only with vectors
+// It could be fun to spend some time looking for alternatives and benchmark them, even if it's really not
+// critical at this point. Use a binary search algorithm on rotated array to find the begining of the visible part,
+// then iterate but with less resolution (1 point every 3 samples for example)
+template <int axis>
+inline static size_t ProjectHalfCircle(const std::vector<GfVec2d> &_manipulatorCircles, double scale,
+                                       const GfVec3d &cameraPosition, const GfVec4d &manipulatorOrigin, const GfMatrix4d &mv,
+                                       const GfMatrix4d &proj, const GfVec2d &textureSize, const GfMatrix4d &toWorld,
+                                       std::vector<ImVec2> &_manipulator2dPoints) {
+    int rotateIndex = -1;
+    size_t circleBegin = _manipulator2dPoints.size();
+    for (int i = 0; i < _manipulatorCircles.size(); ++i) {
+        const GfVec4d pointInLocalSpace =
+            axis == 0 ? GfVec4d(0.0, _manipulatorCircles[i][0], _manipulatorCircles[i][1], 1.0)
+                      : (axis == 1 ? GfVec4d(_manipulatorCircles[i][0], 0.0, _manipulatorCircles[i][1], 1.0)
+                                   : GfVec4d(_manipulatorCircles[i][0], _manipulatorCircles[i][1], 0.0, 1.0));
+        const GfVec4d pointInWorldSpace = GfCompMult(GfVec4d(scale, scale, scale, 1.0), pointInLocalSpace) * toWorld;
+        const double dot = GfDot((GfVec4d(cameraPosition[0], cameraPosition[1], cameraPosition[2], 1.0) - manipulatorOrigin),
+                                 (pointInWorldSpace - manipulatorOrigin));
+        if (dot >= 0.0) {
+            const GfVec2d pointInPixelSpace =
+                ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(pointInWorldSpace.data()));
+            _manipulator2dPoints.emplace_back(pointInPixelSpace[0], pointInPixelSpace[1]);
+        } else {
+            if (rotateIndex == -1 && _manipulator2dPoints.size() > circleBegin) {
+                rotateIndex = _manipulator2dPoints.size();
+            }
+        }
+    };
+
+    // Reorder the points so there is no visible straight line. This could also be costly
+    if (rotateIndex != -1) {
+        std::rotate(_manipulator2dPoints.begin() + circleBegin,
+                    _manipulator2dPoints.begin() + circleBegin + rotateIndex - circleBegin, _manipulator2dPoints.end());
+        rotateIndex = -1;
+    }
+    return _manipulator2dPoints.size();
+};
+
 void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformAPI) {
@@ -244,39 +156,32 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         auto proj = camera.GetFrustum().ComputeProjectionMatrix();
         auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
         auto origin = manipulatorCoordinates.ExtractTranslation();
+        auto cameraPosition = mv.GetInverse().ExtractTranslation();
 
-        // Circles are scaled to keep the same screen size
+        // Circles must be scaled to keep the same screen size
         double scale = viewport.ComputeScaleFactor(origin, axisSize);
 
-        float toWorldf[16];
-        for (int i = 0; i < 16; ++i) {
-            toWorldf[i] = static_cast<float>(manipulatorCoordinates.data()[i]);
-        }
+        const auto toWorld = ComputeManipulatorToWorldTransform(viewport);
 
-        glEnable(GL_DEPTH_TEST);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glLineWidth(_lineWidth);
-        glUseProgram(_programShader);
-        GfMatrix4f mvp(mv);
-        GfMatrix4f projp(proj);
-        glUniformMatrix4fv(_modelViewUniform, 1, GL_FALSE, mvp.data());
-        glUniformMatrix4fv(_projectionUniform, 1, GL_FALSE, projp.data());
-        glUniformMatrix4fv(_objectMatrixUniform, 1, GL_FALSE, toWorldf);
-        glUniform3f(_scaleFactorUniform, scale, scale, scale);
-        if (_selectedAxis == XAxis)
-            glUniform3f(_highlightUniform, 1.0, 0.0, 0.0);
-        else if (_selectedAxis == YAxis)
-            glUniform3f(_highlightUniform, 0.0, 1.0, 0.0);
-        else if (_selectedAxis == ZAxis)
-            glUniform3f(_highlightUniform, 0.0, 0.0, 1.0);
-        else
-            glUniform3f(_highlightUniform, 0.0, 0.0, 0.0);
-        glBindVertexArray(_vertexArrayObject);
+        ImDrawList *draw_list = ImGui::GetWindowDrawList();
+        ImGuiViewport *viewport = ImGui::GetMainViewport();
+        auto textureSize = GfVec2d(viewport->WorkSize[0], viewport->WorkSize[1]);
 
-        const int first[nbCircles] = {0, nbSegments, nbSegments * 2, nbSegments * 3};
-        const int count[nbCircles] = {nbSegments, nbSegments, nbSegments, nbSegments};
-        glMultiDrawArrays(GL_LINE_STRIP, first, count, nbCircles);
-        // glDisable(GL_DEPTH_TEST);
+        const GfVec4d manipulatorOrigin = GfVec4d(origin[0], origin[1], origin[2], 1.0);
+        // Fill _manipulator2dPoints
+        _manipulator2dPoints.clear();
+        const size_t xEnd = ProjectHalfCircle<0>(_manipulatorCircles, scale, cameraPosition, manipulatorOrigin, mv, proj,
+                                                 textureSize, toWorld, _manipulator2dPoints);
+        const size_t yEnd = ProjectHalfCircle<1>(_manipulatorCircles, scale, cameraPosition, manipulatorOrigin, mv, proj,
+                                                 textureSize, toWorld, _manipulator2dPoints);
+        const size_t zEnd = ProjectHalfCircle<2>(_manipulatorCircles, scale, cameraPosition, manipulatorOrigin, mv, proj,
+                                                 textureSize, toWorld, _manipulator2dPoints);
+
+        draw_list->AddPolyline(_manipulator2dPoints.data(), xEnd, ImColor(ImVec4(1.0, 0.0, 0.0, 1.0)), ImDrawFlags_None, 3);
+        draw_list->AddPolyline(_manipulator2dPoints.data() + xEnd, yEnd - xEnd, ImColor(ImVec4(0.0, 1.0, 0.0, 1.0)),
+                               ImDrawFlags_None, 3);
+        draw_list->AddPolyline(_manipulator2dPoints.data() + yEnd, zEnd - yEnd, ImColor(ImVec4(0.0, 0.0, 1.0, 1.0)),
+                               ImDrawFlags_None, 3);
     }
 }
 

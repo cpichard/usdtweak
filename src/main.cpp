@@ -88,10 +88,16 @@ int main(int argc, const char **argv) {
     std::cout << "PXR_PLUGINPATH_NAME: " << (pluginPathName ? pluginPathName : "") << std::endl;
 
     // Init ImGui for glfw and opengl
+    ImGuiContext* mainUIContext = ImGui::GetCurrentContext();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init();
+    // Init an imgui context for hydra, to render the gizmo and hud
+    ImGuiContext *hydraUIContext = ImGui::CreateContext();
+    ImGui::SetCurrentContext(hydraUIContext);
     ImGui_ImplOpenGL3_Init();
 
     {   // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
+        ImGui::SetCurrentContext(mainUIContext);
         Editor editor;
 
         // Connect the window callbacks to the editor
@@ -110,9 +116,11 @@ int main(int argc, const char **argv) {
             glfwPollEvents();
 
             // Render the viewports first as textures
-            editor.HydraRender();
+            ImGui::SetCurrentContext(hydraUIContext);
+            editor.HydraRender(); // RenderViewports
 
             // Render GUI next
+            ImGui::SetCurrentContext(mainUIContext);
             glfwGetFramebufferSize(window, &width, &height);
             glViewport(0, 0, width, height);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -120,7 +128,6 @@ int main(int argc, const char **argv) {
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
             editor.Draw();
-
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -139,6 +146,7 @@ int main(int argc, const char **argv) {
         }
         editor.RemoveCallbacks(window);
     }
+    ImGui::DestroyContext(hydraUIContext);
 
     // Shutdown imgui
     ImGui_ImplOpenGL3_Shutdown();

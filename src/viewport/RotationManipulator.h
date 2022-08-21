@@ -6,6 +6,7 @@
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include "Manipulator.h"
+#include "Gui.h" // for ImVec2
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -40,7 +41,6 @@ class RotationManipulator : public Manipulator {
     UsdTimeCode GetEditionTimeCode(const Viewport &);
     UsdTimeCode GetViewportTimeCode(const Viewport &);
 
-    bool CompileShaders();
     GfVec3d ComputeClockHandVector(Viewport &viewport);
 
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
@@ -55,17 +55,6 @@ class RotationManipulator : public Manipulator {
     GfVec3d _planeNormal3d; // TODO rename global
     GfVec3d _localPlaneNormal; // Local
 
-    // OpenGL stuff
-    unsigned int _arrayBuffer;
-    unsigned int _vertexShader;
-    unsigned int _fragmentShader;
-    unsigned int _programShader;
-    unsigned int _vertexArrayObject;
-    unsigned int _modelViewUniform;
-    unsigned int _projectionUniform;
-    unsigned int _scaleFactorUniform;
-    unsigned int _objectMatrixUniform;
-    unsigned int _highlightUniform;
-
-    float _lineWidth = 3.f;
+    std::vector<GfVec2d> _manipulatorCircles;
+    std::vector<ImVec2> _manipulator2dPoints;
 };

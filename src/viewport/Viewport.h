@@ -136,6 +136,9 @@ class Viewport final {
     // another shared object, CameraList or similar
     GfCamera _perspectiveCamera; // opengl
 
+    // Hydra canvas
+    void BeginHydraUI(int width, int height);
+    void EndHydraUI();
     GfVec2i _textureSize;
     GfVec2d _mousePosition;
     Grid _grid;
