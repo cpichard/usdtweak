@@ -116,7 +116,16 @@ inline void DrawArrow(ImDrawList *drawList, ImVec2 ori, ImVec2 tip, const ImVec4
     drawList->AddTriangleFilled(pt1, pt2, tip, ImColor(color));
 }
 
-// TODO: same as rotation manipulator, share in a base class
+
+template <int Axis> inline ImColor AxisColor(int selectedAxis) {
+    if (selectedAxis == Axis) {
+        return ImColor(ImVec4(1.0, 1.0, 0.0, 1.0));
+    } else {
+        return ImColor(ImVec4(Axis == Manipulator::XAxis, Axis == Manipulator::YAxis,
+                              Axis == Manipulator::ZAxis, 1.0));
+    }
+}
+
 void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformAPI) {
@@ -147,11 +156,11 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
         const auto zAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(zAxis3d.data()));
 
         DrawArrow(drawList, ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(xAxisOnScreen[0], xAxisOnScreen[1]),
-                           ImColor(ImVec4(1.0, 0, 0, 0.8)), 3);
+                           AxisColor<XAxis>(_selectedAxis), 3);
         DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]),
-                           ImColor(ImVec4(0.0, 1.0, 0, 0.8)), 3);
+                           AxisColor<YAxis>(_selectedAxis), 3);
         DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]),
-                           ImColor(ImVec4(0.0, 0.0, 1.0, 0.8)), 3);
+                           AxisColor<ZAxis>(_selectedAxis), 3);
     }
 }
 

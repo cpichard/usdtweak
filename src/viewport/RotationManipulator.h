@@ -30,13 +30,6 @@ class RotationManipulator : public Manipulator {
     /// Called when the viewport changes its selection
     void OnSelectionChange(Viewport &) override;
 
-    typedef enum { // use class enum ??
-        XAxis = 0,
-        YAxis,
-        ZAxis,
-        None,
-    } SelectedAxis;
-
   private:
     UsdTimeCode GetEditionTimeCode(const Viewport &);
     UsdTimeCode GetViewportTimeCode(const Viewport &);
@@ -44,7 +37,7 @@ class RotationManipulator : public Manipulator {
     GfVec3d ComputeClockHandVector(Viewport &viewport);
 
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
-    SelectedAxis _selectedAxis;
+    ManipulatorAxis _selectedAxis;
 
     UsdGeomXformCommonAPI _xformAPI;
 

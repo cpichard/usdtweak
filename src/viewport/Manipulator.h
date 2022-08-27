@@ -23,4 +23,13 @@ struct Manipulator {
 
     /// Called when the viewport changes its selection
     virtual void OnSelectionChange(Viewport &){};
+    
+    // Manipulator axis, for convenience as
+    typedef enum {
+        XAxis = 0,
+        YAxis,
+        ZAxis,
+        None,
+    } ManipulatorAxis;
 };
+

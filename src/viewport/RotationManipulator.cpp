@@ -148,6 +148,15 @@ inline static size_t ProjectHalfCircle(const std::vector<GfVec2d> &_manipulatorC
     return _manipulator2dPoints.size();
 };
 
+template <int Axis> inline ImColor AxisColor(int selectedAxis) {
+    if (selectedAxis == Axis) {
+        return ImColor(ImVec4(1.0, 1.0, 0.0, 1.0));
+    } else {
+        return ImColor(ImVec4(Axis == Manipulator::XAxis, Axis == Manipulator::YAxis, Axis == Manipulator::ZAxis, 1.0));
+    }
+}
+
+
 void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
 
     if (_xformAPI) {
@@ -177,10 +186,10 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
         const size_t zEnd = ProjectHalfCircle<2>(_manipulatorCircles, scale, cameraPosition, manipulatorOrigin, mv, proj,
                                                  textureSize, toWorld, _manipulator2dPoints);
 
-        draw_list->AddPolyline(_manipulator2dPoints.data(), xEnd, ImColor(ImVec4(1.0, 0.0, 0.0, 1.0)), ImDrawFlags_None, 3);
-        draw_list->AddPolyline(_manipulator2dPoints.data() + xEnd, yEnd - xEnd, ImColor(ImVec4(0.0, 1.0, 0.0, 1.0)),
+        draw_list->AddPolyline(_manipulator2dPoints.data(), xEnd, AxisColor<XAxis>(_selectedAxis), ImDrawFlags_None, 3);
+        draw_list->AddPolyline(_manipulator2dPoints.data() + xEnd, yEnd - xEnd, AxisColor<YAxis>(_selectedAxis),
                                ImDrawFlags_None, 3);
-        draw_list->AddPolyline(_manipulator2dPoints.data() + yEnd, zEnd - yEnd, ImColor(ImVec4(0.0, 0.0, 1.0, 1.0)),
+        draw_list->AddPolyline(_manipulator2dPoints.data() + yEnd, zEnd - yEnd, AxisColor<ZAxis>(_selectedAxis),
                                ImDrawFlags_None, 3);
     }
 }

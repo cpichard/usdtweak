@@ -32,20 +32,13 @@ class ScaleManipulator : public Manipulator {
     /// Called when the viewport changes its selection
     void OnSelectionChange(Viewport &) override;
 
-    typedef enum { // use class enum ??
-        XAxis = 0,
-        YAxis,
-        ZAxis,
-        None,
-    } SelectedAxis;
-
   private:
     void ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &closestPoint);
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
 
     UsdTimeCode GetEditionTimeCode(const Viewport &viewport);
 
-    SelectedAxis _selectedAxis;
+    ManipulatorAxis _selectedAxis;
 
     GfVec3d _originMouseOnAxis;
     GfVec3f _scaleOnBegin;

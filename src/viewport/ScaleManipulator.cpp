@@ -90,6 +90,15 @@ GfMatrix4d ScaleManipulator::ComputeManipulatorToWorldTransform(const Viewport &
     return GfMatrix4d();
 }
 
+template <int Axis> inline ImColor AxisColor(int selectedAxis) {
+    if (selectedAxis == Axis) {
+        return ImColor(ImVec4(1.0, 1.0, 0.0, 1.0));
+    } else {
+        return ImColor(ImVec4(Axis == Manipulator::XAxis, Axis == Manipulator::YAxis, Axis == Manipulator::ZAxis, 1.0));
+    }
+}
+
+
 // TODO: same as rotation manipulator, share in a base class
 void ScaleManipulator::OnDrawFrame(const Viewport &viewport) {
 
@@ -121,12 +130,11 @@ void ScaleManipulator::OnDrawFrame(const Viewport &viewport) {
         const auto zAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(zAxis3d.data()));
 
         drawList->AddLine(ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(xAxisOnScreen[0], xAxisOnScreen[1]),
-                          ImColor(ImVec4(1.0, 0, 0, 1)), 3);
+                          AxisColor<XAxis>(_selectedAxis), 3);
         drawList->AddLine(ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]),
-                          ImColor(ImVec4(0.0, 1.0, 0, 1)), 3);
+                          AxisColor<YAxis>(_selectedAxis), 3);
         drawList->AddLine(ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]),
-                          ImColor(ImVec4(0.0, 0.0, 1.0, 1)), 3);
-
+                          AxisColor<ZAxis>(_selectedAxis), 3);
         drawList->AddCircleFilled(ImVec2(xAxisOnScreen[0], xAxisOnScreen[1]), 10, ImColor(ImVec4(1.0, 0, 0, 1)), 32);
         drawList->AddCircleFilled(ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]), 10, ImColor(ImVec4(0.0, 1.0, 0, 1)), 32);
         drawList->AddCircleFilled(ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]), 10, ImColor(ImVec4(0.0, 0, 1.0, 1)), 32);
