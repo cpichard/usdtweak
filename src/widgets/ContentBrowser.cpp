@@ -207,6 +207,9 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
                     DrawLayerTooltip(layer);
                 }
                 if (ImGui::BeginPopupContextItem()) {
+                    if (ImGui::MenuItem("Edit layer")) {
+                        ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
+                    }
                     DrawLayerActionPopupMenu(layer);
                     ImGui::EndPopup();
                 }

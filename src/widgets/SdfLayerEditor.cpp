@@ -334,9 +334,7 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
 void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
     if (!layer)
         return;
-    if (ImGui::MenuItem("Edit layer")) {
-        ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
-    }
+
     if (!layer->IsAnonymous() && ImGui::MenuItem("Reload")) {
         ExecuteAfterDraw(&SdfLayer::Reload, layer, false);
     }
