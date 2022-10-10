@@ -401,7 +401,7 @@ Viewport & Editor::GetViewport() {
 }
 
 void Editor::HydraRender() {
-#ifndef __APPLE__
+#if !( __APPLE__ && PXR_VERSION < 2208)
     _viewport.Update();
     _viewport.Render();
 #endif

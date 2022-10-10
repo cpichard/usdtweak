@@ -38,9 +38,14 @@ The project is almost self contained and only needs:
 - a C++14 compiler installed: MSVC 19 or 17, g++ or clang++.
 - a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v22.05) version >= 20.11. (I am not sure the USD libraries provided with maya, houdini or omniverse would work)
 
-If you managed to build USD, compiling usdtweak should be easy, cmake needs only 1 required variables:
+If you managed to build USD, compiling usdtweak should be easy, you need to provide cmake with only 1 required variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
+
+Unfortunately if you have compiled USD >= 22.08 with MaterialX you will also need to provide:
+
+- __MaterialX_DIR__ pointing to the MaterialX installation directory containing the file MaterialXConfig.cmake.
+
 
 ### Compiling on linux
 
@@ -51,20 +56,29 @@ On linux it should compile with:
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-22.05 ..
+    cmake -Dpxr_DIR=/path/to/usd-22.05 ..
     make
+
+If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
+
+    cmake -Dpxr_DIR=/path/to/usd-22.08 -DMaterialX_DIR=/path/to/usd-22.08/lib/cmake/MaterialX ..
+
 
 ### Compiling on MacOs
 
-It compiles on MacOs Catalina. The viewport doesn't work as the required OpenGL version is not supported, but the layer editor does.
+It compiles on MacOS Mojave. The viewport is now enabled for versions of USD superior or equal to 22.08, otherwise it is deactivated because of the OpenGL version not supported on MacOS;
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/installs/usd-22.05 ..
+    cmake -Dpxr_DIR=/path/to/usd-22.05 ..
     make
+
+If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
+
+    cmake -Dpxr_DIR=/path/to/usd-22.08 -DMaterialX_DIR=/path/to/usd-22.08/lib/cmake/MaterialX ..
 
 ### Compiling on Windows
 
@@ -75,8 +89,12 @@ It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWit
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-22.05 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.05 ..
     cmake --build . --config RelWithDebInfo
+
+If you have USD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
+
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.08 -DMaterialX_DIR=C:\path\to\usd-22.08\lib\cmake\MaterialX ..
 
 ### Installing on Windows
 
@@ -100,7 +118,7 @@ usdtweak is using [GLFW](https://www.glfw.org/) for its windowing system. cmake 
 
 A cmake command will then look like:
 
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\installs\usd-21.11 -Dglfw3_DIR=C:\installs\glfw3-3.3.6\lib\cmake\glfw3 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-21.11 -Dglfw3_DIR=C:\path\to\glfw3-3.3.6\lib\cmake\glfw3 ..
 
 ## Contact
 

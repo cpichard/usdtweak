@@ -479,9 +479,9 @@ template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &
 void Viewport ::BeginHydraUI(int width, int height) {
     // Create a ImGui windows to render the gizmos in
     ImGui_ImplOpenGL3_NewFrame();
-    ImGui::NewFrame();
     ImGuiIO &io = ImGui::GetIO();
     io.DisplaySize = ImVec2((float)width, (float)height);
+    ImGui::NewFrame();
     static bool alwaysOpened = true;
     constexpr ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_None;
     constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
