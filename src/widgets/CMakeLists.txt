@@ -4,6 +4,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/TextEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CompositionEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CompositionEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LauncherBar.cpp
@@ -11,8 +13,6 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FieldValueTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.cpp

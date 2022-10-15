@@ -211,11 +211,11 @@ int _WalkGraph(UsdShadeConnectableAPI const & shadeNode,
                 ImVector<Node*> &nodes, ImVector<NodeLink> &links, int depth) {
 
     if (!shadeNode) {
-        return;
+        return 0;
     }
     //visitedNodes.clear();
     if (!visitedNodes.insert(shadeNode.GetPath()).second) {
-        return;
+        return 0;
     }
     //std::cout << shadeNode.GetPath().GetString() << std::endl;
     if (nodeLayout.size()<=depth) {nodeLayout.push_back(1);}

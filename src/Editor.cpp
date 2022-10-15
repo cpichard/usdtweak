@@ -32,7 +32,7 @@
 #include "Shortcuts.h"
 #include "StageLayerEditor.h"
 #include "LauncherBar.h"
-
+#include "ConnectionEditor.h"
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
 // Reloading model.stage doesn't work but reloading stage separately does
@@ -623,7 +623,16 @@ void Editor::Draw() {
 
         ImGui::End();
     }
-    
+
+#if 0 // experimental connection editor is disabled
+    ImGui::Begin("Connection editor");
+    if (GetCurrentStage()) {
+        auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
+        DrawConnectionEditor(prim);
+    }
+    ImGui::End();
+#endif
+
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
         ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
