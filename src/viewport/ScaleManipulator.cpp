@@ -64,7 +64,7 @@ bool ScaleManipulator::IsMouseOver(const Viewport &viewport) {
 // Same as rotation manipulator now -- TODO : share in a common class
 void ScaleManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
-    auto primPath = selection.GetAnchorPath(viewport.GetCurrentStage());
+    auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 }
 

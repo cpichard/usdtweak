@@ -203,7 +203,7 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::SmallButton(ICON_FA_PEN);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         const UsdPrim &selected =
-            selectedPaths.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selectedPaths.GetAnchorPath(stage));
+            selectedPaths.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selectedPaths.GetAnchorPrimPath(stage));
         DrawUsdPrimEditTarget(selected);
         ImGui::EndPopup();
     }
@@ -330,7 +330,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         }
         if (selectionHasChanged) {
             // This function can only be called in this context and after the clipper.Step()
-            FocusedOnFirstSelectedPath(selectedPaths.GetAnchorPath(stage), paths, clipper);
+            FocusedOnFirstSelectedPath(selectedPaths.GetAnchorPrimPath(stage), paths, clipper);
         }
         ImGui::EndTable();
         

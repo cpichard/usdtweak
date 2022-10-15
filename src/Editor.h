@@ -56,9 +56,6 @@ public:
     void SetLayerPathSelection(const SdfPath &primPath);
     void AddLayerPathSelection(const SdfPath &primPath);
 
-    inline SdfPath GetSelectedAttribute() const { return _selectedAttribute; }
-    inline void SetSelectedAttribute(const SdfPath &primPath) { _selectedAttribute = primPath; }
-
     /// Create a new layer in file path
     void CreateNewLayer(const std::string &path);
     void FindOrOpenLayer(const std::string &path);

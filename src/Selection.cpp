@@ -1,7 +1,10 @@
 #include "Selection.h"
 #include <functional>
+#include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
+
+#include <iostream>
 
 /// At the moment we use a HdSelection for the stages but this will change as the we want to store additional states
 /// The selection implementation will move outside this header
@@ -40,6 +43,8 @@ struct Selection::SelectionData {
     // moved and it invalidates the selection. The handles on spec stays consistent with renaming and moving
     std::unordered_set<SdfSpecHandle> _sdfPrimSelectionDomain;
 
+    std::unordered_set<SdfSpecHandle> _sdfPropSelectionDomain;
+
     // Selection data for the stages
     // TODO: keep an anchor, basically the first selected prim, we would need a list to keep the order
     StageSelection _stageSelection;
@@ -66,7 +71,11 @@ template <> void Selection::Clear(const UsdStageRefPtr &stage) {
 template <> void Selection::AddSelected(const SdfLayerRefPtr &layer, const SdfPath &selectedPath) {
     if (!_data || !layer)
         return;
-    _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));
+    if (selectedPath.IsPropertyPath()) {
+        _data->_sdfPropSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));
+    } else {
+        _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));
+    }
 }
 
 #define ImplementStageAddSelected(StageT)                                                                                        \
@@ -94,7 +103,15 @@ template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const S
         if (!_data || !layer)                                                                                                    \
             return;                                                                                                              \
         _data->_sdfPrimSelectionDomain.clear();                                                                                  \
-        _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));                                             \
+        _data->_sdfPropSelectionDomain.clear();                                                                                  \
+        if (selectedPath.IsPropertyPath()) {                                                                                     \
+            _data->_sdfPropSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));                                         \
+            _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath.GetPrimOrPrimVariantSelectionPath()));     \
+        } else {                                                                                                                 \
+            _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));                                         \
+        }                                                                                                                        \
+        std::cout << selectedPath.GetString() << " " << _data->_sdfPrimSelectionDomain.size() << " "                             \
+                  << _data->_sdfPropSelectionDomain.size() << std::endl;                                                         \
     }
 
 ImplementLayerSetSelected(SdfLayerRefPtr);
@@ -116,7 +133,7 @@ ImplementStageSetSelected(UsdStageWeakPtr);
     template <> bool Selection::IsSelectionEmpty(const LayerT &layer) const {                                                    \
         if (!_data || !layer)                                                                                                    \
             return true;                                                                                                         \
-        return _data->_sdfPrimSelectionDomain.empty();                                                                           \
+        return _data->_sdfPrimSelectionDomain.empty() && _data->_sdfPropSelectionDomain.empty();                                 \
     }
 
 ImplementLayerIsSelectionEmpty(SdfLayerHandle);
@@ -136,6 +153,12 @@ template <> bool Selection::IsSelected(const SdfPrimSpecHandle &spec) const {
     if (!_data || !spec)
         return false;
     return _data->_sdfPrimSelectionDomain.find(spec) != _data->_sdfPrimSelectionDomain.end();
+}
+
+template <> bool Selection::IsSelected(const SdfAttributeSpecHandle &spec) const {
+    if (!_data || !spec)
+        return false;
+    return _data->_sdfPropSelectionDomain.find(spec) != _data->_sdfPropSelectionDomain.end();
 }
 
 template <> bool Selection::IsSelected(const UsdStageWeakPtr &stage, const SdfPath &selectedPath) const {
@@ -164,20 +187,41 @@ template <> bool Selection::UpdateSelectionHash(const UsdStageRefPtr &stage, Sel
     }
     return false;
 }
+// TODO: store anchor for prim and property
+#define ImplementGetAnchorPrimPath(LayerT)\
+template <> SdfPath Selection::GetAnchorPrimPath(const LayerT &layer) const {\
+    if (!_data || !layer)\
+        return {};\
+    if (!_data->_sdfPrimSelectionDomain.empty()) {\
+        const auto firstPrimHandle = *_data->_sdfPrimSelectionDomain.begin();\
+        if (firstPrimHandle) {\
+            return firstPrimHandle->GetPath();\
+        }\
+    }\
+    return {};\
+}\
 
-template <> SdfPath Selection::GetAnchorPath(const SdfLayerRefPtr &layer) {
-    if (!_data || !layer || _data->_sdfPrimSelectionDomain.empty())
-        return {};
-    // TODO: store anchor
-    auto firstPrimHandle = *_data->_sdfPrimSelectionDomain.begin();
-    if (firstPrimHandle) {
-        return firstPrimHandle->GetPath();
-    } else {
-        return SdfPath();
-    };
-}
+ImplementGetAnchorPrimPath(SdfLayerHandle);
+ImplementGetAnchorPrimPath(SdfLayerRefPtr);
 
-template <> SdfPath Selection::GetAnchorPath(const UsdStageRefPtr &stage) {
+#define ImplementGetAnchorPropertyPath(LayerT)\
+template <> SdfPath Selection::GetAnchorPropertyPath(const LayerT &layer) const {\
+    if (!_data || !layer)\
+        return {};\
+    if (!_data->_sdfPropSelectionDomain.empty()) {\
+        const   auto firstPrimHandle = *_data->_sdfPropSelectionDomain.begin();\
+        if (firstPrimHandle) {\
+            return firstPrimHandle->GetPath();\
+        }\
+    }\
+    return {};\
+}\
+
+ImplementGetAnchorPropertyPath(SdfLayerHandle);
+ImplementGetAnchorPropertyPath(SdfLayerRefPtr);
+
+
+template <> SdfPath Selection::GetAnchorPrimPath(const UsdStageRefPtr &stage) const {
     if (!_data || !stage)
         return {};
     if (_data->_stageSelection) {
@@ -189,12 +233,14 @@ template <> SdfPath Selection::GetAnchorPath(const UsdStageRefPtr &stage) {
     return {};
 }
 
-// This is called only once when there is a drag and drop
+// This is called only once when there is a drag and drop at the moment
 template <> std::vector<SdfPath> Selection::GetSelectedPaths(const SdfLayerHandle &layer) const {
     if (!_data || !layer)
         return {};
     std::vector<SdfPath> paths;
     std::transform(_data->_sdfPrimSelectionDomain.begin(), _data->_sdfPrimSelectionDomain.end(), std::back_inserter(paths),
+                   [](const SdfSpecHandle &p) { return p->GetPath(); });
+    std::transform(_data->_sdfPropSelectionDomain.begin(), _data->_sdfPropSelectionDomain.end(), std::back_inserter(paths),
                    [](const SdfSpecHandle &p) { return p->GetPath(); });
     return paths;
 }

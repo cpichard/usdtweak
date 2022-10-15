@@ -31,7 +31,7 @@ struct PrimCopy;
 struct PrimPaste;
 
 struct EditorSetDataPointer;
-struct EditorSelectPrimPath;
+struct EditorSetSelected;
 struct EditorSelectAttributePath;
 struct EditorOpenStage;
 struct EditorFindOrOpenLayer;

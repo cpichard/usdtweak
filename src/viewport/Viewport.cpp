@@ -239,7 +239,7 @@ void Viewport::Draw() {
         ImGui::SameLine();
         ImGui::SmallButton(ICON_FA_PEN);
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPath(GetCurrentStage()));
+            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
             DrawUsdPrimEditTarget(selected);
             ImGui::EndPopup();
         }

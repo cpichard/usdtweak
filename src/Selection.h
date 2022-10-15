@@ -30,7 +30,8 @@ struct Selection {
     template <typename OwnerT> bool IsSelected(const OwnerT &, const SdfPath &path) const;
     template <typename ItemT> bool IsSelected(const ItemT &) const;
     template <typename OwnerT> bool UpdateSelectionHash(const OwnerT &, SelectionHash &lastSelectionHash);
-    template <typename OwnerT> SdfPath GetAnchorPath(const OwnerT &);
+    template <typename OwnerT> SdfPath GetAnchorPrimPath(const OwnerT &) const;
+    template <typename OwnerT> SdfPath GetAnchorPropertyPath(const OwnerT &) const;
     template <typename OwnerT> std::vector<SdfPath> GetSelectedPaths(const OwnerT &) const;
 
     // private:

@@ -31,23 +31,47 @@ struct EditorSetDataPointer : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetDataPointer>(Editor *editor);
 
-struct EditorSelectPrimPath : public EditorCommand {
+struct EditorSetSelected : public EditorCommand {
 
-    EditorSelectPrimPath(SdfPath *selectionObject, SdfPath selectedPath)
-        : selectionObject(selectionObject), selectedPath(std::move(selectedPath)) {}
 
-    ~EditorSelectPrimPath() override {}
+    EditorSetSelected(UsdStageRefPtr stage, SdfPath path)
+    : _stageRefPtr(stage), _path(path) {}
+    
+    EditorSetSelected(const UsdStageWeakPtr & stage, SdfPath path)
+    : _stageWeakPtr(stage), _path(path) {}
+    
+    EditorSetSelected(SdfLayerRefPtr layer, SdfPath path)
+    : _layer(layer), _path(path) {}
+    
+    ~EditorSetSelected() override {}
 
     // TODO: wip, we want an "Selection" object to be passed around
     // At the moment it is just the pointer to the current selection held by the editor
     bool DoIt() override {
-        *selectionObject = selectedPath;
-        return true;
+        if(_editor) {
+            auto & selection = _editor->GetSelection();
+            if (_layer) {
+                selection.SetSelected(_layer, _path);
+            }
+            if (_stageRefPtr) {
+                selection.SetSelected(_stageRefPtr, _path);
+            }
+            if (_stageWeakPtr) {
+                selection.SetSelected(_stageWeakPtr , _path);
+            }
+        }
+        return false;
     }
-    SdfPath *selectionObject;
-    SdfPath selectedPath;
+    UsdStageRefPtr _stageRefPtr;
+    UsdStageWeakPtr _stageWeakPtr;
+    SdfLayerRefPtr _layer;
+    SdfPath _path;
 };
-template void ExecuteAfterDraw<EditorSelectPrimPath>(SdfPath *selectionObject, SdfPath selectedPath);
+template void ExecuteAfterDraw<EditorSetSelected>(UsdStageWeakPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelected>(UsdStageRefPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelected>(SdfLayerRefPtr, SdfPath);
+
+
 
 struct EditorSelectAttributePath : public EditorCommand {
 
@@ -59,7 +83,7 @@ struct EditorSelectAttributePath : public EditorCommand {
     // At the moment it is just the pointer to the current selection held by the editor
     bool DoIt() override {
         if (_editor) {
-            _editor->SetSelectedAttribute(_attributePath);
+            _editor->SetLayerPathSelection(_attributePath);
         }
         return true;
     }
@@ -324,7 +348,7 @@ struct EditorFindPrim : public EditorCommand {
         if (_editor) {
             const auto &stage = _editor->GetCurrentStage();
             auto &selection = _editor->GetSelection();
-            auto anchor = selection.GetAnchorPath(stage);
+            auto anchor = selection.GetAnchorPrimPath(stage);
             SdfPath found;
             bool selectedFound = false;
             // Traverse the stage and set the new selection
