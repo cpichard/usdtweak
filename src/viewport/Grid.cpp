@@ -42,7 +42,9 @@ Grid::Grid() : _zIsUp(1.0) {
     } else {
         exit(ERROR_UNABLE_TO_COMPILE_SHADER);
     }
+#ifndef __APPLE__
     glBindVertexArray(0);
+#endif
 }
 
 
@@ -65,7 +67,9 @@ void Grid::Render(Viewport &viewport) {
     glUniform1f(_planeOrientation, _zIsUp);
     glBindVertexArray(_vertexArrayObject);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+#ifndef __APPLE__
     glBindVertexArray(0);
+#endif
     glUseProgram(0);
     glDisable(GL_BLEND);
 }
