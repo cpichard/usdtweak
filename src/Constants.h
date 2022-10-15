@@ -31,6 +31,9 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorPrimHasComposition {222.f/255.f, 158.f/255.f, 46.f/255.f, 1.0}
 #define ColorGreyish {0.5, 0.5, 0.5, 1.0}
 #define ColorButtonHighlight {0.5, 0.7, 0.5, 0.7}
+#define ColorEditableWidgetBg {0.260f, 0.300f, 0.360f, 1.000f}
+#define ColorPrimSelectedBg {0.75, 0.60, 0.33, 0.6}
+#define ColorAttributeSelectedBg {0.75, 0.60, 0.33, 0.6}
 
 /// Predefined colors for dark mode ui components
 #define ColorPrimaryLight {0.900f, 0.900f, 0.900f, 1.000f}

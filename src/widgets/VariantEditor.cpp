@@ -113,14 +113,16 @@ static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
 void DrawPrimVariants(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
+    const bool showVariants = !primSpec->GetVariantSelections().empty() || primSpec->HasVariantSetNames();
+    if(showVariants && ImGui::CollapsingHeader("Variants")) {
+        // We can have variant selection even if there is no variantSet on this prim
+        // So se draw variant selection AND variantSet names which is the edit list for the
+        // visible variant.
+        // The actual variant node can be edited in the layer editor
+        if (primSpec->HasVariantSetNames()) {
+            DrawVariantSetNames(primSpec);
+        }
 
-    // We can have variant selection even if there is no variantSet on this prim
-    // So se draw variant selection AND variantSet names which is the edit list for the 
-    // visible variant. 
-    // The actual variant node can be edited in the layer editor
-    if (primSpec->HasVariantSetNames()) {
-        DrawVariantSetNames(primSpec);
+        DrawVariantSelection(primSpec);
     }
-
-    DrawVariantSelection(primSpec);
 }

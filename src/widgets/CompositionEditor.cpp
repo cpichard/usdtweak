@@ -286,12 +286,14 @@ void DrawPrimPayloads(const SdfPrimSpecHandle &primSpec) {
 void DrawPrimReferences(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->HasReferences())
         return;
+
     if (ImGui::BeginTable("##DrawPrimReferences", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         TableSetupColumns("", "References", "", "");
         ImGui::TableHeadersRow();
         IterateListEditorItems(primSpec->GetReferenceList(), DrawAssetPathRow<SdfReference>, primSpec);
         ImGui::EndTable();
     }
+
 }
 
 void DrawPrimInherits(const SdfPrimSpecHandle &primSpec) {
@@ -319,13 +321,13 @@ void DrawPrimSpecializes(const SdfPrimSpecHandle &primSpec) {
 void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
-
-    DrawPrimReferences(primSpec);
-    DrawPrimPayloads(primSpec);
-    DrawPrimInherits(primSpec);
-    DrawPrimSpecializes(primSpec);
+    if (ImGui::CollapsingHeader("Composition")) {
+        DrawPrimReferences(primSpec);
+        DrawPrimPayloads(primSpec);
+        DrawPrimInherits(primSpec);
+        DrawPrimSpecializes(primSpec);
+    }
 }
-
 /////////////// Summary for the layer editor
 
 template <typename PathListT>

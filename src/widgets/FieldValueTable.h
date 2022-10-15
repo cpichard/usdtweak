@@ -9,12 +9,14 @@
 
 template <typename FieldT, typename... Args> inline bool HasEdits(const Args &...args) { return true; }
 
-template <typename FieldT, typename... Args> inline ScopedStyleColor GetRowStyle(const int rowId, const Args &...args) {
-    return ScopedStyleColor(ImGuiCol_Text, HasEdits<FieldT>(args...) ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored),
-            ImGuiCol_Button, ImVec4(ColorTransparent));
+template <typename FieldT, typename... Args> inline ScopedStyleColor GetRowStyle(const int rowId, const Args &... args) {
+    return ScopedStyleColor(ImGuiCol_Text,
+                            HasEdits<FieldT>(args...) ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored),
+                            ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_FrameBg, ImVec4(0.260f, 0.300f, 0.360f, 1.000f));
 }
 
 // Default implementation
+// TODO rename to DrawFirstColumn, etc
 template <typename FieldT, typename... Args> inline void DrawFieldValue(const int rowId, const Args &...args) {}
 
 template <typename FieldT, typename... Args> inline void DrawFieldName(const int rowId, const Args &...args) {
@@ -23,6 +25,7 @@ template <typename FieldT, typename... Args> inline void DrawFieldName(const int
 
 template <typename FieldT, typename... Args> inline void DrawFieldButton(const int rowId, const Args &...args) {}
 
+// TODO: Rename to DrawThreeColumnRow
 template <typename FieldT, typename... Args> inline void DrawFieldValueTableRow(const int rowId, const Args &...args) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);
@@ -51,7 +54,7 @@ inline void SetupFieldValueTableColumns(const bool showHeaders, const char *butt
     }
 }
 
-
+// Rename to DrawTwoColumnRow
 template <typename FieldT, typename... Args> inline void DrawValueTableRow(const int rowId, const Args &...args) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);

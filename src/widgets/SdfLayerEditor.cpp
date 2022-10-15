@@ -185,9 +185,9 @@ void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
     if (!layer)
         return;
     int rowId = 0;
-
+    if (ImGui::CollapsingHeader("Metadata")){
     if (BeginFieldValueTable("##DrawLayerMetadata")) {
-        SetupFieldValueTableColumns(true, "", "Metadata");
+        //SetupFieldValueTableColumns(true, "", "Metadata");
         DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
@@ -199,6 +199,7 @@ void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
         DrawFieldValueTableRow<LayerFieldDocumentation>(rowId++, layer);
         DrawFieldValueTableRow<LayerFieldComment>(rowId++, layer);
         EndFieldValueTable();
+    }
     }
 }
 
@@ -257,7 +258,7 @@ template <> inline void DrawFieldButton<SublayerPath>(const int rowId, const Sdf
 void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer) {
     bool enabled = layer;
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("Create", enabled)) {
+        if (ImGui::BeginMenu(ICON_FA_PLUS " Create", enabled)) {
             if (ImGui::MenuItem("Sublayer path")) {
                 std::string newName = "sublayer_" + std::to_string(layer->GetNumSubLayerPaths() + 1) + ".usd";
                 ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, newName, 0); // TODO find proper name that is not in the list of sublayer

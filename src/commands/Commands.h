@@ -29,6 +29,8 @@ struct PrimReorder;
 struct PrimDuplicate;
 struct PrimCopy;
 struct PrimPaste;
+struct PrimCreateAttributeConnection;
+
 
 struct EditorSetDataPointer;
 struct EditorSetSelected;
