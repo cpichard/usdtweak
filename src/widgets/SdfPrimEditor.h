@@ -1,12 +1,12 @@
 #pragma once
 #include <pxr/usd/sdf/primSpec.h>
-
+#include "Selection.h"
 #include "Gui.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
 /// Draw the full fledged primspec editor
-void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec);
+void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &);
 
 void DrawPrimKind(const SdfPrimSpecHandle &primSpec);
 void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags=0);

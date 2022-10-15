@@ -36,7 +36,7 @@ void EditorSettings::ParseLine(const char *line) {
     } else if (sscanf(line, "ShowDebugWindow=%i", &value) == 1) {
         _showDebugWindow = static_cast<bool>(value);
     } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
-        _showArrayEditor = static_cast<bool>(value);
+        _showSdfAttributeEditor = static_cast<bool>(value);
     } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
         _lastFileBrowserDirectory = strBuffer;
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
@@ -83,7 +83,7 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowStatusBar=%d\n", _showStatusBar);
     buf->appendf("ShowLauncherBar=%d\n", _showLauncherBar);
     buf->appendf("ShowDebugWindow=%d\n", _showDebugWindow);
-    buf->appendf("ShowArrayEditor=%d\n", _showArrayEditor);
+    buf->appendf("ShowArrayEditor=%d\n", _showSdfAttributeEditor);
     if (!_lastFileBrowserDirectory.empty()) {
         buf->appendf("LastFileBrowserDirectory=%s\n", _lastFileBrowserDirectory.c_str());
     }

@@ -11,6 +11,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FieldValueTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.cpp

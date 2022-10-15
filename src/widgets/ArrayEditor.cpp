@@ -90,7 +90,7 @@ template <typename ValueT> inline bool DrawVtArray(VtArray<ValueT> &values) {
     return false;
 }
 
-template <typename ValueT> inline VtValue DrawVtValueArrayTyped(VtValue &value) {
+template <typename ValueT> inline VtValue DrawVtValueArrayTyped(const VtValue &value) {
     auto newArray = value.Get<VtArray<ValueT>>();
     if (DrawVtArray<ValueT>(newArray))
         return VtValue(newArray);
@@ -103,14 +103,7 @@ template <typename ValueT> inline VtValue DrawVtValueArrayTyped(VtValue &value) 
         newValue = DrawVtValueArrayTyped<ValueT>(value);                                                                         \
     } else
 
-void DrawAttributeValuesAtTime(const SdfAttributeSpecHandle &attr, double timeCode) {
-    VtValue value;
-    if (std::isnan(timeCode)) { // NOTE: this might change in the API
-        value = attr->GetDefaultValue();
-    } else {
-        auto layer = attr->GetLayer();
-        layer->QueryTimeSample(attr->GetPath(), timeCode, &value);
-    }
+VtValue DrawVtArrayValue(const VtValue &value) {
     VtValue newValue;
     if (value.IsArrayValued()) {
         // clang-format off
@@ -136,30 +129,6 @@ void DrawAttributeValuesAtTime(const SdfAttributeSpecHandle &attr, double timeCo
         DrawArrayIfHolding(GfMatrix2d)
         DrawArrayIfHolding(GfMatrix2f)
         {}
-        // clang-format on
-        if (newValue != VtValue()) {
-            if (std::isnan(timeCode)) { // TODO functions IsDefaultTimeCode() and GetDefaultTimeCode()
-                ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, newValue);
-            } else {
-                ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, attr->GetLayer(), attr->GetPath(), timeCode, newValue);
-            }
-        }
     }
-}
-
-void DrawArrayEditor(const SdfLayerHandle layer, const SdfPath &path) {
-    if (!layer || path == SdfPath())
-        return;
-    ImGui::Text("Path %s", path.GetString().c_str());
-
-    auto attr = layer->GetAttributeAtPath(path);
-    if (!attr)
-        return;
-    // TODO draw buttons, and add a timecode edition/selection
-    // if (ImGui::Button(ICON_FA_PLUS "##Add")) {
-    //    values.push_back(ValueT());
-    //    ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, VtValue(values));
-    //}
-
-    DrawAttributeValuesAtTime(attr, std::numeric_limits<double>::quiet_NaN());
+    return newValue;
 }

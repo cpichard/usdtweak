@@ -172,9 +172,9 @@ struct PrimReparent : public SdfLayerCommand {
 struct PrimCreateAttribute : public SdfLayerCommand {
 
     PrimCreateAttribute(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
-                       SdfVariability variability = SdfVariabilityVarying, bool custom = false)
+                        SdfVariability variability = SdfVariabilityVarying, bool custom = false, bool createDefault = false)
         : _owner(std::move(owner)), _name(std::move(name)), _typeName(std::move(typeName)), _variability(variability),
-          _custom(custom) {}
+          _custom(custom), _createDefault(createDefault) {}
 
     ~PrimCreateAttribute() override {}
 
@@ -185,8 +185,10 @@ struct PrimCreateAttribute : public SdfLayerCommand {
         SdfUndoRecorder recorder(_undoCommands, layer);
         if (SdfAttributeSpecHandle attribute = SdfAttributeSpec::New(_owner, _name, _typeName, _variability, _custom)) {
             // Default value for now
-            auto defaultValue = _typeName.GetDefaultValue();
-            attribute->SetDefaultValue(defaultValue);
+            if(_createDefault) {
+                auto defaultValue = _typeName.GetDefaultValue();
+                attribute->SetDefaultValue(defaultValue);
+            }
             return true;
         }
         return false;
@@ -197,6 +199,7 @@ struct PrimCreateAttribute : public SdfLayerCommand {
     SdfValueTypeName _typeName = SdfValueTypeNames->Float;
     SdfVariability _variability = SdfVariabilityVarying;
     bool _custom = false;
+    bool _createDefault = false;
 };
 
 
@@ -332,6 +335,27 @@ struct PrimPaste : public CopyPasteCommand {
     SdfPrimSpecHandle _prim;
 };
 
+struct PrimCreateAttributeConnection : public SdfLayerCommand {
+    PrimCreateAttributeConnection(SdfAttributeSpecHandle attr, int operation, std::string connectionEndPoint)
+        : _attr(attr), _operation(operation), _connectionEndPoint(connectionEndPoint) {}
+    ~PrimCreateAttributeConnection() override {}
+    bool DoIt() override {
+        if (_attr) {
+            SdfUndoRecorder recorder(_undoCommands, _attr->GetLayer());
+            CreateListEditorOperation(_attr->GetConnectionPathList(), _operation, _connectionEndPoint);
+            return true;
+        }
+
+        return true;
+    }
+
+    SdfAttributeSpecHandle _attr;
+    int _operation = 0;
+    SdfPath _connectionEndPoint;
+};
+
+
+
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
@@ -343,10 +367,11 @@ template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, in
 template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
 template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);
 template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
-                                                    SdfVariability variability, bool custom);
+                                                    SdfVariability variability, bool custom, bool createDefault);
 template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, std::string name, SdfVariability variability,
                                                        bool custom, int operation, std::string targetPath);
 template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
 template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);
 template void ExecuteAfterDraw<PrimCopy>(SdfPrimSpecHandle prim);
 template void ExecuteAfterDraw<PrimPaste>(SdfPrimSpecHandle prim);
+template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, int operation, std::string connectionEndPoint);

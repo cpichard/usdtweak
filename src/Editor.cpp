@@ -27,7 +27,7 @@
 #include "Constants.h"
 #include "Commands.h"
 #include "ResourcesLoader.h"
-#include "ArrayEditor.h"
+#include "SdfAttributeEditor.h"
 #include "TextEditor.h"
 #include "Shortcuts.h"
 #include "StageLayerEditor.h"
@@ -48,7 +48,7 @@
 #define SdfLayerStackWindowTitle "Stage layer editor"
 #define SdfPrimPropertiesWindowTitle "Layer property editor"
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
-#define SdfAttributeWindowTitle "Array editor"
+#define SdfAttributeWindowTitle "Attribute editor"
 #define TimelineWindowTitle "Timeline"
 #define ViewportWindowTitle "Viewport"
 #define StatusBarWindowTitle "Status bar"
@@ -486,7 +486,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
-            ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showArrayEditor);
+            ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
@@ -547,7 +547,7 @@ void Editor::Draw() {
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPath(GetCurrentStage()));
+            auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();
@@ -604,7 +604,7 @@ void Editor::Draw() {
         if (primPath != SdfPath() && primPath != SdfPath::AbsoluteRootPath()) {
             auto selectedPrimSpec = GetCurrentLayer()->GetPrimAtPath(primPath);
             DrawSdfPrimEditorMenuBar(selectedPrimSpec);
-            DrawSdfPrimEditor(selectedPrimSpec);
+            DrawSdfPrimEditor(selectedPrimSpec, GetSelection());
         } else {
             auto headerSize = ImGui::GetWindowSize();
             headerSize.y = TableRowDefaultHeight * 3; // 3 fields in the header
@@ -631,10 +631,10 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_settings._showArrayEditor) {
+    if (_settings._showSdfAttributeEditor) {
         TRACE_SCOPE(SdfAttributeWindowTitle);
-        ImGui::Begin(SdfAttributeWindowTitle, &_settings._showArrayEditor);
-        DrawArrayEditor(GetCurrentLayer(), GetSelectedAttribute());
+        ImGui::Begin(SdfAttributeWindowTitle, &_settings._showSdfAttributeEditor);
+        DrawSdfAttributeEditor(GetCurrentLayer(), GetSelection());
         ImGui::End();
     }
 
