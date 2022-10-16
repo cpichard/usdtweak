@@ -22,33 +22,6 @@ namespace clk = std::chrono;
 
 // TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
 
-template <typename BasicShaderT>
-void DrawBasicShadingProperties(BasicShaderT &shader) {
-    auto ambient = shader.GetAmbient();
-    ImGui::ColorEdit4("ambient", ambient.data());
-    shader.SetAmbient(ambient);
-
-    auto diffuse = shader.GetDiffuse();
-    ImGui::ColorEdit4("diffuse", diffuse.data());
-    shader.SetDiffuse(diffuse);
-
-    auto specular = shader.GetSpecular();
-    ImGui::ColorEdit4("specular", specular.data());
-    shader.SetSpecular(specular);
-}
-
-void DrawGLLights(GlfSimpleLightVector &lights) {
-    for (auto &light : lights) {
-        // Light Position
-        if (ImGui::TreeNode("Light")) {
-            auto position = light.GetPosition();
-            ImGui::DragFloat4("position", position.data());
-            light.SetPosition(position);
-            DrawBasicShadingProperties(light);
-            ImGui::TreePop();
-        }
-    }
-}
 
 // The camera path will move once we create a CameraList class in charge of
 // camera selection per stage
@@ -244,22 +217,7 @@ void Viewport::Draw() {
         DrawCameraEditor(*this);
         ImGui::EndPopup();
     }
-    ImGui::SameLine();
-    ImGui::Button("\xef\x83\xab Lighting");
-    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        ImGui::BulletText("Ambient light");
-        ImGui::InputFloat4("Ambient", _ambient.data());
-        ImGui::Separator();
-        DrawGLLights(_lights);
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Button("\xef\x87\xbc Shading");
-    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        ImGui::BulletText("Default shader");
-        DrawBasicShadingProperties(_material);
-        ImGui::EndPopup();
-    }
+
     ImGui::SameLine();
     ImGui::Button("\xef\x93\xbe Renderer");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
