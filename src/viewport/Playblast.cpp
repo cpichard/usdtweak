@@ -1,6 +1,9 @@
-#include "Playblast.h"
 #include "FileBrowser.h"
 #include "Gui.h"
+#include "Playblast.h"
+#include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/camera.h>
 
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -19,8 +22,7 @@ int PlayblastModalDialog::start = -1;
 int PlayblastModalDialog::end = -1;
 int PlayblastModalDialog::width = 960;
 
-PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage, SdfPath cameraPath)
-    : _stage(stage), _cameraPath(cameraPath) {
+PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage) : _stage(stage) {
     if (directory.empty()) {
         directory = fs::temp_directory_path().string(); // TODO : check it works with macOS and linux
     }
@@ -31,12 +33,33 @@ PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage, SdfPath cameraPath
         start = static_cast<int>(_stage->GetStartTimeCode());
         end = static_cast<int>(_stage->GetEndTimeCode());
     }
+    // find all camera in the stqge
+    if (stage) {
+        for (const auto &prim : stage->Traverse()) {
+            if (prim.IsA<UsdGeomCamera>()) {
+                _stageCameras.push_back(prim.GetPath());
+            }
+        }
+    }
+    // Select the first camera
+    if (!_stageCameras.empty()) {
+        _cameraPath = _stageCameras[0];
+    }
 };
 
 void PlayblastModalDialog::Draw() {
-
-    ImGui::InputText("Directory", &directory);
-    ImGui::InputText("Filename prefix", &filenamePrefix);
+    // Draw available cameras
+    const char *selectedCameraName = _cameraPath == SdfPath() ? "No camera" : _cameraPath.GetText();
+    if (ImGui::BeginCombo("Stage camera", selectedCameraName)) {
+        for (const SdfPath &stageCameraPath : _stageCameras) {
+            if (ImGui::Selectable(stageCameraPath.GetText())) {
+                _cameraPath = stageCameraPath;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::InputText("Output directory", &directory);
+    ImGui::InputText("Output image prefix", &filenamePrefix);
     ImGui::Checkbox("Render sequence", &isSequence);
     if (isSequence) {
         ImGui::InputInt("Start", &start);
@@ -44,7 +67,7 @@ void PlayblastModalDialog::Draw() {
     }
     ImGui::InputInt("Image width", &width);
 
-    if (!directory.empty() && !filenamePrefix.empty() && start <= end) {
+    if (!directory.empty() && !filenamePrefix.empty() && start <= end && _cameraPath != SdfPath()) {
         ImGui::Text("Rendering to : %s\\%s.#.jpg", directory.c_str(), filenamePrefix.c_str());
         if (ImGui::Button("Blast")) {
             if (width > 0) {

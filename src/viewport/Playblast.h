@@ -18,7 +18,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 ///
 struct PlayblastModalDialog : public ModalDialog {
 
-    PlayblastModalDialog(UsdStagePtr stage, SdfPath cameraPath);
+    PlayblastModalDialog(UsdStagePtr stage);
     ~PlayblastModalDialog() override {}
 
     void Draw() override;
@@ -27,6 +27,7 @@ struct PlayblastModalDialog : public ModalDialog {
     UsdAppUtilsFrameRecorder _recorder;
     UsdStagePtr _stage;
     SdfPath _cameraPath;
+    SdfPathVector _stageCameras;
 
     static std::string directory;
     static std::string filenamePrefix;
