@@ -33,6 +33,8 @@
 #include "StageLayerEditor.h"
 #include "LauncherBar.h"
 #include "ConnectionEditor.h"
+#include "Playblast.h"
+
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
 // Reloading model.stage doesn't work but reloading stage separately does
@@ -474,6 +476,15 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Copy", "CTRL+C", false, false)) {
             }
             if (ImGui::MenuItem("Paste", "CTRL+V", false, false)) {
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Tools")) {
+            // TODO: we should really check if storm is available
+            if (ImGui::MenuItem(ICON_FA_IMAGES " Storm playblast")) {
+                if (GetCurrentStage()) {
+                    DrawModalDialog<PlayblastModalDialog>(GetCurrentStage());
+                }
             }
             ImGui::EndMenu();
         }

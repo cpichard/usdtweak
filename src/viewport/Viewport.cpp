@@ -16,7 +16,6 @@
 #include "RendererSettings.h"
 #include "Shortcuts.h"
 #include "PropertyEditor.h"
-#include "Playblast.h"
 
 namespace clk = std::chrono;
 
@@ -232,16 +231,6 @@ void Viewport::Draw() {
         DrawOpenGLSettings(*_renderer, *_renderparams);
         ImGui::EndPopup();
     }
-    ImGui::SameLine();
-    // disable perspective camera as the camera needs to be in the stage
-    ImGui::BeginDisabled(GetCameraPath() == perspectiveCameraPath);
-    if (ImGui::Button(ICON_FA_IMAGES " Playblast")) {
-        if (_renderer) {
-            DrawModalDialog<PlayblastModalDialog>(GetCurrentStage(), GetCameraPath());
-        }
-    }
-    ImGui::EndDisabled();
-
 
     if (GetCurrentStage()) {
         ImGui::SameLine();
