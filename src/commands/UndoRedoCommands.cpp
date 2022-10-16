@@ -69,6 +69,13 @@ struct UsdFunctionCall : public Command {
         : _layer(layer), _func(func)
     {}
 
+    template <> UsdFunctionCall(UsdStageRefPtr stage, std::function<void()> func) : _layer(), _func(func) {
+        if (stage) { // I am assuming the edits always go in the edit target layer
+            _layer = stage->GetEditTarget().GetLayer();
+        }
+    }
+
+
     ~UsdFunctionCall() override {}
 
     /// Undo the last command in the stack
@@ -92,3 +99,4 @@ struct UsdFunctionCall : public Command {
 
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerRefPtr layer, std::function<void()> func);
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerHandle layer, std::function<void()> func);
+template void ExecuteAfterDraw<UsdFunctionCall>(UsdStageRefPtr stage, std::function<void()> func);
