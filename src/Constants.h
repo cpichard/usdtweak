@@ -62,6 +62,9 @@ constexpr const char * DecimalPrecision = "%.5f";
 /// Default name when creating a prim
 constexpr const char *const SdfPrimSpecDefaultName = "prim";
 
+/// Default name when duplicating a camera
+constexpr const char *const UsdGeomCameraDefaultPrefix = "/Cameras/camera";
+
 /// Return error codes
 constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 
