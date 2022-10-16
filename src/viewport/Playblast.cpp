@@ -67,39 +67,39 @@ void PlayblastModalDialog::Draw() {
     }
     ImGui::InputInt("Image width", &width);
 
-    if (!directory.empty() && !filenamePrefix.empty() && start <= end && _cameraPath != SdfPath()) {
-        ImGui::Text("Rendering to : %s\\%s.#.jpg", directory.c_str(), filenamePrefix.c_str());
-        if (ImGui::Button("Blast")) {
-            if (width > 0) {
-                _recorder.SetImageWidth(width);
-            }
-            _recorder.SetRendererPlugin(TfToken("HdStormRendererPlugin"));
-            _recorder.SetColorCorrectionMode(TfToken("sRGB"));
-            _recorder.SetComplexity(0.0);
-            UsdGeomCamera camera(_stage->GetPrimAtPath(_cameraPath));
-            if (isSequence) {
-                for (int i = start; i <= end; ++i) {
-                    std::string frameName = filenamePrefix + "." + std::to_string(i) + ".jpg";
-                    fs::path outputFrame(directory);
-                    if (fs::is_directory(outputFrame)) {
-                        outputFrame /= frameName;
-                        _recorder.Record(_stage, camera, UsdTimeCode(i), outputFrame.string());
-                    }
-                }
-            } else {
-                std::string frameName = filenamePrefix + "." + ".jpg";
+    ImGui::BeginDisabled(directory.empty() || filenamePrefix.empty() || start > end || _cameraPath == SdfPath());
+    ImGui::Text("Rendering to : %s\\%s.#.jpg", directory.c_str(), filenamePrefix.c_str());
+    if (ImGui::Button("Blast")) {
+        if (width > 0) {
+            _recorder.SetImageWidth(width);
+        }
+        _recorder.SetRendererPlugin(TfToken("HdStormRendererPlugin"));
+        _recorder.SetColorCorrectionMode(TfToken("sRGB"));
+        _recorder.SetComplexity(0.0);
+        UsdGeomCamera camera(_stage->GetPrimAtPath(_cameraPath));
+        if (isSequence) {
+            for (int i = start; i <= end; ++i) {
+                std::string frameName = filenamePrefix + "." + std::to_string(i) + ".jpg";
                 fs::path outputFrame(directory);
                 if (fs::is_directory(outputFrame)) {
                     outputFrame /= frameName;
-                    _recorder.Record(_stage, camera, UsdTimeCode::Default(), outputFrame.string());
+                    _recorder.Record(_stage, camera, UsdTimeCode(i), outputFrame.string());
                 }
             }
+        } else {
+            std::string frameName = filenamePrefix + "." + ".jpg";
+            fs::path outputFrame(directory);
+            if (fs::is_directory(outputFrame)) {
+                outputFrame /= frameName;
+                _recorder.Record(_stage, camera, UsdTimeCode::Default(), outputFrame.string());
+            }
+        }
+        CloseModal();
+    }
+    ImGui::SameLine();
+    ImGui::EndDisabled();
 
-            CloseModal();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
-            CloseModal();
-        }
+    if (ImGui::Button("Cancel")) {
+        CloseModal();
     }
 }
