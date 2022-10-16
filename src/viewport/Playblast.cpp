@@ -58,6 +58,8 @@ void PlayblastModalDialog::Draw() {
         }
         ImGui::EndCombo();
     }
+    ImGui::Text("Scene materials ON");
+    ImGui::Text("Purposes: default+proxy");
     ImGui::InputText("Output directory", &directory);
     ImGui::InputText("Output image prefix", &filenamePrefix);
     ImGui::Checkbox("Render sequence", &isSequence);
@@ -75,7 +77,7 @@ void PlayblastModalDialog::Draw() {
         }
         _recorder.SetRendererPlugin(TfToken("HdStormRendererPlugin"));
         _recorder.SetColorCorrectionMode(TfToken("sRGB"));
-        _recorder.SetComplexity(0.0);
+        _recorder.SetComplexity(1.0);
         UsdGeomCamera camera(_stage->GetPrimAtPath(_cameraPath));
         if (isSequence) {
             for (int i = start; i <= end; ++i) {
