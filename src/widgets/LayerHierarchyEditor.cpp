@@ -454,7 +454,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
 
     SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPrimPath(layer));
     DrawLayerNavigation(layer);
-
+    ScopedStyleColor tableStyle(ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("##DrawArrayEditor", 4, flags)) {
