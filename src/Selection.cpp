@@ -110,8 +110,6 @@ template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const S
         } else {                                                                                                                 \
             _data->_sdfPrimSelectionDomain.insert(layer->GetObjectAtPath(selectedPath));                                         \
         }                                                                                                                        \
-        std::cout << selectedPath.GetString() << " " << _data->_sdfPrimSelectionDomain.size() << " "                             \
-                  << _data->_sdfPropSelectionDomain.size() << std::endl;                                                         \
     }
 
 ImplementLayerSetSelected(SdfLayerRefPtr);
