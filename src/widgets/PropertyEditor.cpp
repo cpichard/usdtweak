@@ -373,10 +373,10 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
         return;
 
     if (ImGui::MenuItem("Session layer")) {
-        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
+        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
     }
     if (ImGui::MenuItem("Root layer")) {
-        ExecuteAfterDraw(&UsdStage::SetEditTarget, prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
     }
 
     if (ImGui::BeginMenu("Sublayers")) {
