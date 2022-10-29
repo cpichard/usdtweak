@@ -481,7 +481,7 @@ template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &
 }
 
 
-void Viewport ::BeginHydraUI(int width, int height) {
+void Viewport::BeginHydraUI(int width, int height) {
     // Create a ImGui windows to render the gizmos in
     ImGui_ImplOpenGL3_NewFrame();
     ImGuiIO &io = ImGui::GetIO();
@@ -539,9 +539,13 @@ void Viewport::Render() {
 
         // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
         // else set camera state
-        _renderer->SetCameraState(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
+        auto usdCamera = GetUsdGeomCamera();
+        if (usdCamera) {
+            _renderer->SetCameraPath(usdCamera.GetPath());
+        } else {
+            _renderer->SetCameraState(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
                                   GetCurrentCamera().GetFrustum().ComputeProjectionMatrix());
-
+        }
         _renderer->Render(GetCurrentStage()->GetPseudoRoot(), *_renderparams);
     } else {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
