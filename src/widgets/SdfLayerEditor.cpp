@@ -185,7 +185,7 @@ void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
     if (!layer)
         return;
     int rowId = 0;
-    if (ImGui::CollapsingHeader("Metadata")){
+    if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)){
     if (BeginFieldValueTable("##DrawLayerMetadata")) {
         //SetupFieldValueTableColumns(true, "", "Metadata");
         DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);

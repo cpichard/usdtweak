@@ -114,7 +114,7 @@ void DrawPrimVariants(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     const bool showVariants = !primSpec->GetVariantSelections().empty() || primSpec->HasVariantSetNames();
-    if(showVariants && ImGui::CollapsingHeader("Variants")) {
+    if(showVariants && ImGui::CollapsingHeader("Variants", ImGuiTreeNodeFlags_DefaultOpen)) {
         // We can have variant selection even if there is no variantSet on this prim
         // So se draw variant selection AND variantSet names which is the edit list for the
         // visible variant.

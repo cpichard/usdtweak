@@ -634,7 +634,7 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
     const auto &attributes = primSpec->GetAttributes();
     if (attributes.empty())
         return;
-    if (ImGui::CollapsingHeader("Attributes")) {
+    if (ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
         int rowId = 0;
         if (BeginFieldValueTable("##DrawPrimSpecAttributes")) {
             SetupFieldValueTableColumns(false, "", "Attribute", "");
@@ -701,7 +701,7 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     const auto &relationships = primSpec->GetRelationships();
     if (relationships.empty())
         return;
-    if (ImGui::CollapsingHeader("Relations")) {
+    if (ImGui::CollapsingHeader("Relations", ImGuiTreeNodeFlags_DefaultOpen)) {
         int rowId = 0;
         if (BeginFieldValueTable("##DrawPrimSpecRelations")) {
             SetupFieldValueTableColumns(false, "", "Relations", "");
@@ -747,7 +747,7 @@ GENERATE_FIELD_WITH_BUTTON(PrimHidden, SdfFieldKeys->Hidden, "Hidden", DrawPrimH
 
 void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
-        if (ImGui::CollapsingHeader("Metadata")) {
+        if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)) {
             int rowId = 0;
             if (BeginFieldValueTable("##DrawPrimSpecMetadata")) {
                 SetupFieldValueTableColumns(false, "", "Metadata", "Value");
@@ -772,7 +772,7 @@ static void DrawPrimAssetInfo(const SdfPrimSpecHandle prim) {
         return;
     const auto &assetInfo = prim->GetAssetInfo();
     if (!assetInfo.empty()) {
-        if (ImGui::CollapsingHeader("Asset Info")) { // This should really go in the metadata header
+        if (ImGui::CollapsingHeader("Asset Info", ImGuiTreeNodeFlags_DefaultOpen)) { // This should really go in the metadata header
             if (ImGui::BeginTable("##DrawAssetInfo", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
                 TableSetupColumns("", "Asset Info", "");
                 ImGui::TableHeadersRow();
