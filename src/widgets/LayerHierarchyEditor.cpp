@@ -101,7 +101,7 @@ static void DrawBackgroundSelection(const SdfPrimSpecHandle &currentPrim, Select
     ImVec4 colorSelected = selected ? ImVec4(ColorPrimSelectedBg) : ImVec4(0.75, 0.60, 0.33, 0.2);
     ScopedStyleColor scopedStyle(ImGuiCol_HeaderHovered, selected ? colorSelected : ImVec4(ColorTransparent),
                                  ImGuiCol_HeaderActive, ImVec4(ColorTransparent), ImGuiCol_Header, colorSelected);
-    ImVec2 sizeArg(0.0, 20);
+    ImVec2 sizeArg(0.0, TableRowDefaultHeight);
     const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
     if (ImGui::Selectable("##backgroundSelectedPrim", selected, selectableFlags, sizeArg)) {
         if (currentPrim) {
