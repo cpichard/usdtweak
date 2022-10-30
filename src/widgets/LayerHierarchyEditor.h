@@ -5,5 +5,8 @@
 
 #include "Selection.h"
 
+// rename to SdfLayerSceneGraphEditor.h ??
+// DrawLayerSceneGraph ??
+
 void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selectedPrim);
 

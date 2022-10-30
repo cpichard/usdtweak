@@ -5,7 +5,7 @@
 // Provide a standard and consistent layout for tables with button+field+value, and I don't have to write and fix the same code multiple time in the source
 //
 // TODO: rename to TableLayouts.h
-// and functions like TableLayoutBeginTable() ...
+// and functions like TableLayoutBeginThreeColumnTable() ...
 
 template <typename FieldT, typename... Args> inline bool HasEdits(const Args &...args) { return true; }
 
@@ -25,7 +25,7 @@ template <typename FieldT, typename... Args> inline void DrawFieldName(const int
 
 template <typename FieldT, typename... Args> inline void DrawFieldButton(const int rowId, const Args &...args) {}
 
-// TODO: Rename to DrawThreeColumnRow
+// TODO: Rename to DrawThreeColumnsRow
 template <typename FieldT, typename... Args> inline void DrawFieldValueTableRow(const int rowId, const Args &...args) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);
@@ -37,6 +37,7 @@ template <typename FieldT, typename... Args> inline void DrawFieldValueTableRow(
     DrawFieldValue<FieldT>(rowId, args...);
 }
 
+// TODO: Rename to BeginThreeColumnsTable
 inline bool BeginFieldValueTable(const char *strId) {
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     return ImGui::BeginTable(strId, 3, tableFlags);

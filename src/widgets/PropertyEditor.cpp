@@ -82,6 +82,8 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
 void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
     const std::string attributeLabel = GetDisplayName(attribute);
     VtValue value;
+    // TODO: On the lower spec mac, this call appears to be really slow with some attributes
+    //       AttributeQuery could be a solution but doesn't update with external data updates
     const bool HasValue = attribute.Get(&value, currentTime);
 
     if (HasValue) {
