@@ -6,6 +6,7 @@
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/pcp/node.h>
 #include <pxr/usd/pcp/layerStack.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
 #include "Gui.h"
 #include "PropertyEditor.h"
 #include "VtValueEditor.h"
@@ -369,6 +370,37 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
     }
 }
 
+bool DrawMaterialBindings(const UsdPrim &prim) {
+    if (!prim)
+        return false;
+    UsdShadeMaterialBindingAPI materialBindingAPI(prim);
+    if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
+        ImGui::TableSetupColumn("Material Bindings");
+        ImGui::TableSetupColumn("");
+        ImGui::TableHeadersRow();
+        UsdShadeMaterial material;
+        for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
+            ImGui::TableSetColumnIndex(1);
+            const std::string &purposeName = purpose.GetString();
+            ImGui::Text("%s", purposeName == "" ? "All purposes" : purposeName.c_str());
+            ImGui::TableSetColumnIndex(2);
+            material = materialBindingAPI.ComputeBoundMaterial(purpose);
+            if (material) {
+                ImGui::Text("%s", material.GetPrim().GetPath().GetText());
+            } else {
+                ImGui::Text("unbound");
+            }
+        }
+
+        ImGui::EndTable();
+        return true;
+    }
+    return false;
+}
+
+
 // Second version of an edit target selector
 void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim)
@@ -496,7 +528,11 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
-
+        
+        if (DrawMaterialBindings(prim)) {
+            ImGui::Separator();
+        }
+        
         // Draw variant sets
         if (DrawVariantSetsCombos(prim)) {
             ImGui::Separator();
