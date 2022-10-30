@@ -234,7 +234,8 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
         primSpecName = primSpec->GetPath().GetName();
     }
     ScopedStyleColor textColor(ImGuiCol_Text,
-                               primIsVariant ? ImU32(ImColor::HSV(0.2 / 7.0f, 0.5f, 0.8f)) : ImGui::GetColorU32(ImGuiCol_Text));
+                               primIsVariant ? ImU32(ImColor::HSV(0.2 / 7.0f, 0.5f, 0.8f)) : ImGui::GetColorU32(ImGuiCol_Text),
+                               ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
 
     ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap;
     nodeFlags |= hasChildren && !primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf
@@ -351,8 +352,12 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     HandleDragAndDrop(layer, selection);
     ImGui::SetItemAllowOverlap();
     std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
-    bool unfolded = ImGui::TreeNodeBehavior(IdOf(SdfPath::AbsoluteRootPath().GetHash()), treeNodeFlags, label.c_str());
 
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, 0);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, 0);
+    bool unfolded = ImGui::TreeNodeBehavior(IdOf(SdfPath::AbsoluteRootPath().GetHash()), treeNodeFlags, label.c_str());
+    ImGui::PopStyleColor(2);
+    
     if (!ImGui::IsItemToggledOpen() && ImGui::IsItemClicked()) {
         selection.Clear(layer);
     }
@@ -454,7 +459,6 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
 
     SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPrimPath(layer));
     DrawLayerNavigation(layer);
-    ScopedStyleColor tableStyle(ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY;
 
     if (ImGui::BeginTable("##DrawArrayEditor", 4, flags)) {
