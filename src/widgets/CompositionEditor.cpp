@@ -322,7 +322,7 @@ void DrawPrimSpecializes(const SdfPrimSpecHandle &primSpec) {
 void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
-    if (ImGui::CollapsingHeader("Composition")) {
+    if (ImGui::CollapsingHeader("Composition", ImGuiTreeNodeFlags_DefaultOpen)) {
         DrawPrimReferences(primSpec);
         DrawPrimPayloads(primSpec);
         DrawPrimInherits(primSpec);
