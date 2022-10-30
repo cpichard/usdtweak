@@ -1,7 +1,7 @@
 #pragma once
 #include <functional>
 
-extern bool modalOpenTriggered;
+
 
 // A modal dialog should know how to draw itself
 struct ModalDialog {
@@ -11,16 +11,14 @@ struct ModalDialog {
     static void CloseModal();
 };
 
-/// TODO: Get/Set CurrentModalDialog shouldn't be exposed in this header
-ModalDialog *GetCurrentModalDialog();
-void SetCurrentModalDialog(ModalDialog *);
+/// This is a private variable and function for DrawModalDialog don't use them !
+extern bool modalOpenTriggered;
+void _PushModalDialog(ModalDialog *);
 
 /// Trigger a modal dialog
 template <typename T, typename... ArgTypes> void DrawModalDialog(ArgTypes &&... args) {
     modalOpenTriggered = true;
-    if (!GetCurrentModalDialog()) {
-        SetCurrentModalDialog(new T(args...));
-    }
+    _PushModalDialog(new T(args...));
 }
 
 /// Draw the current modal dialog if it has been triggered

@@ -69,41 +69,42 @@ struct CreateAssetPathModalDialog : public ModalDialog {
             return;
         }
         ImGui::Text("%s", _primSpec->GetPath().GetString().c_str());
-        if (_showFileBrowser) {
+
+        if (ImGui::BeginCombo("Operation", GetListEditorOperationName(_operation))) {
+            for (int n = 0; n < GetListEditorOperationSize(); n++) {
+                if (ImGui::Selectable(GetListEditorOperationName(n))) {
+                    _operation = n;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::InputText("File path", &_assetPath);
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_FILE)) {
+            ImGui::OpenPopup("Asset path browser");
+        }
+        if (ImGui::BeginPopupModal("Asset path browser")) {
             DrawFileBrowser();
             ImGui::Checkbox("Use relative path", &_relative);
             ImGui::Checkbox("Unix compatible", &_unixify);
             if (ImGui::Button("Use selected file")) {
-                _showFileBrowser = !_showFileBrowser;
                 if (_relative) {
                     _assetPath = GetFileBrowserFilePathRelativeTo(_primSpec->GetLayer()->GetRealPath(), _unixify);
                 } else {
                     _assetPath = GetFileBrowserFilePath();
                 }
+                ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
             if (ImGui::Button("Close")) {
-                _showFileBrowser = !_showFileBrowser;
+                ImGui::CloseCurrentPopup();
             }
-        } else {
-            if (ImGui::BeginCombo("Operation", GetListEditorOperationName(_operation))) {
-                for (int n = 0; n < GetListEditorOperationSize(); n++) {
-                    if (ImGui::Selectable(GetListEditorOperationName(n))) {
-                        _operation = n;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            ImGui::InputText("File path", &_assetPath);
-            ImGui::SameLine();
-            if (ImGui::Button(ICON_FA_FILE)) {
-                _showFileBrowser = !_showFileBrowser;
-            }
-            ImGui::InputText("Target prim path", &_primPath);
-            ImGui::InputDouble("Layer time offset", &_timeOffset);
-            ImGui::InputDouble("Layer time scale", &_timeScale);
-            DrawOkCancelModal([=]() { OnOkCallBack(); });
+            ImGui::EndPopup();
         }
+        ImGui::InputText("Target prim path", &_primPath);
+        ImGui::InputDouble("Layer time offset", &_timeOffset);
+        ImGui::InputDouble("Layer time scale", &_timeScale);
+        DrawOkCancelModal([=]() { OnOkCallBack(); });
     }
 
     virtual void OnOkCallBack() = 0;
@@ -118,7 +119,7 @@ struct CreateAssetPathModalDialog : public ModalDialog {
     std::string _assetPath;
     std::string _primPath;
     int _operation = 0;
-    bool _showFileBrowser = false;
+
     bool _relative = false;
     bool _unixify = false;
     double _timeScale = 1.0;
