@@ -373,6 +373,9 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
         if (!clipboardEmpty && ImGui::MenuItem("Paste path as Overs")) {
             ExecuteAfterDraw<LayerCreateOversFromPath>(layer, std::string(ImGui::GetClipboardText()));
         }
+        if (ImGui::MenuItem("Paste")) {
+            ExecuteAfterDraw<PrimPaste>(layer->GetPrimAtPath(SdfPath::AbsoluteRootPath()));
+        }
         ImGui::Separator();
         DrawLayerActionPopupMenu(layer);
 
