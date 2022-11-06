@@ -273,17 +273,19 @@ void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer) {
 void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
     if (!layer)
         return;
-    int rowId = 0;
-    bool hasUpdate = false;
-    if (layer && layer->GetNumSubLayerPaths() > 0) {
-        if (BeginValueTable("##DrawLayerSublayerStack")) {
-            SetupValueTableColumns(true, "", "Sublayers");
-            auto subLayersProxy = layer->GetSubLayerPaths();
-            for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
-                const std::string& path = subLayersProxy[i];
-                DrawValueTableRow<SublayerPath>(rowId++, layer, path);
+    if (ImGui::CollapsingHeader("Sublayers", ImGuiTreeNodeFlags_DefaultOpen)){
+        int rowId = 0;
+        bool hasUpdate = false;
+        if (layer && layer->GetNumSubLayerPaths() > 0) {
+            if (BeginValueTable("##DrawLayerSublayerStack")) {
+                SetupValueTableColumns(false, "", "Sublayers");
+                auto subLayersProxy = layer->GetSubLayerPaths();
+                for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
+                    const std::string& path = subLayersProxy[i];
+                    DrawValueTableRow<SublayerPath>(rowId++, layer, path);
+                }
+                EndValueTable();
             }
-            EndValueTable();
         }
     }
 }
