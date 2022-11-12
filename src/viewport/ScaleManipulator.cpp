@@ -179,6 +179,14 @@ Manipulator *ScaleManipulator::OnUpdate(Viewport &viewport) {
         // TODO division per zero check
         scale[_selectedAxis] = _scaleOnBegin[_selectedAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
 
+        if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
+            scale[XAxis] = _scaleOnBegin[XAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+            scale[YAxis] = _scaleOnBegin[YAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+            scale[ZAxis] = _scaleOnBegin[XAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+        } else {
+            scale[_selectedAxis] = _scaleOnBegin[_selectedAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+        }
+        
         _xformAPI.SetScale(scale, GetEditionTimeCode(viewport));
     }
     return this;
