@@ -3,16 +3,16 @@
 /// IT SHOULD NOT BE COMPILED SEPARATELY
 ///
 
-#include <pxr/usd/sdf/layer.h>
-#include <pxr/usd/sdf/primSpec.h>
-#include <pxr/usd/sdf/variantSpec.h>
-#include <pxr/usd/sdf/variantSetSpec.h>
-#include <pxr/usd/sdf/path.h>
-#include <pxr/usd/sdf/reference.h>
-#include <pxr/usd/sdf/namespaceEdit.h>
-#include <pxr/usd/sdf/valueTypeName.h>
-#include <pxr/usd/sdf/copyUtils.h>
 #include "ProxyHelpers.h"
+#include <pxr/usd/sdf/copyUtils.h>
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/namespaceEdit.h>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/reference.h>
+#include <pxr/usd/sdf/valueTypeName.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -158,7 +158,7 @@ struct PrimReparent : public SdfLayerCommand {
         } else { // TODO in a USD log
             std::cout << "Unable to reparent, reasons are:" << std::endl;
             for (const auto &detail : details) {
-                std::cout <<  detail.edit.currentPath.GetString() << " " << detail.reason << std::endl;
+                std::cout << detail.edit.currentPath.GetString() << " " << detail.reason << std::endl;
             }
         }
         return false;
@@ -185,7 +185,7 @@ struct PrimCreateAttribute : public SdfLayerCommand {
         SdfUndoRecorder recorder(_undoCommands, layer);
         if (SdfAttributeSpecHandle attribute = SdfAttributeSpec::New(_owner, _name, _typeName, _variability, _custom)) {
             // Default value for now
-            if(_createDefault) {
+            if (_createDefault) {
                 auto defaultValue = _typeName.GetDefaultValue();
                 attribute->SetDefaultValue(defaultValue);
             }
@@ -201,7 +201,6 @@ struct PrimCreateAttribute : public SdfLayerCommand {
     bool _custom = false;
     bool _createDefault = false;
 };
-
 
 struct PrimCreateRelationship : public SdfLayerCommand {
 
@@ -292,6 +291,8 @@ struct PrimDuplicate : public SdfLayerCommand {
 
 struct CopyPasteCommand : public SdfLayerCommand {
     ~CopyPasteCommand() override {}
+    TfToken GetPrimsRoot() const { return TfToken("CopiedPrims"); }
+    TfToken GetPropertiesRoot() const { return TfToken("CopiedProperties"); }
     static SdfLayerRefPtr _copyPasteLayer;
 };
 SdfLayerRefPtr CopyPasteCommand::_copyPasteLayer(SdfLayer::CreateAnonymous("CopyPasteBuffer"));
@@ -303,17 +304,17 @@ struct PrimCopy : public CopyPasteCommand {
         if (_prim && _copyPasteLayer) {
             SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
             // Ditch root prim
-            auto defaultPrimToken = _copyPasteLayer->GetDefaultPrim();
-            if (defaultPrimToken != TfToken()) {
-                auto defaultPrim = _copyPasteLayer->GetPrimAtPath(SdfPath::AbsoluteRootPath().AppendChild(defaultPrimToken));
-                defaultPrim->GetLayer()->RemoveRootPrim(defaultPrim);
+            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetPrimsRoot());
+            auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
+            if (defaultPrim) {
+                _copyPasteLayer->RemoveRootPrim(defaultPrim);
             }
+            _copyPasteLayer->InsertRootPrim(SdfPrimSpec::New(_copyPasteLayer, GetPrimsRoot().GetString(), SdfSpecifierDef));
+
             // Copy
             const bool copyOk = SdfCopySpec(_prim->GetLayer(), _prim->GetPath(), _copyPasteLayer,
-                                            SdfPath::AbsoluteRootPath().AppendChild(_prim->GetNameToken()));
-            if (copyOk) {
-                _copyPasteLayer->SetDefaultPrim(_prim->GetNameToken());
-            }
+                                            CopiedPrimRoot.AppendChild(_prim->GetNameToken()));
+
             return copyOk;
         }
         return false;
@@ -327,8 +328,18 @@ struct PrimPaste : public CopyPasteCommand {
     bool DoIt() override {
         if (_prim && _copyPasteLayer) {
             SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
-            return SdfCopySpec(_copyPasteLayer, SdfPath::AbsoluteRootPath().AppendChild(_copyPasteLayer->GetDefaultPrim()),
-                               _prim->GetLayer(), _prim->GetPath().AppendChild(_copyPasteLayer->GetDefaultPrim()));
+            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetPrimsRoot());
+            auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
+            if (defaultPrim) {
+                for (const auto &child : defaultPrim->GetNameChildren()) {
+                    // TODO: it might be better to do it in batch
+                    if (!SdfCopySpec(_copyPasteLayer, child->GetPath(), _prim->GetLayer(),
+                                     _prim->GetPath().AppendChild(child->GetNameToken()))) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
         return false;
     }
@@ -354,8 +365,6 @@ struct PrimCreateAttributeConnection : public SdfLayerCommand {
     SdfPath _connectionEndPoint;
 };
 
-
-
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
 template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string newName);
@@ -374,4 +383,5 @@ template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
 template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);
 template void ExecuteAfterDraw<PrimCopy>(SdfPrimSpecHandle prim);
 template void ExecuteAfterDraw<PrimPaste>(SdfPrimSpecHandle prim);
-template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, int operation, std::string connectionEndPoint);
+template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, int operation,
+                                                              std::string connectionEndPoint);

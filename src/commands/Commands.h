@@ -31,6 +31,8 @@ struct PrimCopy;
 struct PrimPaste;
 struct PrimCreateAttributeConnection;
 
+struct PropertyCopy;
+struct PropertyPaste;
 
 struct EditorSetDataPointer;
 struct EditorSetSelected;

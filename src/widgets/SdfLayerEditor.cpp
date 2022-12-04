@@ -258,7 +258,7 @@ template <> inline void DrawFieldButton<SublayerPath>(const int rowId, const Sdf
 void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer) {
     bool enabled = layer;
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(ICON_FA_PLUS " Create", enabled)) {
+        if (ImGui::BeginMenu("New", enabled)) {
             if (ImGui::MenuItem("Sublayer path")) {
                 std::string newName = "sublayer_" + std::to_string(layer->GetNumSubLayerPaths() + 1) + ".usd";
                 ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, newName, 0); // TODO find proper name that is not in the list of sublayer

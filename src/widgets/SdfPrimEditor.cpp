@@ -27,6 +27,7 @@
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
 #include "FieldValueTable.h"
+#include "Shortcuts.h"
 
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
@@ -493,6 +494,11 @@ inline void DrawFieldButton<AttributeField>(const int rowId, const SdfAttributeS
         if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
             //DrawModalDialog<>(attribute);
         }
+        
+        if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
+            ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
+        }
+        
         ImGui::EndPopup();
     }
     ImGui::PopID();
@@ -831,10 +837,16 @@ void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
 
     bool enabled = primSpec;
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(ICON_FA_PLUS " Create", enabled)) {
+        if (ImGui::BeginMenu("New", enabled)) {
             DrawPrimCreateCompositionMenu(primSpec);
             ImGui::Separator();
             DrawPrimCreatePropertyMenu(primSpec); // attributes and relation
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit", enabled)) {
+            if (ImGui::MenuItem("Paste")) {
+                ExecuteAfterDraw<PropertyPaste>(primSpec);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -861,4 +873,12 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     DrawPrimSpecAttributes(primSpec, selection);
     DrawPrimSpecRelations(primSpec);
     ImGui::EndChild();
+    if (ImGui::IsItemHovered()) {
+        const SdfPath &selectedProperty = selection.GetAnchorPropertyPath(primSpec->GetLayer());
+        if (selectedProperty!=SdfPath()) {
+            SdfPropertySpecHandle selectedPropertySpec = primSpec->GetLayer()->GetPropertyAtPath(selectedProperty);
+            AddShortcut<PropertyCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPropertySpec);
+        }
+        AddShortcut<PropertyPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(primSpec);
+    }
 }
