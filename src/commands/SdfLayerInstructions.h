@@ -63,11 +63,13 @@ struct UndoRedoSetFieldDictValueByKey {
 
 
 struct UndoRedoSetTimeSample {
-    UndoRedoSetTimeSample(SdfLayerHandle layer, const SdfPath& path, double timeCode, VtValue newValue)
-        : _layer(layer), _path(path), _timeCode(timeCode), _newValue(std::move(newValue)) {
+    UndoRedoSetTimeSample(SdfLayerHandle layer, const SdfPath &path, double timeCode, VtValue newValue)
+        : _layer(layer), _path(path), _timeCode(timeCode), _newValue(std::move(newValue)), _isKeyFrame(false),
+          _hasTimeSamples(false) {
 
         if (_layer && _layer->HasField(path, SdfFieldKeys->TimeSamples)) {
-            _layer->QueryTimeSample(_path, _timeCode, &_previousValue);
+            _hasTimeSamples = true;
+            _isKeyFrame = _layer->QueryTimeSample(_path, _timeCode, &_previousValue);
         }
     }
     ~UndoRedoSetTimeSample() = default;
@@ -81,21 +83,28 @@ struct UndoRedoSetTimeSample {
 
     void UndoIt() {
         if (_layer && _layer->GetStateDelegate()) {
-            if (_previousValue != VtValue()) {
+            if (_hasTimeSamples && _isKeyFrame) {
                 _layer->GetStateDelegate()->SetTimeSample(_path, _timeCode, _previousValue);
-            }
-            else {
+            } else if (_hasTimeSamples && !_isKeyFrame) {
+                _layer->EraseTimeSample(_path, _timeCode);
+            } else if (!_hasTimeSamples) {
                 _layer->GetStateDelegate()->SetField(_path, SdfFieldKeys->TimeSamples, _previousValue);
+            } else {
+                // This shouldn't happen
             }
         }
     }
 
+    // TODO: look for reducing the size of this struct
     SdfLayerRefPtr _layer;
     const SdfPath _path;
     double _timeCode;
     VtValue _newValue;
     VtValue _previousValue;
+    bool _isKeyFrame;
+    bool _hasTimeSamples;
 };
+
 
 struct UndoRedoCreateSpec {
     UndoRedoCreateSpec(SdfLayerHandle layer, const SdfPath& path, SdfSpecType specType, bool inert)
