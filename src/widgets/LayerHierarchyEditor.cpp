@@ -347,8 +347,8 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     }
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
-
-    DrawBackgroundSelection(SdfPrimSpecHandle(), selection, selection.IsSelectionEmpty(layer));
+    auto rootPrim = layer->GetPrimAtPath(SdfPath::AbsoluteRootPath());
+    DrawBackgroundSelection(rootPrim, selection, selection.IsSelected(rootPrim));
     HandleDragAndDrop(layer, selection);
     ImGui::SetItemAllowOverlap();
     std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
@@ -359,7 +359,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
     ImGui::PopStyleColor(2);
     
     if (!ImGui::IsItemToggledOpen() && ImGui::IsItemClicked()) {
-        selection.Clear(layer);
+        selection.SetSelected(layer, SdfPath::AbsoluteRootPath());
     }
 
     if (ImGui::BeginPopupContextItem()) {
@@ -374,7 +374,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, Selection &selectio
             ExecuteAfterDraw<LayerCreateOversFromPath>(layer, std::string(ImGui::GetClipboardText()));
         }
         if (ImGui::MenuItem("Paste")) {
-            ExecuteAfterDraw<PrimPaste>(layer->GetPrimAtPath(SdfPath::AbsoluteRootPath()));
+            ExecuteAfterDraw<PrimPaste>(rootPrim);
         }
         ImGui::Separator();
         DrawLayerActionPopupMenu(layer);
