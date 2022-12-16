@@ -289,10 +289,11 @@ struct PrimDuplicate : public SdfLayerCommand {
     SdfPrimSpecHandle _prim;
 };
 
+// A base class for copy/paste commands, it keeps the copy/paste layer and
+// used paths
 struct CopyPasteCommand : public SdfLayerCommand {
     ~CopyPasteCommand() override {}
-    TfToken GetPrimsRoot() const { return TfToken("CopiedPrims"); }
-    TfToken GetPropertiesRoot() const { return TfToken("CopiedProperties"); }
+    TfToken GetCopyRoot() const { return TfToken("Copy"); }
     static SdfLayerRefPtr _copyPasteLayer;
 };
 SdfLayerRefPtr CopyPasteCommand::_copyPasteLayer(SdfLayer::CreateAnonymous("CopyPasteBuffer"));
@@ -304,12 +305,12 @@ struct PrimCopy : public CopyPasteCommand {
         if (_prim && _copyPasteLayer) {
             SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
             // Ditch root prim
-            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetPrimsRoot());
+            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
             if (defaultPrim) {
                 _copyPasteLayer->RemoveRootPrim(defaultPrim);
             }
-            _copyPasteLayer->InsertRootPrim(SdfPrimSpec::New(_copyPasteLayer, GetPrimsRoot().GetString(), SdfSpecifierDef));
+            _copyPasteLayer->InsertRootPrim(SdfPrimSpec::New(_copyPasteLayer, GetCopyRoot().GetString(), SdfSpecifierDef));
 
             // Copy
             const bool copyOk = SdfCopySpec(_prim->GetLayer(), _prim->GetPath(), _copyPasteLayer,
@@ -328,7 +329,7 @@ struct PrimPaste : public CopyPasteCommand {
     bool DoIt() override {
         if (_prim && _copyPasteLayer) {
             SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
-            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetPrimsRoot());
+            const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
             if (defaultPrim) {
                 for (const auto &child : defaultPrim->GetNameChildren()) {
@@ -364,6 +365,57 @@ struct PrimCreateAttributeConnection : public SdfLayerCommand {
     int _operation = 0;
     SdfPath _connectionEndPoint;
 };
+
+struct PropertyCopy : public CopyPasteCommand {
+    PropertyCopy(SdfPropertySpecHandle prop) : _prop(prop){};
+    ~PropertyCopy() override {}
+    bool DoIt() override {
+        if (_prop && _copyPasteLayer) {
+            SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
+            const SdfPath copiedPropertiesRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
+            auto copiedPropertiesPrim = _copyPasteLayer->GetPrimAtPath(copiedPropertiesRoot);
+            if (copiedPropertiesPrim) {
+                _copyPasteLayer->RemoveRootPrim(copiedPropertiesPrim);
+            }
+            _copyPasteLayer->InsertRootPrim(SdfPrimSpec::New(_copyPasteLayer, GetCopyRoot().GetString(), SdfSpecifierDef));
+
+            // Copy
+            const bool copyOk = SdfCopySpec(_prop->GetLayer(), _prop->GetPath(), _copyPasteLayer,
+                                            copiedPropertiesRoot.AppendProperty(_prop->GetNameToken()));
+            return copyOk;
+        }
+        return false;
+    }
+    SdfPropertySpecHandle _prop;
+};
+template void ExecuteAfterDraw<PropertyCopy>(SdfPropertySpecHandle prop);
+
+struct PropertyPaste : public CopyPasteCommand {
+    PropertyPaste(SdfPrimSpecHandle prim) : _prim(prim){};
+    ~PropertyPaste() override {}
+    bool DoIt() override {
+        if (_prim && _copyPasteLayer) {
+            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            const SdfPath CopiedPropertiesRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
+            auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPropertiesRoot);
+            if (defaultPrim) {
+                for (const auto &prop : defaultPrim->GetProperties()) {
+                    // TODO: it might be better to do it in batch
+                    if (!SdfCopySpec(_copyPasteLayer, prop->GetPath(), _prim->GetLayer(),
+                                     _prim->GetPath().AppendProperty(prop->GetNameToken()))) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+            
+        }
+        return false;
+    }
+    SdfPrimSpecHandle _prim;
+};
+template void ExecuteAfterDraw<PropertyPaste>(SdfPrimSpecHandle prim);
+
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
