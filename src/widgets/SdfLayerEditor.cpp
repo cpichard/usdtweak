@@ -16,6 +16,7 @@
 #include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/usdGeom/camera.h>
+#include <pxr/usd/usdRender/settings.h>
 
 #include "Editor.h"
 #include "Commands.h"
@@ -95,6 +96,16 @@ void DrawLayerMetersPerUnit(const SdfLayerRefPtr &layer) {
     }
 }
 
+void DrawRenderSettingsPrimPath(const SdfLayerRefPtr &layer) {
+    VtValue renderSettingsPrimPath = layer->HasField(SdfPath::AbsoluteRootPath(), UsdRenderTokens->renderSettingsPrimPath)
+                                ? layer->GetField(SdfPath::AbsoluteRootPath(), UsdRenderTokens->renderSettingsPrimPath)
+                                : VtValue("");
+    VtValue result = DrawVtValue("Render Settings Prim Path", renderSettingsPrimPath);
+    if (result != VtValue()) {
+        ExecuteAfterDraw(&SdfLayer::SetField<VtValue>, layer, SdfPath::AbsoluteRootPath(), UsdRenderTokens->renderSettingsPrimPath, result);
+    }
+}
+
 #define GENERATE_DRAW_FUNCTION(Name_, Type_, Label_)                                                                             \
     void DrawLayer##Name_(const SdfLayerRefPtr &layer) {                                                                         \
         auto value = layer->Get##Name_();                                                                                        \
@@ -165,9 +176,9 @@ GENERATE_METADATA_FIELD(LayerFieldFramesPerSecond, SdfFieldKeys->FramesPerSecond
 GENERATE_METADATA_FIELD(LayerFieldFramePrecision, SdfFieldKeys->FramePrecision, DrawLayerFramePrecision, "Frame precision");
 GENERATE_METADATA_FIELD(LayerFieldTimeCodesPerSecond, SdfFieldKeys->TimeCodesPerSecond, DrawLayerTimeCodesPerSecond, "TimeCodes per second");
 GENERATE_METADATA_FIELD(LayerFieldMetersPerUnit, UsdGeomTokens->metersPerUnit, DrawLayerMetersPerUnit, "Meters per unit");
+GENERATE_METADATA_FIELD(LayerFieldRenderSettingsPrimPath, UsdRenderTokens->renderSettingsPrimPath, DrawRenderSettingsPrimPath, "Render Settings Prim Path");
 GENERATE_METADATA_FIELD(LayerFieldDocumentation, SdfFieldKeys->Documentation, DrawLayerDocumentation, "Documentation");
 GENERATE_METADATA_FIELD(LayerFieldComment, SdfFieldKeys->Comment, DrawLayerComment, "Comment");
-
 
 void DrawSdfLayerIdentity(const SdfLayerRefPtr &layer, const SdfPath &path) {
     if (!layer)
@@ -185,24 +196,24 @@ void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
     if (!layer)
         return;
     int rowId = 0;
-    if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)){
-    if (BeginFieldValueTable("##DrawLayerMetadata")) {
-        //SetupFieldValueTableColumns(true, "", "Metadata");
-        DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldStartTimeCode>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldEndTimeCode>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldFramesPerSecond>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldFramePrecision>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldTimeCodesPerSecond>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldDocumentation>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldComment>(rowId++, layer);
-        EndFieldValueTable();
-    }
+    if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (BeginFieldValueTable("##DrawLayerMetadata")) {
+            // SetupFieldValueTableColumns(true, "", "Metadata");
+            DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldStartTimeCode>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldEndTimeCode>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldFramesPerSecond>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldFramePrecision>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldTimeCodesPerSecond>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldRenderSettingsPrimPath>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldDocumentation>(rowId++, layer);
+            DrawFieldValueTableRow<LayerFieldComment>(rowId++, layer);
+            EndFieldValueTable();
+        }
     }
 }
-
 
 
 
