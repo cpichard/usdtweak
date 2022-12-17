@@ -499,6 +499,9 @@ inline void DrawFirstColumn<AttributeField>(const int rowId, const SdfAttributeS
             ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
         }
         
+        if (ImGui::MenuItem(ICON_FA_COPY " Copy property path")) {
+            ImGui::SetClipboardText(attribute->GetPath().GetString().c_str());
+        }
         ImGui::EndPopup();
     }
     ImGui::PopID();
