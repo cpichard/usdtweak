@@ -129,14 +129,14 @@ GENERATE_DRAW_FUNCTION(Comment, TextMultiline, "##DrawLayerComment");
     struct ClassName_ {                                                                                                          \
         static constexpr const char *fieldName = FieldName_;                                                                     \
     };                                                                                                                           \
-    template <> inline void DrawFieldValue<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                           \
+    template <> inline void DrawThirdColumn<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                           \
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
         DrawFun_(owner);                                                                                                         \
     }                                                                                                                            \
     template <> inline bool HasEdits<ClassName_>(const SdfLayerRefPtr &owner) {                                                  \
         return !owner->GetField(SdfPath::AbsoluteRootPath(), Token_).IsEmpty();                                                  \
     }                                                                                                                            \
-    template <> inline void DrawFieldButton<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                          \
+    template <> inline void DrawFirstColumn<ClassName_>(const int rowId, const SdfLayerRefPtr &owner) {                          \
         ImGui::PushID(rowId);                                                                                                    \
         if (ImGui::Button(ICON_FA_TRASH) && HasEdits<ClassName_>(owner)) {                                                       \
             ExecuteAfterDraw(&SdfLayer::EraseField, owner, SdfPath::AbsoluteRootPath(), Token_);                                 \
@@ -150,7 +150,7 @@ struct LayerFieldFilename {
     static constexpr const char *fieldName = "Path";
 };
 
-template <> inline void DrawFieldValue<LayerFieldFilename>(const int rowId, const SdfPath &path) {
+template <> inline void DrawThirdColumn<LayerFieldFilename>(const int rowId, const SdfPath &path) {
     if (path == SdfPath() || path == SdfPath::AbsoluteRootPath()) {
         ImGui::Text("Layer root");
     } else {
@@ -164,7 +164,7 @@ struct LayerFieldIdentity {
     static constexpr const char *fieldName = "Layer";
 };
 
-template <> inline void DrawFieldValue<LayerFieldIdentity>(const int rowId, const SdfLayerRefPtr &owner) {
+template <> inline void DrawThirdColumn<LayerFieldIdentity>(const int rowId, const SdfLayerRefPtr &owner) {
     ImGui::Text("%s", owner->GetIdentifier().c_str());
 }
 
@@ -184,11 +184,11 @@ void DrawSdfLayerIdentity(const SdfLayerRefPtr &layer, const SdfPath &path) {
     if (!layer)
         return;
     int rowId = 0;
-    if (BeginFieldValueTable("##DrawLayerHeader")) {
-        SetupFieldValueTableColumns(true, "", "Identity", "Value");
-        DrawFieldValueTableRow<LayerFieldIdentity>(rowId++, layer);
-        DrawFieldValueTableRow<LayerFieldFilename>(rowId++, path);
-        EndFieldValueTable();
+    if (BeginThreeColumnsTable("##DrawLayerHeader")) {
+        SetupThreeColumnsTable(true, "", "Identity", "Value");
+        DrawThreeColumnsRow<LayerFieldIdentity>(rowId++, layer);
+        DrawThreeColumnsRow<LayerFieldFilename>(rowId++, path);
+        EndThreeColumnsTable();
     }
 }
 
@@ -197,20 +197,20 @@ void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer) {
         return;
     int rowId = 0;
     if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (BeginFieldValueTable("##DrawLayerMetadata")) {
+        if (BeginThreeColumnsTable("##DrawLayerMetadata")) {
             // SetupFieldValueTableColumns(true, "", "Metadata");
-            DrawFieldValueTableRow<LayerFieldDefaultPrim>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldUpAxis>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldMetersPerUnit>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldStartTimeCode>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldEndTimeCode>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldFramesPerSecond>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldFramePrecision>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldTimeCodesPerSecond>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldRenderSettingsPrimPath>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldDocumentation>(rowId++, layer);
-            DrawFieldValueTableRow<LayerFieldComment>(rowId++, layer);
-            EndFieldValueTable();
+            DrawThreeColumnsRow<LayerFieldDefaultPrim>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldUpAxis>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldMetersPerUnit>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldStartTimeCode>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldEndTimeCode>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldFramesPerSecond>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldFramePrecision>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldTimeCodesPerSecond>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldRenderSettingsPrimPath>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldDocumentation>(rowId++, layer);
+            DrawThreeColumnsRow<LayerFieldComment>(rowId++, layer);
+            EndThreeColumnsTable();
         }
     }
 }
@@ -235,7 +235,7 @@ struct SublayerPath {
     static constexpr const char *fieldName = "";
 };
 
-template <> inline void DrawFieldValue<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+template <> inline void DrawThirdColumn<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
         std::string newPath(path);
     ImGui::PushID(rowId);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-2*28);
@@ -258,7 +258,7 @@ template <> inline void DrawFieldValue<SublayerPath>(const int rowId, const SdfL
     ImGui::PopID();
 }
 
-template <> inline void DrawFieldButton<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+template <> inline void DrawFirstColumn<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
     ImGui::PushID(rowId);
     if (ImGui::SmallButton(ICON_FA_TRASH)) {
         ExecuteAfterDraw<LayerRemoveSubLayer>(layer, path);
@@ -288,14 +288,14 @@ void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
         int rowId = 0;
         bool hasUpdate = false;
         if (layer && layer->GetNumSubLayerPaths() > 0) {
-            if (BeginValueTable("##DrawLayerSublayerStack")) {
-                SetupValueTableColumns(false, "", "Sublayers");
+            if (BeginTwoColumnsTable("##DrawLayerSublayerStack")) {
+                SetupTwoColumnsTable(false, "", "Sublayers");
                 auto subLayersProxy = layer->GetSubLayerPaths();
                 for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
                     const std::string& path = subLayersProxy[i];
-                    DrawValueTableRow<SublayerPath>(rowId++, layer, path);
+                    DrawTwoColumnsRow<SublayerPath>(rowId++, layer, path);
                 }
-                EndValueTable();
+                EndTwoColumnsTable();
             }
         }
     }

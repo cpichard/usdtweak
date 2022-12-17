@@ -69,7 +69,7 @@ static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
 struct VariantSetNamesItem {};
 
 template <>
-inline void DrawFieldButton<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+inline void DrawFirstColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
                                                 const SdfPrimSpecHandle &primSpec) {
     ImGui::PushID(rowId);
     if (ImGui::Button(ICON_UT_DELETE)) {
@@ -81,12 +81,12 @@ inline void DrawFieldButton<VariantSetNamesItem>(const int rowId, const char *co
     ImGui::PopID();
 }
 template <>
-inline void DrawFieldName<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+inline void DrawSecondColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
                                               const SdfPrimSpecHandle &primSpec) {
     ImGui::Text("%s", operation);
 }
 template <>
-inline void DrawFieldValue<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
+inline void DrawThirdColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
                                                const SdfPrimSpecHandle &primSpec) {
     ImGui::Text("%s", variantName.c_str());
 }
@@ -94,7 +94,7 @@ inline void DrawFieldValue<VariantSetNamesItem>(const int rowId, const char *con
 static void DrawVariantSetNamesItem(const char *operation, const std ::string &variantName, SdfPrimSpecHandle &primSpec,
                                     int &rowId) {
     // This looks over complicated, but DrawFieldValueTableRow does the layout
-    DrawFieldValueTableRow<VariantSetNamesItem>(rowId++, operation, variantName, primSpec);
+    DrawThreeColumnsRow<VariantSetNamesItem>(rowId++, operation, variantName, primSpec);
 }
 
 
@@ -102,10 +102,10 @@ static void DrawVariantSetNamesItem(const char *operation, const std ::string &v
 static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
     auto nameList = primSpec->GetVariantSetNameList();
     int rowId = 0;
-    if (BeginFieldValueTable("##DrawPrimVariantSets")) {
-        SetupFieldValueTableColumns(true, "", "VariantSet names", "");
+    if (BeginThreeColumnsTable("##DrawPrimVariantSets")) {
+        SetupThreeColumnsTable(true, "", "VariantSet names", "");
         IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantSetNamesItem, primSpec, rowId);
-        EndFieldValueTable();
+        EndThreeColumnsTable();
     }
 }
 

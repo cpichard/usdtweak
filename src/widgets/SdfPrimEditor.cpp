@@ -457,7 +457,7 @@ template <> inline ScopedStyleColor GetRowStyle<AttributeField>(const int rowId,
 
 
 template <>
-inline void DrawFieldButton<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+inline void DrawFirstColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
     ImGui::PushID(rowId);
  
     ImGui::Button(ICON_FA_CARET_SQUARE_DOWN);
@@ -505,13 +505,13 @@ inline void DrawFieldButton<AttributeField>(const int rowId, const SdfAttributeS
 };
 
 template <>
-inline void DrawFieldName<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+inline void DrawSecondColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
     // Still not sure we want to show the type at all or in the same column as the name
     ImGui::Text("%s (%s)", attribute->GetName().c_str(), attribute->GetTypeName().GetAsToken().GetText());
 };
  
 template <>
-inline void DrawFieldValue<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+inline void DrawThirdColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
     //ImGui::Button(ICON_FA_KEY); // menu to show stuff ??? -> do we want to show more stuff ???
     //ImGui::SameLine();
     // Check what to show, this could be stored in a variable ... check imgui
@@ -642,14 +642,14 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
         return;
     if (ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
         int rowId = 0;
-        if (BeginFieldValueTable("##DrawPrimSpecAttributes")) {
-            SetupFieldValueTableColumns(false, "", "Attribute", "");
+        if (BeginThreeColumnsTable("##DrawPrimSpecAttributes")) {
+            SetupThreeColumnsTable(false, "", "Attribute", "");
             // the third column allows to show different attribute properties:
             // Default value, keyed values or connections (and summary ??)
             //int showWhat = DrawValueColumnSelector();
             int showWhat = 0;
             for (const SdfAttributeSpecHandle &attribute : attributes) {
-                DrawFieldValueTableRow<AttributeField>(rowId++, attribute, selection, showWhat);
+                DrawThreeColumnsRow<AttributeField>(rowId++, attribute, selection, showWhat);
             }
             ImGui::EndTable();
         }
@@ -684,17 +684,17 @@ static void DrawRelationshipEditListItem(const char *operation, const SdfPath &p
 
 struct RelationField {};
 template <>
-inline void DrawFieldName<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+inline void DrawSecondColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                          const SdfRelationshipSpecHandle &relation) {
     ImGui::Text("%s", relation->GetName().c_str());
 };
 template <>
-inline void DrawFieldValue<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+inline void DrawThirdColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                           const SdfRelationshipSpecHandle &relation) {
     IterateListEditorItems(relation->GetTargetPathList(), DrawRelationshipEditListItem, rowId, primSpec, relation->GetPath());
 };
 template <>
-inline void DrawFieldButton<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
+inline void DrawFirstColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                            const SdfRelationshipSpecHandle &relation) {
     if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
@@ -709,11 +709,11 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
         return;
     if (ImGui::CollapsingHeader("Relations", ImGuiTreeNodeFlags_DefaultOpen)) {
         int rowId = 0;
-        if (BeginFieldValueTable("##DrawPrimSpecRelations")) {
-            SetupFieldValueTableColumns(false, "", "Relations", "");
+        if (BeginThreeColumnsTable("##DrawPrimSpecRelations")) {
+            SetupThreeColumnsTable(false, "", "Relations", "");
             auto relations = primSpec->GetRelationships();
             for (const SdfRelationshipSpecHandle &relation : relations) {
-                DrawFieldValueTableRow<RelationField>(rowId, primSpec, relation);
+                DrawThreeColumnsRow<RelationField>(rowId, primSpec, relation);
             }
             ImGui::EndTable();
         }
@@ -725,7 +725,7 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     struct ClassName_ {                                                                                                          \
         static constexpr const char *fieldName = FieldName_;                                                                     \
     };                                                                                                                           \
-    template <> inline void DrawFieldValue<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                     \
+    template <> inline void DrawThirdColumn<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                     \
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
         DrawFunction_(primSpec);                                                                                                 \
     }
@@ -733,7 +733,7 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
 #define GENERATE_FIELD_WITH_BUTTON(ClassName_, Token_, FieldName_, DrawFunction_)                                                \
     GENERATE_FIELD(ClassName_, FieldName_, DrawFunction_);                                                                       \
     template <> inline bool HasEdits<ClassName_>(const SdfPrimSpecHandle &prim) { return prim->HasField(Token_); }               \
-    template <> inline void DrawFieldButton<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                    \
+    template <> inline void DrawFirstColumn<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                    \
         ImGui::PushID(rowId);                                                                                                    \
         if (ImGui::Button(ICON_FA_TRASH) && HasEdits<ClassName_>(primSpec)) {                                                    \
             ExecuteAfterDraw(&SdfPrimSpec::ClearField, primSpec, Token_);                                                        \
@@ -755,16 +755,16 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
         if (ImGui::CollapsingHeader("Core Metadata", ImGuiTreeNodeFlags_DefaultOpen)) {
             int rowId = 0;
-            if (BeginFieldValueTable("##DrawPrimSpecMetadata")) {
-                SetupFieldValueTableColumns(false, "", "Metadata", "Value");
-                DrawFieldValueTableRow<Specifier>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimType>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimName>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimKind>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimActive>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimInstanceable>(rowId++, primSpec);
-                DrawFieldValueTableRow<PrimHidden>(rowId++, primSpec);
-                EndFieldValueTable();
+            if (BeginThreeColumnsTable("##DrawPrimSpecMetadata")) {
+                SetupThreeColumnsTable(false, "", "Metadata", "Value");
+                DrawThreeColumnsRow<Specifier>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimType>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimName>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimKind>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimActive>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimInstanceable>(rowId++, primSpec);
+                DrawThreeColumnsRow<PrimHidden>(rowId++, primSpec);
+                EndThreeColumnsTable();
             }
             ImGui::Separator();
         }

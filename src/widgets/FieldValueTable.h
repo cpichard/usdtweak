@@ -15,37 +15,44 @@ template <typename FieldT, typename... Args> inline ScopedStyleColor GetRowStyle
                             ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_FrameBg, ImVec4(0.260f, 0.300f, 0.360f, 1.000f));
 }
 
-// Default implementation
-// TODO rename to DrawFirstColumn, etc
-template <typename FieldT, typename... Args> inline void DrawFieldValue(const int rowId, const Args &...args) {}
+//
+// Default implementation - clients will have to reimplement the column function
+//
+template <typename FieldT, typename... Args> inline void DrawFirstColumn(const int rowId, const Args &...args) {}
 
-template <typename FieldT, typename... Args> inline void DrawFieldName(const int rowId, const Args &...args) {
+template <typename FieldT, typename... Args> inline void DrawSecondColumn(const int rowId, const Args &...args) {
     ImGui::Text(FieldT::fieldName);
 }
+template <typename FieldT, typename... Args> inline void DrawThirdColumn(const int rowId, const Args &...args) {}
 
-template <typename FieldT, typename... Args> inline void DrawFieldButton(const int rowId, const Args &...args) {}
 
-// TODO: Rename to DrawThreeColumnsRow
-template <typename FieldT, typename... Args> inline void DrawFieldValueTableRow(const int rowId, const Args &...args) {
+//
+// Provides a standard/unified 3 columns layout
+//
+template <typename FieldT, typename... Args> inline void DrawThreeColumnsRow(const int rowId, const Args &...args) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(0);
-    DrawFieldButton<FieldT>(rowId, args...);
+    DrawFirstColumn<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(1);
-    DrawFieldName<FieldT>(rowId, args...);
+    DrawSecondColumn<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(2);
-    DrawFieldValue<FieldT>(rowId, args...);
+    DrawThirdColumn<FieldT>(rowId, args...);
 }
 
-// TODO: Rename to BeginThreeColumnsTable
-inline bool BeginFieldValueTable(const char *strId) {
+//
+// Standard table with 3 columns used for parameter editing
+// First column is generally used for a button
+// Second column shows the name of the parameter
+// Third column shows the value
+inline bool BeginThreeColumnsTable(const char *strId) {
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     return ImGui::BeginTable(strId, 3, tableFlags);
 }
 
-inline void EndFieldValueTable() { ImGui::EndTable(); }
+inline void EndThreeColumnsTable() { ImGui::EndTable(); }
 
-inline void SetupFieldValueTableColumns(const bool showHeaders, const char *button = "", const char *field = "Field",
+inline void SetupThreeColumnsTable(const bool showHeaders, const char *button = "", const char *field = "Field",
                                         const char *value = "Value") {
     ImGui::TableSetupColumn(button, ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
     ImGui::TableSetupColumn(field, ImGuiTableColumnFlags_WidthFixed);
@@ -56,23 +63,23 @@ inline void SetupFieldValueTableColumns(const bool showHeaders, const char *butt
 }
 
 // Rename to DrawTwoColumnRow
-template <typename FieldT, typename... Args> inline void DrawValueTableRow(const int rowId, const Args &...args) {
+template <typename FieldT, typename... Args> inline void DrawTwoColumnsRow(const int rowId, const Args &...args) {
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(0);
-    DrawFieldButton<FieldT>(rowId, args...);
+    DrawFirstColumn<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(1);
-    DrawFieldValue<FieldT>(rowId, args...);
+    DrawSecondColumn<FieldT>(rowId, args...);
 }
 
-inline bool BeginValueTable(const char *strId) {
+inline bool BeginTwoColumnsTable(const char *strId) {
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
     return ImGui::BeginTable(strId, 2, tableFlags);
 }
 
-inline void EndValueTable() { ImGui::EndTable(); }
+inline void EndTwoColumnsTable() { ImGui::EndTable(); }
 
-inline void SetupValueTableColumns(const bool showHeaders, const char *button = "", const char *value = "Value") {
+inline void SetupTwoColumnsTable(const bool showHeaders, const char *button = "", const char *value = "Value") {
     ImGui::TableSetupColumn(button, ImGuiTableColumnFlags_WidthFixed);
     ImGui::TableSetupColumn(value, ImGuiTableColumnFlags_WidthStretch);
     if (showHeaders) {

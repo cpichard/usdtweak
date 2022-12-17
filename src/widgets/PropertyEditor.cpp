@@ -599,7 +599,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         static constexpr const char *fieldName = "" #OpName_ "";                                                                 \
     };                                                                                                                           \
     template <>                                                                                                                  \
-    inline void DrawFieldValue<XformCommon##OpName_##Field>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,              \
+    inline void DrawThirdColumn<XformCommon##OpName_##Field>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,             \
                                                             const OpType_ &value, const UsdTimeCode &currentTime) {              \
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
         OpType_ valueLocal(value[0], value[1], value[2]);                                                                        \
@@ -617,7 +617,7 @@ struct XformCommonRotateField {
     static constexpr const char *fieldName = "Rotate";
 };
 template <>
-inline void DrawFieldValue<XformCommonRotateField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,
+inline void DrawThirdColumn<XformCommonRotateField>(const int rowId, const UsdGeomXformCommonAPI &xformAPI,
                                                    const GfVec3f &rotation, const UsdGeomXformCommonAPI::RotationOrder &rotOrder,
                                                    const UsdTimeCode &currentTime) {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
@@ -643,13 +643,13 @@ bool DrawXformsCommon(UsdPrim &prim, UsdTimeCode currentTime) {
         xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
 
         int rowId = 0;
-        if (BeginFieldValueTable("##DrawXformsCommon")) {
-            SetupFieldValueTableColumns(true, "", "UsdGeomXformCommonAPI", "");
-            DrawFieldValueTableRow<XformCommonTranslateField>(rowId++, xformAPI, translation, currentTime);
-            DrawFieldValueTableRow<XformCommonRotateField>(rowId++, xformAPI, rotation, rotOrder, currentTime);
-            DrawFieldValueTableRow<XformCommonScaleField>(rowId++, xformAPI, scale, currentTime);
-            DrawFieldValueTableRow<XformCommonPivotField>(rowId++, xformAPI, pivot, currentTime);
-            EndFieldValueTable();
+        if (BeginThreeColumnsTable("##DrawXformsCommon")) {
+            SetupThreeColumnsTable(true, "", "UsdGeomXformCommonAPI", "");
+            DrawThreeColumnsRow<XformCommonTranslateField>(rowId++, xformAPI, translation, currentTime);
+            DrawThreeColumnsRow<XformCommonRotateField>(rowId++, xformAPI, rotation, rotOrder, currentTime);
+            DrawThreeColumnsRow<XformCommonScaleField>(rowId++, xformAPI, scale, currentTime);
+            DrawThreeColumnsRow<XformCommonPivotField>(rowId++, xformAPI, pivot, currentTime);
+            EndThreeColumnsTable();
         }
         return true;
     }

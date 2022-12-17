@@ -180,7 +180,7 @@ struct SublayerRow {
     static constexpr const char *fieldName = "";
 };
 
-template <> inline void DrawFieldValue<SublayerRow>(const int rowId, const UsdStageRefPtr &stage, const SdfLayerHandle &layer) {
+template <> inline void DrawThirdColumn<SublayerRow>(const int rowId, const UsdStageRefPtr &stage, const SdfLayerHandle &layer) {
     ImGui::PushID(rowId);
     if (ImGui::Selectable(layer->GetIdentifier().c_str())) {
         ExecuteAfterDraw(&UsdStage::SetEditTarget, stage, UsdEditTarget(layer));
