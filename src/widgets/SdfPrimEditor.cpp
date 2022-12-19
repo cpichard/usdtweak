@@ -26,7 +26,7 @@
 #include "SdfLayerEditor.h"
 #include "VariantEditor.h"
 #include "ProxyHelpers.h"
-#include "FieldValueTable.h"
+#include "TableLayouts.h"
 #include "Shortcuts.h"
 
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing

@@ -28,7 +28,7 @@
 #include "ImGuiHelpers.h"
 #include "Constants.h"
 #include "VtValueEditor.h"
-#include "FieldValueTable.h"
+#include "TableLayouts.h"
 
 
 void DrawDefaultPrim(const SdfLayerRefPtr &layer) {

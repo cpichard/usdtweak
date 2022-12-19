@@ -10,7 +10,7 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LauncherBar.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/LauncherBar.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/FieldValueTable.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/TableLayouts.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.cpp

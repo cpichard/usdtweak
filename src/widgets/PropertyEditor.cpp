@@ -14,7 +14,7 @@
 #include "Commands.h"
 #include "ModalDialogs.h"
 #include "ImGuiHelpers.h"
-#include "FieldValueTable.h"
+#include "TableLayouts.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 

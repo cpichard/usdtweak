@@ -4,7 +4,7 @@
 #include "ImGuiHelpers.h"
 #include "Gui.h"
 #include "Constants.h"
-#include "FieldValueTable.h"
+#include "TableLayouts.h"
 
 #include "Commands.h"
 #include "ProxyHelpers.h"
