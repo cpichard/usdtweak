@@ -39,6 +39,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Timeline.h
     ${CMAKE_CURRENT_SOURCE_DIR}/VtValueEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/VtValueEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/VtDictionaryEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VtDictionaryEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/VariantEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/VariantEditor.h
 )
