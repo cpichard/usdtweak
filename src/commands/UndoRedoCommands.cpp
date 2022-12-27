@@ -50,7 +50,7 @@ struct ClearUndoRedoCommand : public Command {
 
     /// Undo the last command in the stack
     bool DoIt() override {
-        undoStackPos=0;
+        undoStackPos = 0;
         undoStack.clear();
         delete lastCmd;
         lastCmd = nullptr;
@@ -61,20 +61,9 @@ struct ClearUndoRedoCommand : public Command {
 };
 template void ExecuteAfterDraw<ClearUndoRedoCommand>();
 
-
 struct UsdFunctionCall : public Command {
 
-    template <typename LayerT>
-    UsdFunctionCall(LayerT layer, std::function<void()> func)
-        : _layer(layer), _func(func)
-    {}
-
-    template <> UsdFunctionCall(UsdStageRefPtr stage, std::function<void()> func) : _layer(), _func(func) {
-        if (stage) { // I am assuming the edits always go in the edit target layer
-            _layer = stage->GetEditTarget().GetLayer();
-        }
-    }
-
+    template <typename LayerT> UsdFunctionCall(LayerT layer, std::function<void()> func) : _layer(layer), _func(func) {}
 
     ~UsdFunctionCall() override {}
 
@@ -96,6 +85,12 @@ struct UsdFunctionCall : public Command {
     SdfLayerHandle _layer;
     std::function<void()> _func;
 };
+
+template <> UsdFunctionCall::UsdFunctionCall(UsdStageRefPtr stage, std::function<void()> func) : _layer(), _func(func) {
+    if (stage) { // I am assuming the edits always go in the edit target layer
+        _layer = stage->GetEditTarget().GetLayer();
+    }
+}
 
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerRefPtr layer, std::function<void()> func);
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerHandle layer, std::function<void()> func);

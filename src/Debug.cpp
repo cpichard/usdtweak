@@ -1,3 +1,4 @@
+#include <sstream>
 #include "Gui.h"
 #include "Debug.h"
 #include "pxr/base/trace/reporter.h"
