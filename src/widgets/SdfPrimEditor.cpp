@@ -28,6 +28,7 @@
 #include "ProxyHelpers.h"
 #include "TableLayouts.h"
 #include "Shortcuts.h"
+#include "VtDictionaryEditor.h"
 
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
@@ -767,6 +768,8 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
                 DrawThreeColumnsRow<PrimActive>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimInstanceable>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimHidden>(rowId++, primSpec);
+                DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->CustomData);
+                DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->AssetInfo);
                 EndThreeColumnsTable();
             }
             ImGui::Separator();
