@@ -43,9 +43,7 @@ static bool InstallApplicationPluginPaths(const std::vector<std::string> &plugin
         if (!ArchSetEnv(BOOTSTRAPPED, "1", true)) {
             return false;
         }
-        for (const auto &path : pluginPaths) {
-            ArchSetEnv("PXR_PLUGINPATH_NAME", path, true);
-        }
+        ArchSetEnv("PXR_PLUGINPATH_NAME", TfStringJoin(pluginPaths.begin(), pluginPaths.end(), ";"), true);
         return true;
     }
     return false;
@@ -59,7 +57,7 @@ int main(int argc, char *const *argv) {
     ResourcesLoader loader;
 
     // Adding the plugin paths specified in the config file to the environment. It potentially means restarting the
-    // application with a new environment. Unfortunately USD is not able to dynamically load plugin
+    // application with a new environment. Unfortunately USD is not able to dynamically load plugin 
     // functionalities after startup time, the functions like RegisterPlugins or Load simply does not
     // do what one would expect, more there:
     // https://groups.google.com/g/usd-interest/c/fpLYyf6elmU/m/haZf9bZDAgAJ
