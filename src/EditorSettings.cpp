@@ -7,6 +7,33 @@
 
 EditorSettings::EditorSettings() : _mainWindowWidth(InitialWindowWidth), _mainWindowHeight(InitialWindowHeight) {}
 
+template <typename ContainerT>
+inline void SplitSemiColon(const std::string &line, ContainerT &output) {
+    output.push_back(""); // When we call this function we are sure there is at least one element
+    for (auto c : line) {
+        if (c == '\0')
+            break;
+        else if (c == ';') {
+            output.push_back("");
+        } else {
+            output.back().push_back(c);
+        }
+    }
+}
+
+template <typename ContainerT>
+inline std::string JoinSemiColon(const ContainerT &container) {
+    std::string line;
+    for (auto it = container.begin(); it != container.end(); ++it) {
+        line += *it;
+        if (it != std::prev(container.end())) {
+            line.push_back(';');
+        }
+    }
+    return line;
+}
+
+
 void EditorSettings::ParseLine(const char *line) {
     int value = 0;
     char strBuffer[1024];
@@ -40,17 +67,8 @@ void EditorSettings::ParseLine(const char *line) {
     } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
         _lastFileBrowserDirectory = strBuffer;
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
-        std::string recentFiles(line + 12);
-        _recentFiles.push_back("");
-        for (auto c : recentFiles) {
-            if (c == '\0')
-                break;
-            else if (c == ';') {
-                _recentFiles.push_back("");
-            } else {
-                _recentFiles.back().push_back(c);
-            }
-        }
+        std::string recentFilesLine(line + 12);
+        SplitSemiColon(recentFilesLine, _recentFiles);
     } else if (sscanf(line, "MainWindowWidth=%i", &value) == 1) {
         if (value > 0) {
             _mainWindowWidth = value;
@@ -66,6 +84,9 @@ void EditorSettings::ParseLine(const char *line) {
             auto pos = std::distance(launcher.begin(), semiColonPos);
             AddLauncher(launcher.substr(0, pos), launcher.substr(pos + 1));
         }
+    } else if (strlen(line) > 12 && std::equal(line, line + 12, "PluginPaths=")) {
+        std::string pluginPathsLine(line + 12);
+        SplitSemiColon(pluginPathsLine, _pluginPaths);
     }
 }
 
@@ -87,14 +108,9 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     if (!_lastFileBrowserDirectory.empty()) {
         buf->appendf("LastFileBrowserDirectory=%s\n", _lastFileBrowserDirectory.c_str());
     }
-    std::string recentFileString;
-    for (std::list<std::string>::iterator it = _recentFiles.begin(); it != _recentFiles.end(); ++it) {
-        recentFileString += *it;
-        if (it != std::prev(_recentFiles.end())) {
-            recentFileString.push_back(';');
-        }
+    if (!_recentFiles.empty()) {
+        buf->appendf("RecentFiles=%s\n", JoinSemiColon(_recentFiles).c_str());
     }
-    buf->appendf("RecentFiles=%s\n", recentFileString.c_str());
     if (_mainWindowWidth > 0) {
         buf->appendf("MainWindowWidth=%d\n", _mainWindowWidth);
     }
@@ -103,6 +119,9 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     }
     for (int i = 0; i < _launcherNames.size(); ++i) {
         buf->appendf("Launcher=%s;%s\n", _launcherNames[i].c_str(), _launcherCommandLines[i].c_str());
+    }
+    if(!_pluginPaths.empty()) {
+        buf->appendf("PluginPaths=%s\n", JoinSemiColon(_pluginPaths).c_str());
     }
 }
 

@@ -97,6 +97,17 @@ public:
     bool RemoveLauncher(std::string launcherName) { return _settings.RemoveLauncher(launcherName); };
     void RunLauncher(const std::string &launcherName);
 
+    // Additional plugin paths kept in the settings
+    inline const std::vector<std::string> &GetPluginPaths() const { return _settings._pluginPaths; }
+    inline void AddPluginPath(const std::string &path) { _settings._pluginPaths.push_back(path); }
+    inline void RemovePluginPath(const std::string &path) {
+        const auto &found = std::find(_settings._pluginPaths.begin(), _settings._pluginPaths.end(), path);
+        if (found != _settings._pluginPaths.end()) {
+            _settings._pluginPaths.erase(found);
+        }
+    }
+
+
   private:
     /// Interface with the settings
     void LoadSettings();

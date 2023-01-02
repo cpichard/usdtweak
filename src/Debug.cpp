@@ -1,9 +1,11 @@
-#include <sstream>
-#include "Gui.h"
 #include "Debug.h"
+#include "Gui.h"
 #include "pxr/base/trace/reporter.h"
 #include "pxr/base/trace/trace.h"
+#include <pxr/base/plug/plugin.h>
+#include <pxr/base/plug/registry.h>
 #include <pxr/base/tf/debug.h>
+#include <sstream>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -53,12 +55,30 @@ static void DrawDebugCodes() {
     }
 }
 
+static void DrawPlugins() {
+    const PlugPluginPtrVector &plugins = PlugRegistry::GetInstance().GetAllPlugins();
+    ImVec2 listBoxSize(-FLT_MIN, -10);
+    if (ImGui::BeginListBox("##Plugins", listBoxSize)) {
+        for (const auto &plug : plugins) {
+            const std::string &plugName = plug->GetName();
+            const std::string &plugPath = plug->GetPath();
+            bool isLoaded = plug->IsLoaded();
+            if(ImGui::Checkbox(plugName.c_str(), &isLoaded)) {
+                plug->Load(); // There is no Unload in the API
+            }
+            ImGui::SameLine();
+            ImGui::Text("%s", plugPath.c_str());
+        }
+        ImGui::EndListBox();
+    }
+}
+
 // Draw a preference like panel
 void DrawDebugUI() {
-    static const char *const panels[] = {"Timings", "Debug codes", "Trace reporter"};
+    static const char *const panels[] = {"Timings", "Debug codes", "Trace reporter", "Plugins"};
     static int current_item = 0;
     ImGui::PushItemWidth(100);
-    ImGui::ListBox("##DebugPanels", &current_item, panels, 3);
+    ImGui::ListBox("##DebugPanels", &current_item, panels, 4);
     ImGui::SameLine();
     if (current_item == 0) {
         ImGui::BeginChild("##Timing");
@@ -71,6 +91,10 @@ void DrawDebugUI() {
     } else if (current_item == 2) {
         ImGui::BeginChild("##TraceReporter");
         DrawTraceReporter();
+        ImGui::EndChild();
+    } else if (current_item == 3) {
+        ImGui::BeginChild("##Plugins");
+        DrawPlugins();
         ImGui::EndChild();
     }
 }

@@ -3,7 +3,7 @@
 
 class CommandLineOptions {
   public:
-    CommandLineOptions(int argc, const char **argv);
+    CommandLineOptions(int argc, char *const *argv);
 
     const std::vector<std::string> &stages() { return _stages; }
 

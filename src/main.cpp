@@ -1,11 +1,13 @@
 
-
+// clang-format off
 #include <iostream>
 #include <cstdlib>
 #ifdef WANTS_PYTHON
 #include <Python.h>
 #endif
 #include <pxr/base/plug/registry.h>
+#include <pxr/base/arch/env.h>
+#include <pxr/base/arch/systemInfo.h>
 #include <pxr/imaging/glf/contextCaps.h>
 #include <pxr/imaging/glf/simpleLight.h>
 #include <pxr/imaging/glf/diagnostic.h>
@@ -16,29 +18,44 @@
 #include "ResourcesLoader.h"
 #include "CommandLineOptions.h"
 #include "Gui.h"
+// clang-format on
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-
-void InstallApplicationPluginPath() {
-#ifdef _WIN64
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    std::string::size_type pos = std::string(path).find_last_of("\\/");
-    std::string pluginPath = std::string(path).substr(0, pos) += "\\..\\plugin";
-    PlugRegistry::GetInstance().RegisterPlugins(pluginPath);
-    std::cout << "usdtweak plugin path: " << pluginPath << std::endl;
-#endif
+bool InstallApplicationPluginPaths(const std::vector<std::string> &pluginPaths) {
+    const char *BOOTSTRAPPED = "USDTWEAK_BOOTSTRAPPED";
+    if (!pluginPaths.empty() && !ArchHasEnv(BOOTSTRAPPED)) {
+        ArchSetEnv(BOOTSTRAPPED, "1", false);
+        for (const auto &path : pluginPaths) {
+            ArchSetEnv("PXR_PLUGINPATH_NAME", path, false);
+        }
+        return true;
+    }
+    return false;
 }
 
-int main(int argc, const char **argv) {
+int main(int argc, char *const *argv) {
 
     CommandLineOptions options(argc, argv);
 
-    InstallApplicationPluginPath();
-
     // ResourceLoader will load the settings/fonts/textures and create an imgui context
     ResourcesLoader loader;
+
+    // Adding the plugin paths specified in the config file to the environment. It potentially means restarting the
+    // application with a new environment. Unfortunately USD is not able to dynamically load plugin
+    // functionalities after startup time, the functions like RegisterPlugins or Load simply does not
+    // do what one would expect, more there:
+    // https://groups.google.com/g/usd-interest/c/fpLYyf6elmU/m/haZf9bZDAgAJ
+    // So the only option I see is to reload the application with an updated environment
+    if (InstallApplicationPluginPaths(loader.GetEditorSettings()._pluginPaths)) {
+        std::cout << "Reloading application with new environment" << std::endl;
+        std::string exePath = ArchGetExecutablePath();
+#ifndef _WIN64
+        execve(exePath.c_str(), argv, ArchEnviron());
+#else
+        _execve(exePath.c_str(), argv, ArchEnviron()); // TO TEST
+#endif
+    }
 
     // Initialize python
 #ifdef WANTS_PYTHON
@@ -88,11 +105,11 @@ int main(int argc, const char **argv) {
 #if (__APPLE__ && PXR_VERSION < 2208)
     std::cout << "Viewport is disabled on Apple platform with USD < 22.08" << std::endl;
 #endif
-    const char* pluginPathName = std::getenv("PXR_PLUGINPATH_NAME");
+    const char *pluginPathName = std::getenv("PXR_PLUGINPATH_NAME");
     std::cout << "PXR_PLUGINPATH_NAME: " << (pluginPathName ? pluginPathName : "") << std::endl;
 
     // Init ImGui for glfw and opengl
-    ImGuiContext* mainUIContext = ImGui::GetCurrentContext();
+    ImGuiContext *mainUIContext = ImGui::GetCurrentContext();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
     // Init an imgui context for hydra, to render the gizmo and hud
@@ -100,7 +117,7 @@ int main(int argc, const char **argv) {
     ImGui::SetCurrentContext(hydraUIContext);
     ImGui_ImplOpenGL3_Init();
 
-    {   // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
+    { // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
         ImGui::SetCurrentContext(mainUIContext);
         Editor editor;
 
@@ -108,7 +125,7 @@ int main(int argc, const char **argv) {
         editor.InstallCallbacks(window);
 
         // Process command line options
-        for (auto& stage : options.stages()) {
+        for (auto &stage : options.stages()) {
             editor.OpenStage(stage);
         }
 

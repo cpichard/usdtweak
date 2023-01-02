@@ -31,6 +31,10 @@ struct EditorSettings {
     /// Last file browser directory
     std::string _lastFileBrowserDirectory;
 
+    /// Additional plugin paths -  It really belongs to an ApplicationSettings but we want to edit it
+    /// in the editor - This might move in the future
+    std::vector<std::string> _pluginPaths;
+    
     // Add new file to the list of recent files
     void UpdateRecentFiles(const std::string &newFile);
     const std::list<std::string> &GetRecentFiles() const { return _recentFiles; }
@@ -38,7 +42,7 @@ struct EditorSettings {
     // Launcher commands.
     // We maintain a mapping between the commandName and the commandLine while keeping
     // the order as well. As we expect a very few number of commands, we store them
-    // in 2 vectors instead of a map, it is more efficience as the code iterates on the command name list
+    // in 2 vectors instead of a map, it is more efficient as the code iterates on the command name list
     bool AddLauncher(const std::string &commandName, const std::string &commandLine);
     bool RemoveLauncher(const std::string &commandName);
     const std::vector<std::string> &GetLauncheNameList() const { return _launcherNames; };
@@ -49,6 +53,9 @@ struct EditorSettings {
     void Dump(ImGuiTextBuffer *);
 
   private:
+    // Those are private as they rely on a specific logic, they need to be accessed
+    // with their corresponding api functions
+
     /// Recent files
     std::list<std::string> _recentFiles;
 
