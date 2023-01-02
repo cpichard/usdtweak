@@ -23,6 +23,7 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 // https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
+#ifdef _WIN64
 static std::vector<char *> ArchCurrentEnviron() {
     std::vector<char *> newEnv;
     for (char *envIt = GetEnvironmentStrings(); *envIt; envIt++) {
@@ -34,6 +35,7 @@ static std::vector<char *> ArchCurrentEnviron() {
     newEnv.push_back(0); // The last element must be the null pointer
     return newEnv;
 }
+#endif
 
 static bool InstallApplicationPluginPaths(const std::vector<std::string> &pluginPaths) {
     const char *BOOTSTRAPPED = "USDTWEAK_BOOTSTRAPPED";
