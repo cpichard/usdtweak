@@ -22,12 +22,27 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-bool InstallApplicationPluginPaths(const std::vector<std::string> &pluginPaths) {
+// https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
+static std::vector<char *> ArchCurrentEnviron() {
+    std::vector<char *> newEnv;
+    for (char *envIt = GetEnvironmentStrings(); *envIt; envIt++) {
+        newEnv.push_back(envIt);
+        while (*envIt != 0) {
+            envIt++;
+        }
+    }
+    newEnv.push_back(0); // The last element must be the null pointer
+    return newEnv;
+}
+
+static bool InstallApplicationPluginPaths(const std::vector<std::string> &pluginPaths) {
     const char *BOOTSTRAPPED = "USDTWEAK_BOOTSTRAPPED";
     if (!pluginPaths.empty() && !ArchHasEnv(BOOTSTRAPPED)) {
-        ArchSetEnv(BOOTSTRAPPED, "1", false);
+        if (!ArchSetEnv(BOOTSTRAPPED, "1", true)) {
+            return false;
+        }
         for (const auto &path : pluginPaths) {
-            ArchSetEnv("PXR_PLUGINPATH_NAME", path, false);
+            ArchSetEnv("PXR_PLUGINPATH_NAME", path, true);
         }
         return true;
     }
@@ -53,7 +68,8 @@ int main(int argc, char *const *argv) {
 #ifndef _WIN64
         execve(exePath.c_str(), argv, ArchEnviron());
 #else
-        _execve(exePath.c_str(), argv, ArchEnviron()); // TO TEST
+        // Unfortunately ArchEnviron() doesn't return the modified environment on windows, we need to copy the current env
+        _execve(exePath.c_str(), argv, ArchCurrentEnviron().data());
 #endif
     }
 
