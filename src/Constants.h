@@ -20,7 +20,7 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorAttributeAuthored {1.0, 1.0, 1.0, 1.0}
 #define ColorAttributeUnauthored {0.5, 0.5, 0.5, 1.0}
 #define ColorAttributeRelationship {0.5, 0.5, 0.9, 1.0}
-#define ColorAttributeConnection {0.5, 0.5, 0.9, 1.0}
+#define ColorAttributeConnection {1.0, 1.0, 0.7, 1.0}
 #define ColorMiniButtonAuthored {0.0, 1.0, 0.0, 1.0}
 #define ColorMiniButtonUnauthored {0.6, 0.6, 0.6, 1.0}
 #define ColorTransparent {0.0, 0.0, 0.0, 0.0}

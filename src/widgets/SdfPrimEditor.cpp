@@ -1,34 +1,34 @@
 
-#include <iostream>
 #include <array>
+#include <iostream>
 
-#include <pxr/usd/usd/prim.h>
+#include <pxr/usd/kind/registry.h>
+#include <pxr/usd/sdf/attributeSpec.h>
+#include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerUtils.h>
-#include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/primSpec.h>
-#include <pxr/usd/sdf/types.h>
-#include <pxr/usd/sdf/schema.h>
-#include <pxr/usd/kind/registry.h>
-#include <pxr/usd/sdf/variantSpec.h>
-#include <pxr/usd/sdf/variantSetSpec.h>
-#include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
+#include <pxr/usd/sdf/schema.h>
+#include <pxr/usd/sdf/types.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
+#include <pxr/usd/usd/prim.h>
 
-#include "ImGuiHelpers.h"
-#include "SdfPrimEditor.h"
-#include "CompositionEditor.h"
-#include "ModalDialogs.h"
-#include "FileBrowser.h"
 #include "Commands.h"
+#include "CompositionEditor.h"
 #include "Constants.h"
-#include "VtValueEditor.h"
-#include "SdfLayerEditor.h"
-#include "VariantEditor.h"
+#include "FileBrowser.h"
+#include "ImGuiHelpers.h"
+#include "ModalDialogs.h"
 #include "ProxyHelpers.h"
-#include "TableLayouts.h"
+#include "SdfLayerEditor.h"
+#include "SdfPrimEditor.h"
 #include "Shortcuts.h"
+#include "TableLayouts.h"
+#include "VariantEditor.h"
 #include "VtDictionaryEditor.h"
+#include "VtValueEditor.h"
 
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
@@ -53,8 +53,9 @@ struct CreateAttributeDialog : public ModalDialog {
         }
         ImGui::Checkbox("Custom", &_custom);
         ImGui::Checkbox("Create default value", &_createDefault);
-        DrawOkCancelModal(
-            [&]() { ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom, _createDefault); });
+        DrawOkCancelModal([&]() {
+            ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom, _createDefault);
+        });
     }
     const char *DialogId() const override { return "Create attribute"; }
 
@@ -158,7 +159,8 @@ struct CreateSdfAttributeConnectionDialog : public ModalDialog {
     ~CreateSdfAttributeConnectionDialog() override {}
 
     void Draw() override {
-        if(!_attribute) return;
+        if (!_attribute)
+            return;
         ImGui::Text("Create connection for %s", _attribute->GetPath().GetString().c_str());
         if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
             for (int i = 0; i < GetListEditorOperationSize(); ++i) {
@@ -169,9 +171,8 @@ struct CreateSdfAttributeConnectionDialog : public ModalDialog {
             ImGui::EndCombo();
         }
         ImGui::InputText("Path", &_connectionEndPoint);
-        DrawOkCancelModal([&]() {
-            ExecuteAfterDraw<PrimCreateAttributeConnection>(_attribute, _operation, _connectionEndPoint);
-        });
+        DrawOkCancelModal(
+            [&]() { ExecuteAfterDraw<PrimCreateAttributeConnection>(_attribute, _operation, _connectionEndPoint); });
     }
     const char *DialogId() const override { return "Attribute connection"; }
 
@@ -295,7 +296,7 @@ void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags)
     const char *currentItem = ClassCharFromToken(primSpec->GetTypeName());
     const auto &allSpecTypes = GetAllSpecTypeNames();
     static int selected = 0;
-    
+
     if (ComboWithFilter("Prim Type", currentItem, allSpecTypes, &selected, comboFlags)) {
         const auto newSelection = allSpecTypes[selected].c_str();
         if (primSpec->GetTypeName() != ClassTokenFromChar(newSelection)) {
@@ -303,8 +304,7 @@ void DrawPrimType(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags)
         }
     }
 }
-template<typename T>
-static inline void DrawArrayEditorButton(T attribute) {
+template <typename T> static inline void DrawArrayEditorButton(T attribute) {
     if ((*attribute)->GetDefaultValue().IsArrayValued()) {
         if (ImGui::Button(ICON_FA_LIST)) {
             ExecuteAfterDraw<EditorSelectAttributePath>((*attribute)->GetPath());
@@ -313,165 +313,153 @@ static inline void DrawArrayEditorButton(T attribute) {
     }
 }
 
-// TODO: draw connections as well
-// TODO: show if they have default value, keys, connections
-// TODO: show the type as well
-// TODO: Copy property name / Copy property value
-//void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &selection) {
-//    if (!primSpec)
-//        return;
-//
-//    int deleteButtonCounter = 0;
-//    const auto &attributes = primSpec->GetAttributes();
-//    if (attributes.empty())
-//        return;
-//    static ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
-//    if (ImGui::BeginTable("##DrawPrimSpecAttributes", 4, tableFlags)) {
-//        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 48); // 24 => size of the mini button
-//        ImGui::TableSetupColumn("Attribute", ImGuiTableColumnFlags_WidthFixed);
-//        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed);
-//        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-//
-//        ImGui::TableHeadersRow();
-//
-//        TF_FOR_ALL(attribute, attributes) {
-//            ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-//
-//            ImGui::TableNextRow();
-//
-//            // MiniButton
-//            ImGui::TableSetColumnIndex(0);
-//            ImGui::PushID(deleteButtonCounter++);
-//
-//            if (ImGui::Button(ICON_FA_TRASH)) {
-//                ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath((*attribute)->GetPath()));
-//            }
-//            ImGui::SameLine();
-//            if (ImGui::Button("S")) {
-//                ExecuteAfterDraw<EditorSelectAttributePath>((*attribute)->GetPath());
-//            }
-//            ImGui::SameLine();
-//            if (selection.IsSelected(*attribute)) {
-//                ImGui::Text("Selected");
-//            }
-//            ImGui::PopID();
-//
-//            // Name of the parameter
-//            ImGui::TableSetColumnIndex(1);
-//            SdfTimeSampleMap timeSamples = (*attribute)->GetTimeSampleMap();
-//            if (timeSamples.empty())
-//                nodeFlags |= ImGuiTreeNodeFlags_Leaf;
-//            bool unfolded = ImGui::TreeNodeEx((*attribute)->GetName().c_str(), nodeFlags, "%s", (*attribute)->GetName().c_str());
-//            if ((*attribute)->HasDefaultValue()) { // If closed show the default value
-//                ImGui::TableSetColumnIndex(2);
-//                const std::string defaultValueLabel = "Default";
-//                ImGui::Text("%s", defaultValueLabel.c_str());
-//
-//                ImGui::TableSetColumnIndex(3);
-//                DrawArrayEditorButton(attribute);
-//                ImGui::PushItemWidth(-FLT_MIN);
-//                VtValue modified = DrawVtValue(defaultValueLabel, (*attribute)->GetDefaultValue());
-//                if (modified != VtValue()) {
-//                    ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, *attribute, modified);
-//                }
-//                ImGui::PopItemWidth();
-//            }
-//
-//            if (unfolded) {
-//                TF_FOR_ALL(sample, timeSamples) { // Samples
-//                    ImGui::TableNextRow();
-//                    // Mini button
-//                    ImGui::TableSetColumnIndex(1);
-//                    ImGui::PushID(deleteButtonCounter++);
-//                    if (ImGui::Button(ICON_FA_TRASH)) {
-//                        ExecuteAfterDraw(&SdfLayer::EraseTimeSample, primSpec->GetLayer(), (*attribute)->GetPath(),
-//                                         sample->first);
-//                    }
-//                    ImGui::PopID();
-//                    // Time: TODO edit time ?
-//                    ImGui::TableSetColumnIndex(2);
-//                    std::string sampleValueLabel = std::to_string(sample->first);
-//                    ImGui::Text("%s", sampleValueLabel.c_str());
-//                    // Value
-//                    ImGui::TableSetColumnIndex(3);
-//                    DrawArrayEditorButton(attribute);
-//                    ImGui::PushItemWidth(-FLT_MIN);
-//                    VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
-//                    if (modified != VtValue()) {
-//                        ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, primSpec->GetLayer(), (*attribute)->GetPath(),
-//                                         sample->first, modified);
-//                    }
-//                    ImGui::PopItemWidth();
-//                }
-//                ImGui::TreePop();
-//            }
-//        }
-//        ImGui::EndTable();
-//    }
-//}
-static void DrawAttributeConnectionEditListItem(const char *operation, const SdfPath &path, int &id, const SdfAttributeSpecHandle &attribute) {
-//    ImGui::Selectable(path.GetText());
-//    if (ImGui::BeginPopupContextItem(nullptr)) {
-//        if(ImGui::MenuItem("Remove connection")) {
-//            ExecuteAfterDraw<PrimRemoveAttributeConnection>(attribute, path);
-//        }
-//        ImGui::EndPopup();
-//    }
-    ImGui::PushID(path.GetText());
-    ImGui::Text("%s", operation);
+// TODO: move this code and generalize it for any Path edit list
+static void DrawEditListOneLineEditor(SdfSpecHandle spec, SdfConnectionsProxy &proxy) {
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+    ImGuiStorage *storage = window->DC.StateStorage;
+    // We want to show the first non empty list.
+    constexpr int editListCount = 6;
+    const char *editListNames[editListCount] = {"Ex", "Or", "Ap", "Ad", "Pr", "De"};
+    int currentList = 0;
+    ImGui::Dummy(ImVec2(0.f, 0.f)); // Used just for getting an itemid
     ImGui::SameLine();
-    std::string newPathStr = path.GetString();
-    ImGui::InputText("###AttributeConnection", &newPathStr);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        if(newPathStr.empty()) {
-            std::function<void()> removeItem = [=]() {
-                if (attribute) {
-                    attribute->GetConnectionPathList().RemoveItemEdits(path);
-                }
-            };
-            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), removeItem);
-        } else {
-            std::function<void()> replaceItemEdits = [=]() {
-                if (attribute) {
-                    attribute->GetConnectionPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
-                }
-            };
-            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), replaceItemEdits);
-        }
+    // Did we already kwow which list we want to show ?
+
+    const auto key = ImGui::GetItemID();
+    currentList = storage->GetInt(key, -1);
+    if (currentList == -1) {
+        // Select the best list
+        currentList = 2;
+        storage->SetInt(key, currentList);
     }
-    // TODO we might also want to be able to edit what the connection is pointing
-    // ImGui::Text("%s", path.GetText());
-    ImGui::PopID();
+
+    // TODO getEditList should go in ProxyHelpers, but need some refactoring to add Ordered
+    auto getEditList = [](SdfPathEditorProxy &editList, int which) {
+        // could use a table with pointer to function, but at the stage of writing it might not be
+        // worth the time
+        if (which == 1) {
+            return editList.GetOrderedItems();
+        } else if (which == 2) {
+            return editList.GetAppendedItems();
+        } else if (which == 3) {
+            return editList.GetAddedItems();
+        } else if (which == 4) {
+            return editList.GetPrependedItems();
+        } else if (which == 5) {
+            return editList.GetDeletedItems();
+        }
+        return editList.GetExplicitItems();
+    };
+
+    // Edit list chooser
+    ImGui::SmallButton(editListNames[currentList]);
+    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        for (int i = 0; i < editListCount; ++i) {
+            // Changing the color to show the empty lists
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                  getEditList(proxy, i).empty() ? ImVec4(0.5, 0.5, 0.5, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
+            if (ImGui::MenuItem(editListNames[i])) {
+                storage->SetInt(key, i);
+            }
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    thread_local std::string itemsString; // avoid reallocating
+    itemsString.clear();
+    for (const SdfPath &item : getEditList(proxy, currentList)) {
+        itemsString.append(item.GetString());
+        itemsString.append(" "); // we don't care about the last space, it also helps the user adding a new item
+    }
+
+    ImGui::InputText("##EditListOneLineEditor", &itemsString);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        std::vector<std::string> newList = TfStringSplit(itemsString, " ");
+        // TODO: should the following code go in a command ??
+        std::function<void()> updateList = [=]() {
+            if (spec) {
+                auto editorProxy = SdfGetPathEditorProxy(spec, SdfFieldKeys->ConnectionPaths);
+                auto editList = getEditList(editorProxy, currentList);
+                editList.clear();
+                for (const auto &path : newList) {
+                    editList.push_back(SdfPath(path));
+                }
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(spec->GetLayer(), updateList);
+    }
 }
-struct AttributeField{};
+
+//static void DrawAttributeConnectionEditListItem(const char *operation, const SdfPath &path, int &id,
+//                                                const SdfAttributeSpecHandle &attribute) {
+//    //    ImGui::Selectable(path.GetText());
+//    //    if (ImGui::BeginPopupContextItem(nullptr)) {
+//    //        if(ImGui::MenuItem("Remove connection")) {
+//    //            ExecuteAfterDraw<PrimRemoveAttributeConnection>(attribute, path);
+//    //        }
+//    //        ImGui::EndPopup();
+//    //    }
+//    ImGui::PushID(path.GetText());
+//    ImGui::Text("%s", operation);
+//    ImGui::SameLine();
+//    std::string newPathStr = path.GetString();
+//    ImGui::InputText("###AttributeConnection", &newPathStr);
+//    if (ImGui::IsItemDeactivatedAfterEdit()) {
+//        if (newPathStr.empty()) {
+//            std::function<void()> removeItem = [=]() {
+//                if (attribute) {
+//                    attribute->GetConnectionPathList().RemoveItemEdits(path);
+//                }
+//            };
+//            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), removeItem);
+//        } else {
+//            std::function<void()> replaceItemEdits = [=]() {
+//                if (attribute) {
+//                    attribute->GetConnectionPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
+//                }
+//            };
+//            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), replaceItemEdits);
+//        }
+//    }
+//    // TODO we might also want to be able to edit what the connection is pointing
+//    // ImGui::Text("%s", path.GetText());
+//    ImGui::PopID();
+//}
+
+struct AttributeRow {};
 // TODO:
 // ICON_FA_EDIT could be great for edit target
 // ICON_FA_DRAW_POLYGON great for meshes
-template <> inline ScopedStyleColor GetRowStyle<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+template <>
+inline ScopedStyleColor GetRowStyle<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute,
+                                                  const Selection &selection, const int &showWhat) {
     const bool selected = selection.IsSelected(attribute);
     ImVec4 colorSelected = selected ? ImVec4(ColorAttributeSelectedBg) : ImVec4(0.75, 0.60, 0.33, 0.2);
-    return ScopedStyleColor(ImGuiCol_HeaderHovered, selected ? colorSelected : ImVec4(ColorTransparent),
-                                 ImGuiCol_HeaderActive, ImVec4(ColorTransparent), ImGuiCol_Header, colorSelected, ImGuiCol_Text, ImVec4(ColorAttributeAuthored),
-                                 ImGuiCol_Button, ImVec4(ColorTransparent),
-                            ImGuiCol_FrameBg, ImVec4(ColorEditableWidgetBg));
+    return ScopedStyleColor(ImGuiCol_HeaderHovered, selected ? colorSelected : ImVec4(ColorTransparent), ImGuiCol_HeaderActive,
+                            ImVec4(ColorTransparent), ImGuiCol_Header, colorSelected, ImGuiCol_Text,
+                            ImVec4(ColorAttributeAuthored), ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_FrameBg,
+                            ImVec4(ColorEditableWidgetBg));
 }
 
-
 template <>
-inline void DrawFirstColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+inline void DrawFirstColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
+                                          const int &showWhat) {
     ImGui::PushID(rowId);
- 
+
     ImGui::Button(ICON_FA_CARET_SQUARE_DOWN);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         if (ImGui::MenuItem(ICON_FA_TRASH " Remove attribute")) {
-            //attribute->GetLayer()->GetAttributeAtPath(attribute)
+            // attribute->GetLayer()->GetAttributeAtPath(attribute)
             SdfPrimSpecHandle primSpec = attribute->GetLayer()->GetPrimAtPath(attribute->GetOwner()->GetPath());
             ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(attribute->GetPath()));
         }
-        if (ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
+        if (!attribute->HasConnectionPaths() && ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
             DrawModalDialog<CreateSdfAttributeConnectionDialog>(attribute);
         }
-        
+
         // Only if there are no default
         if (!attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_PLUS " Create default value")) {
             std::function<void()> createDefaultValue = [=]() {
@@ -490,16 +478,15 @@ inline void DrawFirstColumn<AttributeField>(const int rowId, const SdfAttributeS
             };
             ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), clearDefaultValue);
         }
-        
-        
+
         if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
-            //DrawModalDialog<>(attribute);
+            // DrawModalDialog<>(attribute);
         }
-        
+
         if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
             ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
         }
-        
+
         if (ImGui::MenuItem(ICON_FA_COPY " Copy property path")) {
             ImGui::SetClipboardText(attribute->GetPath().GetString().c_str());
         }
@@ -509,63 +496,23 @@ inline void DrawFirstColumn<AttributeField>(const int rowId, const SdfAttributeS
 };
 
 template <>
-inline void DrawSecondColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
+inline void DrawSecondColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
+                                           const int &showWhat) {
     // Still not sure we want to show the type at all or in the same column as the name
     ImGui::Text("%s (%s)", attribute->GetName().c_str(), attribute->GetTypeName().GetAsToken().GetText());
 };
- 
+
 template <>
-inline void DrawThirdColumn<AttributeField>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection, const int &showWhat) {
-    //ImGui::Button(ICON_FA_KEY); // menu to show stuff ??? -> do we want to show more stuff ???
-    //ImGui::SameLine();
+inline void DrawThirdColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
+                                          const int &showWhat) {
     // Check what to show, this could be stored in a variable ... check imgui
+    // For the mini buttons: ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.f, 0.f));
     ImGui::PushID(rowId);
     bool selected = selection.IsSelected(attribute);
-    if(ImGui::Selectable("##select", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
+    if (ImGui::Selectable("##select", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         ExecuteAfterDraw<EditorSelectAttributePath>(attribute->GetPath());
     }
     ImGui::SameLine();
-    
-  //  SdfTimeSampleMap timeSamples = attribute->GetTimeSampleMap();
-//    ImGuiContext &g = *GImGui;
-//    ImGuiWindow *window = g.CurrentWindow;
-//    ImGuiStorage *storage = window->DC.StateStorage;
-//    ImGui::PushID("timeSample");
-//    const auto key = ImGui::GetItemID();
-//    int what = storage->GetInt(key, 0);
-//    ImGui::PopID(); // Timesample
-//    if ( (!timeSamples.empty()||attribute->HasDefaultValue())
-//        && attribute->GetVariability() == SdfVariability::SdfVariabilityVarying ){
-//        //ImGui::SmallButton(ICON_FA_KEY);
-//        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-//            if (attribute->HasDefaultValue()) {
-//                ImGui::MenuItem("default");
-//            }
-//             TF_FOR_ALL(sample, timeSamples) { // Samples
-//
-//                std::string sampleValueLabel = std::to_string(sample->first);
-//                 ImGui::MenuItem(sampleValueLabel.c_str());
-//
-//            }
-//            ImGui::EndPopup();
-//        }
-//
-//        if(ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-//            what -= 1;
-//            storage->SetInt(key,what);
-//        }
-//        ImGui::SameLine();
-//        ImGui::Text(std::to_string(what).c_str());
-//        ImGui::SameLine();
-//        if(ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-//            what += 1;
-//            storage->SetInt(key,what);
-//        }
-//        ImGui::SameLine();
-//    }
-    
-    
-   // ImGui::SameLine();
     if (attribute->HasDefaultValue()) {
         // Show Default value if any
         ImGui::PushItemWidth(-FLT_MIN);
@@ -574,68 +521,22 @@ inline void DrawThirdColumn<AttributeField>(const int rowId, const SdfAttributeS
             ExecuteAfterDraw(&SdfPropertySpec::SetDefaultValue, attribute, modified);
         }
     }
-    
 
-    
-//    if (!timeSamples.empty()) {
-//        ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-//        //nodeFlags |= ImGuiTreeNodeFlags_Leaf;
-//        bool unfolded = ImGui::TreeNodeEx(attribute->GetName().c_str(), nodeFlags, "%s", attribute->GetName().c_str());
-//        if (unfolded) {
-//            TF_FOR_ALL(sample, timeSamples) { // Samples
-//
-//                std::string sampleValueLabel = std::to_string(sample->first);
-//                VtValue modified = DrawVtValue(sampleValueLabel, sample->second);
-//                if (modified != VtValue()) {
-//                    ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, attribute->GetLayer(), attribute->GetPath(),
-//                                     sample->first, modified);
-//                }
-//            }
-//            ImGui::TreePop();
-//        }
-//    }
-    //if (attribute->Time) {
-
-      //  SdfTimeSampleMap timeSamples = attribute->GetTimeSampleMap();
-        
-    //}
-    
+    // TODO: draw a key or something if the attribute has time samples
+    //    if (!timeSamples.empty()) {
+    // ImGui::Button(ICON_FA_KEY);
+    //    }
 
     if (attribute->HasConnectionPaths()) {
-        ImGui::SmallButton(ICON_FA_LINK);
+        ScopedStyleColor connectionColor(ImGuiCol_Text, ImVec4(ColorAttributeConnection));
+        ImGui::SmallButton(ICON_FA_LINK); // TODO: add delete list or "make explicit" menu
         ImGui::SameLine();
         SdfConnectionsProxy connections = attribute->GetConnectionPathList();
-        // SdfConnectionProxy is a SdfListEditorProxy
-        // What should happen when we have multiple connections ?
-        int connectionId = 0;
-        ScopedStyleColor connectionColor(ImGuiCol_Text, ImVec4(ColorAttributeConnection));
-        IterateListEditorItems(attribute->GetConnectionPathList(), DrawAttributeConnectionEditListItem, connectionId, attribute);
+        DrawEditListOneLineEditor(attribute, connections);
     }
     ImGui::PopID();
+    // ImGui::PopStyleVar(1);
 };
-
-// ComboBox inserted in a table header.
-static int DrawValueColumnSelector() {
-    static int showWhat = 0;
-    const char *choices[3] = {"Default value", "Keyed values", "Connections"};
-    ImGui::TableSetColumnIndex(2);
-    ImGui::SameLine();
-    ImGui::PushItemWidth(-FLT_MIN);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 0.0));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0, 0.0));
-    if (ImGui::BeginCombo("Show", choices[showWhat], ImGuiComboFlags_NoArrowButton)) {
-        for (int i = 0; i < 3; ++i) {
-            if (ImGui::Selectable(choices[i])) {
-                showWhat = i;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-    return showWhat;
-}
-
 
 void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &selection) {
     if (!primSpec)
@@ -650,20 +551,18 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
             SetupThreeColumnsTable(false, "", "Attribute", "");
             // the third column allows to show different attribute properties:
             // Default value, keyed values or connections (and summary ??)
-            //int showWhat = DrawValueColumnSelector();
+            // int showWhat = DrawValueColumnSelector();
             int showWhat = 0;
             for (const SdfAttributeSpecHandle &attribute : attributes) {
-                DrawThreeColumnsRow<AttributeField>(rowId++, attribute, selection, showWhat);
+                DrawThreeColumnsRow<AttributeRow>(rowId++, attribute, selection, showWhat);
             }
             ImGui::EndTable();
         }
     }
 }
 
-
-
 static void DrawRelationshipEditListItem(const char *operation, const SdfPath &path, int &id, const SdfPrimSpecHandle &primSpec,
-                                   SdfPath &relationPath) {
+                                         SdfPath &relationPath) {
     std::string newPathStr = path.GetString();
     ImGui::PushID(id++);
     ImGui::Text("%s", operation);
@@ -685,21 +584,20 @@ static void DrawRelationshipEditListItem(const char *operation, const SdfPath &p
     ImGui::PopID();
 }
 
-
-struct RelationField {};
+struct RelationRow {};
 template <>
-inline void DrawSecondColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
-                                         const SdfRelationshipSpecHandle &relation) {
+inline void DrawSecondColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                          const SdfRelationshipSpecHandle &relation) {
     ImGui::Text("%s", relation->GetName().c_str());
 };
 template <>
-inline void DrawThirdColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
-                                          const SdfRelationshipSpecHandle &relation) {
+inline void DrawThirdColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                         const SdfRelationshipSpecHandle &relation) {
     IterateListEditorItems(relation->GetTargetPathList(), DrawRelationshipEditListItem, rowId, primSpec, relation->GetPath());
 };
 template <>
-inline void DrawFirstColumn<RelationField>(const int rowId, const SdfPrimSpecHandle &primSpec,
-                                           const SdfRelationshipSpecHandle &relation) {
+inline void DrawFirstColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                         const SdfRelationshipSpecHandle &relation) {
     if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
     }
@@ -717,19 +615,18 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
             SetupThreeColumnsTable(false, "", "Relations", "");
             auto relations = primSpec->GetRelationships();
             for (const SdfRelationshipSpecHandle &relation : relations) {
-                DrawThreeColumnsRow<RelationField>(rowId, primSpec, relation);
+                DrawThreeColumnsRow<RelationRow>(rowId, primSpec, relation);
             }
             ImGui::EndTable();
         }
     }
 }
 
-
 #define GENERATE_FIELD(ClassName_, FieldName_, DrawFunction_)                                                                    \
     struct ClassName_ {                                                                                                          \
         static constexpr const char *fieldName = FieldName_;                                                                     \
     };                                                                                                                           \
-    template <> inline void DrawThirdColumn<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                     \
+    template <> inline void DrawThirdColumn<ClassName_>(const int rowId, const SdfPrimSpecHandle &primSpec) {                    \
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);                                                               \
         DrawFunction_(primSpec);                                                                                                 \
     }
@@ -743,17 +640,15 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
             ExecuteAfterDraw(&SdfPrimSpec::ClearField, primSpec, Token_);                                                        \
         }                                                                                                                        \
         ImGui::PopID();                                                                                                          \
-    }\
-
+    }
 
 GENERATE_FIELD(Specifier, "Specifier", DrawPrimSpecifier);
-GENERATE_FIELD(PrimType,  "Type", DrawPrimType);
+GENERATE_FIELD(PrimType, "Type", DrawPrimType);
 GENERATE_FIELD(PrimName, "Name", DrawPrimName);
 GENERATE_FIELD_WITH_BUTTON(PrimKind, SdfFieldKeys->Kind, "Kind", DrawPrimKind);
 GENERATE_FIELD_WITH_BUTTON(PrimActive, SdfFieldKeys->Active, "Active", DrawPrimActive);
 GENERATE_FIELD_WITH_BUTTON(PrimInstanceable, SdfFieldKeys->Instanceable, "Instanceable", DrawPrimInstanceable);
 GENERATE_FIELD_WITH_BUTTON(PrimHidden, SdfFieldKeys->Hidden, "Hidden", DrawPrimHidden);
-
 
 void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec->GetPath().IsPrimVariantSelectionPath()) {
@@ -777,14 +672,13 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-
-
 static void DrawPrimAssetInfo(const SdfPrimSpecHandle prim) {
     if (!prim)
         return;
     const auto &assetInfo = prim->GetAssetInfo();
     if (!assetInfo.empty()) {
-        if (ImGui::CollapsingHeader("Asset Info", ImGuiTreeNodeFlags_DefaultOpen)) { // This should really go in the metadata header
+        if (ImGui::CollapsingHeader("Asset Info",
+                                    ImGuiTreeNodeFlags_DefaultOpen)) { // This should really go in the metadata header
             if (ImGui::BeginTable("##DrawAssetInfo", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
                 TableSetupColumns("", "Asset Info", "");
                 ImGui::TableHeadersRow();
@@ -838,7 +732,6 @@ void DrawPrimCreatePropertyMenu(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-
 void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
 
     bool enabled = primSpec;
@@ -859,7 +752,6 @@ void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-
 void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selection) {
     if (!primSpec)
         return;
@@ -871,8 +763,8 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     ImGui::EndChild();
     ImGui::Separator();
     ImGui::BeginChild("##LayerBody");
-        DrawPrimSpecMetadata(primSpec);
-        DrawPrimAssetInfo(primSpec);
+    DrawPrimSpecMetadata(primSpec);
+    DrawPrimAssetInfo(primSpec);
 
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
@@ -881,7 +773,7 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     ImGui::EndChild();
     if (ImGui::IsItemHovered()) {
         const SdfPath &selectedProperty = selection.GetAnchorPropertyPath(primSpec->GetLayer());
-        if (selectedProperty!=SdfPath()) {
+        if (selectedProperty != SdfPath()) {
             SdfPropertySpecHandle selectedPropertySpec = primSpec->GetLayer()->GetPropertyAtPath(selectedProperty);
             AddShortcut<PropertyCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPropertySpec);
         }
