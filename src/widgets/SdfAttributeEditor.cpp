@@ -162,19 +162,25 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
             ImGui::EndTabItem();
         }
 
-        static UsdTimeCode selectedKeyframe = 0;
+        static UsdTimeCode selectedKeyframe = UsdTimeCode::Default();
         if (ImGui::BeginTabItem("Values")) {
             SdfTimeSampleMap timeSamples = attr->GetTimeSampleMap();
             // Left pane with the time samples
+            ScopedStyleColor col(ImGuiCol_FrameBg, ImVec4(0.260f, 0.300f, 0.360f, 1.000f));
             ImGui::BeginChild("left pane", ImVec2(120, 0), true); // TODO variable width
-            if (ImGui::Selectable("Default", selectedKeyframe == UsdTimeCode::Default())) {
-                selectedKeyframe = UsdTimeCode::Default();
-            }
-            TF_FOR_ALL(sample, timeSamples) { // Samples
-                std::string sampleValueLabel = std::to_string(sample->first);
-                if (ImGui::Selectable(sampleValueLabel.c_str(), selectedKeyframe == sample->first)) {
-                    selectedKeyframe = sample->first;
+            if(ImGui::BeginListBox("##Time")) {
+                if (attr->HasDefaultValue()) {
+                    if (ImGui::Selectable("Default", selectedKeyframe == UsdTimeCode::Default())) {
+                        selectedKeyframe = UsdTimeCode::Default();
+                    }
                 }
+                TF_FOR_ALL(sample, timeSamples) { // Samples
+                    std::string sampleValueLabel = std::to_string(sample->first);
+                    if (ImGui::Selectable(sampleValueLabel.c_str(), selectedKeyframe == sample->first)) {
+                        selectedKeyframe = sample->first;
+                    }
+                }
+                ImGui::EndListBox();
             }
             ImGui::EndChild();
             ImGui::SameLine();
@@ -182,16 +188,9 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
             if (selectedKeyframe == UsdTimeCode::Default()) {
                 if (attr->HasDefaultValue()) {
                     VtValue value = attr->GetDefaultValue();
-                    if (value.IsArrayValued()) {
-                        auto newValue = DrawVtArrayValue(value);
-                        if (newValue != VtValue()) {
-                            ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, newValue);
-                        }
-                    } else {
-                        auto newValue = DrawVtValue("##default", value);
-                        if (newValue != VtValue()) {
-                            ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, newValue);
-                        }
+                    VtValue editedValue = value.IsArrayValued() ? DrawVtArrayValue(value) : DrawVtValue("##default", value);
+                    if (editedValue != VtValue()) {
+                        ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, editedValue);
                     }
                 }
             } else {
@@ -211,8 +210,6 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
                 }
             }
             ImGui::EndChild();
-            ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow;
-
             ImGui::EndTabItem();
         }
 
