@@ -313,10 +313,31 @@ template <typename T> static inline void DrawArrayEditorButton(T attribute) {
     }
 }
 
+inline SdfPathEditorProxy GetPathEditorProxy(SdfSpecHandle spec, TfToken field) {
+#ifdef WIN32
+    // Unfortunately on windows the SdfGetPathEditorProxy is not exposed
+    // So the following code is a workaround
+    //Only two calls for the moment, with the arguments:
+    //attribute, SdfFieldKeys->ConnectionPaths
+    //relation, SdfFieldKeys->TargetPaths
+    if (spec->GetSpecType() == SdfSpecTypeAttribute && field == SdfFieldKeys->ConnectionPaths) {
+        SdfAttributeSpecHandle attr = spec->GetLayer()->GetAttributeAtPath(spec->GetPath());
+        return attr->GetConnectionPathList();
+    } else if (spec->GetSpecType() == SdfSpecTypeRelationship && field == SdfFieldKeys->TargetPaths) {
+        SdfRelationshipSpecHandle rel = spec->GetLayer()->GetRelationshipAtPath(spec->GetPath());
+        return rel->GetTargetPathList();
+    }
+    return {}; // Shouldn't happen, if it does, add the case above
+#else
+return SdfGetPathEditorProxy(spec, field);
+#endif
+}
+
+
 // TODO: move this code and generalize it for any Path edit list
 // SdfFieldKeys->ConnectionPaths
 static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
-    SdfPathEditorProxy proxy = SdfGetPathEditorProxy(spec, field);
+    SdfPathEditorProxy proxy = GetPathEditorProxy(spec, field);
     ImGuiContext &g = *GImGui;
     ImGuiWindow *window = g.CurrentWindow;
     ImGuiStorage *storage = window->DC.StateStorage;
@@ -386,7 +407,7 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
         // TODO: should the following code go in a command ??
         std::function<void()> updateList = [=]() {
             if (spec) {
-                auto editorProxy = SdfGetPathEditorProxy(spec, SdfFieldKeys->ConnectionPaths);
+                auto editorProxy = GetPathEditorProxy(spec, field);
                 auto editList = getEditList(editorProxy, currentList);
                 editList.clear();
                 for (const auto &path : newList) {

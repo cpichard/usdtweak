@@ -371,6 +371,9 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
 }
 
 bool DrawMaterialBindings(const UsdPrim &prim) {
+#if (PXR_VERSION < 2208)
+    return false;
+#else
     if (!prim)
         return false;
     UsdShadeMaterialBindingAPI materialBindingAPI(prim);
@@ -398,6 +401,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
         return true;
     }
     return false;
+#endif
 }
 
 
