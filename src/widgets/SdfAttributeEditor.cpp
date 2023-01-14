@@ -21,39 +21,39 @@
 ///
 /// TypeName
 //
-struct TypeName {};
-template <> inline void DrawSecondColumn<TypeName>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct TypeNameRow {};
+template <> inline void DrawSecondColumn<TypeNameRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Attribute type");
 };
-template <> inline void DrawThirdColumn<TypeName>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<TypeNameRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("%s", attr->GetTypeName().GetAsToken().GetText());
 };
 
 ///
 /// Value Type
 ///
-struct ValueType {};
-template <> inline void DrawSecondColumn<ValueType>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct ValueTypeRow {};
+template <> inline void DrawSecondColumn<ValueTypeRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Value type");
 };
-template <> inline void DrawThirdColumn<ValueType>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<ValueTypeRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("%s", attr->GetValueType().GetTypeName().c_str());
 };
 
 ///
 /// Display Name
 ///
-struct DisplayName {};
-template <> inline bool HasEdits<DisplayName>(const SdfAttributeSpecHandle &attr) { return !attr->GetDisplayName().empty(); }
-template <> inline void DrawFirstColumn<DisplayName>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct DisplayNameRow {};
+template <> inline bool HasEdits<DisplayNameRow>(const SdfAttributeSpecHandle &attr) { return !attr->GetDisplayName().empty(); }
+template <> inline void DrawFirstColumn<DisplayNameRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw(&SdfAttributeSpec::SetDisplayName, attr, "");
     }
 };
-template <> inline void DrawSecondColumn<DisplayName>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawSecondColumn<DisplayNameRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Display Name");
 };
-template <> inline void DrawThirdColumn<DisplayName>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<DisplayNameRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     std::string displayName = attr->GetDisplayName();
     ImGui::PushItemWidth(-FLT_MIN);
     ImGui::InputText("##DisplayName", &displayName);
@@ -65,17 +65,17 @@ template <> inline void DrawThirdColumn<DisplayName>(const int rowId, const SdfA
 ///
 /// Display Group
 ///
-struct DisplayGroup {};
-template <> inline bool HasEdits<DisplayGroup>(const SdfAttributeSpecHandle &attr) { return !attr->GetDisplayGroup().empty(); }
-template <> inline void DrawFirstColumn<DisplayGroup>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct DisplayGroupRow {};
+template <> inline bool HasEdits<DisplayGroupRow>(const SdfAttributeSpecHandle &attr) { return !attr->GetDisplayGroup().empty(); }
+template <> inline void DrawFirstColumn<DisplayGroupRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     if (ImGui::Button(ICON_FA_TRASH)) {
         ExecuteAfterDraw(&SdfAttributeSpec::SetDisplayGroup, attr, "");
     }
 };
-template <> inline void DrawSecondColumn<DisplayGroup>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawSecondColumn<DisplayGroupRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Display Group");
 };
-template <> inline void DrawThirdColumn<DisplayGroup>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<DisplayGroupRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     std::string displayGroup = attr->GetDisplayGroup();
     ImGui::PushItemWidth(-FLT_MIN);
     ImGui::InputText("##DisplayGroup", &displayGroup);
@@ -87,11 +87,11 @@ template <> inline void DrawThirdColumn<DisplayGroup>(const int rowId, const Sdf
 ///
 /// Variability
 ///
-struct Variability {};
-template <> inline void DrawSecondColumn<Variability>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct VariabilityRow {};
+template <> inline void DrawSecondColumn<VariabilityRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Variability");
 };
-template <> inline void DrawThirdColumn<Variability>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<VariabilityRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     int variability = attr->GetVariability();
     ImGui::PushItemWidth(-FLT_MIN);
     const char *variabilityOptions[4] = {"Varying", "Uniform", "Config", "Computed"}; // in the doc but not in the code
@@ -105,11 +105,11 @@ template <> inline void DrawThirdColumn<Variability>(const int rowId, const SdfA
 ///
 /// Custom property
 ///
-struct Custom {};
-template <> inline void DrawSecondColumn<Custom>(const int rowId, const SdfAttributeSpecHandle &attr) {
+struct CustomRow {};
+template <> inline void DrawSecondColumn<CustomRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     ImGui::Text("Custom");
 };
-template <> inline void DrawThirdColumn<Custom>(const int rowId, const SdfAttributeSpecHandle &attr) {
+template <> inline void DrawThirdColumn<CustomRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
     bool custom = attr->IsCustom();
     ImGui::PushItemWidth(-FLT_MIN);
     ImGui::Checkbox("##Custom", &custom);
@@ -122,12 +122,12 @@ static void DrawSdfAttributeMetadata(SdfAttributeSpecHandle attr) {
     int rowId = 0;
     if (BeginThreeColumnsTable("##DrawSdfAttributeMetadata")) {
         SetupThreeColumnsTable(false, "", "Metadata", "Value");
-        DrawThreeColumnsRow<TypeName>(rowId++, attr);
-        DrawThreeColumnsRow<ValueType>(rowId++, attr);
-        DrawThreeColumnsRow<Variability>(rowId++, attr);
-        DrawThreeColumnsRow<Custom>(rowId++, attr);
-        DrawThreeColumnsRow<DisplayName>(rowId++, attr);
-        DrawThreeColumnsRow<DisplayGroup>(rowId++, attr);
+        DrawThreeColumnsRow<TypeNameRow>(rowId++, attr);
+        DrawThreeColumnsRow<ValueTypeRow>(rowId++, attr);
+        DrawThreeColumnsRow<VariabilityRow>(rowId++, attr);
+        DrawThreeColumnsRow<CustomRow>(rowId++, attr);
+        DrawThreeColumnsRow<DisplayNameRow>(rowId++, attr);
+        DrawThreeColumnsRow<DisplayGroupRow>(rowId++, attr);
         // DrawThreeColumnsRow<Documentation>(rowId++, attr);
         // DrawThreeColumnsRow<Comment>(rowId++, attr);
         // DrawThreeColumnsRow<PrimHidden>(rowId++, attr);
