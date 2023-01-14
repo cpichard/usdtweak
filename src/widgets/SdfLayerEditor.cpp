@@ -233,11 +233,11 @@ static void DrawSubLayerActionPopupMenu(const SdfLayerRefPtr &layer, const std::
     }
 }
 
-struct SublayerPath {
+struct SublayerPathRow {
     static constexpr const char *fieldName = "";
 };
 
-template <> inline void DrawThirdColumn<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+template <> inline void DrawSecondColumn<SublayerPathRow>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
         std::string newPath(path);
     ImGui::PushID(rowId);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-2*28);
@@ -260,7 +260,7 @@ template <> inline void DrawThirdColumn<SublayerPath>(const int rowId, const Sdf
     ImGui::PopID();
 }
 
-template <> inline void DrawFirstColumn<SublayerPath>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
+template <> inline void DrawFirstColumn<SublayerPathRow>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
     ImGui::PushID(rowId);
     if (ImGui::SmallButton(ICON_FA_TRASH)) {
         ExecuteAfterDraw<LayerRemoveSubLayer>(layer, path);
@@ -295,7 +295,7 @@ void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
                 auto subLayersProxy = layer->GetSubLayerPaths();
                 for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
                     const std::string& path = subLayersProxy[i];
-                    DrawTwoColumnsRow<SublayerPath>(rowId++, layer, path);
+                    DrawTwoColumnsRow<SublayerPathRow>(rowId++, layer, path);
                 }
                 EndTwoColumnsTable();
             }
