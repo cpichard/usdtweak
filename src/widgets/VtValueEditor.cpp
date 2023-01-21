@@ -167,6 +167,22 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
             fltArray[0] = fltValue;
             return VtValue(fltArray);
         }
+    } else if (value.IsHolding<VtArray<TfToken>>()) {
+        thread_local std::string tokens; // avoid reallocating
+        tokens.clear();
+        for (const TfToken &item : value.Get<VtArray<TfToken>>()) {
+            tokens.append(item.GetString());
+            tokens.append(" "); // we don't care about the last space, it also helps the user adding a new item
+        }
+        ImGui::InputText("##tokens", &tokens);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            VtArray<TfToken> newList;
+            for(const std::string &tokenStr :TfStringSplit(tokens, " ")) {
+                // we don't allow empty tokens, this could be a limitation in the future
+                if (!tokenStr.empty()) newList.emplace_back(tokenStr);
+            }
+            return VtValue(newList);
+        }
     } else if (value.IsArrayValued() && value.GetArraySize() > 5) {
         ImGui::Text("%s with %zu values", value.GetTypeName().c_str(), value.GetArraySize());
     } else {
