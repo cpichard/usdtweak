@@ -1,22 +1,70 @@
 
+#include "Commands.h"
+#include "CompositionEditor.h"
+#include "Constants.h"
+#include "FileBrowser.h"
+#include "ImGuiHelpers.h"
+#include "ModalDialogs.h"
+#include "ProxyHelpers.h"
+#include "TableLayouts.h"
+#include <algorithm>
+#include <iostream>
+#include <pxr/usd/sdf/payload.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/reference.h>
-#include <pxr/usd/sdf/payload.h>
-#include "CompositionEditor.h"
-#include "ImGuiHelpers.h"
-#include "ProxyHelpers.h"
-#include "ModalDialogs.h"
-#include "FileBrowser.h"
-#include "Commands.h"
-#include "Constants.h"
-#include "ImGuiHelpers.h"
 
-// 2 local struct to differentiate Inherit and Specialize which have the same underlying type
-struct Inherit {};
-struct Specialize {};
+typedef enum CompositionArcListType { ReferenceList, PayloadList, InheritList, SpecializeList } CompositionArcListType;
+
+// Unfortunately Inherit and Specialize are just alias to SdfPath, so there is no way to differentiate the
+// edit list from the type.
+// To reuse templated code we create new type SdfInherit and SdfSpecialize them
+template <int InheritOrSpecialize> struct SdfInheritOrSpecialize : SdfPath {
+    SdfInheritOrSpecialize() : SdfPath() {}
+    SdfInheritOrSpecialize(const SdfPath &path) : SdfPath(path) {}
+};
+
+using SdfInherit = SdfInheritOrSpecialize<0>;
+using SdfSpecialize = SdfInheritOrSpecialize<1>;
+
+template <typename ArcListItemT> struct ArcListItemTrait { typedef ArcListItemT type; };
+template <> struct ArcListItemTrait<SdfInherit> { typedef SdfPath type; };
+template <> struct ArcListItemTrait<SdfSpecialize> { typedef SdfPath type; };
 
 static bool HasComposition(const SdfPrimSpecHandle &primSpec) {
     return primSpec->HasReferences() || primSpec->HasPayloads() || primSpec->HasInheritPaths() || primSpec->HasSpecializes();
+}
+
+inline SdfReferencesProxy GetCompositionArcList(const SdfPrimSpecHandle &primSpec, const SdfReference &val) {
+    return primSpec->GetReferenceList();
+}
+
+inline SdfPayloadsProxy GetCompositionArcList(const SdfPrimSpecHandle &primSpec, const SdfPayload &val) {
+    return primSpec->GetPayloadList();
+}
+
+inline SdfInheritsProxy GetCompositionArcList(const SdfPrimSpecHandle &primSpec, const SdfInherit &val) {
+    return primSpec->GetInheritPathList();
+}
+
+inline SdfSpecializesProxy GetCompositionArcList(const SdfPrimSpecHandle &primSpec, const SdfSpecialize &val) {
+    return primSpec->GetSpecializesList();
+}
+
+
+inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
+    auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(ref.GetAssetPath());
+    auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
+    ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, ref.GetPrimPath());
+}
+
+inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfPayload &pay) {
+    auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(pay.GetAssetPath());
+    auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
+    ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, pay.GetPrimPath());
+}
+
+inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
+   ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
 }
 
 /// Create a standard UI for entering a SdfPath.
@@ -36,8 +84,8 @@ struct CreateSdfPathModalDialog : public ModalDialog {
         ImGui::Text("%s", _primSpec->GetPath().GetString().c_str());
         if (ImGui::BeginCombo("Operation", GetListEditorOperationName(_operation))) {
             for (int n = 0; n < GetListEditorOperationSize(); n++) {
-                if (ImGui::Selectable(GetListEditorOperationName(n))) {
-                    _operation = n;
+                if (ImGui::Selectable(GetListEditorOperationName(SdfListOpType(n)))) {
+                    _operation = SdfListOpType(n);
                 }
             }
             ImGui::EndCombo();
@@ -52,7 +100,7 @@ struct CreateSdfPathModalDialog : public ModalDialog {
 
     SdfPrimSpecHandle _primSpec;
     std::string _primPath;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
 };
 
 /// UI used to create an AssetPath having a file path to a layer and a
@@ -73,7 +121,7 @@ struct CreateAssetPathModalDialog : public ModalDialog {
         if (ImGui::BeginCombo("Operation", GetListEditorOperationName(_operation))) {
             for (int n = 0; n < GetListEditorOperationSize(); n++) {
                 if (ImGui::Selectable(GetListEditorOperationName(n))) {
-                    _operation = n;
+                    _operation = static_cast<SdfListOpType>(n);
                 }
             }
             ImGui::EndCombo();
@@ -118,7 +166,7 @@ struct CreateAssetPathModalDialog : public ModalDialog {
     SdfPrimSpecHandle _primSpec;
     std::string _assetPath;
     std::string _primPath;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
 
     bool _relative = false;
     bool _unixify = false;
@@ -162,30 +210,34 @@ void DrawPrimCreatePayload(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<
 void DrawPrimCreateInherit(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateInheritModalDialog>(primSpec); }
 void DrawPrimCreateSpecialize(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateSpecializeModalDialog>(primSpec); }
 
-/// Remove a Asset Path from a primspec
-inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfReference &item) {
-    primSpec->GetReferenceList().RemoveItemEdits(item);
+static SdfListOpType opList = SdfListOpTypeExplicit;
+
+template <typename ArcT> void DrawArcCreationDialog(const SdfPrimSpecHandle &primSpec, SdfListOpType opList);
+template <> void DrawArcCreationDialog<SdfReference>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
+    DrawModalDialog<CreateReferenceModalDialog>(primSpec);
 }
-inline void RemoveAssetPathFromList(SdfPrimSpecHandle primSpec, const SdfPayload &item) {
-    primSpec->GetPayloadList().RemoveItemEdits(item);
+template <> void DrawArcCreationDialog<SdfPayload>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
+    DrawModalDialog<CreatePayloadModalDialog>(primSpec);
+}
+template <> void DrawArcCreationDialog<SdfInherit>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
+    DrawModalDialog<CreateInheritModalDialog>(primSpec);
 }
 
-/// Remove SdfPath from their lists (Inherits and Specialize)
-template <typename ListT> inline void RemovePathFromList(const SdfPrimSpecHandle &primSpec, const SdfPath &item);
-template <> inline void RemovePathFromList<Inherit>(const SdfPrimSpecHandle &primSpec, const SdfPath &item) {
-    primSpec->GetInheritPathList().RemoveItemEdits(item);
+template <> void DrawArcCreationDialog<SdfSpecialize>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
+    DrawModalDialog<CreateSpecializeModalDialog>(primSpec);
 }
-template <> inline void RemovePathFromList<Specialize>(const SdfPrimSpecHandle &primSpec, const SdfPath &item) {
-    primSpec->GetSpecializesList().RemoveItemEdits(item);
+template<typename ArcT>
+inline void RemoveArc(const SdfPrimSpecHandle &primSpec, const ArcT &arc) {
+    std::function<void()> removeItem = [=]() { GetCompositionArcList(primSpec, arc).RemoveItemEdits(arc); };
+    ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeItem);
 }
 
 ///
-template <typename PathOriginT> void DrawSdfPathMenuItems(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
+template <typename ArcT> void DrawSdfPathMenuItems(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
     if (ImGui::MenuItem("Remove")) {
         if (!primSpec)
             return;
-        std::function<void()> removeAssetPath = [=]() { RemovePathFromList<PathOriginT>(primSpec, path); };
-        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeAssetPath);
+        RemoveArc(primSpec, ArcT(path));
     }
     if (ImGui::MenuItem("Copy path")) {
         ImGui::SetClipboardText(path.GetString().c_str());
@@ -195,7 +247,7 @@ template <typename PathOriginT> void DrawSdfPathMenuItems(const SdfPrimSpecHandl
 /// Draw the menu items for AssetPaths (SdfReference and SdfPayload)
 template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHandle &primSpec, const AssetPathT &assetPath) {
 
-    if (ImGui::MenuItem("Inspect")) {
+    if (ImGui::MenuItem("Select Arc")) {
         auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
         ExecuteAfterDraw<EditorFindOrOpenLayer>(realPath);
     }
@@ -205,117 +257,223 @@ template <typename AssetPathT> void DrawAssetPathMenuItems(const SdfPrimSpecHand
     }
     ImGui::Separator();
     if (ImGui::MenuItem("Remove")) {
-        // I am not 100% sure this is safe as we copy the primSpec instead of its location
-        // The command UsdFunctionCall will store it between here and the actual call, so between this time it
-        // might be invalidated by another process. Unlikely but possible
-        // TODO: make a command that stores the location of the prim
         if (!primSpec)
             return;
-        std::function<void()> removeAssetPath = [=]() { RemoveAssetPathFromList(primSpec, assetPath); };
-        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeAssetPath);
-    }
+        RemoveArc(primSpec, assetPath);
+     }
     ImGui::Separator();
     if (ImGui::MenuItem("Copy asset path")) {
         ImGui::SetClipboardText(assetPath.GetAssetPath().c_str());
     }
 }
 
-
-template <typename ListT>
-static void DrawSdfPathRow(const char *operationName, const SdfPath &path, SdfPrimSpecHandle &primSpec) {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    if (ImGui::SmallButton(ICON_FA_TRASH)) { // TODO: replace with the proper mini button menu
-        if (!primSpec)
-            return;
-        // DUPLICATED CODE that should go away with the mini button menu
-        std::function<void()> removePath = [=]() { RemovePathFromList<ListT>(primSpec, path); };
-        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removePath);
-    }
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%s", operationName);
-    ImGui::TableSetColumnIndex(2);
-    ImGui::Text("%s", path.GetString().c_str());
-    if (ImGui::BeginPopupContextItem(path.GetString().c_str())) {
-        DrawSdfPathMenuItems<ListT>(primSpec, path);
-        ImGui::EndPopup();
-    }
-}
-
-// Draw a row in a table for SdfReference or SdfPayload
-// It's templated to keep the formatting consistent between payloads and references
-// and avoid to duplicate the code
-template <typename AssetPathT>
-static void DrawAssetPathRow(const char *operationName, const AssetPathT &item,
-                             const SdfPrimSpecHandle &primSpec) { // TODO:primSpec might not be useful here
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    if (ImGui::SmallButton(ICON_FA_TRASH)) { // TODO: replace with the proper menu
-        if (!primSpec)
-            return;
-        std::function<void()> removeAssetPath = [=]() { RemoveAssetPathFromList(primSpec, item); };
-        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeAssetPath);
-    }
-    ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%s", operationName);
-    ImGui::TableSetColumnIndex(2);
-    std::string pathFormated;
-    if (!item.GetAssetPath().empty()) {
-        pathFormated += "@" + item.GetAssetPath() + "@";
-    }
-    if (!item.GetPrimPath().GetString().empty()) {
-        pathFormated += "<" + item.GetPrimPath().GetString() + ">";
-    }
-    ImGui::Text("%s", pathFormated.c_str());
-    if (ImGui::BeginPopupContextItem(item.GetPrimPath().GetString().c_str())) {
-        DrawAssetPathMenuItems(primSpec, item);
-        ImGui::EndPopup();
-    }
-}
-
-void DrawPrimPayloads(const SdfPrimSpecHandle &primSpec) {
-    if (!primSpec->HasPayloads())
-        return;
-    if (ImGui::BeginTable("##DrawPrimPayloads", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "Payloads", "", "");
-        ImGui::TableHeadersRow();
-        IterateListEditorItems(primSpec->GetPayloadList(), DrawAssetPathRow<SdfPayload>, primSpec);
+template <typename InheritOrSpecialize>
+InheritOrSpecialize DrawSdfPathEditor(const SdfPrimSpecHandle &primSpec, const InheritOrSpecialize &arc, ImVec2 outerSize) {
+    InheritOrSpecialize updatedArc;
+    std::string updatedPath = arc.GetString();
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PreciseWidths |
+                                           ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Resizable;
+    if (ImGui::BeginTable("DrawSdfPathEditor", 1, tableFlags, outerSize)) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##assetpath", &updatedPath);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            updatedArc = SdfPath(updatedPath);
+        }
         ImGui::EndTable();
     }
+    return updatedArc;
 }
 
-void DrawPrimReferences(const SdfPrimSpecHandle &primSpec) {
-    if (!primSpec->HasReferences())
-        return;
+// Works with SdfReference and SdfPayload
+template <typename ReferenceOrPayloadT>
+ReferenceOrPayloadT DrawReferenceOrPayloadEditor(const SdfPrimSpecHandle &primSpec, const ReferenceOrPayloadT &ref,
+                                                 ImVec2 outerSize) {
+    ReferenceOrPayloadT ret;
+    std::string updatedPath = ref.GetAssetPath();
+    std::string targetPath = ref.GetPrimPath().GetString();
+    SdfLayerOffset layerOffset = ref.GetLayerOffset();
+    float offset = layerOffset.GetOffset();
+    float scale = layerOffset.GetScale();
+    ImGui::PushID("DrawAssetPathArcEditor");
+    constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PreciseWidths |
+                                           ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Resizable;
+    if (ImGui::BeginTable("DrawAssetPathArcEditorTable", 4, tableFlags, outerSize)) {
+        const float stretchLayer = (layerOffset == SdfLayerOffset()) ? 0.01 : 0.1;
+        const float stretchTarget = (targetPath.empty()) ? 0.01 : 0.3 * (1 - 2 * stretchLayer);
+        const float stretchPath = 1 - 2 * stretchLayer - stretchTarget;
+        ImGui::TableSetupColumn("path", ImGuiTableColumnFlags_WidthStretch, stretchPath);
+        ImGui::TableSetupColumn("target", ImGuiTableColumnFlags_WidthStretch, stretchTarget);
+        ImGui::TableSetupColumn("offset", ImGuiTableColumnFlags_WidthStretch, stretchLayer);
+        ImGui::TableSetupColumn("scale", ImGuiTableColumnFlags_WidthStretch, stretchLayer);
+        ImGui::TableNextRow();
 
-    if (ImGui::BeginTable("##DrawPrimReferences", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "References", "", "");
-        ImGui::TableHeadersRow();
-        IterateListEditorItems(primSpec->GetReferenceList(), DrawAssetPathRow<SdfReference>, primSpec);
+        ImGui::TableSetColumnIndex(0);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##assetpath", &updatedPath);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            ret = ref;
+            ret.SetAssetPath(updatedPath);
+        }
+        // TODO more operation on the path: unixify, make relative, etc
+        if (ImGui::BeginPopupContextItem("sublayer")) {
+            ImGui::Text("%s", updatedPath.c_str());
+            DrawAssetPathMenuItems(primSpec, ref);
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##targetpath", &targetPath);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            ret = ref;
+            ret.SetPrimPath(SdfPath(targetPath));
+        }
+
+        ImGui::TableSetColumnIndex(2);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputFloat("##offset", &offset);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            SdfLayerOffset updatedLayerOffset(layerOffset);
+            updatedLayerOffset.SetOffset(offset);
+            ret = ref;
+            ret.SetLayerOffset(updatedLayerOffset);
+        }
+
+        ImGui::TableSetColumnIndex(3);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputFloat("##scale", &scale);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            SdfLayerOffset updatedLayerOffset(layerOffset);
+            updatedLayerOffset.SetScale(scale);
+            ret = ref;
+            ret.SetLayerOffset(updatedLayerOffset);
+        }
         ImGui::EndTable();
     }
-
+    ImGui::PopID();
+    return ret;
 }
 
-void DrawPrimInherits(const SdfPrimSpecHandle &primSpec) {
-    if (!primSpec->HasInheritPaths())
-        return;
-    if (ImGui::BeginTable("##DrawPrimInherits", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "Inherit", "");
-        ImGui::TableHeadersRow();
-        IterateListEditorItems(primSpec->GetInheritPathList(), DrawSdfPathRow<Inherit>, primSpec);
-        ImGui::EndTable();
+inline SdfReference DrawCompositionArcEditor(const SdfPrimSpecHandle &primSpec, const SdfReference &arc, ImVec2 outerSize) {
+    return DrawReferenceOrPayloadEditor(primSpec, arc, outerSize);
+}
+
+inline SdfPayload DrawCompositionArcEditor(const SdfPrimSpecHandle &primSpec, const SdfPayload &arc, ImVec2 outerSize) {
+    return DrawReferenceOrPayloadEditor(primSpec, arc, outerSize);
+}
+
+inline SdfInherit DrawCompositionArcEditor(const SdfPrimSpecHandle &primSpec, const SdfInherit &arc, ImVec2 outerSize) {
+    return DrawSdfPathEditor(primSpec, arc, outerSize);
+}
+
+inline SdfSpecialize DrawCompositionArcEditor(const SdfPrimSpecHandle &primSpec, const SdfSpecialize &arc, ImVec2 outerSize) {
+    return DrawSdfPathEditor(primSpec, arc, outerSize);
+}
+
+template <typename CompositionArcT>
+void DrawCompositionArcRow(int rowId, const SdfPrimSpecHandle &primSpec, const CompositionArcT &arc, const SdfListOpType &op) {
+    // Arbitrary outer size for the reference editor
+    using ItemType = typename ArcListItemTrait<CompositionArcT>::type;
+    const float regionAvailable = ImGui::GetWindowWidth() - 3 * 28 - 20; // 28 to account for buttons, 20 is arbitrary
+    ImVec2 outerSize(regionAvailable, TableRowDefaultHeight);
+    CompositionArcT updatedArc = DrawCompositionArcEditor(primSpec, arc, outerSize);
+    if (updatedArc != CompositionArcT()) {
+        std::function<void()> updateReferenceFun = [=]() {
+            auto arcList = GetCompositionArcList(primSpec, arc);
+            auto editList = GetSdfListOp(arcList, op);
+            editList[rowId] = updatedArc;
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), updateReferenceFun);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_ARROW_UP)) {
+        std::function<void()> moveUp = [=]() {
+            auto arcList = GetCompositionArcList(primSpec, arc);
+            auto editList = GetSdfListOp(arcList, op);
+            if (rowId >= 1) { // std::swap doesn't compile here
+                auto it = editList[rowId];
+                ItemType tmp = it;
+                editList.erase(editList.begin() + rowId);
+                editList.insert(editList.begin() + rowId - 1, tmp);
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), moveUp);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_ARROW_DOWN)) {
+        std::function<void()> moveDown = [=]() {
+            auto arcList = GetCompositionArcList(primSpec, arc);
+            auto editList = GetSdfListOp(arcList, op);
+            if (rowId < editList.size() - 1) { // std::swap doesn't compile here
+                auto it = editList[rowId];
+                ItemType tmp = it;
+                editList.erase(editList.begin() + rowId);
+                editList.insert(editList.begin() + rowId + 1, tmp);
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), moveDown);
     }
 }
 
-void DrawPrimSpecializes(const SdfPrimSpecHandle &primSpec) {
-    if (!primSpec->HasSpecializes())
-        return;
-    if (ImGui::BeginTable("##DrawPrimSpecializes", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        TableSetupColumns("", "Specialize", "");
-        ImGui::TableHeadersRow();
-        IterateListEditorItems(primSpec->GetSpecializesList(), DrawSdfPathRow<Specialize>, primSpec);
-        ImGui::EndTable();
+struct CompositionArcRow {}; // Rany of SdfReference SdfPayload SdfInherit and SdfSpecialize
+
+#define GENERATE_ARC_ITEM_DRAW_CODE(ClassName_)                                                                                  \
+template <>                                                                                                                  \
+inline void DrawFirstColumn<CompositionArcRow>(int rowId, const SdfPrimSpecHandle &primSpec, const ClassName_ &arc,          \
+                                               const SdfListOpType &chosenList) {                                            \
+    if (ImGui::Button(ICON_FA_TRASH)) {                                                                                      \
+        RemoveArc(primSpec, arc);                                                                                            \
+    }                                                                                                                        \
+}                                                                                                                            \
+                                                                                                                             \
+template <>                                                                                                                  \
+inline void DrawSecondColumn<CompositionArcRow>(int rowId, const SdfPrimSpecHandle &primSpec, const ClassName_ &arc,         \
+                                                const SdfListOpType &chosenList) {                                           \
+    DrawCompositionArcRow(rowId, primSpec, arc, chosenList);                                                                 \
+}
+GENERATE_ARC_ITEM_DRAW_CODE(SdfReference)
+GENERATE_ARC_ITEM_DRAW_CODE(SdfPayload)
+GENERATE_ARC_ITEM_DRAW_CODE(SdfInherit)
+GENERATE_ARC_ITEM_DRAW_CODE(SdfSpecialize)
+
+template <typename CompositionArcItemT> void DrawCompositionEditor(const SdfPrimSpecHandle &primSpec) {
+    using ItemType = typename ArcListItemTrait<CompositionArcItemT>::type;
+    static SdfListOpType opList = SdfListOpTypeExplicit;
+
+    if (ImGui::Button(ICON_FA_PLUS)) {
+        DrawArcCreationDialog<CompositionArcItemT>(primSpec, opList);
+    }
+
+    // TODO: choose the non empty list if no decision was made
+    auto arcList = GetCompositionArcList(primSpec, CompositionArcItemT());
+
+    // TODO: Find the correct edit list
+    ImGui::SameLine();
+    if (ImGui::BeginCombo("##Edit list", GetListEditorOperationName(opList))) {
+        for (int i = 0; i < 6; ++i) {
+            ImGui::PushStyleColor(ImGuiCol_Text, GetSdfListOp(arcList, i).empty() ? ImVec4(ColorAttributeUnauthored)
+                                                                                  : ImVec4(ColorAttributeAuthored));
+            if (ImGui::Selectable(GetListEditorOperationName(i))) {
+                opList = static_cast<SdfListOpType>(i);
+            }
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndCombo();
+    }
+
+    if (BeginTwoColumnsTable("##AssetTypeTable")) {
+        auto editList = GetSdfListOp(arcList, opList);
+        for (int ind = 0; ind < editList.size(); ind++) {
+            const ItemType &item = editList[ind];
+            ImGui::PushID(boost::hash<ItemType>{}(item));
+            const CompositionArcItemT arcItem(item); // Sadly we have to copy here,
+            DrawTwoColumnsRow<CompositionArcRow>(ind, primSpec, arcItem, opList);
+            ImGui::PopID();
+        }
+        EndTwoColumnsTable();
     }
 }
 
@@ -323,27 +481,48 @@ void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
     if (ImGui::CollapsingHeader("Composition", ImGuiTreeNodeFlags_DefaultOpen)) {
-        DrawPrimReferences(primSpec);
-        DrawPrimPayloads(primSpec);
-        DrawPrimInherits(primSpec);
-        DrawPrimSpecializes(primSpec);
+        if (ImGui::BeginTabBar("##CompositionType")) {
+            if (ImGui::BeginTabItem("References", nullptr,
+                                    primSpec->HasReferences() ? ImGuiTabItemFlags_UnsavedDocument : ImGuiTabItemFlags_None)) {
+                DrawCompositionEditor<SdfReference>(primSpec);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Payloads", nullptr,
+                                    primSpec->HasPayloads() ? ImGuiTabItemFlags_UnsavedDocument : ImGuiTabItemFlags_None)) {
+                DrawCompositionEditor<SdfPayload>(primSpec);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Inherits", nullptr,
+                                    primSpec->HasInheritPaths() ? ImGuiTabItemFlags_UnsavedDocument : ImGuiTabItemFlags_None)) {
+                DrawCompositionEditor<SdfInherit>(primSpec);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Specializes", nullptr,
+                                    primSpec->HasSpecializes() ? ImGuiTabItemFlags_UnsavedDocument : ImGuiTabItemFlags_None)) {
+                DrawCompositionEditor<SdfSpecialize>(primSpec);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
     }
 }
-/////////////// Summary for the layer editor
+/////////////// Summaries used in the layer scene editor
 
-template <typename PathListT>
-inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec,
-                               int &menuItemId) {
+template <typename ArcT>
+inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path,
+                               const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
-    if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
-        ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        RemoveArc(primSpec, ArcT(path));
     }
     ImGui::SameLine();
-    std::string summary = path.GetString(); // TODO: add target prim and offsets
-    ImGui::Selectable(summary.c_str());
+    std::string summary = path.GetString();
+    if (ImGui::SmallButton(summary.c_str())) {
+        InspectArcType(primSpec, path);
+    }
     if (ImGui::BeginPopupContextItem()) {
-        DrawSdfPathMenuItems<PathListT>(primSpec, path);
+        DrawSdfPathMenuItems<ArcT>(primSpec, path);
         ImGui::EndPopup();
     }
     ImGui::PopID();
@@ -354,10 +533,8 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
                                  const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
-    if (ImGui::Button(header.empty() ? "###emptyheader" : header.c_str())) {
-        auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(assetPath.GetAssetPath());
-        auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
-        ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, assetPath.GetPrimPath());
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        RemoveArc(primSpec, assetPath);
     }
     ImGui::PopID();
     ImGui::SameLine();
@@ -366,7 +543,9 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     summary += assetPath.GetAssetPath().empty() ? "" : "@" + assetPath.GetAssetPath() + "@";
     summary += assetPath.GetPrimPath().GetString().empty() ? "" : "<" + assetPath.GetPrimPath().GetString() + ">";
     ImGui::PushID(menuItemId++);
-    ImGui::Text("%s", summary.c_str());
+    if(ImGui::Button(summary.c_str())) {
+        InspectArcType(primSpec, assetPath);
+    }
     if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
         DrawAssetPathMenuItems(primSpec, assetPath);
         ImGui::EndPopup();
@@ -374,28 +553,93 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     ImGui::PopID();
 }
 
-void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawAssetPathSummary(ICON_FA_EXTERNAL_LINK_ALT, operation, assetPath, primSpec, menuItemId);
+void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, const SdfPrimSpecHandle &primSpec,
+                          int &menuItemId) {
+    DrawAssetPathSummary("References", operation, assetPath, primSpec, menuItemId);
 }
 
 void DrawPayloadSummary(const char *operation, const SdfPayload &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawAssetPathSummary(ICON_FA_WEIGHT_HANGING, operation, assetPath, primSpec, menuItemId);
+    DrawAssetPathSummary("Payloads", operation, assetPath, primSpec, menuItemId);
 }
 
-void DrawInheritsSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawSdfPathSummary<Inherit>(ICON_FA_EXTERNAL_LINK_SQUARE_ALT, operation, path, primSpec, menuItemId);
+void DrawInheritPathSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
+    DrawSdfPathSummary<SdfInherit>("Inherits", operation, path, primSpec, menuItemId);
 }
 
 void DrawSpecializesSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
-    DrawSdfPathSummary<Specialize>(ICON_FA_SIGN_IN_ALT, operation, path, primSpec, menuItemId);
+    DrawSdfPathSummary<SdfSpecialize>("Specializes", operation, path, primSpec, menuItemId);
+}
+
+inline std::string GetSummary(const SdfReference &arc) { return arc.GetAssetPath(); }
+inline std::string GetSummary(const SdfPayload &arc) { return arc.GetAssetPath(); }
+inline std::string GetSummary(const SdfPath &arc) { return arc.GetString(); }
+
+inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
+    DrawAssetPathMenuItems(primSpec, ref);
+}
+inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfPayload &pay) {
+    DrawAssetPathMenuItems(primSpec, pay);
+}
+inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfInherit &inh) {
+    DrawSdfPathMenuItems<SdfInherit>(primSpec, inh);
+}
+inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfSpecialize &spe) {
+    DrawSdfPathMenuItems<SdfSpecialize>(primSpec, spe);
+}
+
+template <typename ArcT>
+inline
+void DrawPathInRow(const char *operation, const ArcT &assetPath, const SdfPrimSpecHandle &primSpec, int *itemId) {
+    std::string path;
+    path += GetSummary(assetPath);
+    ImGui::PushID((*itemId)++);
+    ImGui::SameLine();
+    if(ImGui::Button(path.c_str())) {
+        InspectArcType(primSpec, assetPath);
+    }
+    if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
+        DrawArcTypeMenuItems(primSpec, assetPath);
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
+}
+
+#define CREATE_COMPOSITION_BUTTON(NAME_, ABBR_, GETLIST_)                                                                        \
+if (primSpec->Has##NAME_##s()) {                                                                                             \
+    if (buttonId > 0)                                                                                                        \
+        ImGui::SameLine();                                                                                                   \
+    ImGui::PushID(buttonId++);                                                                                               \
+    ImGui::SmallButton(#ABBR_);                                                                                              \
+    if (ImGui::BeginPopupContextItem(nullptr, buttonFlags)) {                                                                \
+        IterateListEditorItems(primSpec->Get##GETLIST_##List(), Draw##GETLIST_##Summary, primSpec, buttonId);                \
+        ImGui::EndPopup();                                                                                                   \
+    }                                                                                                                        \
+    ImGui::PopID();                                                                                                          \
 }
 
 void DrawPrimCompositionSummary(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec || !HasComposition(primSpec))
         return;
-    int menuItemId = 0;
-    IterateListEditorItems(primSpec->GetReferenceList(), DrawReferenceSummary, primSpec, menuItemId);
-    IterateListEditorItems(primSpec->GetPayloadList(), DrawPayloadSummary, primSpec, menuItemId);
-    IterateListEditorItems(primSpec->GetInheritPathList(), DrawInheritsSummary, primSpec, menuItemId);
-    IterateListEditorItems(primSpec->GetSpecializesList(), DrawSpecializesSummary, primSpec, menuItemId);
+    ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+    
+    // Buttons are too far appart
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.f, -FLT_MIN));
+    int buttonId = 0;
+    // First draw the Buttons, Ref, Pay etc
+    constexpr ImGuiPopupFlags buttonFlags = ImGuiPopupFlags_MouseButtonLeft;
+    
+    CREATE_COMPOSITION_BUTTON(Reference, Ref, Reference)
+    CREATE_COMPOSITION_BUTTON(Payload, Pay, Payload)
+    CREATE_COMPOSITION_BUTTON(InheritPath, Inh, InheritPath)
+    CREATE_COMPOSITION_BUTTON(Specialize, Inh, Specializes)
+
+    // TODO: stretch each paths to match the cell size. Add ellipsis at the beginning if they are too short
+    // The idea is to see the relevant informations, and be able to quicly click on them
+    // - another thought ... replace the common prefix by an ellipsis ? (only for asset paths)
+    int itemId = 0;
+    IterateListEditorItems(primSpec->GetReferenceList(), DrawPathInRow<SdfReference>, primSpec, &itemId);
+    IterateListEditorItems(primSpec->GetPayloadList(), DrawPathInRow<SdfPayload>, primSpec, &itemId);
+    IterateListEditorItems(primSpec->GetInheritPathList(), DrawPathInRow<SdfInherit>, primSpec, &itemId);
+    IterateListEditorItems(primSpec->GetSpecializesList(), DrawPathInRow<SdfSpecialize>, primSpec, &itemId);
+    ImGui::PopStyleVar();
 }

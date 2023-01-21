@@ -88,7 +88,7 @@ struct PrimRemove : public SdfLayerCommand {
 };
 
 template <typename ItemType> struct PrimCreateListEditorOperation : SdfLayerCommand {
-    PrimCreateListEditorOperation(SdfPrimSpecHandle primSpec, int operation, typename ItemType::value_type item)
+    PrimCreateListEditorOperation(SdfPrimSpecHandle primSpec, SdfListOpType operation, typename ItemType::value_type item)
         : _primSpec(primSpec), _operation(operation), _item(std::move(item)) {}
     ~PrimCreateListEditorOperation() override {}
 
@@ -105,7 +105,7 @@ template <typename ItemType> struct PrimCreateListEditorOperation : SdfLayerComm
     virtual SdfListEditorProxy<ItemType> GetListEditor() = 0;
 
     SdfPrimSpecHandle _primSpec;
-    int _operation;
+    SdfListOpType _operation;
     typename ItemType::value_type _item;
 };
 
@@ -204,7 +204,7 @@ struct PrimCreateAttribute : public SdfLayerCommand {
 
 struct PrimCreateRelationship : public SdfLayerCommand {
 
-    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom, int operation,
+    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom, SdfListOpType operation,
                            std::string targetPath)
         : _owner(std::move(owner)), _name(std::move(name)), _variability(variability), _custom(custom), _operation(operation),
           _targetPath(targetPath) {}
@@ -227,7 +227,7 @@ struct PrimCreateRelationship : public SdfLayerCommand {
     std::string _name;
     SdfVariability _variability = SdfVariabilityVarying;
     bool _custom = false;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
     std::string _targetPath;
 };
 
@@ -348,7 +348,7 @@ struct PrimPaste : public CopyPasteCommand {
 };
 
 struct PrimCreateAttributeConnection : public SdfLayerCommand {
-    PrimCreateAttributeConnection(SdfAttributeSpecHandle attr, int operation, std::string connectionEndPoint)
+    PrimCreateAttributeConnection(SdfAttributeSpecHandle attr, SdfListOpType operation, std::string connectionEndPoint)
         : _attr(attr), _operation(operation), _connectionEndPoint(connectionEndPoint) {}
     ~PrimCreateAttributeConnection() override {}
     bool DoIt() override {
@@ -362,7 +362,7 @@ struct PrimCreateAttributeConnection : public SdfLayerCommand {
     }
 
     SdfAttributeSpecHandle _attr;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
     SdfPath _connectionEndPoint;
 };
 
@@ -423,17 +423,17 @@ template void ExecuteAfterDraw<PrimNew>(SdfPrimSpecHandle primSpec, std::string 
 template void ExecuteAfterDraw<PrimRemove>(SdfPrimSpecHandle primSpec);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, SdfPath source, SdfPath destination);
 template void ExecuteAfterDraw<PrimReparent>(SdfLayerHandle layer, std::vector<SdfPath> source, SdfPath destination);
-template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, int operation, SdfReference reference);
-template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, int operation, SdfPayload payload);
-template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, int operation, SdfPath inherit);
-template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, int operation, SdfPath specialize);
+template void ExecuteAfterDraw<PrimCreateReference>(SdfPrimSpecHandle primSpec, SdfListOpType operation, SdfReference reference);
+template void ExecuteAfterDraw<PrimCreatePayload>(SdfPrimSpecHandle primSpec, SdfListOpType operation, SdfPayload payload);
+template void ExecuteAfterDraw<PrimCreateInherit>(SdfPrimSpecHandle primSpec, SdfListOpType operation, SdfPath inherit);
+template void ExecuteAfterDraw<PrimCreateSpecialize>(SdfPrimSpecHandle primSpec, SdfListOpType operation, SdfPath specialize);
 template void ExecuteAfterDraw<PrimCreateAttribute>(SdfPrimSpecHandle owner, std::string name, SdfValueTypeName typeName,
                                                     SdfVariability variability, bool custom, bool createDefault);
 template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, std::string name, SdfVariability variability,
-                                                       bool custom, int operation, std::string targetPath);
+                                                       bool custom, SdfListOpType operation, std::string targetPath);
 template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
 template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);
 template void ExecuteAfterDraw<PrimCopy>(SdfPrimSpecHandle prim);
 template void ExecuteAfterDraw<PrimPaste>(SdfPrimSpecHandle prim);
-template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, int operation,
+template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, SdfListOpType operation,
                                                               std::string connectionEndPoint);

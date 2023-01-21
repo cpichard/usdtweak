@@ -77,7 +77,7 @@ struct CreateRelationDialog : public ModalDialog {
         if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
             for (int i = 0; i < GetListEditorOperationSize(); ++i) {
                 if (ImGui::Selectable(GetListEditorOperationName(i), false)) {
-                    _operation = i;
+                    _operation = static_cast<SdfListOpType>(i);
                 }
             }
             ImGui::EndCombo();
@@ -98,7 +98,7 @@ struct CreateRelationDialog : public ModalDialog {
     const SdfPrimSpecHandle &_sdfPrim;
     std::string _relationName;
     std::string _targetPath;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
     SdfVariability _variability = SdfVariabilityVarying;
     bool _custom = true;
 };
@@ -165,7 +165,7 @@ struct CreateSdfAttributeConnectionDialog : public ModalDialog {
         if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
             for (int i = 0; i < GetListEditorOperationSize(); ++i) {
                 if (ImGui::Selectable(GetListEditorOperationName(i), false)) {
-                    _operation = i;
+                    _operation = static_cast<SdfListOpType>(i);
                 }
             }
             ImGui::EndCombo();
@@ -178,7 +178,7 @@ struct CreateSdfAttributeConnectionDialog : public ModalDialog {
 
     SdfAttributeSpecHandle _attribute;
     std::string _connectionEndPoint;
-    int _operation = 0;
+    SdfListOpType _operation = SdfListOpTypeExplicit;
 };
 
 void DrawPrimSpecifier(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboFlags) {
@@ -342,35 +342,36 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     ImGuiWindow *window = g.CurrentWindow;
     ImGuiStorage *storage = window->DC.StateStorage;
     // We want to show the first non empty list.
-    constexpr int editListCount = 6;
-    const char *editListNames[editListCount] = {"Ex", "Or", "Ap", "Ad", "Pr", "De"};
+    //constexpr int editListCount = 6;
+    //const char *editListNames[editListCount] = {"Ex", "Or", "Ap", "Ad", "Pr", "De"};
     int currentList = 0;
-
+// TODO Replace with GetSdfListOp
     // TODO getEditList should go in ProxyHelpers, but need some refactoring to add Ordered
-    auto getEditList = [](SdfPathEditorProxy &editList, int which) {
-        // could use a table with pointer to function, but at the stage of writing it might not be
-        // worth the time
-        if (which == 1) {
-            return editList.GetOrderedItems();
-        } else if (which == 2) {
-            return editList.GetAppendedItems();
-        } else if (which == 3) {
-            return editList.GetAddedItems();
-        } else if (which == 4) {
-            return editList.GetPrependedItems();
-        } else if (which == 5) {
-            return editList.GetDeletedItems();
-        }
-        return editList.GetExplicitItems();
-    };
+//    auto getEditList = [](SdfPathEditorProxy &editList, int which) {
+//        // could use a table with pointer to function, but at the stage of writing it might not be
+//        // worth the time
+//        if (which == 1) {
+//            return editList.GetOrderedItems();
+//        } else if (which == 2) {
+//            return editList.GetAppendedItems();
+//        } else if (which == 3) {
+//            return editList.GetAddedItems();
+//        } else if (which == 4) {
+//            return editList.GetPrependedItems();
+//        } else if (which == 5) {
+//            return editList.GetDeletedItems();
+//        }
+//        return editList.GetExplicitItems();
+//    };
 
+    
     // Did we already kwow which list we want to show ?
-    const auto key = ImGui::GetItemID();
+    const auto key = ImGui::GetID("EditListChoice");
     currentList = storage->GetInt(key, -1);
     if (currentList == -1) { // select the non empty list or explicit
         currentList = 0;
         for (int i = 0; i < 6; i++) {
-            if (!getEditList(proxy, i).empty()) {
+            if (!GetSdfListOp(proxy, i).empty()) {
                 currentList = i;
                 break;
             }
@@ -379,13 +380,13 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     }
 
     // Edit list chooser
-    ImGui::SmallButton(editListNames[currentList]);
+    ImGui::SmallButton(GetListEditorOperationAbbreviation(currentList));
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        for (int i = 0; i < editListCount; ++i) {
+        for (int i = 0; i < GetListEditorOperationSize(); ++i) {
             // Changing the color to show the empty lists
             ImGui::PushStyleColor(ImGuiCol_Text,
-                                  getEditList(proxy, i).empty() ? ImVec4(0.5, 0.5, 0.5, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
-            if (ImGui::MenuItem(editListNames[i])) {
+                                  GetSdfListOp(proxy, i).empty() ? ImVec4(0.5, 0.5, 0.5, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
+            if (ImGui::MenuItem(GetListEditorOperationName(i))) {
                 storage->SetInt(key, i);
             }
             ImGui::PopStyleColor();
@@ -396,7 +397,7 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     ImGui::SameLine();
     thread_local std::string itemsString; // avoid reallocating
     itemsString.clear();
-    for (const SdfPath &item : getEditList(proxy, currentList)) {
+    for (const SdfPath &item : GetSdfListOp(proxy, currentList)) {
         itemsString.append(item.GetString());
         itemsString.append(" "); // we don't care about the last space, it also helps the user adding a new item
     }
@@ -408,7 +409,7 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
         std::function<void()> updateList = [=]() {
             if (spec) {
                 auto editorProxy = GetPathEditorProxy(spec, field);
-                auto editList = getEditList(editorProxy, currentList);
+                auto editList = GetSdfListOp(editorProxy, currentList);
                 editList.clear();
                 for (const auto &path : newList) {
                     editList.push_back(SdfPath(path));
@@ -525,6 +526,19 @@ template <>
 inline void DrawSecondColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
                                            const int &showWhat) {
     // Still not sure we want to show the type at all or in the same column as the name
+    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasDefaultValue() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
+    ImGui::Text(ICON_FA_POO);
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    // TODO: it might not be efficient to get the timesamplemap here, is there another way to know if the attribute has keys ?
+    ImGui::PushStyleColor(ImGuiCol_Text, !attribute->GetTimeSampleMap().empty() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
+    ImGui::Text(ICON_FA_KEY);
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasConnectionPaths() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
+    ImGui::Text(ICON_FA_LINK);
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
     ImGui::Text("%s (%s)", attribute->GetName().c_str(), attribute->GetTypeName().GetAsToken().GetText());
 };
 
@@ -548,20 +562,12 @@ inline void DrawThirdColumn<AttributeRow>(const int rowId, const SdfAttributeSpe
         }
     }
 
-    // TODO: draw a key or something if the attribute has time samples
-    //    if (!timeSamples.empty()) {
-    // ImGui::Button(ICON_FA_KEY);
-    //    }
-
     if (attribute->HasConnectionPaths()) {
         ScopedStyleColor connectionColor(ImGuiCol_Text, ImVec4(ColorAttributeConnection));
-        ImGui::SmallButton(ICON_FA_LINK); // TODO: add delete list or "make explicit" menu
-        ImGui::SameLine();
         SdfConnectionsProxy connections = attribute->GetConnectionPathList();
         DrawEditListOneLineEditor(attribute, SdfFieldKeys->ConnectionPaths);
     }
     ImGui::PopID();
-    // ImGui::PopStyleVar(1);
 };
 
 void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &selection) {
@@ -613,6 +619,13 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
 
 struct RelationRow {};
 template <>
+inline void DrawFirstColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
+                                         const SdfRelationshipSpecHandle &relation) {
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
+    }
+};
+template <>
 inline void DrawSecondColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                           const SdfRelationshipSpecHandle &relation) {
     ImGui::Text("%s", relation->GetName().c_str());
@@ -623,13 +636,7 @@ inline void DrawThirdColumn<RelationRow>(const int rowId, const SdfPrimSpecHandl
     ImGui::PushItemWidth(-FLT_MIN);
     DrawEditListOneLineEditor(relation, SdfFieldKeys->TargetPaths);
 };
-template <>
-inline void DrawFirstColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
-                                         const SdfRelationshipSpecHandle &relation) {
-    if (ImGui::Button(ICON_FA_TRASH)) {
-        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
-    }
-};
+
 
 void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
