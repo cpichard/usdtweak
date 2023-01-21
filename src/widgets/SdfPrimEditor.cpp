@@ -643,7 +643,9 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
             SetupThreeColumnsTable(false, "", "Relations", "");
             auto relations = primSpec->GetRelationships();
             for (const SdfRelationshipSpecHandle &relation : relations) {
+                ImGui::PushID(rowId++);
                 DrawThreeColumnsRow<RelationRow>(rowId, primSpec, relation);
+                ImGui::PopID();
             }
             ImGui::EndTable();
         }
