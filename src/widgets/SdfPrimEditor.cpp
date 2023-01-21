@@ -702,35 +702,6 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-static void DrawPrimAssetInfo(const SdfPrimSpecHandle prim) {
-    if (!prim)
-        return;
-    const auto &assetInfo = prim->GetAssetInfo();
-    if (!assetInfo.empty()) {
-        if (ImGui::CollapsingHeader("Asset Info",
-                                    ImGuiTreeNodeFlags_DefaultOpen)) { // This should really go in the metadata header
-            if (ImGui::BeginTable("##DrawAssetInfo", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-                TableSetupColumns("", "Asset Info", "");
-                ImGui::TableHeadersRow();
-                TF_FOR_ALL(keyValue, assetInfo) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%s", keyValue->first.c_str());
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::PushItemWidth(-FLT_MIN);
-                    VtValue modified = DrawVtValue(keyValue->first.c_str(), keyValue->second);
-                    if (modified != VtValue()) {
-                        ExecuteAfterDraw(&SdfPrimSpec::SetAssetInfo, prim, keyValue->first, modified);
-                    }
-                    ImGui::PopItemWidth();
-                }
-                ImGui::EndTable();
-                ImGui::Separator();
-            }
-        }
-    }
-}
-
 void DrawPrimCreateCompositionMenu(const SdfPrimSpecHandle &primSpec) {
     if (primSpec) {
         if (ImGui::MenuItem("Reference")) {
@@ -794,8 +765,6 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     ImGui::Separator();
     ImGui::BeginChild("##LayerBody");
     DrawPrimSpecMetadata(primSpec);
-    DrawPrimAssetInfo(primSpec);
-
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec, selection);
