@@ -135,10 +135,6 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     auto color = _drawTarget->GetAttachment("color");
     _textureId = color->GetGlTextureName();
     _drawTarget->Unbind();
-
-    // USD render engine setup
-    _renderparams = new ImagingSettings;
-
 }
 
 Viewport::~Viewport() {
@@ -158,10 +154,6 @@ Viewport::~Viewport() {
     _drawTarget->Unbind();
     _renderers.clear();
 
-    if (_renderparams) {
-        delete _renderparams;
-        _renderparams = nullptr;
-    }
 }
 
 static void DrawOpenedStages() {
@@ -190,15 +182,15 @@ void Viewport::Draw() {
     ImGui::SameLine();
     ImGui::Button("\xef\x93\xbe Renderer");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawRendererSettings(*_renderer, *_renderparams);
+        DrawRendererSettings(*_renderer, _renderparams);
         DrawAovSettings(*_renderer);
-        DrawColorCorrection(*_renderer, *_renderparams);
+        DrawColorCorrection(*_renderer, _renderparams);
         ImGui::EndPopup();
     }
     ImGui::SameLine();
     ImGui::Button("\xef\x89\xac Viewport");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawOpenGLSettings(*_renderer, *_renderparams);
+        DrawOpenGLSettings(*_renderer, _renderparams);
         ImGui::EndPopup();
     }
 
@@ -290,7 +282,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
 /// Frane the viewport using the bounding box of the selection
 void Viewport::FrameSelection(const Selection &selection) { // Camera manipulator ???
     if (GetCurrentStage() && !selection.IsSelectionEmpty(GetCurrentStage())) {
-        UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
+        UsdGeomBBoxCache bboxcache(_renderparams.frame, UsdGeomImageable::GetOrderedPurposeTokens());
         GfBBox3d bbox;
         for (const auto &primPath : selection.GetSelectedPaths(GetCurrentStage())) {
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
@@ -303,7 +295,7 @@ void Viewport::FrameSelection(const Selection &selection) { // Camera manipulato
 /// Frame the viewport using the bounding box of the root prim
 void Viewport::FrameRootPrim(){
     if (GetCurrentStage()) {
-        UsdGeomBBoxCache bboxcache(_renderparams->frame, UsdGeomImageable::GetOrderedPurposeTokens());
+        UsdGeomBBoxCache bboxcache(_renderparams.frame, UsdGeomImageable::GetOrderedPurposeTokens());
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         if(defaultPrim){
             _cameraManipulator.FrameBoundingBox(GetCurrentCamera(), bboxcache.ComputeWorldBound(defaultPrim));
@@ -434,11 +426,11 @@ void Viewport::SetCameraPath(const SdfPath &cameraPath) {
     _selectedCameraPath = cameraPath;
 
     _renderCamera = &_perspectiveCamera; // by default
-    if (GetCurrentStage() && _renderparams) {
+    if (GetCurrentStage()) {
         const auto selectedCameraPrim = UsdGeomCamera::Get(GetCurrentStage(), _selectedCameraPath);
         if (selectedCameraPrim) {
             _renderCamera = &_stageCamera;
-            _stageCamera = selectedCameraPrim.GetCamera(_renderparams->frame);
+            _stageCamera = selectedCameraPrim.GetCamera(_renderparams.frame);
         }
     }
 
@@ -493,8 +485,8 @@ void Viewport::Render() {
 
     _drawTarget->Bind();
     glEnable(GL_DEPTH_TEST);
-    glClearColor(_renderparams->clearColor[0], _renderparams->clearColor[1], _renderparams->clearColor[2],
-                 _renderparams->clearColor[3]);
+    glClearColor(_renderparams.clearColor[0], _renderparams.clearColor[1], _renderparams.clearColor[2],
+                 _renderparams.clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport(0, 0, width, height);
 
@@ -502,11 +494,11 @@ void Viewport::Render() {
         // Render hydra
         // Set camera and lighting state
 
-        _renderparams->SetLightPositionFromCamera(GetCurrentCamera());
-        _renderer->SetLightingState(_renderparams->_lights, _renderparams->_material, _renderparams->_ambient);
+        _renderparams.SetLightPositionFromCamera(GetCurrentCamera());
+        _renderer->SetLightingState(_renderparams._lights, _renderparams._material, _renderparams._ambient);
         _renderer->SetRenderViewport(GfVec4d(0, 0, width, height));
         _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
-        _renderparams->forceRefresh = true;
+        _renderparams.forceRefresh = true;
 
         // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
         // else set camera state
@@ -517,7 +509,7 @@ void Viewport::Render() {
             _renderer->SetCameraState(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
                                   GetCurrentCamera().GetFrustum().ComputeProjectionMatrix());
         }
-        _renderer->Render(GetCurrentStage()->GetPseudoRoot(), *_renderparams);
+        _renderer->Render(GetCurrentStage()->GetPseudoRoot(), _renderparams);
     } else {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
@@ -532,9 +524,7 @@ void Viewport::Render() {
 }
 
 void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) {
-    if (_renderparams) {
-        _renderparams->frame = tc;
-    }
+    _renderparams.frame = tc;
 }
 
 /// Update anything that could have change after a frame render
@@ -563,18 +553,18 @@ void Viewport::Update() {
         // This should be extracted in a Playback module,
         // also the current code is not providing the exact frame rate, it doesn't take into account when the frame is
         // displayed. This is a first implementation to get an idea of how it should interact with the rest of the application.
-        if (_playing && _renderparams) {
+        if (_playing) {
             auto current = clk::steady_clock::now();
             const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
             const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
             double newFrame =
-                _renderparams->frame.GetValue() + timesCodePerSec * timeDifference.count(); // for now just increment the frame
+                _renderparams.frame.GetValue() + timesCodePerSec * timeDifference.count(); // for now just increment the frame
             if (newFrame > GetCurrentStage()->GetEndTimeCode()) {
                 newFrame = GetCurrentStage()->GetStartTimeCode();
             } else if (newFrame < GetCurrentStage()->GetStartTimeCode()) {
                 newFrame = GetCurrentStage()->GetStartTimeCode();
             }
-            _renderparams->frame = UsdTimeCode(newFrame);
+            _renderparams.frame = UsdTimeCode(newFrame);
             _lastFrameTime = current;
         }
 
@@ -619,10 +609,9 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
     GfFrustum pixelFrustum = GetCurrentCamera().GetFrustum().ComputeNarrowedFrustum(clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
     GfVec3d outHitPoint;
     GfVec3d outHitNormal;
-    return (_renderparams && _renderer &&
-        _renderer->TestIntersection(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
+    return (_renderer && _renderer->TestIntersection(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
             pixelFrustum.ComputeProjectionMatrix(),
-            GetCurrentStage()->GetPseudoRoot(), *_renderparams, &outHitPoint, &outHitNormal,
+            GetCurrentStage()->GetPseudoRoot(), _renderparams, &outHitPoint, &outHitNormal,
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
 }
 
@@ -635,5 +624,5 @@ void Viewport::StartPlayback() {
 void Viewport::StopPlayback() {
     _playing = false;
     // cast to nearest frame
-    _renderparams->frame = UsdTimeCode(int(_renderparams->frame.GetValue()));
+    _renderparams.frame = UsdTimeCode(int(_renderparams.frame.GetValue()));
 }

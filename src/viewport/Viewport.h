@@ -40,7 +40,7 @@ class Viewport final {
     void Draw();
 
     /// Returns the time code of this viewport
-    UsdTimeCode GetCurrentTimeCode() const { return _renderparams ? _renderparams->frame : UsdTimeCode::Default(); }
+    UsdTimeCode GetCurrentTimeCode() const { return _renderparams.frame; }
     void SetCurrentTimeCode(const UsdTimeCode &tc);
 
     /// Camera framing
@@ -143,7 +143,7 @@ class Viewport final {
     GLuint _textureId = 0;
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
     UsdImagingGLEngine *_renderer = nullptr;
-    ImagingSettings *_renderparams = nullptr;
+    ImagingSettings _renderparams;
     GlfDrawTargetRefPtr _drawTarget;
 
     // Playback controls
