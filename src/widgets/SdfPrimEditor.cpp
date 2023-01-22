@@ -22,6 +22,7 @@
 #include "ImGuiHelpers.h"
 #include "ModalDialogs.h"
 #include "UsdHelpers.h"
+#include "EditListSelector.h"
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
 #include "Shortcuts.h"
@@ -338,61 +339,10 @@ return SdfGetPathEditorProxy(spec, field);
 // SdfFieldKeys->ConnectionPaths
 static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     SdfPathEditorProxy proxy = GetPathEditorProxy(spec, field);
-    ImGuiContext &g = *GImGui;
-    ImGuiWindow *window = g.CurrentWindow;
-    ImGuiStorage *storage = window->DC.StateStorage;
-    // We want to show the first non empty list.
-    //constexpr int editListCount = 6;
-    //const char *editListNames[editListCount] = {"Ex", "Or", "Ap", "Ad", "Pr", "De"};
-    int currentList = 0;
-// TODO Replace with GetSdfListOp
-    // TODO getEditList should go in ProxyHelpers, but need some refactoring to add Ordered
-//    auto getEditList = [](SdfPathEditorProxy &editList, int which) {
-//        // could use a table with pointer to function, but at the stage of writing it might not be
-//        // worth the time
-//        if (which == 1) {
-//            return editList.GetOrderedItems();
-//        } else if (which == 2) {
-//            return editList.GetAppendedItems();
-//        } else if (which == 3) {
-//            return editList.GetAddedItems();
-//        } else if (which == 4) {
-//            return editList.GetPrependedItems();
-//        } else if (which == 5) {
-//            return editList.GetDeletedItems();
-//        }
-//        return editList.GetExplicitItems();
-//    };
-
+    SdfListOpType currentList = GetEditListChoice(proxy);
     
-    // Did we already kwow which list we want to show ?
-    const auto key = ImGui::GetID("EditListChoice");
-    currentList = storage->GetInt(key, -1);
-    if (currentList == -1) { // select the non empty list or explicit
-        currentList = 0;
-        for (int i = 0; i < 6; i++) {
-            if (!GetSdfListOp(proxy, i).empty()) {
-                currentList = i;
-                break;
-            }
-        }
-        storage->SetInt(key, currentList);
-    }
-
     // Edit list chooser
-    ImGui::SmallButton(GetListEditorOperationAbbreviation(currentList));
-    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        for (int i = 0; i < GetListEditorOperationSize(); ++i) {
-            // Changing the color to show the empty lists
-            ImGui::PushStyleColor(ImGuiCol_Text,
-                                  GetSdfListOp(proxy, i).empty() ? ImVec4(0.5, 0.5, 0.5, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
-            if (ImGui::MenuItem(GetListEditorOperationName(i))) {
-                storage->SetInt(key, i);
-            }
-            ImGui::PopStyleColor();
-        }
-        ImGui::EndPopup();
-    }
+    DrawEditListSmallButtonSelector(currentList, proxy);
 
     ImGui::SameLine();
     thread_local std::string itemsString; // avoid reallocating
@@ -419,42 +369,6 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
         ExecuteAfterDraw<UsdFunctionCall>(spec->GetLayer(), updateList);
     }
 }
-
-// static void DrawAttributeConnectionEditListItem(const char *operation, const SdfPath &path, int &id,
-//                                                const SdfAttributeSpecHandle &attribute) {
-//    //    ImGui::Selectable(path.GetText());
-//    //    if (ImGui::BeginPopupContextItem(nullptr)) {
-//    //        if(ImGui::MenuItem("Remove connection")) {
-//    //            ExecuteAfterDraw<PrimRemoveAttributeConnection>(attribute, path);
-//    //        }
-//    //        ImGui::EndPopup();
-//    //    }
-//    ImGui::PushID(path.GetText());
-//    ImGui::Text("%s", operation);
-//    ImGui::SameLine();
-//    std::string newPathStr = path.GetString();
-//    ImGui::InputText("###AttributeConnection", &newPathStr);
-//    if (ImGui::IsItemDeactivatedAfterEdit()) {
-//        if (newPathStr.empty()) {
-//            std::function<void()> removeItem = [=]() {
-//                if (attribute) {
-//                    attribute->GetConnectionPathList().RemoveItemEdits(path);
-//                }
-//            };
-//            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), removeItem);
-//        } else {
-//            std::function<void()> replaceItemEdits = [=]() {
-//                if (attribute) {
-//                    attribute->GetConnectionPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
-//                }
-//            };
-//            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), replaceItemEdits);
-//        }
-//    }
-//    // TODO we might also want to be able to edit what the connection is pointing
-//    // ImGui::Text("%s", path.GetText());
-//    ImGui::PopID();
-//}
 
 struct AttributeRow {};
 // TODO:
@@ -507,7 +421,7 @@ inline void DrawFirstColumn<AttributeRow>(const int rowId, const SdfAttributeSpe
         }
 
         if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
-            // DrawModalDialog<>(attribute);
+            // TODO: DrawModalDialog<>(attribute);
         }
 
         if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
@@ -592,30 +506,6 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
         }
     }
 }
-
-// static void DrawRelationshipEditListItem(const char *operation, const SdfPath &path, int &id, const SdfPrimSpecHandle
-// &primSpec,
-//                                         SdfPath &relationPath) {
-//    std::string newPathStr = path.GetString();
-//    ImGui::PushID(id++);
-//    ImGui::Text("%s", operation);
-//    ImGui::SameLine();
-//    ImGui::PushItemWidth(-FLT_MIN);
-//    ImGui::InputText("###RelationValue", &newPathStr);
-//    if (ImGui::IsItemDeactivatedAfterEdit()) {
-//        std::function<void()> replaceItemEdits = [=]() {
-//            if (primSpec) {
-//                const auto &relationship = primSpec->GetRelationshipAtPath(relationPath);
-//                if (relationship) {
-//                    relationship->GetTargetPathList().ReplaceItemEdits(path, SdfPath(newPathStr));
-//                }
-//            }
-//        };
-//        ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), replaceItemEdits);
-//    }
-//    ImGui::PopItemWidth();
-//    ImGui::PopID();
-//}
 
 struct RelationRow {};
 template <>

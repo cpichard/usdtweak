@@ -6,7 +6,10 @@
 #include "ImGuiHelpers.h"
 #include "ModalDialogs.h"
 #include "UsdHelpers.h"
+#include "ImGuiHelpers.h"
+#include "EditListSelector.h"
 #include "TableLayouts.h"
+
 #include <algorithm>
 #include <iostream>
 #include <pxr/usd/sdf/payload.h>
@@ -420,7 +423,7 @@ void DrawCompositionArcRow(int rowId, const SdfPrimSpecHandle &primSpec, const C
 
 struct CompositionArcRow {}; // Rany of SdfReference SdfPayload SdfInherit and SdfSpecialize
 
-#define GENERATE_ARC_ITEM_DRAW_CODE(ClassName_)                                                                                  \
+#define GENERATE_ARC_DRAW_CODE(ClassName_)                                                                                  \
 template <>                                                                                                                  \
 inline void DrawFirstColumn<CompositionArcRow>(int rowId, const SdfPrimSpecHandle &primSpec, const ClassName_ &arc,          \
                                                const SdfListOpType &chosenList) {                                            \
@@ -434,35 +437,23 @@ inline void DrawSecondColumn<CompositionArcRow>(int rowId, const SdfPrimSpecHand
                                                 const SdfListOpType &chosenList) {                                           \
     DrawCompositionArcRow(rowId, primSpec, arc, chosenList);                                                                 \
 }
-GENERATE_ARC_ITEM_DRAW_CODE(SdfReference)
-GENERATE_ARC_ITEM_DRAW_CODE(SdfPayload)
-GENERATE_ARC_ITEM_DRAW_CODE(SdfInherit)
-GENERATE_ARC_ITEM_DRAW_CODE(SdfSpecialize)
+GENERATE_ARC_DRAW_CODE(SdfReference)
+GENERATE_ARC_DRAW_CODE(SdfPayload)
+GENERATE_ARC_DRAW_CODE(SdfInherit)
+GENERATE_ARC_DRAW_CODE(SdfSpecialize)
 
 template <typename CompositionArcItemT> void DrawCompositionEditor(const SdfPrimSpecHandle &primSpec) {
     using ItemType = typename ArcListItemTrait<CompositionArcItemT>::type;
-    static SdfListOpType opList = SdfListOpTypeExplicit;
 
     if (ImGui::Button(ICON_FA_PLUS)) {
         DrawArcCreationDialog<CompositionArcItemT>(primSpec, opList);
     }
-
-    // TODO: choose the non empty list if no decision was made
+   
     auto arcList = GetCompositionArcList(primSpec, CompositionArcItemT());
+    SdfListOpType opList = GetEditListChoice(arcList);
 
-    // TODO: Find the correct edit list
     ImGui::SameLine();
-    if (ImGui::BeginCombo("##Edit list", GetListEditorOperationName(opList))) {
-        for (int i = 0; i < 6; ++i) {
-            ImGui::PushStyleColor(ImGuiCol_Text, GetSdfListOp(arcList, i).empty() ? ImVec4(ColorAttributeUnauthored)
-                                                                                  : ImVec4(ColorAttributeAuthored));
-            if (ImGui::Selectable(GetListEditorOperationName(i))) {
-                opList = static_cast<SdfListOpType>(i);
-            }
-            ImGui::PopStyleColor();
-        }
-        ImGui::EndCombo();
-    }
+    DrawEditListComboSelector(opList, arcList);
 
     if (BeginTwoColumnsTable("##AssetTypeTable")) {
         auto editList = GetSdfListOp(arcList, opList);
