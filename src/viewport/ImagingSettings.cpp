@@ -1,6 +1,6 @@
 #include <iostream>
 #include <map>
-#include "RendererSettings.h"
+#include "ImagingSettings.h"
 #include "VtValueEditor.h"
 #include "Gui.h"
 

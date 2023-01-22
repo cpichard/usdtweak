@@ -18,9 +18,8 @@
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
-//#include <pxr/usdImaging/usdImagingGL/renderParams.h>
 
-#include <RendererSettings.h>
+#include <ImagingSettings.h>
 
 class Viewport final {
   public:

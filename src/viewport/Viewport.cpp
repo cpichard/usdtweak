@@ -13,7 +13,6 @@
 #include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
-#include "RendererSettings.h"
 #include "Shortcuts.h"
 #include "PropertyEditor.h"
 
