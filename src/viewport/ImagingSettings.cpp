@@ -136,7 +136,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
 }
 
-void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+void DrawRendererSelection(UsdImagingGLEngine &renderer) {
     // Renderer
     const auto currentPlugin = renderer.GetCurrentRendererId();
     if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
@@ -155,16 +155,9 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderp
         }
         ImGui::EndCombo();
     }
+}
 
-    // Renderer settings
-    for (auto setting : renderer.GetRendererSettingsList()) {
-        VtValue currentValue = renderer.GetRendererSetting(setting.key);
-        VtValue newValue = DrawVtValue(setting.name, currentValue);
-        if (newValue != VtValue()) {
-            renderer.SetRendererSetting(setting.key, newValue);
-        }
-    }
-
+void DrawRendererControls(UsdImagingGLEngine &renderer) {
     if (renderer.IsPauseRendererSupported()) {
         ImGui::Separator();
         if (ImGui::Button("Pause")) {
@@ -182,6 +175,30 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderp
         ImGui::SameLine();
         if (ImGui::Button("Restart")) {
             renderer.RestartRenderer();
+        }
+    }
+}
+
+void DrawRendererCommands(UsdImagingGLEngine &renderer) {
+    if (ImGui::BeginMenu("Renderer commands")) {
+        HdCommandDescriptors commands = renderer.GetRendererCommandDescriptors();
+        for (const auto &command : commands) {
+            if (ImGui::Selectable(command.commandDescription.c_str())) {
+                renderer.InvokeRendererCommand(command.commandName);
+            }
+        }
+        ImGui::EndMenu();
+    }
+}
+
+
+void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+    // Renderer settings
+    for (auto setting : renderer.GetRendererSettingsList()) {
+        VtValue currentValue = renderer.GetRendererSetting(setting.key);
+        VtValue newValue = DrawVtValue(setting.name, currentValue);
+        if (newValue != VtValue()) {
+            renderer.SetRendererSetting(setting.key, newValue);
         }
     }
 }

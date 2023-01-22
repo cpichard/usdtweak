@@ -182,9 +182,15 @@ void Viewport::Draw() {
     ImGui::SameLine();
     ImGui::Button("\xef\x93\xbe Renderer");
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawRendererSettings(*_renderer, _imagingSettings);
-        DrawAovSettings(*_renderer);
+        DrawRendererControls(*_renderer);
+        DrawRendererSelection(*_renderer);
         DrawColorCorrection(*_renderer, _imagingSettings);
+        DrawAovSettings(*_renderer);
+        DrawRendererCommands(*_renderer);
+        if(ImGui::BeginMenu("Renderer Settings")) {
+            DrawRendererSettings(*_renderer, _imagingSettings);
+            ImGui::EndMenu();
+        }
         ImGui::EndPopup();
     }
     ImGui::SameLine();
