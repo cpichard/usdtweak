@@ -21,7 +21,7 @@
 #include "FileBrowser.h"
 #include "ImGuiHelpers.h"
 #include "ModalDialogs.h"
-#include "ProxyHelpers.h"
+#include "UsdHelpers.h"
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
 #include "Shortcuts.h"

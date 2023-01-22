@@ -5,7 +5,7 @@
 #include "FileBrowser.h"
 #include "ImGuiHelpers.h"
 #include "ModalDialogs.h"
-#include "ProxyHelpers.h"
+#include "UsdHelpers.h"
 #include "TableLayouts.h"
 #include <algorithm>
 #include <iostream>

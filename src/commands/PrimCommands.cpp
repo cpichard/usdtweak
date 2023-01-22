@@ -3,7 +3,7 @@
 /// IT SHOULD NOT BE COMPILED SEPARATELY
 ///
 
-#include "ProxyHelpers.h"
+#include "UsdHelpers.h"
 #include <pxr/usd/sdf/copyUtils.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/namespaceEdit.h>

@@ -7,7 +7,7 @@
 #include "TableLayouts.h"
 
 #include "Commands.h"
-#include "ProxyHelpers.h"
+#include "UsdHelpers.h"
 
 
 static void DrawVariantSelectionMiniButton(const SdfPrimSpecHandle &primSpec, const std::string &variantSetName, int &buttonId) {
