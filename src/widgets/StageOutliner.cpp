@@ -10,7 +10,7 @@
 #include "Constants.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
-#include "UsdPropertyEditor.h" // for DrawUsdPrimEditTarget
+#include "UsdPrimEditor.h" // for DrawUsdPrimEditTarget
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
 

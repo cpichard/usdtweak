@@ -14,7 +14,7 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "Shortcuts.h"
-#include "UsdPropertyEditor.h"
+#include "UsdPrimEditor.h" // DrawUsdPrimEditTarget
 
 namespace clk = std::chrono;
 

@@ -18,7 +18,7 @@
 #include "SdfLayerEditor.h"
 #include "LayerHierarchyEditor.h"
 #include "FileBrowser.h"
-#include "UsdPropertyEditor.h"
+#include "UsdPrimEditor.h"
 #include "ModalDialogs.h"
 #include "StageOutliner.h"
 #include "Timeline.h"

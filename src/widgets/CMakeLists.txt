@@ -19,8 +19,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/UsdPropertyEditor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/UsdPropertyEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/UsdPrimEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/UsdPrimEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/StageOutliner.cpp
