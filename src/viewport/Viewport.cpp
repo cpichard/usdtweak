@@ -14,7 +14,7 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "Shortcuts.h"
-#include "PropertyEditor.h"
+#include "UsdPropertyEditor.h"
 
 namespace clk = std::chrono;
 

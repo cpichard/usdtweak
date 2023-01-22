@@ -8,7 +8,7 @@
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include "Gui.h"
-#include "PropertyEditor.h"
+#include "UsdPropertyEditor.h"
 #include "VtValueEditor.h"
 #include "Constants.h"
 #include "Commands.h"
