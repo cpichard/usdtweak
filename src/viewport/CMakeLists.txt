@@ -20,6 +20,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ScaleManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SelectionManipulator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SelectionManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/RendererSettings.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/RendererSettings.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.h
 )

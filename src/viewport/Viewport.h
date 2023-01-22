@@ -17,10 +17,10 @@
 #include "Grid.h"
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
-#include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
-#include <pxr/usdImaging/usdImagingGL/renderParams.h>
-#include <pxr/imaging/glf/simpleLight.h>
+//#include <pxr/usdImaging/usdImagingGL/renderParams.h>
+
+#include <RendererSettings.h>
 
 class Viewport final {
   public:
@@ -110,11 +110,6 @@ class Viewport final {
     void StopPlayback();
 
   private:
-    // GL Lights
-    GlfSimpleLightVector _lights;
-    GlfSimpleMaterial _material;
-    GfVec4f _ambient;
-
     // Manipulators
     Manipulator *_currentEditingState; // Manipulator currently used by the FSM
     Manipulator *_activeManipulator;   // Manipulator chosen by the user
@@ -149,7 +144,7 @@ class Viewport final {
     GLuint _textureId = 0;
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
     UsdImagingGLEngine *_renderer = nullptr;
-    UsdImagingGLRenderParams *_renderparams = nullptr;
+    ImagingSettings *_renderparams = nullptr;
     GlfDrawTargetRefPtr _drawTarget;
 
     // Playback controls

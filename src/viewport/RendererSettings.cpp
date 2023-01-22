@@ -4,6 +4,53 @@
 #include "VtValueEditor.h"
 #include "Gui.h"
 
+
+template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
+    GfVec3d camPos = camera.GetFrustum().GetPosition();
+    GfVec4f lightPos(camPos[0], camPos[1], camPos[2], 1.0);
+    object.SetPosition(lightPos);
+}
+
+void ImagingSettings::SetLightPositionFromCamera(const GfCamera &camera) {
+    if (_lights.empty()) return;
+    CopyCameraPosition(camera, _lights[0]);
+}
+
+ImagingSettings::ImagingSettings() {
+    frame = 1.0;
+    complexity = 1.0;
+    clearColor = GfVec4f(0.12, 0.12, 0.12, 1.0);
+    showRender = false;
+    forceRefresh = false;
+    enableLighting = true;
+    enableSceneMaterials = false;
+    drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
+    highlight = true;
+    gammaCorrectColors = false;
+    colorCorrectionMode = TfToken("sRGB");
+    showGuides = true;
+    showProxy = true;
+    showRender = false;
+
+    // Lights
+    GlfSimpleLight simpleLight;
+    simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
+    simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+    simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
+    simpleLight.SetPosition({200, 200, 200, 1.0});
+    _lights.push_back(simpleLight);
+
+    // TODO: set color correction as well
+
+    // Default material
+    _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
+    _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+    _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
+    _ambient = {0.0, 0.0, 0.0, 0.0};
+}
+
+
+
 // We keep the currently selected AOV per engine here as there is it not really store in UsdImagingGLEngine.
 // When setting a color aov, the engine adds multiple other aov to render, in short there is no easy way to know
 // which aov is rendered.
@@ -26,7 +73,7 @@ void InitializeRendererAov(UsdImagingGLEngine &renderer) {
     renderer.SetRendererAov(GetAovSelection(renderer));
 }
 
-void DrawOpenGLSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
+void DrawOpenGLSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     // General render parameters
     ImGui::ColorEdit4("Background color", renderparams.clearColor.data());
 
@@ -76,7 +123,7 @@ void DrawOpenGLSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
 }
 
-void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
+void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     // Renderer
     const auto currentPlugin = renderer.GetCurrentRendererId();
     if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
@@ -126,7 +173,7 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams
     }
 }
 
-void DrawColorCorrection(UsdImagingGLEngine &renderer, UsdImagingGLRenderParams &renderparams) {
+void DrawColorCorrection(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
 
     if (renderer.IsColorCorrectionCapable() && GetAovSelection(renderer) == TfToken("color")) {
         ImGui::Separator();

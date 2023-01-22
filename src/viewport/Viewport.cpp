@@ -138,37 +138,8 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _drawTarget->Unbind();
 
     // USD render engine setup
-    _renderparams = new UsdImagingGLRenderParams;
-    _renderparams->frame = 1.0;
-    _renderparams->complexity = 1.0;
-    _renderparams->clearColor = GfVec4f(0.12, 0.12, 0.12, 1.0);
-    _renderparams->showRender = false;
-    _renderparams->forceRefresh = false;
-    _renderparams->enableLighting = true;
-    _renderparams->enableSceneMaterials = false;
-    _renderparams->drawMode = UsdImagingGLDrawMode::DRAW_SHADED_SMOOTH;
-    _renderparams->highlight = true;
-    _renderparams->gammaCorrectColors = false;
-    _renderparams->colorCorrectionMode = TfToken("sRGB");
-    _renderparams->showGuides = true;
-    _renderparams->showProxy = true;
-    _renderparams->showRender = false;
+    _renderparams = new ImagingSettings;
 
-    // Lights
-    GlfSimpleLight simpleLight;
-    simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
-    simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-    simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
-    simpleLight.SetPosition({200, 200, 200, 1.0});
-    _lights.emplace_back(simpleLight);
-
-    // TODO: set color correction as well
-
-    // Default material
-    _material.SetAmbient({0.0, 0.0, 0.0, 1.f});
-    _material.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-    _material.SetSpecular({0.2, 0.2, 0.2, 1.f});
-    _ambient = {0.0, 0.0, 0.0, 0.0};
 }
 
 Viewport::~Viewport() {
@@ -474,11 +445,11 @@ void Viewport::SetCameraPath(const SdfPath &cameraPath) {
 
 }
 
-template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
-    GfVec3d camPos = camera.GetFrustum().GetPosition();
-    GfVec4f lightPos(camPos[0], camPos[1], camPos[2], 1.0);
-    object.SetPosition(lightPos);
-}
+//template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
+//    GfVec3d camPos = camera.GetFrustum().GetPosition();
+//    GfVec4f lightPos(camPos[0], camPos[1], camPos[2], 1.0);
+//    object.SetPosition(lightPos);
+//}
 
 
 void Viewport::BeginHydraUI(int width, int height) {
@@ -531,8 +502,9 @@ void Viewport::Render() {
     if (_renderer && GetCurrentStage()) {
         // Render hydra
         // Set camera and lighting state
-        CopyCameraPosition(GetCurrentCamera(), _lights[0]);
-        _renderer->SetLightingState(_lights, _material, _ambient);
+
+        _renderparams->SetLightPositionFromCamera(GetCurrentCamera());
+        _renderer->SetLightingState(_renderparams->_lights, _renderparams->_material, _renderparams->_ambient);
         _renderer->SetRenderViewport(GfVec4d(0, 0, width, height));
         _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
         _renderparams->forceRefresh = true;
