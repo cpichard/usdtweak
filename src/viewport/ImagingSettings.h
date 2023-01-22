@@ -7,22 +7,29 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 struct ImagingSettings : UsdImagingGLRenderParams {
-    
+
     ImagingSettings();
-    
+
     void SetLightPositionFromCamera(const GfCamera &);
-    
+
     // Defaults GL lights and materials
-    GlfSimpleLightVector _lights;
+    bool enableCameraLight;
+    const GlfSimpleLightVector &GetLights();
+
+    
     GlfSimpleMaterial _material;
     GfVec4f _ambient;
+
+private:
+    GlfSimpleLightVector _lights;
 };
+
 /// We keep track of the selected AOV in the UI, unfortunately the selected AOV is not awvailable in
 /// UsdImagingGLEngine, so we need the initialize the UI data with this function
 void InitializeRendererAov(UsdImagingGLEngine&);
 
 ///
 void DrawRendererSettings(UsdImagingGLEngine &, ImagingSettings &);
-void DrawOpenGLSettings(UsdImagingGLEngine &, ImagingSettings &);
+void DrawImagingSettings(UsdImagingGLEngine &, ImagingSettings &);
 void DrawAovSettings(UsdImagingGLEngine &);
 void DrawColorCorrection(UsdImagingGLEngine &, ImagingSettings &);

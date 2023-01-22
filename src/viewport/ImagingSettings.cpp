@@ -12,7 +12,8 @@ template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &
 }
 
 void ImagingSettings::SetLightPositionFromCamera(const GfCamera &camera) {
-    if (_lights.empty()) return;
+    if (_lights.empty())
+        return;
     CopyCameraPosition(camera, _lights[0]);
 }
 
@@ -33,12 +34,8 @@ ImagingSettings::ImagingSettings() {
     showRender = false;
 
     // Lights
-    GlfSimpleLight simpleLight;
-    simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
-    simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
-    simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
-    simpleLight.SetPosition({200, 200, 200, 1.0});
-    _lights.push_back(simpleLight);
+    enableCameraLight = true;
+
 
     // TODO: set color correction as well
 
@@ -49,6 +46,21 @@ ImagingSettings::ImagingSettings() {
     _ambient = {0.0, 0.0, 0.0, 0.0};
 }
 
+const GlfSimpleLightVector &ImagingSettings::GetLights() {
+    // Only a camera light for the moment
+    if (enableCameraLight && _lights.empty()) {
+        GlfSimpleLight simpleLight;
+        simpleLight.SetAmbient({0.2, 0.2, 0.2, 1.0});
+        simpleLight.SetDiffuse({1.0, 1.0, 1.0, 1.f});
+        simpleLight.SetSpecular({0.2, 0.2, 0.2, 1.f});
+        simpleLight.SetPosition({200, 200, 200, 1.0});
+        _lights.push_back(simpleLight);
+    }
+    if (!enableCameraLight && !_lights.empty()) {
+        _lights.clear();
+    }
+    return _lights;
+}
 
 
 // We keep the currently selected AOV per engine here as there is it not really store in UsdImagingGLEngine.
@@ -73,7 +85,7 @@ void InitializeRendererAov(UsdImagingGLEngine &renderer) {
     renderer.SetRendererAov(GetAovSelection(renderer));
 }
 
-void DrawOpenGLSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     // General render parameters
     ImGui::ColorEdit4("Background color", renderparams.clearColor.data());
 
@@ -121,6 +133,7 @@ void DrawOpenGLSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpar
     ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
+    ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
 }
 
 void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
