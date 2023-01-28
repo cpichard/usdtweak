@@ -459,7 +459,7 @@ template <typename CompositionArcItemT> void DrawCompositionEditor(const SdfPrim
         auto editList = GetSdfListOp(arcList, opList);
         for (int ind = 0; ind < editList.size(); ind++) {
             const ItemType &item = editList[ind];
-            ImGui::PushID(boost::hash<ItemType>{}(item));
+            ImGui::PushID(TfHash{}(item));
             const CompositionArcItemT arcItem(item); // Sadly we have to copy here,
             DrawTwoColumnsRow<CompositionArcRow>(ind, primSpec, arcItem, opList);
             ImGui::PopID();
