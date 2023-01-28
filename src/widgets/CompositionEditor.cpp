@@ -54,20 +54,20 @@ inline SdfSpecializesProxy GetCompositionArcList(const SdfPrimSpecHandle &primSp
 }
 
 
-inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
+inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
     auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(ref.GetAssetPath());
     auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
-    ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, ref.GetPrimPath());
+    ExecuteAfterDraw<EditorSelectLayerLocation>(layerOrOpen, ref.GetPrimPath());
 }
 
-inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfPayload &pay) {
+inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfPayload &pay) {
     auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(pay.GetAssetPath());
     auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
-    ExecuteAfterDraw<EditorInspectLayerLocation>(layerOrOpen, pay.GetPrimPath());
+    ExecuteAfterDraw<EditorSelectLayerLocation>(layerOrOpen, pay.GetPrimPath());
 }
 
-inline void InspectArcType(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
-   ExecuteAfterDraw<EditorInspectLayerLocation>(primSpec->GetLayer(), path);
+inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
+   ExecuteAfterDraw<EditorSelectLayerLocation>(primSpec->GetLayer(), path);
 }
 
 /// Create a standard UI for entering a SdfPath.
@@ -586,7 +586,7 @@ void DrawPathInRow(const char *operation, const ArcT &assetPath, const SdfPrimSp
     ImGui::PushID((*itemId)++);
     ImGui::SameLine();
     if(ImGui::Button(path.c_str())) {
-        InspectArcType(primSpec, assetPath);
+        SelectArcType(primSpec, assetPath);
     }
     if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
         DrawArcTypeMenuItems(primSpec, assetPath);

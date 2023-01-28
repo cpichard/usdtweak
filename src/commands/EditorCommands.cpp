@@ -170,10 +170,10 @@ struct EditorShutdown : public EditorCommand {
 template void ExecuteAfterDraw<EditorShutdown>();
 
 // Will set the current layer and the current selected layer prim
-struct EditorInspectLayerLocation : public EditorCommand {
-    EditorInspectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
-    EditorInspectLayerLocation(SdfLayerRefPtr layer, SdfPath path) : _layer(layer), _path(path) {}
-    ~EditorInspectLayerLocation() override {}
+struct EditorSelectLayerLocation : public EditorCommand {
+    EditorSelectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
+    EditorSelectLayerLocation(SdfLayerRefPtr layer, SdfPath path) : _layer(layer), _path(path) {}
+    ~EditorSelectLayerLocation() override {}
 
     bool DoIt() override {
         if (_editor && _layer) {
@@ -186,8 +186,8 @@ struct EditorInspectLayerLocation : public EditorCommand {
     SdfLayerRefPtr _layer;
     SdfPath _path;
 };
-template void ExecuteAfterDraw<EditorInspectLayerLocation>(SdfLayerHandle layer, SdfPath);
-template void ExecuteAfterDraw<EditorInspectLayerLocation>(SdfLayerRefPtr layer, SdfPath);
+template void ExecuteAfterDraw<EditorSelectLayerLocation>(SdfLayerHandle layer, SdfPath);
+template void ExecuteAfterDraw<EditorSelectLayerLocation>(SdfLayerRefPtr layer, SdfPath);
 
 struct EditorSetCurrentLayer : public EditorCommand {
 

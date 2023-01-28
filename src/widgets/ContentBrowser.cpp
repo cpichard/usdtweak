@@ -264,6 +264,6 @@ void DrawContentBrowser(Editor &editor) {
     auto layers = SdfLayer::GetLoadedLayers();
     DrawLayerSet(editor.GetStageCache(), layers, &selectedLayer, &selectedStage, options);
     if (selectedLayer != editor.GetCurrentLayer()) {
-        ExecuteAfterDraw<EditorInspectLayerLocation>(selectedLayer, SdfPath::AbsoluteRootPath());
+        ExecuteAfterDraw<EditorSelectLayerLocation>(selectedLayer, SdfPath::AbsoluteRootPath());
     }
 }
