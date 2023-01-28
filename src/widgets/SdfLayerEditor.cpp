@@ -146,11 +146,11 @@ GENERATE_DRAW_FUNCTION(Comment, TextMultiline, "##DrawLayerComment");
 
 
 // Draw the layer path
-struct LayerFieldFilename {
+struct LayerFilenameRow {
     static constexpr const char *fieldName = "Path";
 };
 
-template <> inline void DrawThirdColumn<LayerFieldFilename>(const int rowId, const SdfPath &path) {
+template <> inline void DrawThirdColumn<LayerFilenameRow>(const int rowId, const SdfPath &path) {
     if (path == SdfPath() || path == SdfPath::AbsoluteRootPath()) {
         ImGui::Text("Layer root");
     } else {
@@ -160,11 +160,11 @@ template <> inline void DrawThirdColumn<LayerFieldFilename>(const int rowId, con
 
 
 // Draw the layer identifier
-struct LayerFieldIdentity {
+struct LayerIdentityRow {
     static constexpr const char *fieldName = "Layer";
 };
 
-template <> inline void DrawThirdColumn<LayerFieldIdentity>(const int rowId, const SdfLayerRefPtr &owner) {
+template <> inline void DrawThirdColumn<LayerIdentityRow>(const int rowId, const SdfLayerRefPtr &owner) {
     ImGui::Text("%s", owner->GetIdentifier().c_str());
 }
 
@@ -186,8 +186,8 @@ void DrawSdfLayerIdentity(const SdfLayerRefPtr &layer, const SdfPath &path) {
     int rowId = 0;
     if (BeginThreeColumnsTable("##DrawLayerHeader")) {
         SetupThreeColumnsTable(true, "", "Identity", "Value");
-        DrawThreeColumnsRow<LayerFieldIdentity>(rowId++, layer);
-        DrawThreeColumnsRow<LayerFieldFilename>(rowId++, path);
+        DrawThreeColumnsRow<LayerIdentityRow>(rowId++, layer);
+        DrawThreeColumnsRow<LayerFilenameRow>(rowId++, path);
         EndThreeColumnsTable();
     }
 }
@@ -300,6 +300,7 @@ void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
         }
     }
 }
+
 
 void DrawLayerNavigation(SdfLayerRefPtr layer) {
     if (!layer)
