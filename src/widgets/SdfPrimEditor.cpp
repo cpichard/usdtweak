@@ -206,30 +206,6 @@ void DrawPrimSpecifier(const SdfPrimSpecHandle &primSpec, ImGuiComboFlags comboF
     }
 }
 
-// TODO Share code as we want to share the style of the button, but not necessarily the behaviour
-// DrawMiniButton ?? in a specific file ? OptionButton ??? OptionMenuButton ??
-static void DrawPropertyMiniButton(const char *btnStr, int rowId, const ImVec4 &btnColor = ImVec4({0.0, 0.7, 0.0, 1.0})) {
-    ImGui::PushID(rowId);
-    ImGui::PushStyleColor(ImGuiCol_Text, btnColor);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));
-    ImGui::SmallButton(btnStr);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-    ImGui::PopID();
-}
-
-void DrawPrimInstanceableActionButton(const SdfPrimSpecHandle &primSpec, int buttonId) {
-    DrawPropertyMiniButton("(m)", buttonId);
-    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        if (primSpec->HasInstanceable()) {
-            if (ImGui::Button("Reset to default")) {
-                ExecuteAfterDraw(&SdfPrimSpec::ClearInstanceable, primSpec);
-            }
-        }
-        ImGui::EndPopup();
-    }
-}
-
 void DrawPrimInstanceable(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
