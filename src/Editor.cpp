@@ -684,6 +684,14 @@ void Editor::RunLauncher(const std::string &launcherName) {
         commandLine.replace(pos, 14, GetCurrentLayer() ? GetCurrentLayer()->GetRealPath() : "");
     }
 
+    pos = commandLine.find("__CURRENT_TIME__");
+    if (pos != std::string::npos) {
+        auto timeCode = GetViewport().GetCurrentTimeCode();
+        if (!timeCode.IsDefault()) {
+            commandLine.replace(pos, 16, std::to_string(timeCode.GetValue()));
+        }
+    }
+
     auto command = [commandLine]() -> int { return std::system(commandLine.c_str()); };
     // TODO: we are just storing the tasks in a vector, we shoud do some
     // cleaning when the tasks are done
