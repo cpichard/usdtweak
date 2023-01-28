@@ -44,13 +44,29 @@ VtValue DrawGfMatrix(const std::string &label, const VtValue &value) {
     return VtValue();
 }
 
-template <typename GfVecT, int DataType, int N>
+
+template <typename GfVecT, int DataType, int N, typename CastToT=GfVecT>
 VtValue DrawGfVec(const std::string& label, const VtValue& value) {
-    GfVecT buffer(value.Get<GfVecT>());
+    CastToT buffer(value.Get<GfVecT>());
     constexpr const char* format = DataType == ImGuiDataType_S32 ? "%d" : DecimalPrecision;
     ImGui::InputScalarN(label.c_str(), DataType, buffer.data(), N, NULL, NULL, format, ImGuiInputTextFlags());
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         return VtValue(GfVecT(buffer));
+    }
+    return VtValue();
+}
+
+template <typename GfQuatT, int DataType, typename BufferT>
+VtValue DrawGfQuat(const std::string& label, const VtValue& value) {
+    BufferT buffer;
+    GfQuatT src = value.Get<GfQuatT>();
+    buffer[0] = src.GetReal();
+    buffer[1] = src.GetImaginary()[0];
+    buffer[2] = src.GetImaginary()[1];
+    buffer[3] = src.GetImaginary()[2];
+    ImGui::InputScalarN(label.c_str(), DataType, buffer.data(), 4, NULL, NULL, DecimalPrecision, ImGuiInputTextFlags());
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        return VtValue(GfQuatT(buffer[0], buffer[1], buffer[2], buffer[3]));
     }
     return VtValue();
 }
@@ -107,6 +123,18 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         return DrawGfVec<GfVec3i, ImGuiDataType_S32, 3>(label, value);
     } else if (value.IsHolding<GfVec2i>()) {
         return DrawGfVec<GfVec2i, ImGuiDataType_S32, 2>(label, value);
+    } else if (value.IsHolding<GfVec2h>()) {
+        return DrawGfVec<GfVec2h, ImGuiDataType_Float, 2, GfVec2f>(label, value);
+    } else if (value.IsHolding<GfVec3h>()) {
+        return DrawGfVec<GfVec3h, ImGuiDataType_Float, 3, GfVec3f>(label, value);
+    } else if (value.IsHolding<GfVec4h>()) {
+        return DrawGfVec<GfVec4h, ImGuiDataType_Float, 4, GfVec4f>(label, value);
+    } else if (value.IsHolding<GfQuatd>()) {
+        return DrawGfQuat<GfQuatd, ImGuiDataType_Double, GfVec4d>(label, value);
+    } else if (value.IsHolding<GfQuatf>()) {
+        return DrawGfQuat<GfQuatf, ImGuiDataType_Float, GfVec4f>(label, value);
+    } else if (value.IsHolding<GfQuath>()) {
+        return DrawGfQuat<GfQuath, ImGuiDataType_Float, GfVec4f>(label, value);
     } else if (value.IsHolding<bool>()) {
         bool isOn = value.Get<bool>();
         if (ImGui::Checkbox(label.c_str(), &isOn)) {
@@ -123,6 +151,12 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         ImGui::InputFloat(label.c_str(), &fltValue);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(fltValue);
+        }
+    } else if (value.IsHolding<GfHalf>()) {
+        float fltValue = value.Get<float>();
+        ImGui::InputFloat(label.c_str(), &fltValue);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(GfHalf(fltValue));
         }
     } else if (value.IsHolding<int>()) {
         int intValue = value.Get<int>();
@@ -177,9 +211,10 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         ImGui::InputText("##tokens", &tokens);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             VtArray<TfToken> newList;
-            for(const std::string &tokenStr :TfStringSplit(tokens, " ")) {
+            for (const std::string &tokenStr : TfStringSplit(tokens, " ")) {
                 // we don't allow empty tokens, this could be a limitation in the future
-                if (!tokenStr.empty()) newList.emplace_back(tokenStr);
+                if (!tokenStr.empty())
+                    newList.emplace_back(tokenStr);
             }
             return VtValue(newList);
         }

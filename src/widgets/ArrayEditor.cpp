@@ -106,6 +106,8 @@ template <typename ValueT> inline VtValue DrawVtValueArrayTyped(const VtValue &v
 VtValue DrawVtArrayValue(const VtValue &value) {
     VtValue newValue;
     if (value.IsArrayValued()) {
+        // Ideally we would like to order the conditions test by the probablility
+        // of appearance of the type
         // clang-format off
         DrawArrayIfHolding(GfVec2f)
         DrawArrayIfHolding(GfVec3f)
@@ -120,6 +122,7 @@ VtValue DrawVtArrayValue(const VtValue &value) {
         DrawArrayIfHolding(float)
         DrawArrayIfHolding(double)
         DrawArrayIfHolding(int)
+        DrawArrayIfHolding(GfHalf)
         DrawArrayIfHolding(TfToken)
         DrawArrayIfHolding(SdfAssetPath)
         DrawArrayIfHolding(GfMatrix4d)
@@ -128,6 +131,13 @@ VtValue DrawVtArrayValue(const VtValue &value) {
         DrawArrayIfHolding(GfMatrix3f)
         DrawArrayIfHolding(GfMatrix2d)
         DrawArrayIfHolding(GfMatrix2f)
+        DrawArrayIfHolding(std::string)
+        DrawArrayIfHolding(GfVec2h)
+        DrawArrayIfHolding(GfVec3h)
+        DrawArrayIfHolding(GfVec4h)
+        DrawArrayIfHolding(GfQuath)
+        DrawArrayIfHolding(GfQuatf)
+        DrawArrayIfHolding(GfQuatd)
         {}
     }
     return newValue;
