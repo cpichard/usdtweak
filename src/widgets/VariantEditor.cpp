@@ -66,11 +66,12 @@ static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
     }
 }
 
-struct VariantSetNamesItem {};
+struct VariantSetNamesRow {};
+
+#define VariantSetNamesRowArgs const int rowId, const SdfListOpType &operation, const std::string &variantName, const SdfPrimSpecHandle &primSpec
 
 template <>
-inline void DrawFirstColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
-                                                const SdfPrimSpecHandle &primSpec) {
+inline void DrawFirstColumn<VariantSetNamesRow>(VariantSetNamesRowArgs) {
     ImGui::PushID(rowId);
     if (ImGui::Button(ICON_UT_DELETE)) {
         if (!primSpec)
@@ -81,30 +82,26 @@ inline void DrawFirstColumn<VariantSetNamesItem>(const int rowId, const char *co
     ImGui::PopID();
 }
 template <>
-inline void DrawSecondColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
-                                              const SdfPrimSpecHandle &primSpec) {
-    ImGui::Text("%s", operation);
+inline void DrawSecondColumn<VariantSetNamesRow>(VariantSetNamesRowArgs) {
+    ImGui::Text("%s", GetListEditorOperationName(operation));
 }
 template <>
-inline void DrawThirdColumn<VariantSetNamesItem>(const int rowId, const char *const &operation, const std ::string &variantName,
-                                               const SdfPrimSpecHandle &primSpec) {
+inline void DrawThirdColumn<VariantSetNamesRow>(VariantSetNamesRowArgs) {
     ImGui::Text("%s", variantName.c_str());
 }
 
-static void DrawVariantSetNamesItem(const char *operation, const std ::string &variantName, SdfPrimSpecHandle &primSpec,
+static void DrawVariantSetNamesRow(SdfListOpType operation, const std::string &variantName, const SdfPrimSpecHandle &primSpec,
                                     int &rowId) {
-    // This looks over complicated, but DrawFieldValueTableRow does the layout
-    DrawThreeColumnsRow<VariantSetNamesItem>(rowId++, operation, variantName, primSpec);
+    DrawThreeColumnsRow<VariantSetNamesRow>(rowId++, operation, variantName, primSpec);
 }
-
 
 /// Draw the variantSet names edit list
 static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
     auto nameList = primSpec->GetVariantSetNameList();
     int rowId = 0;
     if (BeginThreeColumnsTable("##DrawPrimVariantSets")) {
-        SetupThreeColumnsTable(true, "", "VariantSet names", "");
-        IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantSetNamesItem, primSpec, rowId);
+        SetupThreeColumnsTable(false, "", "VariantSet names", "");
+        IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantSetNamesRow, primSpec, rowId);
         EndThreeColumnsTable();
     }
 }
@@ -114,7 +111,7 @@ void DrawPrimVariants(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
     const bool showVariants = !primSpec->GetVariantSelections().empty() || primSpec->HasVariantSetNames();
-    if(showVariants && ImGui::CollapsingHeader("Variants", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (showVariants && ImGui::CollapsingHeader("Variants", ImGuiTreeNodeFlags_DefaultOpen)) {
         // We can have variant selection even if there is no variantSet on this prim
         // So se draw variant selection AND variantSet names which is the edit list for the
         // visible variant.

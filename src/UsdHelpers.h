@@ -9,22 +9,22 @@ template <typename PolicyT, typename FuncT, typename... ExtraArgsT>
 static void IterateListEditorItems(const SdfListEditorProxy<PolicyT> &listEditor, const FuncT &call, ExtraArgsT... args) {
     // TODO: should we check if the list is already all explicit ??
     for (const typename PolicyT::value_type &item : listEditor.GetExplicitItems()) {
-        call("explicit", item, args...);
+        call(SdfListOpTypeExplicit, item, args...);
     }
     for (const typename PolicyT::value_type &item : listEditor.GetOrderedItems()) {
-        call("ordered", item, args...);
+        call(SdfListOpTypeOrdered, item, args...);
     }
     for (const typename PolicyT::value_type &item : listEditor.GetAddedItems()) {
-        call("add", item, args...); // return "add" as TfToken instead ?
+        call(SdfListOpTypeAdded, item, args...); // return "add" as TfToken instead ?
     }
     for (const typename PolicyT::value_type &item : listEditor.GetPrependedItems()) {
-        call("prepend", item, args...);
+        call(SdfListOpTypePrepended, item, args...);
     }
     for (const typename PolicyT::value_type &item : listEditor.GetAppendedItems()) {
-        call("append", item, args...);
+        call(SdfListOpTypeAppended, item, args...);
     }
     for (const typename PolicyT::value_type &item : listEditor.GetDeletedItems()) {
-        call("delete", item, args...);
+        call(SdfListOpTypeDeleted, item, args...);
     }
 }
 
@@ -83,3 +83,4 @@ template <typename ListEditorT, typename OpOrIntT> inline auto GetSdfListOp(List
     }
     return listEditor.GetExplicitItems();
 };
+

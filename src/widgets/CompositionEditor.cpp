@@ -500,7 +500,7 @@ void DrawPrimCompositions(const SdfPrimSpecHandle &primSpec) {
 /////////////// Summaries used in the layer scene editor
 
 template <typename ArcT>
-inline void DrawSdfPathSummary(std::string &&header, const char *operation, const SdfPath &path,
+inline void DrawSdfPathSummary(std::string &&header, SdfListOpType operation, const SdfPath &path,
                                const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
@@ -510,7 +510,7 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
     ImGui::SameLine();
     std::string summary = path.GetString();
     if (ImGui::SmallButton(summary.c_str())) {
-        InspectArcType(primSpec, path);
+        SelectArcType(primSpec, path);
     }
     if (ImGui::BeginPopupContextItem()) {
         DrawSdfPathMenuItems<ArcT>(primSpec, path);
@@ -520,7 +520,7 @@ inline void DrawSdfPathSummary(std::string &&header, const char *operation, cons
 }
 
 template <typename AssetPathT>
-inline void DrawAssetPathSummary(std::string &&header, const char *operation, const AssetPathT &assetPath,
+inline void DrawAssetPathSummary(std::string &&header, SdfListOpType operation, const AssetPathT &assetPath,
                                  const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
     ImGui::PushID(menuItemId++);
@@ -529,13 +529,13 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     }
     ImGui::PopID();
     ImGui::SameLine();
-    std::string summary(operation);
+    std::string summary = GetListEditorOperationName(operation);
     summary += " ";
     summary += assetPath.GetAssetPath().empty() ? "" : "@" + assetPath.GetAssetPath() + "@";
     summary += assetPath.GetPrimPath().GetString().empty() ? "" : "<" + assetPath.GetPrimPath().GetString() + ">";
     ImGui::PushID(menuItemId++);
     if(ImGui::Button(summary.c_str())) {
-        InspectArcType(primSpec, assetPath);
+        SelectArcType(primSpec, assetPath);
     }
     if (ImGui::BeginPopupContextItem("###AssetPathMenuItems")) {
         DrawAssetPathMenuItems(primSpec, assetPath);
@@ -544,26 +544,26 @@ inline void DrawAssetPathSummary(std::string &&header, const char *operation, co
     ImGui::PopID();
 }
 
-void DrawReferenceSummary(const char *operation, const SdfReference &assetPath, const SdfPrimSpecHandle &primSpec,
+void DrawReferenceSummary(SdfListOpType operation, const SdfReference &assetPath, const SdfPrimSpecHandle &primSpec,
                           int &menuItemId) {
     DrawAssetPathSummary("References", operation, assetPath, primSpec, menuItemId);
 }
 
-void DrawPayloadSummary(const char *operation, const SdfPayload &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawPayloadSummary(SdfListOpType operation, const SdfPayload &assetPath, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawAssetPathSummary("Payloads", operation, assetPath, primSpec, menuItemId);
 }
 
-void DrawInheritPathSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawInheritPathSummary(SdfListOpType operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawSdfPathSummary<SdfInherit>("Inherits", operation, path, primSpec, menuItemId);
 }
 
-void DrawSpecializesSummary(const char *operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
+void DrawSpecializesSummary(SdfListOpType operation, const SdfPath &path, const SdfPrimSpecHandle &primSpec, int &menuItemId) {
     DrawSdfPathSummary<SdfSpecialize>("Specializes", operation, path, primSpec, menuItemId);
 }
 
-inline std::string GetSummary(const SdfReference &arc) { return arc.GetAssetPath(); }
-inline std::string GetSummary(const SdfPayload &arc) { return arc.GetAssetPath(); }
-inline std::string GetSummary(const SdfPath &arc) { return arc.GetString(); }
+inline std::string GetArcSummary(const SdfReference &arc) { return arc.IsInternal() ? arc.GetPrimPath().GetString() : arc.GetAssetPath(); }
+inline std::string GetArcSummary(const SdfPayload &arc) { return arc.GetAssetPath(); }
+inline std::string GetArcSummary(const SdfPath &arc) { return arc.GetString(); }
 
 inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
     DrawAssetPathMenuItems(primSpec, ref);
@@ -580,9 +580,9 @@ inline void DrawArcTypeMenuItems(const SdfPrimSpecHandle &primSpec, const SdfSpe
 
 template <typename ArcT>
 inline
-void DrawPathInRow(const char *operation, const ArcT &assetPath, const SdfPrimSpecHandle &primSpec, int *itemId) {
+void DrawPathInRow(SdfListOpType operation, const ArcT &assetPath, const SdfPrimSpecHandle &primSpec, int *itemId) {
     std::string path;
-    path += GetSummary(assetPath);
+    path += GetArcSummary(assetPath);
     ImGui::PushID((*itemId)++);
     ImGui::SameLine();
     if(ImGui::Button(path.c_str())) {
