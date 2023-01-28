@@ -284,21 +284,19 @@ void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer) {
 
 // TODO that Should move to layerproperty
 void DrawLayerSublayerStack(SdfLayerRefPtr layer) {
-    if (!layer)
+    if (!layer || layer->GetNumSubLayerPaths() == 0)
         return;
-    if (ImGui::CollapsingHeader("Sublayers", ImGuiTreeNodeFlags_DefaultOpen)){
+    if (ImGui::CollapsingHeader("Sublayers", ImGuiTreeNodeFlags_DefaultOpen)) {
         int rowId = 0;
         bool hasUpdate = false;
-        if (layer && layer->GetNumSubLayerPaths() > 0) {
-            if (BeginTwoColumnsTable("##DrawLayerSublayerStack")) {
-                SetupTwoColumnsTable(false, "", "Sublayers");
-                auto subLayersProxy = layer->GetSubLayerPaths();
-                for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
-                    const std::string& path = subLayersProxy[i];
-                    DrawTwoColumnsRow<SublayerPathRow>(rowId++, layer, path);
-                }
-                EndTwoColumnsTable();
+        if (BeginTwoColumnsTable("##DrawLayerSublayerStack")) {
+            SetupTwoColumnsTable(false, "", "Sublayers");
+            auto subLayersProxy = layer->GetSubLayerPaths();
+            for (int i = 0; i < layer->GetNumSubLayerPaths(); ++i) {
+                const std::string &path = subLayersProxy[i];
+                DrawTwoColumnsRow<SublayerPathRow>(rowId++, layer, path);
             }
+            EndTwoColumnsTable();
         }
     }
 }
