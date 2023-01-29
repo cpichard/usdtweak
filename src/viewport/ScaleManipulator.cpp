@@ -19,7 +19,7 @@ ScaleManipulator::~ScaleManipulator() {}
 
 bool ScaleManipulator::IsMouseOver(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformable) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mv = frustum.ComputeViewMatrix();
         const auto proj = frustum.ComputeProjectionMatrix();
@@ -66,22 +66,20 @@ void ScaleManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
     auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
+    _xformable = UsdGeomXformable(_xformAPI.GetPrim());
 }
 
 GfMatrix4d ScaleManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
-    if (_xformAPI) {
+    if (_xformable) {
         const auto currentTime = viewport.GetCurrentTimeCode();
         GfVec3d translation;
-        GfVec3f scale;
-        GfVec3f pivot;
-        GfVec3f rotation;
+        GfVec3f scale, pivot, rotation;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+        _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
         const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
         const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
         const auto rotMat = _xformAPI.GetRotationTransform(rotation, rotOrder);
-        const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
-        const auto parentToWorld = xformable.ComputeParentToWorldTransform(currentTime);
+        const auto parentToWorld = _xformable.ComputeParentToWorldTransform(currentTime);
 
         // We are just interested in the pivot position and the orientation
         const GfMatrix4d toManipulator = rotMat * pivotMat * transMat * parentToWorld;
@@ -98,11 +96,10 @@ template <int Axis> inline ImColor AxisColor(int selectedAxis) {
     }
 }
 
-
 // TODO: same as rotation manipulator, share in a base class
 void ScaleManipulator::OnDrawFrame(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformable) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mv = frustum.ComputeViewMatrix();
         const auto proj = frustum.ComputeProjectionMatrix();
@@ -144,10 +141,10 @@ void ScaleManipulator::OnDrawFrame(const Viewport &viewport) {
 void ScaleManipulator::OnBeginEdition(Viewport &viewport) {
     // Save original translation values
     GfVec3d translation;
-    GfVec3f pivot;
-    GfVec3f rotation;
+    GfVec3f pivot, rotation;
     UsdGeomXformCommonAPI::RotationOrder rotOrder;
-    _xformAPI.GetXformVectors(&translation, &rotation, &_scaleOnBegin, &pivot, &rotOrder, viewport.GetCurrentTimeCode());
+    _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &_scaleOnBegin, &pivot, &rotOrder,
+                                            viewport.GetCurrentTimeCode());
 
     // Save mouse position on selected axis
     const GfMatrix4d objectTransform = ComputeManipulatorToWorldTransform(viewport);
@@ -163,7 +160,7 @@ Manipulator *ScaleManipulator::OnUpdate(Viewport &viewport) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
 
-    if (_xformAPI && _selectedAxis < 3) {
+    if (_xformable && _selectedAxis < 3) {
         GfVec3d mouseOnAxis;
         ProjectMouseOnAxis(viewport, mouseOnAxis);
 
@@ -186,8 +183,24 @@ Manipulator *ScaleManipulator::OnUpdate(Viewport &viewport) {
         } else {
             scale[_selectedAxis] = _scaleOnBegin[_selectedAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
         }
-        
-        _xformAPI.SetScale(scale, GetEditionTimeCode(viewport));
+
+        if (_xformAPI) {
+            _xformAPI.SetScale(scale, GetEditionTimeCode(viewport));
+        } else {
+            bool reset = false;
+            auto ops = _xformable.GetOrderedXformOps(&reset);
+            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                GfVec3d translation;
+                GfVec3f scale_, pivot, rotation;
+                UsdGeomXformCommonAPI::RotationOrder rotOrder;
+                _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale_, &pivot, &rotOrder,
+                                                        GetEditionTimeCode(viewport));
+                const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
+                const auto rotMat = _xformAPI.GetRotationTransform(rotation, rotOrder);
+                GfMatrix4d current = GfMatrix4d().SetScale(scale) * rotMat * transMat;
+                ops[0].Set(current, GetEditionTimeCode(viewport));
+            }
+        }
     }
     return this;
 };
@@ -196,7 +209,7 @@ void ScaleManipulator::OnEndEdition(Viewport &) { EndEdition(); };
 
 ///
 void ScaleManipulator::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &linePoint) {
-    if (_xformAPI && _selectedAxis < 3) {
+    if (_xformable && _selectedAxis < 3) {
         GfVec3d rayPoint;
         double a = 0;
         double b = 0;

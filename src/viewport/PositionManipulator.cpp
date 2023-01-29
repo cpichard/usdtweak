@@ -34,7 +34,7 @@ PositionManipulator::~PositionManipulator() {}
 
 bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformAPI || _xformable) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mv = frustum.ComputeViewMatrix();
         const auto proj = frustum.ComputeProjectionMatrix();
@@ -81,54 +81,50 @@ void PositionManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
     auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
+    _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
 }
 
 GfMatrix4d PositionManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
-    if (_xformAPI) {
+    if (_xformable) {
         const auto currentTime = viewport.GetCurrentTimeCode();
-        GfVec3d translation;
-        GfVec3f scale;
-        GfVec3f pivot;
-        GfVec3f rotation;
-        UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+        GfMatrix4d localTransform;
+        bool resetsXformStack = false;
+        _xformable.GetLocalTransformation(&localTransform, &resetsXformStack, currentTime);
+        const GfVec3d translation = localTransform.ExtractTranslation();
         const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
-        const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
-        const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
-        const auto parentToWorld = xformable.ComputeParentToWorldTransform(currentTime);
+        // const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot); // Do we need to get the pivot ?
+        const auto parentToWorld = _xformable.ComputeParentToWorldTransform(currentTime);
 
         // We are just interested in the pivot position and the orientation
-        const GfMatrix4d toManipulator = pivotMat * transMat * parentToWorld;
+        const GfMatrix4d toManipulator = /* pivotMat * */ transMat * parentToWorld; // TODO pivot ?? or not pivot ???
         return toManipulator.GetOrthonormalized();
     }
     return GfMatrix4d();
 }
 
-
 inline void DrawArrow(ImDrawList *drawList, ImVec2 ori, ImVec2 tip, const ImVec4 &color, float thickness) {
     constexpr float arrowThickness = 20.f;
     drawList->AddLine(ori, tip, ImColor(color), thickness);
     const float len = sqrt((tip[0] - ori[0]) * (tip[0] - ori[0]) + (tip[1] - ori[1]) * (tip[1] - ori[1]));
-    if (len <= arrowThickness) return;
-    const ImVec2 vec(arrowThickness * (tip[0] - ori[0])/len, arrowThickness * (tip[1] - ori[1])/len);
-    const ImVec2 pt1(tip[0] - vec[0] - 0.5*vec[1], tip[1] - vec[1] + 0.5* vec[0]);
-    const ImVec2 pt2(tip[0] - vec[0] +  0.5*vec[1], tip[1] - vec[1] -  0.5*vec[0]);
+    if (len <= arrowThickness)
+        return;
+    const ImVec2 vec(arrowThickness * (tip[0] - ori[0]) / len, arrowThickness * (tip[1] - ori[1]) / len);
+    const ImVec2 pt1(tip[0] - vec[0] - 0.5 * vec[1], tip[1] - vec[1] + 0.5 * vec[0]);
+    const ImVec2 pt2(tip[0] - vec[0] + 0.5 * vec[1], tip[1] - vec[1] - 0.5 * vec[0]);
     drawList->AddTriangleFilled(pt1, pt2, tip, ImColor(color));
 }
-
 
 template <int Axis> inline ImColor AxisColor(int selectedAxis) {
     if (selectedAxis == Axis) {
         return ImColor(ImVec4(1.0, 1.0, 0.0, 1.0));
     } else {
-        return ImColor(ImVec4(Axis == Manipulator::XAxis, Axis == Manipulator::YAxis,
-                              Axis == Manipulator::ZAxis, 1.0));
+        return ImColor(ImVec4(Axis == Manipulator::XAxis, Axis == Manipulator::YAxis, Axis == Manipulator::ZAxis, 1.0));
     }
 }
 
 void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformAPI || _xformable) {
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const auto mv = frustum.ComputeViewMatrix();
         const auto proj = frustum.ComputeProjectionMatrix();
@@ -155,22 +151,24 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
         const auto yAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(yAxis3d.data()));
         const auto zAxisOnScreen = ProjectToTextureScreenSpace(mv, proj, textureSize, GfVec3d(zAxis3d.data()));
 
+        // TODO : Draw grey if not editable
+
         DrawArrow(drawList, ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(xAxisOnScreen[0], xAxisOnScreen[1]),
-                           AxisColor<XAxis>(_selectedAxis), 3);
-        DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]),
-                           AxisColor<YAxis>(_selectedAxis), 3);
-        DrawArrow(drawList,ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]),
-                           AxisColor<ZAxis>(_selectedAxis), 3);
+                  AxisColor<XAxis>(_selectedAxis), 3);
+        DrawArrow(drawList, ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(yAxisOnScreen[0], yAxisOnScreen[1]),
+                  AxisColor<YAxis>(_selectedAxis), 3);
+        DrawArrow(drawList, ImVec2(originOnScreen[0], originOnScreen[1]), ImVec2(zAxisOnScreen[0], zAxisOnScreen[1]),
+                  AxisColor<ZAxis>(_selectedAxis), 3);
     }
 }
 
 void PositionManipulator::OnBeginEdition(Viewport &viewport) {
     // Save original translation values
-    GfVec3f scale;
-    GfVec3f pivot;
-    GfVec3f rotation;
-    UsdGeomXformCommonAPI::RotationOrder rotOrder;
-    _xformAPI.GetXformVectors(&_translationOnBegin, &rotation, &scale, &pivot, &rotOrder, viewport.GetCurrentTimeCode());
+    GfVec3f scale, pivot, rotation;
+    GfMatrix4d localTransform;
+    bool resetsXformStack = false;
+    _xformable.GetLocalTransformation(&localTransform, &resetsXformStack, viewport.GetCurrentTimeCode());
+    _translationOnBegin = localTransform.ExtractTranslation();
 
     // Save mouse position on selected axis
     const GfMatrix4d objectTransform = ComputeManipulatorToWorldTransform(viewport);
@@ -186,7 +184,7 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
 
-    if (_xformAPI && _selectedAxis < 3) {
+    if (_xformable && _selectedAxis < 3) {
         GfVec3d mouseOnAxis;
         ProjectMouseOnAxis(viewport, mouseOnAxis);
 
@@ -199,8 +197,17 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
 
         GfVec3d translation = _translationOnBegin;
         translation[_selectedAxis] += sign * (_originMouseOnAxis - mouseOnAxis).GetLength();
-
-        _xformAPI.SetTranslate(translation, GetEditionTimeCode(viewport));
+        if (_xformAPI) {
+            _xformAPI.SetTranslate(translation, GetEditionTimeCode(viewport));
+        } else {
+            bool reset = false;
+            auto ops = _xformable.GetOrderedXformOps(&reset);
+            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                GfMatrix4d current = ops[0].GetOpTransform(GetEditionTimeCode(viewport));
+                current.SetTranslateOnly(translation); // TODO: what happens if there is a pivot ???
+                ops[0].Set(current, GetEditionTimeCode(viewport));
+            }
+        }
     }
     return this;
 };
@@ -209,7 +216,7 @@ void PositionManipulator::OnEndEdition(Viewport &) { EndEdition(); };
 
 ///
 void PositionManipulator::ProjectMouseOnAxis(const Viewport &viewport, GfVec3d &linePoint) {
-    if (_xformAPI && _selectedAxis < 3) {
+    if ((_xformAPI || _xformable) && _selectedAxis < 3) {
         GfVec3d rayPoint;
         double a = 0;
         double b = 0;

@@ -48,7 +48,7 @@ static bool IntersectsUnitCircle(const GfVec3d &planeNormal3d, const GfVec3d &pl
 
 bool RotationManipulator::IsMouseOver(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformable) {
         const GfVec2d mousePosition = viewport.GetMousePosition();
         const auto &frustum = viewport.GetCurrentCamera().GetFrustum();
         const GfRay ray = frustum.ComputeRay(mousePosition);
@@ -81,25 +81,24 @@ void RotationManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
     auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
     _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
+    _xformable = UsdGeomXformable(_xformAPI.GetPrim());
 }
 
 GfMatrix4d RotationManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
-    if (_xformAPI) {
+    if (_xformable) {
         const auto currentTime = GetViewportTimeCode(viewport);
         GfVec3d translation;
-        GfVec3f rotation;
-        GfVec3f scale;
-        GfVec3f pivot;
-        UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+        GfVec3f rotation, scale, pivot;
 
-        const GfMatrix4d rotMat =
+        UsdGeomXformCommonAPI::RotationOrder rotOrder;
+        _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+        GfMatrix4d rotMat =
             UsdGeomXformOp::GetOpTransform(UsdGeomXformCommonAPI::ConvertRotationOrderToOpType(rotOrder), VtValue(rotation));
 
         const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
         const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
-        const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
-        const auto parentToWorldMat = xformable.ComputeParentToWorldTransform(currentTime);
+        // const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
+        const auto parentToWorldMat = _xformable.ComputeParentToWorldTransform(currentTime);
 
         // We are just interested in the pivot position and the orientation
         const GfMatrix4d toManipulator = rotMat * pivotMat * transMat * parentToWorldMat;
@@ -156,10 +155,9 @@ template <int Axis> inline ImColor AxisColor(int selectedAxis) {
     }
 }
 
-
 void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
 
-    if (_xformAPI) {
+    if (_xformable) {
         const auto &camera = viewport.GetCurrentCamera();
         auto mv = camera.GetFrustum().ComputeViewMatrix();
         auto proj = camera.GetFrustum().ComputeProjectionMatrix();
@@ -187,10 +185,8 @@ void RotationManipulator::OnDrawFrame(const Viewport &viewport) {
                                                  textureSize, toWorld, _manipulator2dPoints);
 
         draw_list->AddPolyline(_manipulator2dPoints.data(), xEnd, AxisColor<XAxis>(_selectedAxis), ImDrawFlags_None, 3);
-        draw_list->AddPolyline(_manipulator2dPoints.data() + xEnd, yEnd - xEnd, AxisColor<YAxis>(_selectedAxis),
-                               ImDrawFlags_None, 3);
-        draw_list->AddPolyline(_manipulator2dPoints.data() + yEnd, zEnd - yEnd, AxisColor<ZAxis>(_selectedAxis),
-                               ImDrawFlags_None, 3);
+        draw_list->AddPolyline(_manipulator2dPoints.data() + xEnd, yEnd - xEnd, AxisColor<YAxis>(_selectedAxis), ImDrawFlags_None, 3);
+        draw_list->AddPolyline(_manipulator2dPoints.data() + yEnd, zEnd - yEnd, AxisColor<ZAxis>(_selectedAxis), ImDrawFlags_None, 3);
     }
 }
 
@@ -212,8 +208,7 @@ GfVec3d RotationManipulator::ComputeClockHandVector(Viewport &viewport) {
 }
 
 void RotationManipulator::OnBeginEdition(Viewport &viewport) {
-    if (_xformAPI) {
-
+    if (_xformable) {
         const auto manipulatorCoordinates = ComputeManipulatorToWorldTransform(viewport);
         _planeOrigin3d = manipulatorCoordinates.ExtractTranslation();
         _planeNormal3d = GfVec3d(); // default init
@@ -230,15 +225,13 @@ void RotationManipulator::OnBeginEdition(Viewport &viewport) {
 
         // Save the rotation values
         GfVec3d translation;
-        GfVec3f rotation;
-        GfVec3f scale;
-        GfVec3f pivot;
+        GfVec3f rotation, scale, pivot;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, GetViewportTimeCode(viewport));
+        _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder,
+                                                GetViewportTimeCode(viewport));
 
         _rotateMatrixOnBegin =
             UsdGeomXformOp::GetOpTransform(UsdGeomXformCommonAPI::ConvertRotationOrderToOpType(rotOrder), VtValue(rotation));
-        ;
     }
     BeginEdition(viewport.GetCurrentStage());
 }
@@ -247,7 +240,7 @@ Manipulator *RotationManipulator::OnUpdate(Viewport &viewport) {
     if (ImGui::IsMouseReleased(0)) {
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
-    if (_xformAPI && _selectedAxis != None) {
+    if (_xformable && _selectedAxis != None) {
 
         // Compute rotation angle in world coordinates
         const GfVec3d rotateTo = ComputeClockHandVector(viewport);
@@ -270,27 +263,36 @@ Manipulator *RotationManipulator::OnUpdate(Viewport &viewport) {
         }
 
         const GfRotation deltaRotation(localPlaneNormal * axisSign, worldRotation.GetAngle());
-
+        // NOTE: should that be _rotateMatrixOnBegin * deltaRotation instead ? the formula for opTrans use this order
         const GfMatrix4d resultingRotation = GfMatrix4d(1.0).SetRotate(deltaRotation) * _rotateMatrixOnBegin;
 
         // Get latest rotation values to give a hint to the decompose function
         GfVec3d translation;
-        GfVec3f rotation;
-        GfVec3f scale;
-        GfVec3f pivot;
+        GfVec3f rotation, scale, pivot;
         UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectors(&translation, &rotation, &scale, &pivot, &rotOrder, GetViewportTimeCode(viewport));
+        _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder,
+                                                GetViewportTimeCode(viewport));
         double thetaTw = GfDegreesToRadians(rotation[0]);
         double thetaFB = GfDegreesToRadians(rotation[1]);
         double thetaLR = GfDegreesToRadians(rotation[2]);
         double thetaSw = 0.0;
-
         // Decompose the matrix in angle values
         GfRotation::DecomposeRotation(resultingRotation, xAxis, yAxis, zAxis, 1.0, &thetaTw, &thetaFB, &thetaLR, &thetaSw, true);
-
         const GfVec3f newRotationValues =
             GfVec3f(GfRadiansToDegrees(thetaTw), GfRadiansToDegrees(thetaFB), GfRadiansToDegrees(thetaLR));
-        _xformAPI.SetRotate(newRotationValues, rotOrder, GetEditionTimeCode(viewport));
+        if (_xformAPI) {
+            _xformAPI.SetRotate(newRotationValues, rotOrder, GetEditionTimeCode(viewport));
+        } else { // Modify only if we have a single matrix
+            bool reset = false;
+            auto ops = _xformable.GetOrderedXformOps(&reset);
+            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                // [ "xformOp:translate", "xformOp:translate:pivot", "xformOp:rotateXYZ",
+                // "xformOp:scale", "!invert!xformOp:translate:pivot" ] - No pivot here
+                GfMatrix4d current = GfMatrix4d().SetScale(scale) * _rotateMatrixOnBegin *
+                                     GfMatrix4d(1.0).SetRotate(deltaRotation) * GfMatrix4d().SetTranslate(translation);
+                ops[0].Set(current, GetEditionTimeCode(viewport));
+            }
+        }
     }
 
     return this;

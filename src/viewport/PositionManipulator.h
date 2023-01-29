@@ -43,5 +43,6 @@ class PositionManipulator : public Manipulator {
     GfVec3d _translationOnBegin;
     GfLine _axisLine;
 
+    UsdGeomXformable _xformable;
     UsdGeomXformCommonAPI _xformAPI;
 };

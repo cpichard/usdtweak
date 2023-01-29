@@ -45,4 +45,5 @@ class ScaleManipulator : public Manipulator {
     GfLine _axisLine;
 
     UsdGeomXformCommonAPI _xformAPI;
+    UsdGeomXformable _xformable;
 };

@@ -40,6 +40,7 @@ class RotationManipulator : public Manipulator {
     ManipulatorAxis _selectedAxis;
 
     UsdGeomXformCommonAPI _xformAPI;
+    UsdGeomXformable _xformable;
 
     GfVec3d _rotateFrom;
     GfMatrix4d _rotateMatrixOnBegin;
