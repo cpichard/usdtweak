@@ -18,9 +18,9 @@
 
 typedef enum CompositionArcListType { ReferenceList, PayloadList, InheritList, SpecializeList } CompositionArcListType;
 
-// Unfortunately Inherit and Specialize are just alias to SdfPath, so there is no way to differentiate the
-// edit list from the type.
-// To reuse templated code we create new type SdfInherit and SdfSpecialize them
+// Unfortunately Inherit and Specialize are just alias to SdfPath, there is no way to differentiate find the
+// edit list the sdfpath is coming from using the type.
+// To reuse templated code we create new type SdfInherit and SdfSpecialize 
 template <int InheritOrSpecialize> struct SdfInheritOrSpecialize : SdfPath {
     SdfInheritOrSpecialize() : SdfPath() {}
     SdfInheritOrSpecialize(const SdfPath &path) : SdfPath(path) {}
@@ -53,9 +53,26 @@ inline SdfSpecializesProxy GetCompositionArcList(const SdfPrimSpecHandle &primSp
     return primSpec->GetSpecializesList();
 }
 
+inline void ClearArcList(const SdfPrimSpecHandle &primSpec, const SdfReference &val) {
+    return primSpec->ClearReferenceList();
+}
+
+inline void ClearArcList(const SdfPrimSpecHandle &primSpec, const SdfPayload &val) {
+    return primSpec->ClearPayloadList();
+}
+
+inline void ClearArcList(const SdfPrimSpecHandle &primSpec, const SdfInherit &val) {
+    return primSpec->ClearInheritPathList();
+}
+
+inline void ClearArcList(const SdfPrimSpecHandle &primSpec, const SdfSpecialize &val) {
+    return primSpec->ClearSpecializesList();
+}
+
 
 inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfReference &ref) {
-    auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(ref.GetAssetPath());
+    auto realPath = ref.GetAssetPath().empty() ? primSpec->GetLayer()->GetRealPath()
+                                               : primSpec->GetLayer()->ComputeAbsolutePath(ref.GetAssetPath());
     auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
     ExecuteAfterDraw<EditorSelectLayerLocation>(layerOrOpen, ref.GetPrimPath());
 }
@@ -70,7 +87,7 @@ inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfPath &path
    ExecuteAfterDraw<EditorSelectLayerLocation>(primSpec->GetLayer(), path);
 }
 
-/// Create a standard UI for entering a SdfPath.
+/// A SdfPath creation UI.
 /// This is used for inherit and specialize
 struct CreateSdfPathModalDialog : public ModalDialog {
 
@@ -231,7 +248,13 @@ template <> void DrawArcCreationDialog<SdfSpecialize>(const SdfPrimSpecHandle &p
 }
 template<typename ArcT>
 inline void RemoveArc(const SdfPrimSpecHandle &primSpec, const ArcT &arc) {
-    std::function<void()> removeItem = [=]() { GetCompositionArcList(primSpec, arc).RemoveItemEdits(arc); };
+    std::function<void()> removeItem = [=]() {
+        GetCompositionArcList(primSpec, arc).RemoveItemEdits(arc);
+        // Also clear the arc list if there are no more items
+        if (GetCompositionArcList(primSpec, arc).HasKeys()) {
+            ClearArcList(primSpec, arc);
+        }
+    };
     ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), removeItem);
 }
 
