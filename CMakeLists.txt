@@ -49,6 +49,14 @@ target_compile_definitions(usdtweak PRIVATE NOMINMAX)
 target_link_libraries(usdtweak glfw resources ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES} ${MATERIALX_LIBRARIES})
 target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS})
 
+set(USE_PYTHON3 OFF CACHE BOOL "Compile with the Python3 target")
+if (DEFINED USE_PYTHON3)
+    message(STATUS "Looking for Python3 target")
+    find_package(Python3 COMPONENTS Development)
+    target_link_libraries(usdtweak Python3::Python)
+endif()
+
+
 # Installer on windows
 if(WIN32)
     include("cmake/windows_installer.cmake")

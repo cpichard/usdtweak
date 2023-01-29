@@ -96,6 +96,13 @@ If you have USD >= 22.08 compiled with MaterialX, you have to add an additional 
 
     cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.08 -DMaterialX_DIR=C:\path\to\usd-22.08\lib\cmake\MaterialX ..
 
+#### Using the NVidia USD build (experimental)
+
+NVidia provides a USD build [here](https://developer.nvidia.com/usd) if you don't want to compile USD yourself. It needs either VisualStudio 2017 or a more recent version (2019, 2022) with the "MSVC141 - C++ build tools x86/x64" installed. The cmake commands to build usdtweak differ, if you have a more recent version you'll need to specify the toolkit using `-T v141`. The Nvidia USD build also needs Python3.7, set the `USE_PYTHON3` argument to force cmake to look after Python3, but you'll have to make sure Python3.7 is installed already.
+
+    cmake  -G "Visual Studio 16 2019" -T v141 -A x64 -Dpxr_DIR=C:\path\to\nvidia-usd-22.11 -DMaterialX_DIR=C:\path\to\nvidia-usd-22.11\lib\cmake\MaterialX -DUSE_PYTHON3=ON ..
+    cmake --build . --config Release
+
 ### Installing on Windows
 
 You can install usdtweak with its dependencies on windows, it copies the required files in a directory with the following command:

@@ -18,6 +18,11 @@
 #include "ResourcesLoader.h"
 #include "CommandLineOptions.h"
 #include "Gui.h"
+
+#ifdef _WIN64
+#include<process.h>
+#endif
+
 // clang-format on
 
 PXR_NAMESPACE_USING_DIRECTIVE
