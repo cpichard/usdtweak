@@ -143,6 +143,70 @@ static void DrawSdfAttributeMetadata(SdfAttributeSpecHandle attr) {
     }
 }
 
+#define LEFT_PANE_WIDTH 140
+
+static void DrawTimeSamplesEditor(const SdfAttributeSpecHandle &attr, SdfTimeSampleMap &timeSamples,
+                                  UsdTimeCode &selectedKeyframe) {
+
+    if (ImGui::Button(ICON_FA_KEY)) {
+        // Create a new key
+        // DrawModalDialog<CreateTimeSampleDialog>(attr->GetLayer(), attr->GetPath());
+    }
+    ImGui::SameLine();
+    // TODO: ability to select multiple keyframes and delete them
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        if (selectedKeyframe == UsdTimeCode::Default()) {
+            if (attr->HasDefaultValue()) {
+                ExecuteAfterDraw(&SdfAttributeSpec::ClearDefaultValue, attr);
+            }
+        } else {
+            ExecuteAfterDraw(&SdfLayer::EraseTimeSample, attr->GetLayer(), attr->GetPath(), selectedKeyframe.GetValue());
+        }
+    }
+
+    if (ImGui::BeginListBox("##Time", ImVec2(LEFT_PANE_WIDTH - 20, -FLT_MIN))) { // -20 to account for the scroll bar
+        if (attr->HasDefaultValue()) {
+            if (ImGui::Selectable("Default", selectedKeyframe == UsdTimeCode::Default())) {
+                selectedKeyframe = UsdTimeCode::Default();
+            }
+        }
+        TF_FOR_ALL(sample, timeSamples) { // Samples
+            std::string sampleValueLabel = std::to_string(sample->first);
+            if (ImGui::Selectable(sampleValueLabel.c_str(), selectedKeyframe == sample->first)) {
+                selectedKeyframe = sample->first;
+            }
+        }
+        ImGui::EndListBox();
+    }
+}
+static void DrawSamplesAtTimeCode(const SdfAttributeSpecHandle &attr, SdfTimeSampleMap &timeSamples,
+                                  UsdTimeCode &selectedKeyframe) {
+    if (selectedKeyframe == UsdTimeCode::Default()) {
+        if (attr->HasDefaultValue()) {
+            VtValue value = attr->GetDefaultValue();
+            VtValue editedValue = value.IsArrayValued() ? DrawVtArrayValue(value) : DrawVtValue("##default", value);
+            if (editedValue != VtValue()) {
+                ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, editedValue);
+            }
+        }
+    } else {
+        auto foundSample = timeSamples.find(selectedKeyframe.GetValue());
+        if (foundSample != timeSamples.end()) {
+            VtValue editResult;
+            if (foundSample->second.IsArrayValued()) {
+                editResult = DrawVtArrayValue(foundSample->second);
+            } else {
+                editResult = DrawVtValue("##timeSampleValue", foundSample->second);
+            }
+
+            if (editResult != VtValue()) {
+                ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, attr->GetLayer(), attr->GetPath(), foundSample->first,
+                                 editResult);
+            }
+        }
+    }
+}
+
 // Work in progress
 void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selection) {
     if (!layer)
@@ -165,50 +229,15 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
         static UsdTimeCode selectedKeyframe = UsdTimeCode::Default();
         if (ImGui::BeginTabItem("Values")) {
             SdfTimeSampleMap timeSamples = attr->GetTimeSampleMap();
+
             // Left pane with the time samples
             ScopedStyleColor col(ImGuiCol_FrameBg, ImVec4(0.260f, 0.300f, 0.360f, 1.000f));
-            ImGui::BeginChild("left pane", ImVec2(120, 0), true); // TODO variable width
-            if(ImGui::BeginListBox("##Time")) {
-                if (attr->HasDefaultValue()) {
-                    if (ImGui::Selectable("Default", selectedKeyframe == UsdTimeCode::Default())) {
-                        selectedKeyframe = UsdTimeCode::Default();
-                    }
-                }
-                TF_FOR_ALL(sample, timeSamples) { // Samples
-                    std::string sampleValueLabel = std::to_string(sample->first);
-                    if (ImGui::Selectable(sampleValueLabel.c_str(), selectedKeyframe == sample->first)) {
-                        selectedKeyframe = sample->first;
-                    }
-                }
-                ImGui::EndListBox();
-            }
+            ImGui::BeginChild("left pane", ImVec2(LEFT_PANE_WIDTH, 0), true); // TODO variable width
+            DrawTimeSamplesEditor(attr, timeSamples, selectedKeyframe);
             ImGui::EndChild();
             ImGui::SameLine();
             ImGui::BeginChild("value", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
-            if (selectedKeyframe == UsdTimeCode::Default()) {
-                if (attr->HasDefaultValue()) {
-                    VtValue value = attr->GetDefaultValue();
-                    VtValue editedValue = value.IsArrayValued() ? DrawVtArrayValue(value) : DrawVtValue("##default", value);
-                    if (editedValue != VtValue()) {
-                        ExecuteAfterDraw(&SdfAttributeSpec::SetDefaultValue, attr, editedValue);
-                    }
-                }
-            } else {
-                auto foundSample = timeSamples.find(selectedKeyframe.GetValue());
-                if (foundSample != timeSamples.end()) {
-                    VtValue editResult;
-                    if (foundSample->second.IsArrayValued()) {
-                        editResult = DrawVtArrayValue(foundSample->second);
-                    } else {
-                        editResult = DrawVtValue("##timeSampleValue", foundSample->second);
-                    }
-
-                    if (editResult != VtValue()) {
-                        ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, attr->GetLayer(), attr->GetPath(), foundSample->first,
-                                         editResult);
-                    }
-                }
-            }
+            DrawSamplesAtTimeCode(attr, timeSamples, selectedKeyframe);
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
