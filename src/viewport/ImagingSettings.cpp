@@ -180,10 +180,12 @@ void DrawRendererControls(UsdImagingGLEngine &renderer) {
 }
 
 void DrawRendererCommands(UsdImagingGLEngine &renderer) {
-    if (ImGui::BeginMenu("Renderer commands")) {
+    if (ImGui::BeginMenu("Renderer Commands")) {
         HdCommandDescriptors commands = renderer.GetRendererCommandDescriptors();
         for (const auto &command : commands) {
             if (ImGui::Selectable(command.commandDescription.c_str())) {
+                // TODO: that should be executed after drawing the UI
+                // the following code should live in a command
                 renderer.InvokeRendererCommand(command.commandName);
             }
         }
@@ -198,6 +200,8 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderp
         VtValue currentValue = renderer.GetRendererSetting(setting.key);
         VtValue newValue = DrawVtValue(setting.name, currentValue);
         if (newValue != VtValue()) {
+            // TODO: that should be executed after drawing the UI
+            // the following code should live in a command
             renderer.SetRendererSetting(setting.key, newValue);
         }
     }

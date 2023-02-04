@@ -313,6 +313,9 @@ return SdfGetPathEditorProxy(spec, field);
 
 // TODO: move this code and generalize it for any Path edit list
 // SdfFieldKeys->ConnectionPaths
+
+
+// This editor is specialized for paths
 static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     SdfPathEditorProxy proxy = GetPathEditorProxy(spec, field);
     SdfListOpType currentList = GetEditListChoice(proxy);
@@ -397,7 +400,7 @@ inline void DrawFirstColumn<AttributeRow>(const int rowId, const SdfAttributeSpe
         }
 
         if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
-            // TODO: DrawModalDialog<>(attribute);
+            DrawTimeSampleCreationDialog(attribute->GetLayer(), attribute->GetPath());
         }
 
         if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {

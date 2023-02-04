@@ -18,6 +18,62 @@
 #include "VtDictionaryEditor.h"
 #include "VtValueEditor.h"
 
+/// Dialogs
+
+struct CreateTimeSampleDialog : public ModalDialog {
+    CreateTimeSampleDialog(SdfLayerHandle layer, SdfPath attrPath) : _layer(layer), _attrPath(attrPath) {
+        auto attr = _layer->GetAttributeAtPath(_attrPath);
+        _hasSamples = layer->GetNumTimeSamplesForPath(attrPath) != 0;
+        _hasDefault = attr->HasDefaultValue();
+        _isArray = attr->GetTypeName().IsArray();
+    };
+    ~CreateTimeSampleDialog() override {}
+
+    void Draw() override {
+        
+        ImGui::InputDouble("Time Code", &_timeCode);
+        auto attr = _layer->GetAttributeAtPath(_attrPath);
+        auto typeName = attr->GetTypeName();
+        if (_hasSamples) {
+            ImGui::Checkbox("Copy closest value", &_copyClosestValue);
+        } else if (_isArray && ! _hasDefault) {
+            ImGui::InputInt("New array number of element", &_numElements);
+        }
+        
+        // TODO: check if the key already exists
+        DrawOkCancelModal([=]() {
+            VtValue value = typeName.GetDefaultValue();
+            if (_copyClosestValue) { // we are normally sure that there is a least one element
+                // This is not really the closest element right now
+                auto sampleSet = _layer->ListTimeSamplesForPath(_attrPath);
+                auto it = std::lower_bound(sampleSet.begin(), sampleSet.end(), _timeCode);
+                if (it==sampleSet.end()) {
+                    it--;
+                }
+                _layer->QueryTimeSample(_attrPath, *it, &value);
+            } else if (_isArray && ! _hasDefault) {
+                
+            }
+
+            ExecuteAfterDraw(&SdfLayer::SetTimeSample<VtValue>, _layer, _attrPath, _timeCode, value);
+        });
+    }
+    const char *DialogId() const override { return "Create TimeSample"; }
+    double _timeCode = 0;
+    const SdfLayerHandle _layer;
+    const SdfPath _attrPath;
+    bool _copyClosestValue = false;
+    bool _hasSamples = false;
+    bool _isArray = false;
+    bool _hasDefault = false;
+    int _numElements = 0;
+};
+
+// we want to keep CreateTimeSampleDialog hidden
+void DrawTimeSampleCreationDialog(SdfLayerHandle layer, SdfPath attributePath) {
+    DrawModalDialog<CreateTimeSampleDialog>(layer, attributePath);
+}
+
 ///
 /// TypeName
 //
@@ -150,7 +206,7 @@ static void DrawTimeSamplesEditor(const SdfAttributeSpecHandle &attr, SdfTimeSam
 
     if (ImGui::Button(ICON_FA_KEY)) {
         // Create a new key
-        // DrawModalDialog<CreateTimeSampleDialog>(attr->GetLayer(), attr->GetPath());
+        DrawTimeSampleCreationDialog(attr->GetLayer(), attr->GetPath());
     }
     ImGui::SameLine();
     // TODO: ability to select multiple keyframes and delete them
@@ -227,6 +283,7 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
         }
 
         static UsdTimeCode selectedKeyframe = UsdTimeCode::Default();
+        
         if (ImGui::BeginTabItem("Values")) {
             SdfTimeSampleMap timeSamples = attr->GetTimeSampleMap();
 
