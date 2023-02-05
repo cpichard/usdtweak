@@ -223,7 +223,8 @@ void Viewport::Draw() {
 
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
-    _textureSize = GfVec2i(wsize[0], std::max(1.f, wsize[1] - cursorPos.y - 2 * GImGui->Style.ItemSpacing.y));
+    _textureSize = GfVec2i(std::max(1.f, wsize[0] - 2 * GImGui->Style.ItemSpacing.x),
+                           std::max(1.f, wsize[1] - cursorPos.y - 2 * GImGui->Style.ItemSpacing.y));
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
