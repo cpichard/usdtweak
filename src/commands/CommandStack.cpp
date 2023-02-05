@@ -1,5 +1,4 @@
 #include "CommandStack.h"
-#include "UndoRedoCommands.h"
 #include "SdfCommandGroupRecorder.h"
 
 CommandStack *CommandStack::instance = nullptr;

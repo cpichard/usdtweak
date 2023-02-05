@@ -6,7 +6,6 @@
 #include "SdfCommandGroup.h"
 #include "SdfCommandGroupRecorder.h"
 #include "UndoLayerStateDelegate.h"
-#include "UndoRedoCommands.h"
 #include "CommandStack.h"
 
 /// A SdfUndoRedoRecorder creates an object on the stack which will start recording all the usd commands

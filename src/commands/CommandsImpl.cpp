@@ -4,7 +4,6 @@
 #include "SdfCommandGroupRecorder.h"
 #include "SdfUndoRedoRecorder.h"
 #include "UndoLayerStateDelegate.h"
-#include "UndoRedoCommands.h"
 #include <functional>
 #include <vector>
 
