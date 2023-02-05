@@ -25,6 +25,7 @@
 #include "EditListSelector.h"
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
+#include "SdfAttributeEditor.h" // timesample editor
 #include "Shortcuts.h"
 #include "TableLayouts.h"
 #include "VariantEditor.h"

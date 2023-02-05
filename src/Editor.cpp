@@ -300,14 +300,16 @@ void Editor::SetCurrentStage(UsdStageCache::Id current) {
 }
 
 void Editor::SetCurrentStage(UsdStageRefPtr stage) {
-    _currentStage = stage;
-    // NOTE: We set the default layer to the current stage root
-    // this might have side effects
-    if (_currentStage) {
-        SetCurrentLayer(_currentStage->GetRootLayer());
+    if (_currentStage != stage) {
+        _currentStage = stage;
+        // NOTE: We set the default layer to the current stage root
+        // this might have side effects
+        if (_currentStage) {
+            SetCurrentLayer(_currentStage->GetRootLayer());
+        }
+        // TODO multiple viewport management
+        _viewport.SetCurrentStage(stage);
     }
-    // TODO multiple viewport management
-    _viewport.SetCurrentStage(stage);
 }
 
 void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
@@ -414,12 +416,23 @@ void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDial
 
 void Editor::AddLayerPathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentLayer(), primPath);
+    ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
 }
 
 void Editor::SetLayerPathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentLayer(), primPath);
+    ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
 }
 
+void Editor::AddStagePathSelection(const SdfPath &primPath) {
+    _selection.AddSelected(GetCurrentStage(), primPath);
+    ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+}
+
+void Editor::SetStagePathSelection(const SdfPath &primPath) {
+    _selection.SetSelected(GetCurrentStage(), primPath);
+    ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+}
 
 
 void Editor::DrawMainMenuBar() {

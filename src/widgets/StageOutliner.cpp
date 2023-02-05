@@ -28,7 +28,7 @@ static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
         format += " ";
         format += obj->GetPath().GetString();
         if (ImGui::MenuItem(format.c_str())) {
-            ExecuteAfterDraw<EditorSelectLayerLocation>(tree->GetLayer(), obj->GetPath());
+            ExecuteAfterDraw<EditorSetSelection>(tree->GetLayer(), obj->GetPath());
         }
     }
     for (auto subTree : tree->GetChildTrees()) {
@@ -167,7 +167,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
                         selectedPaths.AddSelected(prim.GetStage(), prim.GetPath());
                     }
                 } else {
-                    selectedPaths.SetSelected(prim.GetStage(), prim.GetPath());
+                    ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prim.GetPath());
                 }
             }
             {

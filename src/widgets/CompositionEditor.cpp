@@ -74,17 +74,17 @@ inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfReference 
     auto realPath = ref.GetAssetPath().empty() ? primSpec->GetLayer()->GetRealPath()
                                                : primSpec->GetLayer()->ComputeAbsolutePath(ref.GetAssetPath());
     auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
-    ExecuteAfterDraw<EditorSelectLayerLocation>(layerOrOpen, ref.GetPrimPath());
+    ExecuteAfterDraw<EditorSetSelection>(layerOrOpen, ref.GetPrimPath());
 }
 
 inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfPayload &pay) {
     auto realPath = primSpec->GetLayer()->ComputeAbsolutePath(pay.GetAssetPath());
     auto layerOrOpen = SdfLayer::FindOrOpen(realPath);
-    ExecuteAfterDraw<EditorSelectLayerLocation>(layerOrOpen, pay.GetPrimPath());
+    ExecuteAfterDraw<EditorSetSelection>(layerOrOpen, pay.GetPrimPath());
 }
 
 inline void SelectArcType(const SdfPrimSpecHandle &primSpec, const SdfPath &path) {
-   ExecuteAfterDraw<EditorSelectLayerLocation>(primSpec->GetLayer(), path);
+   ExecuteAfterDraw<EditorSetSelection>(primSpec->GetLayer(), path);
 }
 
 /// A SdfPath creation UI.

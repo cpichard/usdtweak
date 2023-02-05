@@ -441,7 +441,7 @@ static void ShowExampleAppCustomNodeGraph(const UsdPrim &prim)
         draw_list->ChannelsSetCurrent(0); // Background
         ImGui::SetCursorScreenPos(node_rect_min);
         if(ImGui::InvisibleButton("node", node->Size)){
-            ExecuteAfterDraw<EditorSetSelected>(prim.GetStage(), node->Path);
+            ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), node->Path);
         }
         if (ImGui::IsItemHovered())
         {

@@ -31,19 +31,20 @@ struct EditorSetDataPointer : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetDataPointer>(Editor *editor);
 
-struct EditorSetSelected : public EditorCommand {
-
-
-    EditorSetSelected(UsdStageRefPtr stage, SdfPath path)
+struct EditorSetSelection : public EditorCommand {
+    EditorSetSelection(UsdStageRefPtr stage, SdfPath path)
     : _stageRefPtr(stage), _path(path) {}
     
-    EditorSetSelected(const UsdStageWeakPtr & stage, SdfPath path)
-    : _stageWeakPtr(stage), _path(path) {}
+    EditorSetSelection(const UsdStageWeakPtr & stage, SdfPath path)
+    : _stageRefPtr(stage), _path(path) {}
     
-    EditorSetSelected(SdfLayerRefPtr layer, SdfPath path)
+    EditorSetSelection(SdfLayerRefPtr layer, SdfPath path)
     : _layer(layer), _path(path) {}
     
-    ~EditorSetSelected() override {}
+    EditorSetSelection(SdfLayerHandle layer, SdfPath path)
+    : _layer(layer), _path(path) {}
+    
+    ~EditorSetSelection() override {}
 
     // TODO: wip, we want an "Selection" object to be passed around
     // At the moment it is just the pointer to the current selection held by the editor
@@ -51,28 +52,26 @@ struct EditorSetSelected : public EditorCommand {
         if(_editor) {
             auto & selection = _editor->GetSelection();
             if (_layer) {
-                selection.SetSelected(_layer, _path);
+                _editor->SetCurrentLayer(_layer);
+                _editor->SetLayerPathSelection(_path);
             }
             if (_stageRefPtr) {
-                selection.SetSelected(_stageRefPtr, _path);
-            }
-            if (_stageWeakPtr) {
-                selection.SetSelected(_stageWeakPtr , _path);
+                _editor->SetCurrentStage(_stageRefPtr);
+                _editor->SetStagePathSelection(_path);
             }
         }
         return false;
     }
     UsdStageRefPtr _stageRefPtr;
-    UsdStageWeakPtr _stageWeakPtr;
     SdfLayerRefPtr _layer;
     SdfPath _path;
 };
-template void ExecuteAfterDraw<EditorSetSelected>(UsdStageWeakPtr, SdfPath);
-template void ExecuteAfterDraw<EditorSetSelected>(UsdStageRefPtr, SdfPath);
-template void ExecuteAfterDraw<EditorSetSelected>(SdfLayerRefPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelection>(UsdStageWeakPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelection>(UsdStageRefPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelection>(SdfLayerRefPtr, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelection>(SdfLayerHandle, SdfPath);
 
-
-
+// TODO use setlayerlocation instead ???
 struct EditorSelectAttributePath : public EditorCommand {
 
     EditorSelectAttributePath(SdfPath attributePath) : _attributePath(attributePath) {}
@@ -169,25 +168,6 @@ struct EditorShutdown : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorShutdown>();
 
-// Will set the current layer and the current selected layer prim
-struct EditorSelectLayerLocation : public EditorCommand {
-    EditorSelectLayerLocation(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
-    EditorSelectLayerLocation(SdfLayerRefPtr layer, SdfPath path) : _layer(layer), _path(path) {}
-    ~EditorSelectLayerLocation() override {}
-
-    bool DoIt() override {
-        if (_editor && _layer) {
-            _editor->SetCurrentLayer(_layer);
-            _editor->SetLayerPathSelection(_path);
-        }
-
-        return false;
-    }
-    SdfLayerRefPtr _layer;
-    SdfPath _path;
-};
-template void ExecuteAfterDraw<EditorSelectLayerLocation>(SdfLayerHandle layer, SdfPath);
-template void ExecuteAfterDraw<EditorSelectLayerLocation>(SdfLayerRefPtr layer, SdfPath);
 
 struct EditorSetCurrentLayer : public EditorCommand {
 

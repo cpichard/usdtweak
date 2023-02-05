@@ -55,7 +55,9 @@ public:
     Selection &GetSelection() { return _selection; }
     void SetLayerPathSelection(const SdfPath &primPath);
     void AddLayerPathSelection(const SdfPath &primPath);
-
+    void SetStagePathSelection(const SdfPath &primPath);
+    void AddStagePathSelection(const SdfPath &primPath);
+    
     /// Create a new layer in file path
     void CreateNewLayer(const std::string &path);
     void FindOrOpenLayer(const std::string &path);

@@ -35,8 +35,6 @@ struct PropertyCopy;
 struct PropertyPaste;
 
 struct EditorSetDataPointer;
-struct EditorSetSelected;
-struct EditorSelectAttributePath;
 struct EditorOpenStage;
 struct EditorFindOrOpenLayer;
 struct EditorRunLauncher;
@@ -48,7 +46,8 @@ struct EditorSetCurrentStage;
 struct EditorSetEditTarget;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
-struct EditorSelectLayerLocation;
+struct EditorSetSelection;
+struct EditorSelectAttributePath;
 struct EditorShutdown;
 struct EditorStartPlayback;
 struct EditorStopPlayback;

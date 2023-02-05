@@ -8,5 +8,5 @@
 // rename to SdfLayerSceneGraphEditor.h ??
 // DrawLayerSceneGraph ??
 
-void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selectedPrim);
+void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selectedPrim);
 
