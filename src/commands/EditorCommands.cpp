@@ -6,12 +6,13 @@
 ///
 /// Work in progress, this is not used yet
 ///
-
-#include "Commands.h"
+#include "CommandsImpl.h"
 #include "Editor.h"
 #include <pxr/usd/usd/primRange.h>
 #include <string>
 #include "WildcardsCompare.h"
+
+#include "SdfUndoRedoRecorder.h"
 ///
 /// Base class for an editor command, contai ns only a pointer of the editor
 ///

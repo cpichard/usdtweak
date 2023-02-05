@@ -2,7 +2,7 @@
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/abstractData.h>
 #include "UndoLayerStateDelegate.h"
-#include "SdfUndoRecorder.h"
+#include "SdfCommandGroupRecorder.h"
 #include "SdfLayerInstructions.h"
 
 ///

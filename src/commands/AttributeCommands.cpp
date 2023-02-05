@@ -1,6 +1,12 @@
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/attribute.h>
+#include <pxr/usd/usd/timeCode.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/usd/sdf/propertySpec.h>
+#include <pxr/base/vt/value.h>
+#include "CommandsImpl.h"
+#include "CommandStack.h"
+#include "SdfCommandGroupRecorder.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -18,7 +24,7 @@ struct AttributeSet : public SdfLayerCommand {
         if (_stage) {
             auto layer = _stage->GetEditTarget().GetLayer();
             if (layer) {
-                SdfUndoRecorder recorder(_undoCommands, layer);
+                SdfCommandGroupRecorder recorder(_undoCommands, layer);
                 const UsdAttribute &attribute = _stage->GetAttributeAtPath(_path);
                 attribute.Set(_value, _timeCode);
                 return true;
@@ -46,7 +52,7 @@ struct AttributeCreateDefaultValue : public SdfLayerCommand {
         if (_stage) {
             auto layer = _stage->GetEditTarget().GetLayer();
             if (layer) {
-                SdfUndoRecorder recorder(_undoCommands, layer);
+                SdfCommandGroupRecorder recorder(_undoCommands, layer);
                 const UsdAttribute &attribute = _stage->GetAttributeAtPath(_path);
                 if (attribute) {
                     VtValue value = attribute.GetTypeName().GetDefaultValue();

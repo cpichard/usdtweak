@@ -2,6 +2,9 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/reference.h>
+#include "CommandsImpl.h"
+#include "SdfUndoRedoRecorder.h"
+#include <pxr/usd/sdf/variantSpec.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -15,7 +18,7 @@ struct LayerRemoveSubLayer : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer)
             return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
         for (int i = 0; i < _layer->GetNumSubLayerPaths(); i++) {
             if (_layer->GetSubLayerPaths()[i] == _subLayerPath) {
                 _layer->RemoveSubLayerPath(i);
@@ -39,7 +42,7 @@ struct LayerMoveSubLayer : public SdfLayerCommand {
     ~LayerMoveSubLayer() override {}
 
     bool DoIt() override {
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
         return _movingUp ? MoveUp() : MoveDown();
     }
 
@@ -87,7 +90,7 @@ struct LayerRenameSubLayer : public SdfLayerCommand {
     ~LayerRenameSubLayer() override {}
 
     bool DoIt() override {
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
         if (!_layer)
             return false;
         std::vector<std::string> layers = _layer->GetSubLayerPaths();
@@ -160,7 +163,7 @@ struct LayerTextEdit : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer)
             return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
         if (_oldText.empty()) {
             _layer->ExportToString(&_oldText);
         }
@@ -193,7 +196,7 @@ struct LayerCreateOversFromPath : public SdfLayerCommand {
         if (path == SdfPath()) {
             return false;
         }
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
 
         for (auto &prefix : path.GetPrefixes()) {
             if (!_layer->HasSpec(prefix)) {

@@ -1,20 +1,19 @@
-///
-/// This file should be included in Commands.cpp to be compiled with it.
-/// IT SHOULD NOT BE COMPILED SEPARATELY
-///
 
-#include "UsdHelpers.h"
+
+#include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/copyUtils.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/namespaceEdit.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/reference.h>
+#include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/sdf/valueTypeName.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/variantSpec.h>
-
-PXR_NAMESPACE_USING_DIRECTIVE
+#include "CommandsImpl.h"
+#include "SdfUndoRedoRecorder.h"
+#include "UsdHelpers.h"
 
 struct PrimNew : public SdfLayerCommand {
 
@@ -31,12 +30,12 @@ struct PrimNew : public SdfLayerCommand {
         if (!_layer && !_primSpec)
             return false;
         if (_layer) {
-            SdfUndoRecorder recorder(_undoCommands, _layer);
+            SdfCommandGroupRecorder recorder(_undoCommands, _layer);
             _newPrimSpec = SdfPrimSpec::New(_layer, _primName, SdfSpecifier::SdfSpecifierDef);
             _layer->InsertRootPrim(_newPrimSpec);
             return true;
         } else {
-            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _primSpec->GetLayer());
             _newPrimSpec = SdfPrimSpec::New(_primSpec, _primName, SdfSpecifier::SdfSpecifierDef);
             return true;
         }
@@ -58,7 +57,7 @@ struct PrimRemove : public SdfLayerCommand {
         if (!_primSpec)
             return false;
         auto layer = _primSpec->GetLayer();
-        SdfUndoRecorder recorder(_undoCommands, layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, layer);
         if (_primSpec->GetNameParent()) {
             // Case where the prim is a variant
             // I am not 100% sure this it the way to do it
@@ -94,7 +93,7 @@ template <typename ItemType> struct PrimCreateListEditorOperation : SdfLayerComm
 
     bool DoIt() override {
         if (_primSpec) {
-            SdfUndoRecorder recorder(_undoCommands, _primSpec->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _primSpec->GetLayer());
             CreateListEditorOperation(GetListEditor(), _operation, _item);
             return true;
         }
@@ -145,7 +144,7 @@ struct PrimReparent : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer)
             return false;
-        SdfUndoRecorder recorder(_undoCommands, _layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
         SdfBatchNamespaceEdit batchEdit;
         for (const auto &source : _source) {
             SdfNamespaceEdit reparentEdit = SdfNamespaceEdit::Reparent(source, _destination, 0);
@@ -182,7 +181,7 @@ struct PrimCreateAttribute : public SdfLayerCommand {
         if (!_owner)
             return false;
         auto layer = _owner->GetLayer();
-        SdfUndoRecorder recorder(_undoCommands, layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, layer);
         if (SdfAttributeSpecHandle attribute = SdfAttributeSpec::New(_owner, _name, _typeName, _variability, _custom)) {
             // Default value for now
             if (_createDefault) {
@@ -204,8 +203,8 @@ struct PrimCreateAttribute : public SdfLayerCommand {
 
 struct PrimCreateRelationship : public SdfLayerCommand {
 
-    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom, SdfListOpType operation,
-                           std::string targetPath)
+    PrimCreateRelationship(SdfPrimSpecHandle owner, std::string name, SdfVariability variability, bool custom,
+                           SdfListOpType operation, std::string targetPath)
         : _owner(std::move(owner)), _name(std::move(name)), _variability(variability), _custom(custom), _operation(operation),
           _targetPath(targetPath) {}
 
@@ -215,7 +214,7 @@ struct PrimCreateRelationship : public SdfLayerCommand {
         if (!_owner)
             return false;
         auto layer = _owner->GetLayer();
-        SdfUndoRecorder recorder(_undoCommands, layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, layer);
         if (SdfRelationshipSpecHandle relationship = SdfRelationshipSpec::New(_owner, _name, _custom, _variability)) {
             CreateListEditorOperation(relationship->GetTargetPathList(), _operation, SdfPath(_targetPath));
             return true;
@@ -258,7 +257,7 @@ struct PrimReorder : public SdfLayerCommand {
         if (position < 0 || position > nameChildren.size())
             return false;
 
-        SdfUndoRecorder recorder(_undoCommands, layer);
+        SdfCommandGroupRecorder recorder(_undoCommands, layer);
         SdfNamespaceEdit reorderEdit = SdfNamespaceEdit::Reorder(_prim->GetPath(), position);
         SdfBatchNamespaceEdit batchEdit;
         batchEdit.Add(reorderEdit);
@@ -278,7 +277,7 @@ struct PrimDuplicate : public SdfLayerCommand {
     ~PrimDuplicate() override {}
     bool DoIt() override {
         if (_prim) {
-            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _prim->GetLayer());
             return (SdfCopySpec(_prim->GetLayer(), _prim->GetPath(), _prim->GetLayer(),
                                 _prim->GetPath().ReplaceName(TfToken(_newName))));
         }
@@ -303,7 +302,7 @@ struct PrimCopy : public CopyPasteCommand {
     ~PrimCopy() override {}
     bool DoIt() override {
         if (_prim && _copyPasteLayer) {
-            SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
+            SdfCommandGroupRecorder recorder(_undoCommands, _copyPasteLayer);
             // Ditch root prim
             const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
@@ -328,7 +327,7 @@ struct PrimPaste : public CopyPasteCommand {
     ~PrimPaste() override {}
     bool DoIt() override {
         if (_prim && _copyPasteLayer) {
-            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _prim->GetLayer());
             const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
             if (defaultPrim) {
@@ -353,7 +352,7 @@ struct PrimCreateAttributeConnection : public SdfLayerCommand {
     ~PrimCreateAttributeConnection() override {}
     bool DoIt() override {
         if (_attr) {
-            SdfUndoRecorder recorder(_undoCommands, _attr->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _attr->GetLayer());
             CreateListEditorOperation(_attr->GetConnectionPathList(), _operation, _connectionEndPoint);
             return true;
         }
@@ -371,7 +370,7 @@ struct PropertyCopy : public CopyPasteCommand {
     ~PropertyCopy() override {}
     bool DoIt() override {
         if (_prop && _copyPasteLayer) {
-            SdfUndoRecorder recorder(_undoCommands, _copyPasteLayer);
+            SdfCommandGroupRecorder recorder(_undoCommands, _copyPasteLayer);
             const SdfPath copiedPropertiesRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto copiedPropertiesPrim = _copyPasteLayer->GetPrimAtPath(copiedPropertiesRoot);
             if (copiedPropertiesPrim) {
@@ -395,7 +394,7 @@ struct PropertyPaste : public CopyPasteCommand {
     ~PropertyPaste() override {}
     bool DoIt() override {
         if (_prim && _copyPasteLayer) {
-            SdfUndoRecorder recorder(_undoCommands, _prim->GetLayer());
+            SdfCommandGroupRecorder recorder(_undoCommands, _prim->GetLayer());
             const SdfPath CopiedPropertiesRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPropertiesRoot);
             if (defaultPrim) {
@@ -408,14 +407,12 @@ struct PropertyPaste : public CopyPasteCommand {
                 }
             }
             return true;
-            
         }
         return false;
     }
     SdfPrimSpecHandle _prim;
 };
 template void ExecuteAfterDraw<PropertyPaste>(SdfPrimSpecHandle prim);
-
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);

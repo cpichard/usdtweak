@@ -1,8 +1,8 @@
 #include <iostream>
-#include "SdfUndoRecorder.h"
+#include "SdfCommandGroupRecorder.h"
 #include "UndoLayerStateDelegate.h"
 
-SdfUndoRecorder::SdfUndoRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer)
+SdfCommandGroupRecorder::SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer)
     : _undoCommands(undoCommands), _layer(layer) {
     if (_layer) {
         _previousDelegate = _layer->GetStateDelegate();
@@ -12,7 +12,7 @@ SdfUndoRecorder::SdfUndoRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr l
     }
 }
 
-SdfUndoRecorder::~SdfUndoRecorder() {
+SdfCommandGroupRecorder::~SdfCommandGroupRecorder() {
     if (_layer && _previousDelegate) {
         _layer->SetStateDelegate(_previousDelegate);
     }

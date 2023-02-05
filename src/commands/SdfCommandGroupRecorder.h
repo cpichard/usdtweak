@@ -7,15 +7,15 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 ///
-/// Scoped undo recorder
+/// Scoped sdf commands recorder
 ///
 
-class SdfUndoRecorder final {
+class SdfCommandGroupRecorder final {
 public:
 
     ///
-    SdfUndoRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer);
-    ~SdfUndoRecorder();
+    SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer);
+    ~SdfCommandGroupRecorder();
 
 private:
     SdfCommandGroup &_undoCommands;
@@ -25,4 +25,4 @@ private:
 
 
 /// We might have a SdfRedoRecorder at some point, so alias to a base type
-using SdfCommandRecorder = SdfUndoRecorder;
+//using SdfCommandRecorder = SdfCommandGroupRecorder;
