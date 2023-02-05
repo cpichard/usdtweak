@@ -16,7 +16,7 @@
 #include "Editor.h"
 #include "Debug.h"
 #include "SdfLayerEditor.h"
-#include "LayerHierarchyEditor.h"
+#include "SdfLayerSceneGraphEditor.h"
 #include "FileBrowser.h"
 #include "UsdPrimEditor.h"
 #include "ModalDialogs.h"

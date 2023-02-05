@@ -26,7 +26,7 @@
 #include "Editor.h"
 #include "FileBrowser.h"
 #include "ImGuiHelpers.h"
-#include "LayerHierarchyEditor.h"
+#include "SdfLayerSceneGraphEditor.h"
 #include "ModalDialogs.h"
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"

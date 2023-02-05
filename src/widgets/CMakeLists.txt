@@ -14,8 +14,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/TableLayouts.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LayerHierarchyEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerSceneGraphEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerSceneGraphEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ModalDialogs.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.cpp
@@ -30,8 +30,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/StageLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/ArrayEditor.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/ArrayEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/VtArrayEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/VtArrayEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TextFilter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TextFilter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Timeline.cpp

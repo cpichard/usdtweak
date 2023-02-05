@@ -7,7 +7,7 @@
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
 
-#include "ArrayEditor.h"
+#include "VtArrayEditor.h"
 #include "SdfAttributeEditor.h"
 #include "SdfLayerEditor.h"
 // TODO: to include TableLayouts we need Constants and ImguiHelpers

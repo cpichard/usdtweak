@@ -1,4 +1,4 @@
-#include "ArrayEditor.h"
+#include "VtArrayEditor.h"
 #include "Commands.h"
 #include "Gui.h"
 #include "VtValueEditor.h"
