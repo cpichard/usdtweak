@@ -416,22 +416,22 @@ void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDial
 
 void Editor::AddLayerPathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentLayer(), primPath);
-    ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
+    //ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
 }
 
 void Editor::SetLayerPathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentLayer(), primPath);
-    ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
+    //ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
 }
 
 void Editor::AddStagePathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentStage(), primPath);
-    ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+    //ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
 }
 
 void Editor::SetStagePathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentStage(), primPath);
-    ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+    //ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
 }
 
 
