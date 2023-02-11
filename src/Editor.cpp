@@ -65,6 +65,30 @@ static const std::vector<std::string> GetUsdValidExtensions() {
     return validExtensions;
 }
 
+// Used only in the editor, so no point adding them to ImGuiHelpers yet
+inline bool BelongToSameDockTab(ImGuiWindow *w1, ImGuiWindow *w2) {
+    if (!w1 || !w2)
+        return false;
+    if (!w1->RootWindow || !w2->RootWindow)
+        return false;
+    if (!w1->RootWindow->DockNode || !w2->RootWindow->DockNode)
+        return false;
+    if (!w1->RootWindow->DockNode->TabBar || !w2->RootWindow->DockNode->TabBar)
+        return false;
+    return w1->RootWindow->DockNode->TabBar == w2->RootWindow->DockNode->TabBar;
+}
+
+inline void BringWindowToTabFront(const char *windowName) {
+    ImGuiContext &g = *GImGui;
+    if (ImGuiWindow *window = ImGui::FindWindowByName(windowName)) {
+        if (g.NavWindow != window && !BelongToSameDockTab(window, g.HoveredWindow)) {
+            ImGuiDockNode *dockNode = window ? window->DockNode : nullptr;
+            if (dockNode && dockNode->TabBar) {
+                dockNode->TabBar->SelectedTabId = dockNode->TabBar->NextSelectedTabId = window->TabId;
+            }
+        }
+    }
+}
 
 
 struct CloseEditorModalDialog : public ModalDialog {
@@ -416,22 +440,22 @@ void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDial
 
 void Editor::AddLayerPathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentLayer(), primPath);
-    //ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
+    BringWindowToTabFront(SdfPrimPropertiesWindowTitle);
 }
 
 void Editor::SetLayerPathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentLayer(), primPath);
-    //ImGui::SetWindowFocus(SdfPrimPropertiesWindowTitle);
+    BringWindowToTabFront(SdfPrimPropertiesWindowTitle);
 }
 
 void Editor::AddStagePathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentStage(), primPath);
-    //ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+    BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
 }
 
 void Editor::SetStagePathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentStage(), primPath);
-    //ImGui::SetWindowFocus(UsdPrimPropertiesWindowTitle);
+    BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
 }
 
 
