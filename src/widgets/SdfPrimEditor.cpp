@@ -350,6 +350,50 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
     }
 }
 
+static void DrawAttributeRowPopupMenu(const SdfAttributeSpecHandle &attribute) {
+    if (ImGui::MenuItem(ICON_FA_TRASH " Remove attribute")) {
+        // attribute->GetLayer()->GetAttributeAtPath(attribute)
+        SdfPrimSpecHandle primSpec = attribute->GetLayer()->GetPrimAtPath(attribute->GetOwner()->GetPath());
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(attribute->GetPath()));
+    }
+    if (!attribute->HasConnectionPaths() && ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
+        DrawModalDialog<CreateSdfAttributeConnectionDialog>(attribute);
+    }
+
+    // Only if there are no default
+    if (!attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_PLUS " Create default value")) {
+        std::function<void()> createDefaultValue = [=]() {
+            if (attribute) {
+                auto defaultValue = attribute->GetTypeName().GetDefaultValue();
+                attribute->SetDefaultValue(defaultValue);
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), createDefaultValue);
+    }
+    if (attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_TRASH " Clear default value")) {
+        std::function<void()> clearDefaultValue = [=]() {
+            if (attribute) {
+                attribute->ClearDefaultValue();
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), clearDefaultValue);
+    }
+
+    if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
+        DrawTimeSampleCreationDialog(attribute->GetLayer(), attribute->GetPath());
+    }
+    
+    // TODO: delete keys if it has keys
+    
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
+        ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
+    }
+
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy property path")) {
+        ImGui::SetClipboardText(attribute->GetPath().GetString().c_str());
+    }
+}
+
 struct AttributeRow {};
 // TODO:
 // ICON_FA_EDIT could be great for edit target
@@ -369,49 +413,9 @@ template <>
 inline void DrawFirstColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
                                           const int &showWhat) {
     ImGui::PushID(rowId);
-
-    ImGui::Button(ICON_FA_CARET_SQUARE_DOWN);
-    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        if (ImGui::MenuItem(ICON_FA_TRASH " Remove attribute")) {
-            // attribute->GetLayer()->GetAttributeAtPath(attribute)
-            SdfPrimSpecHandle primSpec = attribute->GetLayer()->GetPrimAtPath(attribute->GetOwner()->GetPath());
-            ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(attribute->GetPath()));
-        }
-        if (!attribute->HasConnectionPaths() && ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
-            DrawModalDialog<CreateSdfAttributeConnectionDialog>(attribute);
-        }
-
-        // Only if there are no default
-        if (!attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_PLUS " Create default value")) {
-            std::function<void()> createDefaultValue = [=]() {
-                if (attribute) {
-                    auto defaultValue = attribute->GetTypeName().GetDefaultValue();
-                    attribute->SetDefaultValue(defaultValue);
-                }
-            };
-            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), createDefaultValue);
-        }
-        if (attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_TRASH " Clear default value")) {
-            std::function<void()> clearDefaultValue = [=]() {
-                if (attribute) {
-                    attribute->ClearDefaultValue();
-                }
-            };
-            ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), clearDefaultValue);
-        }
-
-        if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
-            DrawTimeSampleCreationDialog(attribute->GetLayer(), attribute->GetPath());
-        }
-
-        if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
-            ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
-        }
-
-        if (ImGui::MenuItem(ICON_FA_COPY " Copy property path")) {
-            ImGui::SetClipboardText(attribute->GetPath().GetString().c_str());
-        }
-        ImGui::EndPopup();
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        SdfPrimSpecHandle primSpec = attribute->GetLayer()->GetPrimAtPath(attribute->GetOwner()->GetPath());
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(attribute->GetPath()));
     }
     ImGui::PopID();
 };
@@ -420,20 +424,25 @@ template <>
 inline void DrawSecondColumn<AttributeRow>(const int rowId, const SdfAttributeSpecHandle &attribute, const Selection &selection,
                                            const int &showWhat) {
     // Still not sure we want to show the type at all or in the same column as the name
-    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasDefaultValue() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
-    ImGui::Text(ICON_FA_POO);
+    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasDefaultValue() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored));
+    ImGui::Text(ICON_FA_FLASK);
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    // TODO: it might not be efficient to get the timesamplemap here, is there another way to know if the attribute has keys ?
-    ImGui::PushStyleColor(ImGuiCol_Text, !attribute->GetTimeSampleMap().empty() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
+    const bool hasTimeSamples = attribute->GetLayer()->GetNumTimeSamplesForPath(attribute->GetPath()) == 0;
+    ImGui::PushStyleColor(ImGuiCol_Text, hasTimeSamples ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored));
     ImGui::Text(ICON_FA_KEY);
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasConnectionPaths() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeSelectedBg));
+    ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasConnectionPaths() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored));
     ImGui::Text(ICON_FA_LINK);
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::Text("%s (%s)", attribute->GetName().c_str(), attribute->GetTypeName().GetAsToken().GetText());
+    const std::string attributeText(attribute->GetName() + " (" + attribute->GetTypeName().GetAsToken().GetString() + ")");
+    ImGui::Text("%s", attributeText.c_str());
+    if (ImGui::BeginPopupContextItem(attributeText.c_str())) {
+        DrawAttributeRowPopupMenu(attribute);
+        ImGui::EndPopup();
+    }
 };
 
 template <>
@@ -520,8 +529,8 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
             SetupThreeColumnsTable(false, "", "Relations", "");
             auto relations = primSpec->GetRelationships();
             for (const SdfRelationshipSpecHandle &relation : relations) {
-                ImGui::PushID(rowId++);
-                DrawThreeColumnsRow<RelationRow>(rowId, primSpec, relation);
+                ImGui::PushID(relation->GetPath().GetHash());
+                DrawThreeColumnsRow<RelationRow>(rowId++, primSpec, relation);
                 ImGui::PopID();
             }
             ImGui::EndTable();
