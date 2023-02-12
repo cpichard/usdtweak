@@ -99,6 +99,7 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
         // 2. edit inherited on the attribute -
         // 3. edit visible on the attribute
         // 4. edit invisible on the attribute
+        ImGui::PushID(prim.GetPath().GetHash()); // TODO: should that go up in the call graph ?
         VtValue visibleValue;
         auto attr = imageable.GetVisibilityAttr();
         if (attr.HasAuthoredValue()) {
@@ -132,6 +133,7 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
                 ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->inherited), tc);
             }
         }
+        ImGui::PopID();
     }
 }
 
@@ -160,6 +162,8 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
             unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
             // TreeSelectionBehavior(selectedPaths, &prim);
             if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                // TODO selection, should go in commands, ultimately the selection is passed
+                // as const
                 if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
                     if (selectedPaths.IsSelected(prim.GetStage(), prim.GetPath())) {
                         selectedPaths.RemoveSelected(prim.GetStage(), prim.GetPath());
