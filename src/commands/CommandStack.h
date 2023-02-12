@@ -15,7 +15,7 @@ struct CommandStack {
     
     //
     friend struct UsdFunctionCall;
-    friend struct SdfUndoRedoRecorder;
+    friend class SdfUndoRedoRecorder;
     
     static CommandStack &GetInstance();
 
