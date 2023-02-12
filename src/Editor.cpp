@@ -35,6 +35,8 @@
 #include "ConnectionEditor.h"
 #include "Playblast.h"
 
+#include "Stamp.h"
+
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
 // that explains how to debug the issue:
 // Reloading model.stage doesn't work but reloading stage separately does
@@ -90,6 +92,32 @@ inline void BringWindowToTabFront(const char *windowName) {
     }
 }
 
+struct AboutModalDialog : public ModalDialog {
+    AboutModalDialog(Editor& editor) : editor(editor) {}
+    void Draw() override {
+        ImGui::Text("usdtweak pre-alpha version " BUILD_DATE);
+        ImGui::Text("  revision " GIT_HASH);
+        ImGui::Text("");
+        ImGui::Text("This is a pre-alpha version for testing purpose.");
+        ImGui::Text("Please send your feedbacks as github issues:");
+        ImGui::Text("https://github.com/cpichard/usdtweak/issues");
+        ImGui::Text("or by mail: cpichard.github@gmail.com");
+        ImGui::Text("");
+        ImGui::Text("usdtweak - Copyright (c) 2016-2023 Cyril Pichard - Apache License 2.0");
+        ImGui::Text("");
+        ImGui::Text("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
+        ImGui::Text("   Copyright (c) 2016-2023 Pixar - Modified Apache 2.0 License");
+        ImGui::Text("");
+        ImGui::Text("IMGUI - https://github.com/ocornut/imgui");
+        ImGui::Text("   Copyright (c) 2014-2023 Omar Cornut - The MIT License (MIT)");
+        ImGui::Text("");
+        if (ImGui::Button("  Close  ")) {
+            CloseModal();
+        }
+    }
+    const char *DialogId() const override { return "About Usdtweak"; }
+    Editor &editor;
+};
 
 struct CloseEditorModalDialog : public ModalDialog {
     CloseEditorModalDialog(Editor &editor, std::string confirmReasons) : editor(editor), confirmReasons(confirmReasons) {}
@@ -540,6 +568,9 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("About")) {
+            DrawModalDialog<AboutModalDialog>(*this);
         }
 
         ImGui::EndMainMenuBar();

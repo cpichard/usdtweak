@@ -57,6 +57,17 @@ if (DEFINED USE_PYTHON3)
 endif()
 
 
+# Get the stamp informations, git hash, time stamp, stuff like that
+add_custom_command(
+  TARGET usdtweak
+  PRE_BUILD
+  COMMAND  ${CMAKE_COMMAND} 
+      -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}" 
+      -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src" 
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp.cmake"
+)
+
+
 # Installer on windows
 if(WIN32)
     include("cmake/windows_installer.cmake")
