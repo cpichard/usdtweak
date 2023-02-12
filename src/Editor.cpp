@@ -571,6 +571,7 @@ void Editor::DrawMainMenuBar() {
         }
         if (ImGui::BeginMenu("About")) {
             DrawModalDialog<AboutModalDialog>(*this);
+            ImGui::EndMenu();
         }
 
         ImGui::EndMainMenuBar();
