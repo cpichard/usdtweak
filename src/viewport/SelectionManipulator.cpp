@@ -4,6 +4,7 @@
 #include "Viewport.h"
 #include "SelectionManipulator.h"
 #include "Gui.h"
+#include "Commands.h"
 
 bool SelectionManipulator::IsPickablePath(const UsdStage &stage, const SdfPath &path) {
     auto prim = stage.GetPrimAtPath(path);
@@ -47,9 +48,10 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
         }
 
         if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
+            // TODO: a command
             selection.AddSelected(viewport.GetCurrentStage(), outHitPrimPath);
         } else {
-            selection.SetSelected(viewport.GetCurrentStage(), outHitPrimPath);
+            ExecuteAfterDraw<EditorSetSelection>(viewport.GetCurrentStage(), outHitPrimPath);
         }
     } else if (outHitInstancerPath.IsEmpty()) {
         selection.Clear(viewport.GetCurrentStage());
