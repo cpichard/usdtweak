@@ -428,7 +428,7 @@ inline void DrawSecondColumn<AttributeRow>(const int rowId, const SdfAttributeSp
     ImGui::Text(ICON_FA_FLASK);
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    const bool hasTimeSamples = attribute->GetLayer()->GetNumTimeSamplesForPath(attribute->GetPath()) == 0;
+    const bool hasTimeSamples = attribute->GetLayer()->GetNumTimeSamplesForPath(attribute->GetPath()) != 0;
     ImGui::PushStyleColor(ImGuiCol_Text, hasTimeSamples ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored));
     ImGui::Text(ICON_FA_KEY);
     ImGui::PopStyleColor();
