@@ -640,8 +640,9 @@ void Editor::Draw() {
     }
 
     if (_settings._showOutliner) {
+        const ImGuiWindowFlags windowFlagsWithMenu = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         TRACE_SCOPE(UsdStageHierarchyWindowTitle);
-        ImGui::Begin(UsdStageHierarchyWindowTitle, &_settings._showOutliner);
+        ImGui::Begin(UsdStageHierarchyWindowTitle, &_settings._showOutliner, windowFlagsWithMenu);
         DrawStageOutliner(GetCurrentStage(), _selection);
         ImGui::End();
     }

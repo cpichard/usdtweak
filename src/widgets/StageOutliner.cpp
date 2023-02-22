@@ -18,6 +18,55 @@
 #define StageOutlinerSeed 2342934
 #define IdOf ToImGuiID<StageOutlinerSeed, size_t>
 
+class StageOutlinerDisplayOptions {
+  public:
+    StageOutlinerDisplayOptions() { ComputePrimFlagsPredicate(); }
+
+    Usd_PrimFlagsPredicate GetPrimFlagsPredicate() const { return _displayPredicate; }
+
+    void ToggleShowPrototypes() { _showPrototypes = !_showPrototypes; }
+
+    void ToggleShowInactive() {
+        _showInactive = !_showInactive;
+        ComputePrimFlagsPredicate();
+    }
+    void ToggleShowAbstract() {
+        _showAbstract = !_showAbstract;
+        ComputePrimFlagsPredicate();
+    }
+    void ToggleShowUnloaded() {
+        _showUnloaded = !_showUnloaded;
+        ComputePrimFlagsPredicate();
+    }
+    void ToggleShowUndefined() {
+        _showUndefined = !_showUndefined;
+        ComputePrimFlagsPredicate();
+    }
+
+    bool GetShowPrototypes() const { return _showPrototypes; }
+    bool GetShowInactive() const { return _showInactive; }
+    bool GetShowUnloaded() const { return _showUnloaded; }
+    bool GetShowAbstract() const { return _showAbstract; }
+    bool GetShowUndefined() const { return _showUndefined; }
+
+  private:
+    // Default is:
+    // UsdPrimIsActive && UsdPrimIsDefined && UsdPrimIsLoaded && !UsdPrimIsAbstract
+    void ComputePrimFlagsPredicate() {
+        auto flags =
+            (!_showInactive ? UsdPrimIsActive : Usd_PrimFlags()) && (!_showUndefined ? UsdPrimIsDefined : Usd_PrimFlags()) &&
+            (!_showUnloaded ? UsdPrimIsLoaded : Usd_PrimFlags()) && (!_showAbstract ? !UsdPrimIsAbstract : Usd_PrimFlags());
+        _displayPredicate = UsdTraverseInstanceProxies(flags);
+    }
+
+    Usd_PrimFlagsPredicate _displayPredicate;
+    bool _showInactive = false;
+    bool _showUndefined = false;
+    bool _showUnloaded = false;
+    bool _showAbstract = false;
+    bool _showPrototypes = false;
+};
+
 static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
     if (!tree)
         return;
@@ -137,13 +186,13 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
     }
 }
 
-static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths) {
+static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, StageOutlinerDisplayOptions &displayOptions) {
     ImGuiTreeNodeFlags flags =
         ImGuiTreeNodeFlags_OpenOnArrow |
         ImGuiTreeNodeFlags_AllowItemOverlap; // for testing worse case scenario add | ImGuiTreeNodeFlags_DefaultOpen;
 
     // Another way ???
-    const auto &children = prim.GetFilteredChildren(UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+    const auto &children = prim.GetFilteredChildren(displayOptions.GetPrimFlagsPredicate());
     if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
@@ -259,7 +308,7 @@ static void TraverseRange(UsdPrimRange &range, std::vector<SdfPath> &paths) {
 }
 
 // Traverse the stage skipping the paths closed by the tree ui.
-static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &paths) {
+static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &paths, StageOutlinerDisplayOptions &displayOptions) {
     if (!stage)
         return;
     ImGuiContext &g = *GImGui;
@@ -271,12 +320,14 @@ static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &path
 
     if (rootPathIsOpen) {
         // Stage
-        auto range = UsdPrimRange::Stage(stage, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+        auto range = UsdPrimRange::Stage(stage, displayOptions.GetPrimFlagsPredicate());
         TraverseRange(range, paths);
         // Prototypes
-        for(const auto &proto: stage->GetPrototypes()) {
-            auto range = UsdPrimRange(proto, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
-            TraverseRange(range, paths);
+        if (displayOptions.GetShowPrototypes()) {
+            for(const auto &proto: stage->GetPrototypes()) {
+                auto range = UsdPrimRange(proto, displayOptions.GetPrimFlagsPredicate());
+                TraverseRange(range, paths);
+            }
         }
     }
 }
@@ -296,10 +347,39 @@ static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::v
     }
 }
 
+void DrawStageOutlinerMenuBar(StageOutlinerDisplayOptions &displayOptions) {
+
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Show")) {
+            if (ImGui::MenuItem("Inactive", nullptr, displayOptions.GetShowInactive())) {
+                displayOptions.ToggleShowInactive();
+            }
+            if (ImGui::MenuItem("Undefined", nullptr, displayOptions.GetShowUndefined())) {
+                displayOptions.ToggleShowUndefined();
+            }
+            if (ImGui::MenuItem("Unloaded", nullptr, displayOptions.GetShowUnloaded())) {
+                displayOptions.ToggleShowUnloaded();
+            }
+            if (ImGui::MenuItem("Abstract", nullptr, displayOptions.GetShowAbstract())) {
+                displayOptions.ToggleShowAbstract();
+            }
+            if (ImGui::MenuItem("Prototypes", nullptr, displayOptions.GetShowPrototypes())) {
+                displayOptions.ToggleShowPrototypes();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+}
+
 /// Draw the hierarchy of the stage
 void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     if (!stage)
         return;
+    
+    static StageOutlinerDisplayOptions displayOptions;
+    DrawStageOutlinerMenuBar(displayOptions);
+    
     //ImGui::PushID("StageOutliner");
     constexpr unsigned int textBufferSize = 512;
     static char buf[textBufferSize];
@@ -328,7 +408,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         // Find all the opened paths
         std::vector<SdfPath> paths;
         paths.reserve(1024);
-        TraverseOpenedPaths(stage, paths); // This must be inside the table scope to get the correct treenode hash table
+        TraverseOpenedPaths(stage, paths, displayOptions); // This must be inside the table scope to get the correct treenode hash table
 
         // Draw the tree root node, the layer
         DrawStageTreeRow(stage, selectedPaths);
@@ -341,7 +421,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
                 const auto &prim = stage->GetPrimAtPath(path);
-                DrawPrimTreeRow(prim, selectedPaths);
+                DrawPrimTreeRow(prim, selectedPaths, displayOptions);
                 ImGui::PopID();
             }
         }
