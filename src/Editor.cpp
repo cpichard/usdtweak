@@ -111,6 +111,10 @@ struct AboutModalDialog : public ModalDialog {
         ImGui::Text("IMGUI - https://github.com/ocornut/imgui");
         ImGui::Text("   Copyright (c) 2014-2023 Omar Cornut - The MIT License (MIT)");
         ImGui::Text("");
+        ImGui::Text("GLFW - https://www.glfw.org/");
+        ImGui::Text("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
+        ImGui::Text("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
+        ImGui::Text("");
         if (ImGui::Button("  Close  ")) {
             CloseModal();
         }
@@ -569,8 +573,10 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("About")) {
-            DrawModalDialog<AboutModalDialog>(*this);
+        if (ImGui::BeginMenu("Help")) {
+            if (ImGui::MenuItem("About")) {
+                DrawModalDialog<AboutModalDialog>(*this);
+            }
             ImGui::EndMenu();
         }
 
