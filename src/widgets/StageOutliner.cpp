@@ -232,9 +232,34 @@ static void OpenSelectedPaths(const UsdStageRefPtr &stage, Selection &selectedPa
     }
 }
 
+static void TraverseRange(UsdPrimRange &range, std::vector<SdfPath> &paths) {
+    static std::set<SdfPath> retainedPath; // to fix a bug with instanced prim which recreates the path at every call and give a different hash
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+    ImGuiStorage *storage = window->DC.StateStorage;
+    for (auto iter = range.begin(); iter != range.end(); ++iter) {
+        const auto &path = iter->GetPath();
+        const ImGuiID pathHash = IdOf(GetHash(path));
+        const bool isOpen = storage->GetInt(pathHash, 0) != 0;
+        if (!isOpen) {
+            iter.PruneChildren();
+        }
+        // This bit of code is to avoid a bug. It appears that the SdfPath of instance proxies are not kept and the underlying memory
+        // is deleted and recreated between each frame, invalidating the hash value. So for the same path we have different hash every frame :s not cool.
+        // This problems appears on versions > 21.11
+        // a look at the changelog shows that they were lots of changes on the SdfPath side:
+        // https://github.com/PixarAnimationStudios/USD/commit/46c26f63d2a6e9c6c5dbfbcefa0235c3265457bb
+        //
+        // In the end we workaround this issue by keeping the instance proxy paths alive:
+        if (iter->IsInstanceProxy()) {
+            retainedPath.insert(path);
+        }
+        paths.push_back(path);
+    }
+}
+
 // Traverse the stage skipping the paths closed by the tree ui.
 static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &paths) {
-    static std::set<SdfPath> retainedPath; // to fix a bug with instanced prim which recreates the path at every call and give a different hash
     if (!stage)
         return;
     ImGuiContext &g = *GImGui;
@@ -245,25 +270,13 @@ static void TraverseOpenedPaths(UsdStageRefPtr stage, std::vector<SdfPath> &path
     const bool rootPathIsOpen = storage->GetInt(IdOf(GetHash(rootPath)), 0) != 0;
 
     if (rootPathIsOpen) {
+        // Stage
         auto range = UsdPrimRange::Stage(stage, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
-        for (auto iter = range.begin(); iter != range.end(); ++iter) {
-            const auto path = iter->GetPath();
-            const ImGuiID pathHash = IdOf(GetHash(path));
-            const bool isOpen = storage->GetInt(pathHash, 0) != 0;
-            if (!isOpen) {
-                iter.PruneChildren();
-            }
-            // This bit of code is to avoid a bug. It appears that the SdfPath of instance proxies are not kept and the underlying memory 
-            // is deleted and recreated between each frame, invalidating the hash value. So for the same path we have different hash every frame :s not cool.
-            // This problems appears on versions > 21.11
-            // a look at the changelog shows that they were lots of changes on the SdfPath side:
-            // https://github.com/PixarAnimationStudios/USD/commit/46c26f63d2a6e9c6c5dbfbcefa0235c3265457bb
-            // 
-            // In the end we workaround this issue by keeping the instance proxy paths alive:
-            if (iter->IsInstanceProxy()) {
-                retainedPath.insert(path);
-            }
-            paths.push_back(path);
+        TraverseRange(range, paths);
+        // Prototypes
+        for(const auto &proto: stage->GetPrototypes()) {
+            auto range = UsdPrimRange(proto, UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate));
+            TraverseRange(range, paths);
         }
     }
 }
