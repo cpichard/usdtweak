@@ -68,7 +68,7 @@ inline void CreateListEditorOperation(SdfListEditorProxy<PolicyT> &&listEditor, 
     }
 }
 
-template <typename ListEditorT, typename OpOrIntT> inline auto GetSdfListOp(ListEditorT &listEditor, OpOrIntT op_) {
+template <typename ListEditorT, typename OpOrIntT> inline auto GetSdfListOpItems(ListEditorT &listEditor, OpOrIntT op_) {
     const SdfListOpType op = static_cast<SdfListOpType>(op_);
     if (op == SdfListOpTypeOrdered) {
         return listEditor.GetOrderedItems();
@@ -82,5 +82,23 @@ template <typename ListEditorT, typename OpOrIntT> inline auto GetSdfListOp(List
         return listEditor.GetDeletedItems();
     }
     return listEditor.GetExplicitItems();
+};
+
+
+template <typename ListEditorT, typename OpOrIntT, typename ItemsT> inline void SetSdfListOpItems(ListEditorT &listEditor, OpOrIntT op_, const ItemsT &items) {
+    const SdfListOpType op = static_cast<SdfListOpType>(op_);
+    if (op == SdfListOpTypeOrdered) {
+        listEditor.SetOrderedItems(items);
+    } else if (op == SdfListOpTypeAppended) {
+        listEditor.SetAppendedItems(items);
+    } else if (op == SdfListOpTypeAdded) {
+        listEditor.SetAddedItems(items);
+    } else if (op == SdfListOpTypePrepended) {
+        listEditor.SetPrependedItems(items);
+    } else if (op == SdfListOpTypeDeleted) {
+        listEditor.SetDeletedItems(items);
+    } else {
+        listEditor.SetExplicitItems(items);
+    }
 };
 

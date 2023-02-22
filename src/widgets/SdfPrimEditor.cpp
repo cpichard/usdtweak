@@ -14,6 +14,7 @@
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/tokens.h>
 
 #include "Commands.h"
 #include "CompositionEditor.h"
@@ -295,7 +296,7 @@ inline SdfPathEditorProxy GetPathEditorProxy(SdfSpecHandle spec, TfToken field) 
 #ifdef WIN32
     // Unfortunately on windows the SdfGetPathEditorProxy is not exposed
     // So the following code is a workaround
-    //Only two calls for the moment, with the arguments:
+    // Only two calls for the moment, with the arguments:
     //attribute, SdfFieldKeys->ConnectionPaths
     //relation, SdfFieldKeys->TargetPaths
     if (spec->GetSpecType() == SdfSpecTypeAttribute && field == SdfFieldKeys->ConnectionPaths) {
@@ -311,23 +312,54 @@ return SdfGetPathEditorProxy(spec, field);
 #endif
 }
 
-
-// TODO: move this code and generalize it for any Path edit list
-// SdfFieldKeys->ConnectionPaths
-
-
-// This editor is specialized for paths
-static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
-    SdfPathEditorProxy proxy = GetPathEditorProxy(spec, field);
+// This editor is specialized for list editor of tokens in the metadata.
+// TODO: The code is really similar to DrawSdfPathListOneLinerEditor and ideally they should be unified.
+static void DrawTfTokenListOneLinerEditor(SdfSpecHandle spec, TfToken field) {
+    SdfTokenListOp proxy = spec->GetInfo(field).Get<SdfTokenListOp>();
     SdfListOpType currentList = GetEditListChoice(proxy);
     
     // Edit list chooser
     DrawEditListSmallButtonSelector(currentList, proxy);
 
     ImGui::SameLine();
+    thread_local std::string itemsString; // avoid reallocating for every element at every frame
+    itemsString.clear();
+    for (const TfToken &item : GetSdfListOpItems(proxy, currentList)) {
+        itemsString.append(item.GetString());
+        itemsString.append(" "); // we don't care about the last space, it also helps the user adding a new item
+    }
+
+    ImGui::InputText("##EditListOneLineEditor", &itemsString);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        std::vector<std::string> newList = TfStringSplit(itemsString, " ");
+        // TODO: should the following code go in a command ??
+        std::function<void()> updateList = [=]() {
+            if (spec) {
+                SdfTokenListOp listOp = spec->GetInfo(field).Get<SdfTokenListOp>();
+                SdfTokenListOp::ItemVector editList;
+                for (const auto &path : newList) {
+                    editList.push_back(TfToken(path));
+                }
+                SetSdfListOpItems(listOp, currentList, editList);
+                spec->SetInfo(field, VtValue(listOp));
+            }
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(spec->GetLayer(), updateList);
+    }
+}
+
+// This function is specialized for editing list of paths in a line editor
+static void DrawSdfPathListOneLinerEditor(SdfSpecHandle spec, TfToken field) {
+    SdfPathEditorProxy proxy = GetPathEditorProxy(spec, field);
+    SdfListOpType currentList = GetEditListChoice(proxy);
+    
+    // Edit listop chooser
+    DrawEditListSmallButtonSelector(currentList, proxy);
+
+    ImGui::SameLine();
     thread_local std::string itemsString; // avoid reallocating
     itemsString.clear();
-    for (const SdfPath &item : GetSdfListOp(proxy, currentList)) {
+    for (const SdfPath &item : GetSdfListOpItems(proxy, currentList)) {
         itemsString.append(item.GetString());
         itemsString.append(" "); // we don't care about the last space, it also helps the user adding a new item
     }
@@ -339,7 +371,7 @@ static void DrawEditListOneLineEditor(SdfSpecHandle spec, TfToken field) {
         std::function<void()> updateList = [=]() {
             if (spec) {
                 auto editorProxy = GetPathEditorProxy(spec, field);
-                auto editList = GetSdfListOp(editorProxy, currentList);
+                auto editList = GetSdfListOpItems(editorProxy, currentList);
                 editList.clear();
                 for (const auto &path : newList) {
                     editList.push_back(SdfPath(path));
@@ -468,7 +500,7 @@ inline void DrawThirdColumn<AttributeRow>(const int rowId, const SdfAttributeSpe
     if (attribute->HasConnectionPaths()) {
         ScopedStyleColor connectionColor(ImGuiCol_Text, ImVec4(ColorAttributeConnection));
         SdfConnectionsProxy connections = attribute->GetConnectionPathList();
-        DrawEditListOneLineEditor(attribute, SdfFieldKeys->ConnectionPaths);
+        DrawSdfPathListOneLinerEditor(attribute, SdfFieldKeys->ConnectionPaths);
     }
     ImGui::PopID();
 };
@@ -513,9 +545,8 @@ template <>
 inline void DrawThirdColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                          const SdfRelationshipSpecHandle &relation) {
     ImGui::PushItemWidth(-FLT_MIN);
-    DrawEditListOneLineEditor(relation, SdfFieldKeys->TargetPaths);
+    DrawSdfPathListOneLinerEditor(relation, SdfFieldKeys->TargetPaths);
 };
-
 
 void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
@@ -537,6 +568,23 @@ void DrawPrimSpecRelations(const SdfPrimSpecHandle &primSpec) {
         }
     }
 }
+
+struct ApiSchemaRow {};
+template <> inline bool HasEdits<ApiSchemaRow>(const SdfPrimSpecHandle &prim) { return prim->HasInfo(UsdTokens->apiSchemas); }
+template <> inline void DrawFirstColumn<ApiSchemaRow>(const int rowId, const SdfPrimSpecHandle &primSpec) {
+    ImGui::PushID(rowId);
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        ExecuteAfterDraw(&SdfPrimSpec::ClearInfo, primSpec, UsdTokens->apiSchemas);
+    }
+    ImGui::PopID();
+};
+template <> inline void DrawSecondColumn<ApiSchemaRow>(const int rowId, const SdfPrimSpecHandle &primSpec) {
+    ImGui::Text("API Schemas");
+};
+template <> inline void DrawThirdColumn<ApiSchemaRow>(const int rowId, const SdfPrimSpecHandle &primSpec) {
+    ImGui::PushItemWidth(-FLT_MIN);
+    DrawTfTokenListOneLinerEditor(primSpec, UsdTokens->apiSchemas);
+};
 
 #define GENERATE_FIELD(ClassName_, FieldName_, DrawFunction_)                                                                    \
     struct ClassName_ {                                                                                                          \
@@ -579,6 +627,7 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
                 DrawThreeColumnsRow<PrimActive>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimInstanceable>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimHidden>(rowId++, primSpec);
+                DrawThreeColumnsRow<ApiSchemaRow>(rowId++, primSpec);
                 DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->CustomData);
                 DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->AssetInfo);
                 EndThreeColumnsTable();
@@ -650,11 +699,13 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     ImGui::EndChild();
     ImGui::Separator();
     ImGui::BeginChild("##LayerBody");
+    ImGui::PushID(primSpec->GetPath().GetHash());
     DrawPrimSpecMetadata(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec, selection);
     DrawPrimSpecRelations(primSpec);
+    ImGui::PopID();
     ImGui::EndChild();
     if (ImGui::IsItemHovered()) {
         const SdfPath &selectedProperty = selection.GetAnchorPropertyPath(primSpec->GetLayer());

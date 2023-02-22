@@ -409,7 +409,7 @@ void DrawCompositionArcRow(int rowId, const SdfPrimSpecHandle &primSpec, const C
     if (updatedArc != CompositionArcT()) {
         std::function<void()> updateReferenceFun = [=]() {
             auto arcList = GetCompositionArcList(primSpec, arc);
-            auto editList = GetSdfListOp(arcList, op);
+            auto editList = GetSdfListOpItems(arcList, op);
             editList[rowId] = updatedArc;
         };
         ExecuteAfterDraw<UsdFunctionCall>(primSpec->GetLayer(), updateReferenceFun);
@@ -418,7 +418,7 @@ void DrawCompositionArcRow(int rowId, const SdfPrimSpecHandle &primSpec, const C
     if (ImGui::Button(ICON_FA_ARROW_UP)) {
         std::function<void()> moveUp = [=]() {
             auto arcList = GetCompositionArcList(primSpec, arc);
-            auto editList = GetSdfListOp(arcList, op);
+            auto editList = GetSdfListOpItems(arcList, op);
             if (rowId >= 1) { // std::swap doesn't compile here
                 auto it = editList[rowId];
                 ItemType tmp = it;
@@ -432,7 +432,7 @@ void DrawCompositionArcRow(int rowId, const SdfPrimSpecHandle &primSpec, const C
     if (ImGui::Button(ICON_FA_ARROW_DOWN)) {
         std::function<void()> moveDown = [=]() {
             auto arcList = GetCompositionArcList(primSpec, arc);
-            auto editList = GetSdfListOp(arcList, op);
+            auto editList = GetSdfListOpItems(arcList, op);
             if (rowId < editList.size() - 1) { // std::swap doesn't compile here
                 auto it = editList[rowId];
                 ItemType tmp = it;
@@ -479,7 +479,7 @@ template <typename CompositionArcItemT> void DrawCompositionEditor(const SdfPrim
     DrawEditListComboSelector(opList, arcList);
 
     if (BeginTwoColumnsTable("##AssetTypeTable")) {
-        auto editList = GetSdfListOp(arcList, opList);
+        auto editList = GetSdfListOpItems(arcList, opList);
         for (int ind = 0; ind < editList.size(); ind++) {
             const ItemType &item = editList[ind];
             ImGui::PushID(static_cast<int>(TfHash{}(item)));

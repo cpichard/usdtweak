@@ -18,7 +18,7 @@ template <typename ListEditorT> inline SdfListOpType GetEditListChoice(const Lis
     if (opList == -1) { // select the non empty list or explicit
         opList = 0;     // explicit
         for (int i = 0; i < GetListEditorOperationSize(); i++) {
-            if (!GetSdfListOp(proxy, i).empty()) {
+            if (!GetSdfListOpItems(proxy, i).empty()) {
                 opList = i;
                 break;
             }
@@ -30,7 +30,7 @@ template <typename ListEditorT> inline SdfListOpType GetEditListChoice(const Lis
 
 // Returns a the color style for the list name, depending on if they are empty or not
 template <typename EditListT> inline ScopedStyleColor GetItemColor(SdfListOpType selectedList, const EditListT &arcList) {
-    return ScopedStyleColor(ImGuiCol_Text, GetSdfListOp(arcList, selectedList).empty() ? ImVec4(ColorAttributeUnauthored)
+    return ScopedStyleColor(ImGuiCol_Text, GetSdfListOpItems(arcList, selectedList).empty() ? ImVec4(ColorAttributeUnauthored)
                                                                                        : ImVec4(ColorAttributeAuthored));
 }
 
