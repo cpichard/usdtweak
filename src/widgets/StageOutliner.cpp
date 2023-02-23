@@ -135,51 +135,50 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
     return ImVec4(ColorPrimDefault);
 }
 
+static inline const char *GetVisibilityIcon(const TfToken &visibility) {
+    if (visibility == UsdGeomTokens->inherited) {
+        return ICON_FA_HAND_POINT_UP;
+    } else if (visibility == UsdGeomTokens->invisible) {
+        return ICON_FA_EYE_SLASH;
+    } else if (visibility == UsdGeomTokens->visible) {
+        return ICON_FA_EYE;
+    }
+    return ICON_FA_EYE;
+}
+
 static void DrawVisibilityButton(const UsdPrim &prim) {
-#if PXR_VERSION >= 2205
-    constexpr const char *inheritedIcon = ICON_FA_QUESTION_CIRCLE;
-#else
-    constexpr const char *inheritedIcon = ICON_FA_EYE;
-#endif
+    // TODO: this should work with animation
     UsdGeomImageable imageable(prim);
     if (imageable) {
-        // 4 possible states:
-        // 1. no edit on the attribute -> default inherited
-        // 2. edit inherited on the attribute -
-        // 3. edit visible on the attribute
-        // 4. edit invisible on the attribute
-        ImGui::PushID(prim.GetPath().GetHash()); // TODO: should that go up in the call graph ?
-        VtValue visibleValue;
+        ImGui::PushID(prim.GetPath().GetHash());
+        // Get visibility value
         auto attr = imageable.GetVisibilityAttr();
-        if (attr.HasAuthoredValue()) {
-            attr.Get(&visibleValue);
-
-            const TfToken &visibilityToken = visibleValue.Get<TfToken>();
-            const char *icon = visibilityToken == UsdGeomTokens->invisible
-                                   ? ICON_FA_EYE_SLASH
-#if PXR_VERSION >= 2205
-                                   : (visibilityToken == UsdGeomTokens->visible ? ICON_FA_EYE : inheritedIcon);
-#else
-                                   : inheritedIcon;
-#endif
-            ScopedStyleColor buttonColor(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0));
-            if (ImGui::SmallButton(icon)) {
-                UsdTimeCode tc = UsdTimeCode::Default();
-                if (visibilityToken == UsdGeomTokens->inherited) {
-#if PXR_VERSION >= 2205
-                    ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->visible), tc);
-                } else if (visibilityToken == UsdGeomTokens->visible) {
-#endif
-                    ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->invisible), tc);
-                } else if (visibilityToken == UsdGeomTokens->invisible) {
-                    ExecuteAfterDraw(&UsdPrim::RemoveProperty, prim, attr.GetName());
+        VtValue visibleValue;
+        attr.Get(&visibleValue);
+        TfToken visibilityToken = visibleValue.Get<TfToken>();
+        const char *visibilityIcon = GetVisibilityIcon(visibilityToken);
+        {
+            ScopedStyleColor buttonColor(
+                ImGuiCol_Text, attr.HasAuthoredValue() ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(ColorPrimInactive));
+            ImGui::SmallButton(visibilityIcon);
+            // Menu to select the new visibility
+            {
+                ScopedStyleColor menuTextColor(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0));
+                if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+                    if (attr.HasAuthoredValue() && ImGui::MenuItem("clear visibiliy")) {
+                        ExecuteAfterDraw(&UsdPrim::RemoveProperty, prim, attr.GetName());
+                    }
+                    VtValue allowedTokens;
+                    attr.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
+                    if (allowedTokens.IsHolding<VtArray<TfToken>>()) {
+                        for (const auto &token : allowedTokens.Get<VtArray<TfToken>>()) {
+                            if (ImGui::MenuItem(token.GetText())) {
+                                ExecuteAfterDraw<AttributeSet>(attr, VtValue(token), UsdTimeCode::Default());
+                            }
+                        }
+                    }
+                    ImGui::EndPopup();
                 }
-            }
-        } else {
-            ScopedStyleColor buttonColor(ImGuiCol_Text, ImVec4(ColorPrimInactive));
-            if (ImGui::SmallButton(inheritedIcon)) {
-                UsdTimeCode tc = UsdTimeCode::Default();
-                ExecuteAfterDraw<AttributeSet>(attr, VtValue(UsdGeomTokens->inherited), tc);
             }
         }
         ImGui::PopID();
