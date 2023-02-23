@@ -185,6 +185,21 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
     }
 }
 
+// This is pretty similar to DrawBackgroundSelection in the SdfLayerSceneGraphEditor
+static void DrawBackgroundSelection(const UsdPrim &prim, bool selected) {
+
+    ImVec4 colorSelected = selected ? ImVec4(ColorPrimSelectedBg) : ImVec4(0.75, 0.60, 0.33, 0.2);
+    ScopedStyleColor scopedStyle(ImGuiCol_HeaderHovered, selected ? colorSelected : ImVec4(ColorTransparent),
+                                 ImGuiCol_HeaderActive, ImVec4(ColorTransparent), ImGuiCol_Header, colorSelected);
+    ImVec2 sizeArg(0.0, TableRowDefaultHeight);
+    const auto selectableFlags = ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
+    ImGui::Selectable("##backgroundSelectedPrim", selected, selectableFlags, sizeArg);
+    ImGui::SetItemAllowOverlap();
+    ImGui::SameLine();
+}
+
+
+
 static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, StageOutlinerDisplayOptions &displayOptions) {
     ImGuiTreeNodeFlags flags =
         ImGuiTreeNodeFlags_OpenOnArrow |
@@ -195,16 +210,15 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
     if (children.empty()) {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
-    if (selectedPaths.IsSelected(prim.GetStage(), prim.GetPath())) {
-        flags |= ImGuiTreeNodeFlags_Selected;
-    }
+
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
+    DrawBackgroundSelection(prim, selectedPaths.IsSelected(prim.GetStage(), prim.GetPath()));
     bool unfolded = true;
     {
         {
             TreeIndenter<StageOutlinerSeed, SdfPath> indenter(prim.GetPath());
-            ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim));
+            ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
             const ImGuiID pathHash = IdOf(GetHash(prim.GetPath()));
 
             unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
