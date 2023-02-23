@@ -516,6 +516,7 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
         int rowId = 0;
         if (BeginThreeColumnsTable("##DrawPrimSpecAttributes")) {
             SetupThreeColumnsTable(false, "", "Attribute", "");
+            ImGui::PushID(primSpec->GetPath().GetHash());
             // the third column allows to show different attribute properties:
             // Default value, keyed values or connections (and summary ??)
             // int showWhat = DrawValueColumnSelector();
@@ -523,6 +524,7 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
             for (const SdfAttributeSpecHandle &attribute : attributes) {
                 DrawThreeColumnsRow<AttributeRow>(rowId++, attribute, selection, showWhat);
             }
+            ImGui::PopID();
             ImGui::EndTable();
         }
     }
@@ -620,6 +622,7 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
             int rowId = 0;
             if (BeginThreeColumnsTable("##DrawPrimSpecMetadata")) {
                 SetupThreeColumnsTable(false, "", "Metadata", "Value");
+                ImGui::PushID(primSpec->GetPath().GetHash());
                 DrawThreeColumnsRow<Specifier>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimType>(rowId++, primSpec);
                 DrawThreeColumnsRow<PrimName>(rowId++, primSpec);
@@ -630,6 +633,7 @@ void DrawPrimSpecMetadata(const SdfPrimSpecHandle &primSpec) {
                 DrawThreeColumnsRow<ApiSchemaRow>(rowId++, primSpec);
                 DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->CustomData);
                 DrawThreeColumnsDictionaryEditor<SdfPrimSpec>(rowId, primSpec, SdfFieldKeys->AssetInfo);
+                ImGui::PopID();
                 EndThreeColumnsTable();
             }
             ImGui::Separator();
@@ -699,13 +703,11 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
     ImGui::EndChild();
     ImGui::Separator();
     ImGui::BeginChild("##LayerBody");
-    ImGui::PushID(primSpec->GetPath().GetHash());
     DrawPrimSpecMetadata(primSpec);
     DrawPrimCompositions(primSpec);
     DrawPrimVariants(primSpec);
     DrawPrimSpecAttributes(primSpec, selection);
     DrawPrimSpecRelations(primSpec);
-    ImGui::PopID();
     ImGui::EndChild();
     if (ImGui::IsItemHovered()) {
         const SdfPath &selectedProperty = selection.GetAnchorPropertyPath(primSpec->GetLayer());

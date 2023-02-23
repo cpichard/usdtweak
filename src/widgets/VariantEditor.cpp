@@ -44,6 +44,7 @@ static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
     if (!variantSelections.empty()) {
         if (ImGui::BeginTable("##DrawPrimVariantSelections", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             TableSetupColumns("", "Variant selections", "");
+            ImGui::PushID(primSpec->GetPath().GetHash());
             ImGui::TableHeadersRow();
             int buttonId = 0;
             for (const auto &variantSelection : variantSelections) {
@@ -59,7 +60,7 @@ static void DrawVariantSelection(const SdfPrimSpecHandle &primSpec) {
                 DrawVariantSelectionCombo(primSpec, variantSelection, buttonId);
                 ImGui::PopItemWidth();
             }
-
+            ImGui::PopID();
             ImGui::EndTable();
             ImGui::Separator();
         }
@@ -101,7 +102,9 @@ static void DrawVariantSetNames(const SdfPrimSpecHandle &primSpec) {
     int rowId = 0;
     if (BeginThreeColumnsTable("##DrawPrimVariantSets")) {
         SetupThreeColumnsTable(false, "", "VariantSet names", "");
+        ImGui::PushID(primSpec->GetPath().GetHash());
         IterateListEditorItems(primSpec->GetVariantSetNameList(), DrawVariantSetNamesRow, primSpec, rowId);
+        ImGui::PopID();
         EndThreeColumnsTable();
     }
 }
