@@ -132,6 +132,9 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
     if (prim.IsPrototype() || prim.IsInPrototype() || prim.IsInstanceProxy()) {
         return ImVec4(ColorPrimPrototype);
     }
+    if (!prim.IsDefined()) {
+        return ImVec4(ColorPrimUndefined);
+    }
     return ImVec4(ColorPrimDefault);
 }
 

@@ -28,6 +28,7 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorPrimInactive {0.4, 0.4, 0.4, 1.0}
 #define ColorPrimInstance {135.f/255.f, 206.f/255.f, 250.f/255.f, 1.0}
 #define ColorPrimPrototype {118.f/255.f, 136.f/255.f, 217.f/255.f, 1.0}
+#define ColorPrimUndefined {200.f/255.f, 100.f/255.f, 100.f/255.f, 1.0}
 #define ColorPrimHasComposition {222.f/255.f, 158.f/255.f, 46.f/255.f, 1.0}
 #define ColorGreyish {0.5, 0.5, 0.5, 1.0}
 #define ColorButtonHighlight {0.5, 0.7, 0.5, 0.7}
