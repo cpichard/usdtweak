@@ -23,6 +23,14 @@ else ()
     FetchContent_MakeAvailable(glfw)
 endif (DEFINED glfw3_DIR)
 
+# Get the stamp informations, git hash, time stamp, stuff like that
+add_custom_command(
+  OUTPUT src/Stamp.h
+  COMMAND  ${CMAKE_COMMAND}
+      -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+      -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp.cmake"
+)
 
 # Use folders in the generated xcode/vs projects
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -34,13 +42,13 @@ if (APPLE)
     set(myApp_ICON ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icon.icns)
     set_source_files_properties(${myApp_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
-add_executable(usdtweak MACOSX_BUNDLE "" ${myApp_ICON})
+add_executable(usdtweak MACOSX_BUNDLE src/Stamp.h ${myApp_ICON})
 
 set_target_properties(usdtweak PROPERTIES
     OUTPUT_NAME "usdtweak"
     MACOSX_BUNDLE TRUE)
 else()
-    add_executable(usdtweak "")
+    add_executable(usdtweak src/Stamp.h)
 endif()
 
 add_subdirectory(src)
@@ -55,17 +63,6 @@ if (DEFINED USE_PYTHON3)
     find_package(Python3 COMPONENTS Development)
     target_link_libraries(usdtweak Python3::Python)
 endif()
-
-
-# Get the stamp informations, git hash, time stamp, stuff like that
-add_custom_command(
-  TARGET usdtweak
-  PRE_BUILD
-  COMMAND  ${CMAKE_COMMAND} 
-      -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}" 
-      -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src" 
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp.cmake"
-)
 
 
 # Installer on windows
