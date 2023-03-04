@@ -145,6 +145,16 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
     }
 }
 
+void DrawPropertyArcs(const UsdProperty &property, UsdTimeCode currentTime) {
+    SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
+    for (const auto &prop : properties) {
+        if (ImGui::MenuItem(prop.GetSpec().GetPath().GetText())) {
+            ExecuteAfterDraw<EditorSelectAttributePath>(prop.GetSpec().GetPath());
+        }
+    }
+}
+
+
 /// Specialization for DrawPropertyMiniButton, between UsdAttribute and UsdRelashionship
 template <typename UsdPropertyT> const char *SmallButtonLabel();
 template <> const char *SmallButtonLabel<UsdAttribute>() { return "(a)"; };
@@ -221,6 +231,10 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
         DrawMenuEditConnection(property);
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
+        }
+        if (ImGui::BeginMenu(ICON_FA_HAND_HOLDING_USD " Select SdfAttribute")) {
+            DrawPropertyArcs(property, currentTime);
+            ImGui::EndMenu();
         }
         ImGui::EndPopup();
     }
