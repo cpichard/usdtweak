@@ -213,7 +213,7 @@ const char *imgui =
 "Collapsed=0\n"
 "[Window][About Usdtweak]\n"
 "Pos=304,322\n"
-"Size=416,380\n"
+"Size=460,468\n"
 "Collapsed=0\n"
 "[Window][Create relationship]\n"
 "Pos=439,417\n"
