@@ -158,11 +158,13 @@ int main(int argc, char *const *argv) {
             glfwPollEvents();
 
             // Render the viewports first as textures
+            ImGui_ImplGlfw_RestoreCallbacks(window);
             ImGui::SetCurrentContext(hydraUIContext);
             editor.HydraRender(); // RenderViewports
 
             // Render GUI next
             ImGui::SetCurrentContext(mainUIContext);
+            ImGui_ImplGlfw_InstallCallbacks(window);
             glfwGetFramebufferSize(window, &width, &height);
             glViewport(0, 0, width, height);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
