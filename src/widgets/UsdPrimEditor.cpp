@@ -583,7 +583,9 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
                 ImGui::TableSetColumnIndex(2);
                 ImGui::PushItemWidth(-FLT_MIN); // Right align and get rid of widget label
+                ImGui::PushID(attribute.GetPath().GetHash());
                 DrawAttributeValueAtTime(attribute, currentTime);
+                ImGui::PopID();
                 ImGui::PopItemWidth();
                 // TODO: in the hint ???
                 // DrawAttributeTypeInfo(attribute);
