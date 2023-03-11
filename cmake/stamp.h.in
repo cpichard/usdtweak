@@ -2,7 +2,8 @@
 
 #define STRINGIFY2(s) #s
 #define STRINGIFY(s) STRINGIFY2(s)
-
-#define GIT_HASH "@GIT_HASH@"
-#define BUILD_DATE "@BUILD_DATE@"
 #define USD_VERSION "" STRINGIFY(PXR_MINOR_VERSION) "." STRINGIFY(PXR_PATCH_VERSION)
+
+const char *GetGitHash();
+const char *GetBuildDate();
+

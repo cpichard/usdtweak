@@ -95,8 +95,8 @@ inline void BringWindowToTabFront(const char *windowName) {
 struct AboutModalDialog : public ModalDialog {
     AboutModalDialog(Editor& editor) : editor(editor) {}
     void Draw() override {
-        ImGui::Text("usdtweak pre-alpha version " BUILD_DATE);
-        ImGui::Text("  revision " GIT_HASH);
+        ImGui::Text("usdtweak pre-alpha version %s", GetBuildDate());
+        ImGui::Text("  revision %s", GetGitHash());
         ImGui::Text("");
         ImGui::Text("This is a pre-alpha version for testing purpose.");
         ImGui::Text("Please send your feedbacks as github issues:");

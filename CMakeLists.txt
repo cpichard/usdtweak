@@ -24,8 +24,8 @@ else ()
 endif (DEFINED glfw3_DIR)
 
 # Get the stamp informations, git hash, time stamp, stuff like that
-add_custom_command(
-  OUTPUT src/Stamp.h
+add_custom_target(stamp
+  BYPRODUCTS src/Stamp.h src/Stamp.cpp
   COMMAND  ${CMAKE_COMMAND}
       -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
       -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -42,14 +42,15 @@ if (APPLE)
     set(myApp_ICON ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icon.icns)
     set_source_files_properties(${myApp_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
-add_executable(usdtweak MACOSX_BUNDLE src/Stamp.h ${myApp_ICON})
+add_executable(usdtweak MACOSX_BUNDLE ${myApp_ICON})
 
 set_target_properties(usdtweak PROPERTIES
     OUTPUT_NAME "usdtweak"
     MACOSX_BUNDLE TRUE)
 else()
-    add_executable(usdtweak src/Stamp.h)
+    add_executable(usdtweak)
 endif()
+add_dependencies(usdtweak stamp)
 
 add_subdirectory(src)
 

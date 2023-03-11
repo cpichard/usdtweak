@@ -17,6 +17,10 @@ endif()
 
 # Get the current time
 string(TIMESTAMP BUILD_DATE "%Y.%m.%d")
-configure_file(${SRC_DIR}/cmake/stamp.h.in ${DST_DIR}/Stamp.h @ONLY)
+if(NOT EXISTS ${DST_DIR}/Stamp.h)
+    execute_process(COMMAND ${CMAKE_COMMAND} -E copy ${SRC_DIR}/cmake/stamp.h.in ${DST_DIR}/Stamp.h)
+endif()
+
+configure_file(${SRC_DIR}/cmake/stamp.cpp.in ${DST_DIR}/Stamp.cpp @ONLY)
  
  

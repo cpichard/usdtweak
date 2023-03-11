@@ -16,6 +16,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdHelpers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Stamp.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Stamp.h
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
 )
 

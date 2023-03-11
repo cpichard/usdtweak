@@ -1,0 +1,4 @@
+#include "Stamp.h"
+
+const char *GetGitHash() { return "@GIT_HASH@"; }
+const char *GetBuildDate() { return "@BUILD_DATE@"; }
