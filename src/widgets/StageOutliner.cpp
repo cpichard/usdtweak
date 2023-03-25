@@ -53,18 +53,28 @@ class StageOutlinerDisplayOptions {
     // Default is:
     // UsdPrimIsActive && UsdPrimIsDefined && UsdPrimIsLoaded && !UsdPrimIsAbstract
     void ComputePrimFlagsPredicate() {
-        auto flags =
-            (!_showInactive ? UsdPrimIsActive : Usd_PrimFlags()) && (!_showUndefined ? UsdPrimIsDefined : Usd_PrimFlags()) &&
-            (!_showUnloaded ? UsdPrimIsLoaded : Usd_PrimFlags()) && (!_showAbstract ? !UsdPrimIsAbstract : Usd_PrimFlags());
+        Usd_PrimFlagsConjunction flags;
+        if (!_showInactive) {
+            flags = flags && UsdPrimIsActive;
+        }
+        if (!_showUndefined) {
+            flags = flags && UsdPrimIsDefined;
+        }
+        if (!_showUnloaded) {
+            flags = flags && UsdPrimIsLoaded;
+        }
+        if (!_showAbstract) {
+            flags = flags && !UsdPrimIsAbstract;
+        }
         _displayPredicate = UsdTraverseInstanceProxies(flags);
     }
 
     Usd_PrimFlagsPredicate _displayPredicate;
-    bool _showInactive = false;
+    bool _showInactive = true;
     bool _showUndefined = false;
-    bool _showUnloaded = false;
+    bool _showUnloaded = true;
     bool _showAbstract = false;
-    bool _showPrototypes = false;
+    bool _showPrototypes = true;
 };
 
 static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
