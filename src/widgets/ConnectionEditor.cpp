@@ -399,7 +399,7 @@ static void ShowExampleAppCustomNodeGraph(const UsdPrim &prim)
         Node* node_out = nodes[link->OutputIdx];
         ImVec2 p1 = offset + node_inp->GetInputSlotPos(link->InputSlot);
         ImVec2 p2 = offset + node_out->GetOutputSlotPos(link->OutputSlot);
-        draw_list->AddBezierCurve(p1, p1 + ImVec2(-50, 0), p2 + ImVec2(+50, 0), p2, IM_COL32(200, 200, 100, 255), 3.0f);
+        draw_list->AddBezierCubic(p1, p1 + ImVec2(-50, 0), p2 + ImVec2(+50, 0), p2, IM_COL32(200, 200, 100, 255), 3.0f);
     }
 
     // Display nodes

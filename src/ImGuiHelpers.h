@@ -37,10 +37,6 @@ struct ScopedStyleColor {
     const size_t nbPop; // TODO: get rid of this constant and generate the correct number of pop at compile time
 };
 
-/// Plus Operation on ImVec2
-inline ImVec2 operator+(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
-inline ImVec2 operator-(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lhs.x - rhs.x, lhs.y - rhs.y); }
-
 /// Creates a splitter
 /// This is coming right from the imgui github repo
 bool Splitter(bool splitVertically, float thickness, float *size1, float *size2, float minSize1, float minSize2,
