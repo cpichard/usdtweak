@@ -25,7 +25,7 @@ endif (DEFINED glfw3_DIR)
 
 # Get the stamp informations, git hash, time stamp, stuff like that
 add_custom_target(stamp
-  BYPRODUCTS src/Stamp.h src/Stamp.cpp
+  BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Stamp.h ${CMAKE_CURRENT_SOURCE_DIR}/src/Stamp.cpp
   COMMAND  ${CMAKE_COMMAND}
       -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
       -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
