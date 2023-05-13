@@ -122,6 +122,8 @@ VtValue DrawVtArrayValue(const VtValue &value) {
         DrawArrayIfHolding(float)
         DrawArrayIfHolding(double)
         DrawArrayIfHolding(int)
+        DrawArrayIfHolding(int64_t)
+        DrawArrayIfHolding(uint64_t)
         DrawArrayIfHolding(GfHalf)
         DrawArrayIfHolding(TfToken)
         DrawArrayIfHolding(SdfAssetPath)

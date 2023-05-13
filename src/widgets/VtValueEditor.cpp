@@ -164,6 +164,20 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(intValue);
         }
+    } else if (value.IsHolding<int64_t>()) {
+        int64_t intValue = value.Get<int64_t>();
+        const char* format = "%" PRId64;
+        ImGui::InputScalar(label.c_str(), ImGuiDataType_S64, (void*)&intValue, nullptr, nullptr, format, ImGuiInputTextFlags());
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(intValue);
+        }
+    } else if (value.IsHolding<uint64_t>()) {
+        uint64_t intValue = value.Get<uint64_t>();
+        const char* format = "%" PRIu64;
+        ImGui::InputScalar(label.c_str(), ImGuiDataType_U64, (void*)&intValue, nullptr, nullptr, format, ImGuiInputTextFlags());
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(intValue);
+        }
     } else if (value.IsHolding<TfToken>()) {
         TfToken token = value.Get<TfToken>();
         return DrawTfToken(label, token);
