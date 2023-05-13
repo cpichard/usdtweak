@@ -67,7 +67,7 @@ static void DrawViewportCameraEditor(Viewport &viewport) {
         camera.SetClippingRange(clippingRange);
     }
 
-    if (ImGui::Button("Duplicate selected camera")) {
+    if (ImGui::Button("Duplicate camera")) {
         UsdStageRefPtr stage = viewport.GetCurrentStage();
         // Find the next camera path
         std::string cameraPath = UsdGeomCameraDefaultPrefix;
