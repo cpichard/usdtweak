@@ -276,11 +276,6 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
         return;
 
     if (ImGui::BeginTabBar("Stuff")) {
-        if (ImGui::BeginTabItem("Metadata")) {
-            DrawSdfLayerIdentity(layer, path);
-            DrawSdfAttributeMetadata(attr);
-            ImGui::EndTabItem();
-        }
 
         static UsdTimeCode selectedKeyframe = UsdTimeCode::Default();
         
@@ -299,6 +294,13 @@ void DrawSdfAttributeEditor(const SdfLayerHandle layer, const Selection &selecti
             ImGui::EndTabItem();
         }
 
+        
+        if (ImGui::BeginTabItem("Metadata")) {
+            DrawSdfLayerIdentity(layer, path);
+            DrawSdfAttributeMetadata(attr);
+            ImGui::EndTabItem();
+        }
+        
         if (ImGui::BeginTabItem("Connections")) {
             ImGui::EndTabItem();
         }
