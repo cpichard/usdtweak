@@ -178,7 +178,7 @@ void Viewport::Draw() {
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
-        ImGui::Image((ImTextureID)_textureId, ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image((ImTextureID)((uintptr_t)_textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
         //if (ImGui::BeginPopupContextItem()) {
