@@ -25,7 +25,7 @@ template <typename T, typename... ArgTypes> void DrawModalDialog(ArgTypes &&... 
 void DrawCurrentModal();
 
 /// Convenience function to draw an Ok and Cancel buttons in a Modal dialog
-void DrawOkCancelModal(const std::function<void()> &onOk);
+void DrawOkCancelModal(const std::function<void()> &onOk, bool disableOk=false);
 
 /// Force closing the current modal dialog
 void ForceCloseCurrentModal();

@@ -15,6 +15,8 @@
 #include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/tokens.h>
+#include <pxr/usd/usd/typed.h>
+#include <pxr/base/plug/registry.h>
 
 #include "Commands.h"
 #include "CompositionEditor.h"
@@ -36,12 +38,86 @@
 //// NOTES: Sdf API: Removing a variantSet and cleaning it from the list editing
 //// -> https://groups.google.com/g/usd-interest/c/OeqtGl_1H-M/m/xjCx3dT9EgAJ
 
+// TODO: by default use the schema type of the prim
+// TODO: copy metadata ? interpolation, etc ??
+// TODO: write the code for creating relationship from schema
+// TODO: when a schema has no attribute, the ok button should be disabled
+//       and the name should be empty instead of the widget disappearing
+
+std::vector<std::string> GetPrimSpecPropertyNames(TfToken primTypeName, SdfSpecType filter) {
+    std::vector<std::string> filteredPropNames;
+    if (auto *primDefinition = UsdSchemaRegistry::GetInstance().FindConcretePrimDefinition(primTypeName)) {
+        for (const auto &propName : primDefinition->GetPropertyNames()) {
+            if (primDefinition->GetSpecType(propName) == filter) {
+                filteredPropNames.push_back(propName.GetString());
+            }
+        }
+    }
+    return filteredPropNames;
+}
+
 struct CreateAttributeDialog : public ModalDialog {
-    CreateAttributeDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim){};
+    CreateAttributeDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim), _schemaTypeNames(GetAllSpecTypeNames()) {
+        // https://openusd.org/release/api/class_usd_prim_definition.html
+        selectedSchemaTypeName = std::find(_schemaTypeNames.begin(), _schemaTypeNames.end(), _sdfPrim->GetTypeName().GetString());
+        FillAttributeNames();
+        UpdateWithNewPrimDefinition();
+    };
     ~CreateAttributeDialog() override {}
 
+    void UpdateWithNewPrimDefinition() {
+        if (selectedSchemaTypeName != _schemaTypeNames.end() && _selectedAttributeName != _allAttrNames.end()) {
+            if (auto *primDefinition =
+                    UsdSchemaRegistry::GetInstance().FindConcretePrimDefinition(TfToken(*selectedSchemaTypeName))) {
+                _attributeName = *_selectedAttributeName;
+                SdfAttributeSpecHandle attrSpec = primDefinition->GetSchemaAttributeSpec(TfToken(_attributeName));
+                _typeName = attrSpec->GetTypeName();
+                _variability = attrSpec->GetVariability();
+            }
+        } else {
+            _attributeName = "";
+        }
+    }
+
+    void FillAttributeNames() {
+        if (selectedSchemaTypeName != _schemaTypeNames.end()) {
+            _allAttrNames = GetPrimSpecPropertyNames(TfToken(*selectedSchemaTypeName), SdfSpecTypeAttribute);
+            _selectedAttributeName = _allAttrNames.begin();
+        } else {
+            _attributeName = "";
+        }
+    }
+
     void Draw() override {
-        ImGui::InputText("Name", &_attributeName);
+        // Schema
+        ImGui::BeginDisabled(_custom);
+        const char *schemaStr = selectedSchemaTypeName == _schemaTypeNames.end() ? "" : selectedSchemaTypeName->c_str();
+        if (ImGui::BeginCombo("From schema", schemaStr)) {
+            for (size_t i = 0; i < _schemaTypeNames.size(); i++) {
+                if (_schemaTypeNames[i] != "" && ImGui::Selectable(_schemaTypeNames[i].c_str(), false)) {
+                    selectedSchemaTypeName = _schemaTypeNames.begin() + i;
+                    FillAttributeNames();
+                    UpdateWithNewPrimDefinition();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+        // Attribute name
+        if (_custom) {
+            ImGui::InputText("Name", &_attributeName);
+        } else {
+            if (ImGui::BeginCombo("Name", _attributeName.c_str())) {
+                for (size_t i = 0; i < _allAttrNames.size(); i++) {
+                    if (ImGui::Selectable(_allAttrNames[i].c_str(), false)) {
+                        _selectedAttributeName = _allAttrNames.begin() + i;
+                        UpdateWithNewPrimDefinition();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::BeginDisabled(!_custom);
         if (ImGui::BeginCombo("Type", _typeName.GetAsToken().GetString().c_str())) {
             for (int i = 0; i < GetAllValueTypeNames().size(); i++) {
                 if (ImGui::Selectable(GetAllValueTypeNames()[i].GetAsToken().GetString().c_str(), false)) {
@@ -54,28 +130,91 @@ struct CreateAttributeDialog : public ModalDialog {
         if (ImGui::Checkbox("Varying", &varying)) {
             _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
         }
-        ImGui::Checkbox("Custom", &_custom);
+        ImGui::EndDisabled();
+
+        ImGui::Checkbox("Custom attribute", &_custom);
         ImGui::Checkbox("Create default value", &_createDefault);
-        DrawOkCancelModal([&]() {
-            ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom, _createDefault);
-        });
+        DrawOkCancelModal(
+            [&]() {
+                ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom, _createDefault);
+            },
+            bool(_attributeName == ""));
     }
+
     const char *DialogId() const override { return "Create attribute"; }
 
     const SdfPrimSpecHandle &_sdfPrim;
     std::string _attributeName;
     SdfVariability _variability = SdfVariabilityVarying;
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
-    bool _custom = true;
+    bool _custom = false;
     bool _createDefault = false;
+    std::vector<std::string> _schemaTypeNames;
+    std::vector<std::string>::iterator selectedSchemaTypeName = _schemaTypeNames.end();
+
+    std::vector<std::string> _allAttrNames;
+    std::vector<std::string>::iterator _selectedAttributeName = _allAttrNames.end();
 };
 
 struct CreateRelationDialog : public ModalDialog {
-    CreateRelationDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim){};
+    CreateRelationDialog(const SdfPrimSpecHandle &sdfPrim) : _sdfPrim(sdfPrim), _allSchemaNames(GetAllSpecTypeNames()) {
+        _selectedSchemaName = std::find(_allSchemaNames.begin(), _allSchemaNames.end(), _sdfPrim->GetTypeName().GetString());
+        FillRelationshipNames();
+        UpdateWithNewPrimDefinition();
+    };
     ~CreateRelationDialog() override {}
 
+    void FillRelationshipNames() {
+        if (_selectedSchemaName != _allSchemaNames.end()) {
+            _allRelationshipNames = GetPrimSpecPropertyNames(TfToken(*_selectedSchemaName), SdfSpecTypeRelationship);
+            _selectedRelationshipName = _allRelationshipNames.begin();
+        } else {
+            _relationName = "";
+        }
+    }
+
+    void UpdateWithNewPrimDefinition() {
+        if (_selectedSchemaName != _allSchemaNames.end() && _selectedRelationshipName != _allRelationshipNames.end()) {
+            if (auto *primDefinition =
+                    UsdSchemaRegistry::GetInstance().FindConcretePrimDefinition(TfToken(*_selectedSchemaName))) {
+                _relationName = *_selectedRelationshipName;
+                SdfRelationshipSpecHandle relSpec = primDefinition->GetSchemaRelationshipSpec(TfToken(_relationName));
+                _variability = relSpec->GetVariability();
+            }
+        } else {
+            _relationName = "";
+        }
+    }
+
     void Draw() override {
-        ImGui::InputText("Relationship name", &_relationName);
+
+        ImGui::BeginDisabled(_custom);
+        const char *schemaStr = _selectedSchemaName == _allSchemaNames.end() ? "" : _selectedSchemaName->c_str();
+        if (ImGui::BeginCombo("From schema", schemaStr)) {
+            for (size_t i = 0; i < _allSchemaNames.size(); i++) {
+                if (_allSchemaNames[i] != "" && ImGui::Selectable(_allSchemaNames[i].c_str(), false)) {
+                    _selectedSchemaName = _allSchemaNames.begin() + i;
+                    FillRelationshipNames();
+                    UpdateWithNewPrimDefinition();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+
+        if (_custom) {
+            ImGui::InputText("Relationship name", &_relationName);
+        } else {
+            if (ImGui::BeginCombo("Name", _relationName.c_str())) {
+                for (size_t i = 0; i < _allRelationshipNames.size(); i++) {
+                    if (ImGui::Selectable(_allRelationshipNames[i].c_str(), false)) {
+                        _selectedRelationshipName = _allRelationshipNames.begin() + i;
+                        UpdateWithNewPrimDefinition();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
         ImGui::InputText("Target path", &_targetPath);
         if (ImGui::BeginCombo("Edit list", GetListEditorOperationName(_operation))) {
             for (int i = 0; i < GetListEditorOperationSize(); ++i) {
@@ -85,16 +224,18 @@ struct CreateRelationDialog : public ModalDialog {
             }
             ImGui::EndCombo();
         }
-
+        ImGui::BeginDisabled(!_custom);
         bool varying = _variability == SdfVariabilityVarying;
         if (ImGui::Checkbox("Varying", &varying)) {
             _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
         }
-        ImGui::Checkbox("Custom", &_custom);
-
-        DrawOkCancelModal([=]() {
-            ExecuteAfterDraw<PrimCreateRelationship>(_sdfPrim, _relationName, _variability, _custom, _operation, _targetPath);
-        });
+        ImGui::EndDisabled();
+        ImGui::Checkbox("Custom relationship", &_custom);
+        DrawOkCancelModal(
+            [=]() {
+                ExecuteAfterDraw<PrimCreateRelationship>(_sdfPrim, _relationName, _variability, _custom, _operation, _targetPath);
+            },
+            _relationName == "");
     }
     const char *DialogId() const override { return "Create relationship"; }
 
@@ -103,8 +244,14 @@ struct CreateRelationDialog : public ModalDialog {
     std::string _targetPath;
     SdfListOpType _operation = SdfListOpTypeExplicit;
     SdfVariability _variability = SdfVariabilityVarying;
-    bool _custom = true;
+    bool _custom = false;
+    std::vector<std::string> _allSchemaNames;
+    std::vector<std::string>::iterator _selectedSchemaName = _allSchemaNames.end();
+    std::vector<std::string> _allRelationshipNames;
+    std::vector<std::string>::iterator _selectedRelationshipName = _allRelationshipNames.end();
 };
+
+
 
 struct CreateVariantModalDialog : public ModalDialog {
 
