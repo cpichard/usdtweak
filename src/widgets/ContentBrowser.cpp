@@ -15,7 +15,7 @@
 PXR_NAMESPACE_USING_DIRECTIVE
 
 struct ContentBrowserOptions {
-    bool _filterAnonymous = true;
+    bool _filterAnonymous = false;
     bool _filterFiles = true;
     bool _filterUnmodified = true;
     bool _filterModified = true;
