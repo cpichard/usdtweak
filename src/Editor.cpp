@@ -253,7 +253,7 @@ struct SaveLayerAsDialog : public ModalDialog {
         auto filePath = GetFileBrowserFilePath();
         ImGui::Text("%s", filePath.c_str());
         DrawOkCancelModal([&]() { // On Ok ->
-            if (!filePath.empty() && !FilePathExists()) {
+            if (!filePath.empty()) {
                 editor.SaveLayerAs(_layer, filePath);
             }
         });
@@ -434,8 +434,12 @@ void Editor::OpenStage(const std::string &path, bool openLoaded) {
 }
 
 void Editor::SaveLayerAs(SdfLayerRefPtr layer, const std::string &path) {
+    if (!layer) return;
     auto newLayer = SdfLayer::CreateNew(path);
-    if (newLayer && layer) {
+    if (!newLayer) {
+        newLayer = SdfLayer::FindOrOpen(path);
+    }
+    if (newLayer) {
         newLayer->TransferContent(layer);
         newLayer->Save();
         SetCurrentLayer(newLayer, true);
