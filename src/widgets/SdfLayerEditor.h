@@ -9,7 +9,7 @@ void DrawSdfLayerIdentity(const SdfLayerRefPtr &layer, const SdfPath &);
 void DrawSdfLayerMetadata(const SdfLayerRefPtr &layer);
 
 ///
-void DrawLayerActionPopupMenu(SdfLayerHandle layer);
+void DrawLayerActionPopupMenu(SdfLayerHandle layer, bool isStage=false);
 
 void DrawLayerNavigation(SdfLayerRefPtr layer);
 

@@ -11,8 +11,35 @@
 #include "Commands.h"
 #include "Constants.h"
 #include "TextFilter.h"
+#include "ModalDialogs.h"
+#include "FileBrowser.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+struct SessionLoadModalDialog : public ModalDialog {
+
+    SessionLoadModalDialog(const UsdStageRefPtr &stage) : _stage(stage) {};
+    ~SessionLoadModalDialog() override {}
+
+    void Draw() override {
+        DrawFileBrowser();
+        auto filePath = GetFileBrowserFilePath();
+        ImGui::Text("%s", filePath.c_str());
+        DrawOkCancelModal([&]() { // On Ok ->
+            if (!filePath.empty()) {
+                SdfLayerRefPtr sessionLayer =_stage->GetSessionLayer();
+                std::function<void()> importSession = [=]() {
+                    sessionLayer->Import(filePath);
+                };
+                ExecuteAfterDraw<UsdFunctionCall>(sessionLayer, importSession);
+            }
+        });
+    }
+
+    const char *DialogId() const override { return "Load session"; }
+
+    UsdStageRefPtr _stage;
+};
 
 struct ContentBrowserOptions {
     bool _filterAnonymous = false;
@@ -193,7 +220,7 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 const auto &layer = sortedLayerList[row];
                 const std::string &layerName = LayerNameFromOptions(layer, options);
-                const bool isStage = cache.FindOneMatching(layer);
+                const UsdStageRefPtr isStage = cache.FindOneMatching(layer);
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
                 ImGui::PushID(layer->GetUniqueIdentifier());
                 DrawSelectStageButton(layer, isStage, selectedStage);
@@ -207,10 +234,26 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
                     DrawLayerTooltip(layer);
                 }
                 if (ImGui::BeginPopupContextItem()) {
+                    if (isStage) {
+                        if(ImGui::MenuItem("Edit session layer")) {
+                            ExecuteAfterDraw<EditorSetCurrentLayer>(isStage->GetSessionLayer());
+                        }
+                        if (ImGui::MenuItem("Load session layer")) {
+                            DrawModalDialog<SessionLoadModalDialog>(isStage);
+                        }
+                        if (ImGui::MenuItem("Save session layer as")) {
+                            ExecuteAfterDraw<EditorSaveLayerAs>(isStage->GetSessionLayer());
+                        }
+                    }
+
                     if (ImGui::MenuItem("Edit layer")) {
                         ExecuteAfterDraw<EditorSetCurrentLayer>(layer);
                     }
-                    DrawLayerActionPopupMenu(layer);
+
+                    // TODO: split stage and layer ??
+                    // Stage could be flatten and exported - or zipped
+                    DrawLayerActionPopupMenu(layer, isStage);
+
                     ImGui::EndPopup();
                 }
                 ImGui::PopID();

@@ -4,7 +4,7 @@
 
 /// Draw the file browser ui this can be used anywhere, except that there is only one instance of the FileBrowser. Also, there is
 /// no OK/Cancel button, or options, this is the responsibility of the caller to draw them.
-void DrawFileBrowser();
+void DrawFileBrowser(int gutterSize=190);
 
 /// Returns the current stored file browser path
 std::string GetFileBrowserFilePath();

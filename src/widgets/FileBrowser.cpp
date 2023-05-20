@@ -226,7 +226,7 @@ static void DrawFileSize(uintmax_t fileSize) {
     ImGui::Text(format[i], fileSize);
 }
 
-void DrawFileBrowser() {
+void DrawFileBrowser(int gutterSize) {
 
 
     static fs::path displayedFileName;
@@ -299,7 +299,7 @@ void DrawFileBrowser() {
     // Get window size
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     // TODO: 190 should be computed or passed in parameter as there might be other widget taking height
-    ImVec2 sizeArg(0, currentWindow->Size[1] - 190);
+    ImVec2 sizeArg(0, currentWindow->Size[1] - gutterSize);
     ImGui::PushItemWidth(-1); // List takes the full size
     if (ImGui::BeginListBox("##FileList", sizeArg)) {
         constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;

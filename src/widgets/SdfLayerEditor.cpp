@@ -346,14 +346,14 @@ void DrawLayerNavigation(SdfLayerRefPtr layer) {
 }
 
 /// Draw a popup menu with the possible action on a layer
-void DrawLayerActionPopupMenu(SdfLayerHandle layer) {
+void DrawLayerActionPopupMenu(SdfLayerHandle layer, bool isStage) {
     if (!layer)
         return;
 
     if (!layer->IsAnonymous() && ImGui::MenuItem("Reload")) {
         ExecuteAfterDraw(&SdfLayer::Reload, layer, false);
     }
-    if (ImGui::MenuItem("Open as Stage")) {
+    if (!isStage && ImGui::MenuItem("Open as Stage")) {
         ExecuteAfterDraw<EditorOpenStage>(layer->GetRealPath());
     }
     if (layer->IsDirty() && !layer->IsAnonymous() && ImGui::MenuItem("Save layer")) {
