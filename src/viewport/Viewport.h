@@ -82,8 +82,12 @@ class Viewport final {
 
     /// Draw manipulator toolbox, to select translate, rotate, scale
     void DrawManipulatorToolbox(const struct ImVec2 &origin);
-
-
+    
+    /// Draw toolbar: camera selection, renderer options, viewport options ...
+    void DrawToolBar(const ImVec2 &cursorPos);
+    
+    /// Draw stage selector
+    void DrawStageSelector(const ImVec2 &cursorPos);
 
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents

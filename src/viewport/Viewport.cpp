@@ -171,56 +171,6 @@ static void DrawOpenedStages() {
 void Viewport::Draw() {
     const ImVec2 wsize = ImGui::GetWindowSize();
 
-    ImGui::Button("\xef\x80\xb0 Cameras");
-    ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
-    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawCameraList(*this);
-        DrawCameraEditor(*this);
-        ImGui::EndPopup();
-    }
-
-    ImGui::SameLine();
-    ImGui::Button("\xef\x93\xbe Renderer");
-    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawRendererControls(*_renderer);
-        DrawRendererSelection(*_renderer);
-        DrawColorCorrection(*_renderer, _imagingSettings);
-        DrawAovSettings(*_renderer);
-        DrawRendererCommands(*_renderer);
-        if(ImGui::BeginMenu("Renderer Settings")) {
-            DrawRendererSettings(*_renderer, _imagingSettings);
-            ImGui::EndMenu();
-        }
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Button("\xef\x89\xac Viewport");
-    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
-        DrawImagingSettings(*_renderer, _imagingSettings);
-        ImGui::EndPopup();
-    }
-
-    if (GetCurrentStage()) {
-        ImGui::SameLine();
-        ImGui::SmallButton(ICON_UT_STAGE);
-        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            DrawOpenedStages();
-            ImGui::EndPopup();
-        }
-        ImGui::SameLine();
-        ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
-        ImGui::SameLine();
-        ImGui::SmallButton(ICON_FA_PEN);
-        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
-            DrawUsdPrimEditTarget(selected);
-            ImGui::EndPopup();
-        }
-        ImGui::SameLine();
-        ImGui::Text("%s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
-    }
-
-
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
     _textureSize = GfVec2i(std::max(1.f, wsize[0] - 2 * GImGui->Style.ItemSpacing.x),
@@ -238,15 +188,88 @@ void Viewport::Draw() {
         //}
         HandleManipulationEvents();
         HandleKeyboardShortcut();
-
+        DrawToolBar(cursorPos);
+        DrawStageSelector(cursorPos);
         DrawManipulatorToolbox(cursorPos);
     }
+}
+
+void Viewport::DrawStageSelector(const ImVec2 &cursorPos) {
+    const ImVec2 buttonSize(25, 25); // Button size
+    const ImVec2 toolBoxPos(15, 10); // Alignment
+    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
+    const ImVec4 selectedColor(ColorButtonHighlight);
+        
+    if (GetCurrentStage()) {
+        ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
+        ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+        //ImGui::SameLine();
+        ImGui::SmallButton(ICON_UT_STAGE);
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            DrawOpenedStages();
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
+        ImGui::SameLine();
+        ImGui::SmallButton(ICON_FA_PEN);
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
+            DrawUsdPrimEditTarget(selected);
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
+        ImGui::PopStyleColor();
+    }
+
+}
+
+void Viewport::DrawToolBar(const ImVec2 &cursorPos) {
+    const ImVec2 buttonSize(25, 25); // Button size
+    const ImVec2 toolBoxPos(120, 40); // Alignment
+    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
+    const ImVec4 selectedColor(ColorButtonHighlight);
+
+    ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
+    ImGui::Button("\xef\x80\xb0");
+    ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
+        DrawCameraList(*this);
+        DrawCameraEditor(*this);
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    ImGui::Button("\xef\x93\xbe");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
+        DrawRendererControls(*_renderer);
+        DrawRendererSelection(*_renderer);
+        DrawColorCorrection(*_renderer, _imagingSettings);
+        DrawAovSettings(*_renderer);
+        DrawRendererCommands(*_renderer);
+        if(ImGui::BeginMenu("Renderer Settings")) {
+            DrawRendererSettings(*_renderer, _imagingSettings);
+            ImGui::EndMenu();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Button("\xef\x89\xac");
+    if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
+        DrawImagingSettings(*_renderer, _imagingSettings);
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleColor(2);
 }
 
 // Poor man manipulator toolbox
 void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
     const ImVec2 buttonSize(25, 25); // Button size
-    const ImVec2 toolBoxPos(15, 15); // Alignment
+    const ImVec2 toolBoxPos(15, 40); // Alignment
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
     const ImVec4 selectedColor(ColorButtonHighlight);
 
