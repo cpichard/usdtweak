@@ -11,22 +11,25 @@ This project is written in C++ and relies on [ImGUI](https://github.com/ocornut/
 
 ## Status
 
-There is no roadmap at the moment, as it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. The original idea behind this project was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So my current goal driving the developments is to provide at least the same functionalities as usdview and some ability to edit the stages and layers.
+There is no roadmap at the moment, it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. The original idea behind this project was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So my current goal driving the developments is to provide at least the same functionalities as usdview with some ability to edit the stages and layers.
 
 As of today usdtweak allows
 
 - to edit multiple stages and layers at the same time, copying and pasting prims between layers,
 - to edit stages properties selecting the edit target
+- to create and edit variants
 - to edit layer hierarchy: adding, deleting, reparenting, and renaming prims
 - to edit layer stack: adding, deleting new sublayers
-- to create and delete compositions like variants, references and payloads, inherits, ...
+- to create and delete compositions like references and payloads, inherits, ...
 - to change property values in layers or stages
-- to add and delete keys
+- to add and delete keys on properties
 - a minimal viewport interaction: translating, rotating, scaling objects.
 - text editing (for small files)
 - and more ...
 
-Drop me an email if you are interested in beta testing on windows or if you can't compile it.
+If you want to usdtweak, you can download the latest windows installer here https://github.com/cpichard/usdtweak/releases. Feel free to reach out if you have feedbacks.
+
+You can also build usdtweak, here are the instructions to do so. 
 
 ## Building
 
@@ -36,7 +39,7 @@ The project is almost self contained and only needs:
 
 - [cmake](https://cmake.org/) installed (version > 3.14)
 - a C++14 compiler installed: MSVC 19 or 17, g++ or clang++.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v22.05) version >= 20.11. (I am not sure the USD libraries provided with maya, houdini or omniverse would work)
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v23.05) version >= 20.11. I am not sure the USD libraries provided with maya or houdini would work, in theory they should, let me know if you manage to compile with them.
 
 If you managed to build USD, compiling usdtweak should be easy, you need to provide cmake with only 1 required variables:
 
@@ -56,7 +59,7 @@ On linux it should compile with:
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/path/to/usd-22.05 ..
+    cmake -Dpxr_DIR=/path/to/usd-23.05 ..
     make
 
 If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
@@ -66,7 +69,7 @@ If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
 
 ### Compiling on MacOs
 
-It compiles on MacOS Mojave. The viewport is now enabled for versions of USD superior or equal to 22.08, otherwise it is deactivated because of the OpenGL version not supported on MacOS;
+It compiles on MacOS Mojave. The viewport is now enabled for versions of USD superior or equal to 22.08, otherwise it is deactivated because the OpenGL version is not supported on MacOS;
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
@@ -89,7 +92,7 @@ It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWit
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.05 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-23.05 ..
     cmake --build . --config RelWithDebInfo
 
 If you have USD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
