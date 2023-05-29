@@ -136,25 +136,31 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
 }
 
-void DrawRendererSelection(UsdImagingGLEngine &renderer) {
-    // Renderer
+void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
     const auto currentPlugin = renderer.GetCurrentRendererId();
     if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
-        auto plugins = renderer.GetRendererPlugins();
-        for (int n = 0; n < plugins.size(); n++) {
-            bool is_selected = (currentPlugin == plugins[n]);
-            if (ImGui::Selectable(plugins[n].GetText(), is_selected)) {
-                if (!renderer.SetRendererPlugin(plugins[n])) {
-                    std::cerr << "unable to set default renderer plugin" << std::endl;
-                } else {
-                    renderer.SetRendererAov(GetAovSelection(renderer));
-                }
-            }
-            if (is_selected)
-                ImGui::SetItemDefaultFocus();
-        }
+        DrawRendererSelectionList(renderer);
         ImGui::EndCombo();
     }
+}
+
+void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
+    const auto currentPlugin = renderer.GetCurrentRendererId();
+    auto plugins = renderer.GetRendererPlugins();
+    for (int n = 0; n < plugins.size(); n++) {
+        bool is_selected = (currentPlugin == plugins[n]);
+        std::string pluginName = renderer.GetRendererDisplayName(plugins[n]);
+        if (ImGui::Selectable(pluginName.c_str(), is_selected)) {
+            if (!renderer.SetRendererPlugin(plugins[n])) {
+                std::cerr << "unable to set default renderer plugin" << std::endl;
+            } else {
+                renderer.SetRendererAov(GetAovSelection(renderer));
+            }
+        }
+        if (is_selected)
+            ImGui::SetItemDefaultFocus();
+    }
+
 }
 
 void DrawRendererControls(UsdImagingGLEngine &renderer) {

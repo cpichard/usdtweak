@@ -29,7 +29,8 @@ private:
 void InitializeRendererAov(UsdImagingGLEngine&);
 
 ///
-void DrawRendererSelection(UsdImagingGLEngine &);
+void DrawRendererSelectionCombo(UsdImagingGLEngine &);
+void DrawRendererSelectionList(UsdImagingGLEngine &);
 void DrawRendererControls(UsdImagingGLEngine &);
 void DrawRendererCommands(UsdImagingGLEngine &);
 void DrawRendererSettings(UsdImagingGLEngine &, ImagingSettings &);
