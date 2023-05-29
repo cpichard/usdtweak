@@ -117,7 +117,6 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
         ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
     }
     if (ImGui::BeginMenu("Edit layer")) {
-        ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
         if (pcpIndex.IsValid()) {
             auto rootNode = pcpIndex.GetRootNode();
