@@ -188,121 +188,173 @@ void Viewport::Draw() {
         //}
         HandleManipulationEvents();
         HandleKeyboardShortcut();
-        DrawToolBar(cursorPos);
-        DrawStageSelector(cursorPos);
-        DrawManipulatorToolbox(cursorPos);
+
+        DrawToolBar(cursorPos + ImVec2(120, 40));
+        DrawManipulatorToolbox(cursorPos + ImVec2(15, 40));
+        DrawStageSelector(cursorPos + ImVec2(15, 15));
     }
 }
 
-void Viewport::DrawStageSelector(const ImVec2 &cursorPos) {
-    const ImVec2 buttonSize(25, 25); // Button size
-    const ImVec2 toolBoxPos(15, 10); // Alignment
-    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
-    const ImVec4 selectedColor(ColorButtonHighlight);
-        
-    if (GetCurrentStage()) {
-        ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
-        ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
-        //ImGui::SameLine();
-        ImGui::SmallButton(ICON_UT_STAGE);
-        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            DrawOpenedStages();
-            ImGui::EndPopup();
-        }
-        ImGui::SameLine();
-        ImGui::Text("%s", GetCurrentStage()->GetRootLayer()->GetDisplayName().c_str());
-        ImGui::SameLine();
-        ImGui::SmallButton(ICON_FA_PEN);
-        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            const UsdPrim& selected = GetSelection().IsSelectionEmpty(GetCurrentStage()) ? GetCurrentStage()->GetPseudoRoot() : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
-            DrawUsdPrimEditTarget(selected);
-            ImGui::EndPopup();
-        }
-        ImGui::SameLine();
-        ImGui::Text("%s", GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName().c_str());
-        ImGui::PopStyleColor();
-    }
 
+void Viewport::DrawStageSelector(const ImVec2 widgetOrigin) {
+    const ImVec2 buttonSize(25, 25); // Button size
+    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
+    const ImVec4 selectedColor(ColorButtonHighlight);
+    const ImGuiStyle &style = ImGui::GetStyle();
+    
+    // Background frame
+    const std::string stageName = GetCurrentStage() ? GetCurrentStage()->GetRootLayer()->GetDisplayName() : "";
+    const auto stageNameTextSize = ImGui::CalcTextSize(stageName.c_str(), nullptr, false, false);
+    const std::string editTargetName = GetCurrentStage() ? GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName() : "";
+    const auto editTargetNameTextSize = ImGui::CalcTextSize(editTargetName.c_str(), nullptr, false, false);
+
+    ImVec2 frameSize(stageNameTextSize.x + editTargetNameTextSize.x + 2 * buttonSize.x + 4 * style.FramePadding.y, std::max(stageNameTextSize.y, editTargetNameTextSize.y));
+
+    frameSize += ImVec2(2 * style.FramePadding.x, 2 * style.FramePadding.y);
+    ImGui::SetCursorPos(widgetOrigin);
+    const ImVec2 frameTop = ImGui::GetCurrentWindow()->DC.CursorPos - style.FramePadding;
+    const ImVec2 frameBot = frameTop + frameSize + style.FramePadding;
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
+    ImGui::RenderFrame(frameTop, frameBot, ImGui::GetColorU32(ImGuiCol_FrameBg), false, false);
+    ImGui::PopStyleColor();
+
+    // Stage selector
+    ImGui::SetCursorPos(widgetOrigin);
+    ImGui::SmallButton(ICON_UT_STAGE);
+    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        DrawOpenedStages();
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Text("%s", stageName.c_str());
+
+    // Edit target selector
+    ImGui::SameLine();
+    ImGui::SmallButton(ICON_FA_PEN);
+    if (GetCurrentStage() && ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        const UsdPrim &selected = GetSelection().IsSelectionEmpty(GetCurrentStage())
+                                      ? GetCurrentStage()->GetPseudoRoot()
+                                      : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
+        DrawUsdPrimEditTarget(selected);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::Text("%s", editTargetName.c_str());
 }
 
-void Viewport::DrawToolBar(const ImVec2 &cursorPos) {
+
+void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     const ImVec2 buttonSize(25, 25); // Button size
-    const ImVec2 toolBoxPos(120, 40); // Alignment
-    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
+    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
     const ImVec4 selectedColor(ColorButtonHighlight);
 
-    ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    ImGui::SetCursorPos(widgetPosition);
     ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
-    ImGui::Button("\xef\x80\xb0");
+    ImGui::Button(ICON_FA_CAMERA);
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawCameraList(*this);
         DrawCameraEditor(*this);
         ImGui::EndPopup();
     }
-
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Cameras");
+    }
     ImGui::SameLine();
-    ImGui::Button("\xef\x93\xbe");
+    ImGui::Button(ICON_FA_USER_COG);
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawRendererControls(*_renderer);
-        DrawRendererSelection(*_renderer);
+        DrawRendererSelectionCombo(*_renderer);
         DrawColorCorrection(*_renderer, _imagingSettings);
         DrawAovSettings(*_renderer);
         DrawRendererCommands(*_renderer);
-        if(ImGui::BeginMenu("Renderer Settings")) {
+        if (ImGui::BeginMenu("Renderer Settings")) {
             DrawRendererSettings(*_renderer, _imagingSettings);
             ImGui::EndMenu();
         }
         ImGui::EndPopup();
     }
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Renderer settings");
+    }
     ImGui::SameLine();
-    ImGui::Button("\xef\x89\xac");
+    ImGui::Button(ICON_FA_TV);
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawImagingSettings(*_renderer, _imagingSettings);
         ImGui::EndPopup();
     }
-
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Viewport settings");
+    }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, _imagingSettings.enableCameraLight ? selectedColor : defaultColor);
+    if (ImGui::Button(ICON_FA_FIRE)) {
+        _imagingSettings.enableCameraLight = !_imagingSettings.enableCameraLight;
+    }
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Enable camera light");
+    }
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, _imagingSettings.enableSceneMaterials ? selectedColor : defaultColor);
+    if (ImGui::Button(ICON_FA_HAND_SPARKLES)) {
+        _imagingSettings.enableSceneMaterials = !_imagingSettings.enableSceneMaterials;
+    }
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Enable scene materials");
+    }
+    ImGui::PopStyleColor();
+    if (_renderer && _renderer->GetRendererPlugins().size() >= 2) {
+        ImGui::SameLine();
+        ImGui::Button(_renderer->GetRendererDisplayName(_renderer->GetCurrentRendererId()).c_str());
+        if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+            ImGui::SetTooltip("Render delegate");
+        }
+        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+            DrawRendererSelectionList(*_renderer);
+            ImGui::EndPopup();
+        }
+    }
     ImGui::PopStyleColor(2);
 }
 
+
 // Poor man manipulator toolbox
-void Viewport::DrawManipulatorToolbox(const ImVec2 &cursorPos) {
+void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
     const ImVec2 buttonSize(25, 25); // Button size
-    const ImVec2 toolBoxPos(15, 40); // Alignment
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.9);
     const ImVec4 selectedColor(ColorButtonHighlight);
-
-    ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
+    ImGui::SetCursorPos(widgetPosition);
     ImGui::SetNextItemWidth(80);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
     DrawPickMode(_selectionManipulator);
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
-    //ImGui::SetCursorPos(ImVec2(toolBoxPos.x + cursorPos.x, toolBoxPos.y + cursorPos.y));
-    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
+    ImGui::SetCursorPosX(widgetPosition.x);
+    
     if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
         ChooseManipulator<MouseHoverManipulator>();
     }
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<PositionManipulator>() ? selectedColor : defaultColor);
-    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
+    ImGui::SetCursorPosX(widgetPosition.x);
     if (ImGui::Button(ICON_FA_ARROWS_ALT, buttonSize)) {
         ChooseManipulator<PositionManipulator>();
     }
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<RotationManipulator>() ? selectedColor : defaultColor);
-    ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
+    ImGui::SetCursorPosX(widgetPosition.x);
     if (ImGui::Button(ICON_FA_SYNC_ALT, buttonSize)) {
         ChooseManipulator<RotationManipulator>();
     }
     ImGui::PopStyleColor();
 
      ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
-     ImGui::SetCursorPosX(toolBoxPos.x + cursorPos.x);
+     ImGui::SetCursorPosX(widgetPosition.x);
     if (ImGui::Button(ICON_FA_COMPRESS, buttonSize)) {
         ChooseManipulator<ScaleManipulator>();
     }
