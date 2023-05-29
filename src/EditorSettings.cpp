@@ -87,6 +87,9 @@ void EditorSettings::ParseLine(const char *line) {
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "PluginPaths=")) {
         std::string pluginPathsLine(line + 12);
         SplitSemiColon(pluginPathsLine, _pluginPaths);
+    } else if (strlen(line) > 19 && std::equal(line, line + 19, "BlueprintLocations=")) {
+        std::string blueprintsLine(line + 19);
+        SplitSemiColon(blueprintsLine, _blueprintLocations);
     }
 }
 
@@ -120,9 +123,13 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     for (int i = 0; i < _launcherNames.size(); ++i) {
         buf->appendf("Launcher=%s;%s\n", _launcherNames[i].c_str(), _launcherCommandLines[i].c_str());
     }
-    if(!_pluginPaths.empty()) {
+    if (!_pluginPaths.empty()) {
         buf->appendf("PluginPaths=%s\n", JoinSemiColon(_pluginPaths).c_str());
     }
+    if (!_blueprintLocations.empty()) {
+        buf->appendf("BlueprintLocations=%s\n", JoinSemiColon(_blueprintLocations).c_str());
+    }
+
 }
 
 void EditorSettings::UpdateRecentFiles(const std::string &newFile) {

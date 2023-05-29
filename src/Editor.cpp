@@ -34,6 +34,7 @@
 #include "LauncherBar.h"
 #include "ConnectionEditor.h"
 #include "Playblast.h"
+#include "Blueprints.h"
 
 #include "Stamp.h"
 
@@ -333,6 +334,7 @@ Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
+    Blueprints::GetInstance().SetBlueprintsLocations(_settings._blueprintLocations);
 }
 
 Editor::~Editor(){

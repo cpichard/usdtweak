@@ -214,6 +214,7 @@ struct PrimCreateRelationship : public SdfLayerCommand {
         if (!_owner)
             return false;
         auto layer = _owner->GetLayer();
+        // TODO we could pass a list of space separated target and link them all
         SdfCommandGroupRecorder recorder(_undoCommands, layer);
         if (SdfRelationshipSpecHandle relationship = SdfRelationshipSpec::New(_owner, _name, _custom, _variability)) {
             CreateListEditorOperation(relationship->GetTargetPathList(), _operation, SdfPath(_targetPath));
@@ -287,6 +288,36 @@ struct PrimDuplicate : public SdfLayerCommand {
     std::string _newName;
     SdfPrimSpecHandle _prim;
 };
+
+struct PrimAddBlueprint : public SdfLayerCommand {
+    PrimAddBlueprint(SdfPrimSpecHandle prim, std::string &primName, std::string blueprintPath)
+        : _prim(std::move(prim)), _primName(primName), _blueprintPath(blueprintPath){};
+    ~PrimAddBlueprint() override {}
+    bool DoIt() override {
+        if (_prim) {
+            // Open a layer and copy the content of it onto this prim
+            auto layerSource = SdfLayer::FindOrOpen(_blueprintPath);
+            if (!layerSource)
+                return false; // warning ??
+            auto primSourcePath = SdfPath::AbsoluteRootPath().AppendChild(layerSource->GetDefaultPrim());
+            // TODO check primSourcePath
+            SdfCommandGroupRecorder recorder(_undoCommands, _prim->GetLayer());
+            // TODO check the GetDefaultPrim is available or create a new name
+
+            auto primDest = SdfPrimSpec::New(_prim, FindNextAvailableTokenString(layerSource->GetDefaultPrim()),
+                                             SdfSpecifier::SdfSpecifierDef);
+            return (SdfCopySpec(layerSource, primSourcePath, _prim->GetLayer(), primDest->GetPath()));
+            // Close the layer
+        }
+        return false;
+    }
+
+    std::string _primName;
+    std::string _blueprintPath;
+    SdfPrimSpecHandle _prim;
+};
+
+
 
 // A base class for copy/paste commands, it keeps the copy/paste layer and
 // used paths
@@ -430,6 +461,7 @@ template void ExecuteAfterDraw<PrimCreateRelationship>(SdfPrimSpecHandle owner, 
                                                        bool custom, SdfListOpType operation, std::string targetPath);
 template void ExecuteAfterDraw<PrimReorder>(SdfPrimSpecHandle owner, bool up);
 template void ExecuteAfterDraw<PrimDuplicate>(SdfPrimSpecHandle prim, std::string newName);
+template void ExecuteAfterDraw<PrimAddBlueprint>(SdfPrimSpecHandle prim, std::string newName, std::string bluePrintPath);
 template void ExecuteAfterDraw<PrimCopy>(SdfPrimSpecHandle prim);
 template void ExecuteAfterDraw<PrimPaste>(SdfPrimSpecHandle prim);
 template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, SdfListOpType operation,

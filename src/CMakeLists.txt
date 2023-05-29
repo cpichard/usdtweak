@@ -1,5 +1,7 @@
 
 target_sources(usdtweak PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/Blueprints.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Blueprints.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Constants.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandLineOptions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandLineOptions.cpp

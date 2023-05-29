@@ -27,6 +27,7 @@ struct PrimCreateAttribute;
 struct PrimCreateRelationship;
 struct PrimReorder;
 struct PrimDuplicate;
+struct PrimAddBlueprint;
 struct PrimCopy;
 struct PrimPaste;
 struct PrimCreateAttributeConnection;

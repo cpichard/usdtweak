@@ -39,6 +39,10 @@ struct EditorSettings {
     void UpdateRecentFiles(const std::string &newFile);
     const std::list<std::string> &GetRecentFiles() const { return _recentFiles; }
 
+    
+    /// Blueprints root location on disk
+    std::vector<std::string> _blueprintLocations;
+
     // Launcher commands.
     // We maintain a mapping between the commandName and the commandLine while keeping
     // the order as well. As we expect a very few number of commands, we store them

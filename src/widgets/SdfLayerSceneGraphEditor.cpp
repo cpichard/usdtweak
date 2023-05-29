@@ -31,10 +31,28 @@
 #include "SdfPrimEditor.h"
 #include "Shortcuts.h"
 #include "UsdHelpers.h"
+#include "Blueprints.h"
 
 //
 #define LayerHierarchyEditorSeed 3456823
 #define IdOf ToImGuiID<3456823, size_t>
+
+static void DrawBlueprintMenus(SdfPrimSpecHandle &primSpec, const std::string &folder) {
+    Blueprints &blueprints = Blueprints::GetInstance();
+    for (const auto &subfolder : blueprints.GetSubFolders(folder)) {
+        // TODO should check for name validity
+        std::string subFolderName = subfolder.substr(subfolder.find_last_of("/") + 1);
+        if (ImGui::BeginMenu(subFolderName.c_str())) {
+            DrawBlueprintMenus(primSpec, subfolder);
+            ImGui::EndMenu();
+        }
+    }
+    for (const auto &item : blueprints.GetItems(folder)) {
+        if (ImGui::MenuItem(item.first.c_str())) {
+            ExecuteAfterDraw<PrimAddBlueprint>(primSpec, FindNextAvailableTokenString(primSpec->GetName()), item.second);
+        }
+    }
+}
 
 
 void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
@@ -49,6 +67,10 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
         if (ImGui::MenuItem("Add sibling")) {
             ExecuteAfterDraw<PrimNew>(parent, FindNextAvailableTokenString(primSpec->GetName()));
         }
+    }
+    if (ImGui::BeginMenu("Add blueprint")) {
+        DrawBlueprintMenus(primSpec, "");
+        ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Duplicate")) {
         ExecuteAfterDraw<PrimDuplicate>(primSpec, FindNextAvailableTokenString(primSpec->GetName()));
