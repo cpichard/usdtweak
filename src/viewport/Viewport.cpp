@@ -10,6 +10,7 @@
 #include <pxr/usd/usdUtils/stageCache.h>
 
 #include "Gui.h"
+#include "ImGuiHelpers.h"
 #include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
