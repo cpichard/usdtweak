@@ -2,6 +2,9 @@
 #include <cassert>
 #include <pxr/usd/sdf/listEditorProxy.h>
 #include <pxr/usd/sdf/reference.h>
+#include <pxr/usd/sdf/listOp.h>
+
+PXR_NAMESPACE_USING_DIRECTIVE
 
 // ExtraArgsT is used to pass additional arguments as the function passed as visitor
 // might need more than the operation and the item
@@ -102,3 +105,6 @@ template <typename ListEditorT, typename OpOrIntT, typename ItemsT> inline void 
     }
 };
 
+// Look for a new name. If prefix ends with a number, it will increase its value until
+// a valid name/token is found
+std::string FindNextAvailableTokenString(std::string prefix);

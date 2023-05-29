@@ -1,6 +1,5 @@
 #include <array>
 #include <cctype>
-#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stack>
@@ -31,49 +30,28 @@
 #include "SdfLayerEditor.h"
 #include "SdfPrimEditor.h"
 #include "Shortcuts.h"
+#include "UsdHelpers.h"
 
 //
 #define LayerHierarchyEditorSeed 3456823
 #define IdOf ToImGuiID<3456823, size_t>
 
-// Look for a new name. If prefix ends with a number, it will increase its value until
-// a valid name/token is found
-static std::string FindNextAvailablePrimName(std::string prefix) {
-    // Find number in the prefix
-    size_t end = prefix.size() - 1;
-    while (end > 0 && std::isdigit(prefix[end])) {
-        end--;
-    }
-    size_t padding = prefix.size() - 1 - end;
-    const std::string number = prefix.substr(end + 1, padding);
-    auto value = number.size() ? std::stoi(number) : 0;
-    std::ostringstream newName;
-    padding = padding == 0 ? 4 : padding; // 4: default padding
-    do {
-        value += 1;
-        newName.seekp(0, std::ios_base::beg); // rewind
-        newName << prefix.substr(0, end + 1) << std::setfill('0') << std::setw(padding) << value;
-        // Looking for existing token with the same name.
-        // There might be a better solution here
-    } while (TfToken::Find(newName.str()) != TfToken());
-    return newName.str();
-}
 
 void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     if (!primSpec)
         return;
 
     if (ImGui::MenuItem("Add child")) {
-        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
+        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
     }
     auto parent = primSpec->GetNameParent();
     if (parent) {
         if (ImGui::MenuItem("Add sibling")) {
-            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailablePrimName(primSpec->GetName()));
+            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailableTokenString(primSpec->GetName()));
         }
     }
     if (ImGui::MenuItem("Duplicate")) {
-        ExecuteAfterDraw<PrimDuplicate>(primSpec, FindNextAvailablePrimName(primSpec->GetName()));
+        ExecuteAfterDraw<PrimDuplicate>(primSpec, FindNextAvailableTokenString(primSpec->GetName()));
     }
     if (ImGui::MenuItem("Remove")) {
         ExecuteAfterDraw<PrimRemove>(primSpec);
@@ -125,9 +103,9 @@ inline void DrawTooltip(const char *text) {
 void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
     if (ImGui::Button(ICON_FA_PLUS)) {
         if (prim == SdfPrimSpecHandle()) {
-            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
+            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         } else {
-            ExecuteAfterDraw<PrimNew>(prim, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
+            ExecuteAfterDraw<PrimNew>(prim, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         }
     }
     DrawTooltip("New child prim");
@@ -135,15 +113,15 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
     if (ImGui::Button(ICON_FA_PLUS_SQUARE) && prim) {
         auto parent = prim->GetNameParent();
         if (parent) {
-            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailablePrimName(prim->GetName()));
+            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailableTokenString(prim->GetName()));
         } else {
-            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(prim->GetName()));
+            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(prim->GetName()));
         }
     }
     DrawTooltip("New sibbling prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_CLONE) && prim) {
-        ExecuteAfterDraw<PrimDuplicate>(prim, FindNextAvailablePrimName(prim->GetName()));
+        ExecuteAfterDraw<PrimDuplicate>(prim, FindNextAvailableTokenString(prim->GetName()));
     }
     DrawTooltip("Duplicate");
     ImGui::SameLine();
@@ -366,7 +344,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
         DrawMiniToolbar(layer, SdfPrimSpec());
         ImGui::Separator();
         if (ImGui::MenuItem("Add root prim")) {
-            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailablePrimName(SdfPrimSpecDefaultName));
+            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         }
         const char *clipboard = ImGui::GetClipboardText();
         const bool clipboardEmpty = !clipboard || clipboard[0] == 0;
@@ -504,6 +482,6 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
         AddShortcut<PrimCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPrim);
         AddShortcut<PrimPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(selectedPrim);
         AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim,
-                                                                  FindNextAvailablePrimName(selectedPrim->GetName()));
+                                                                  FindNextAvailableTokenString(selectedPrim->GetName()));
     }
 }
