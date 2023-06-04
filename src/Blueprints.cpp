@@ -29,7 +29,21 @@ void Blueprints::SetBlueprintsLocations(const std::vector<std::string> &location
     // TODO: we should measure the time it takes to read all the blueprints as this can affect the application startup time
     // Also this code could be ran in another thread as it is not essential to have the
     // blueprint informations at startup time
+    // -> We might just want to read a json file containing a list of file/
+    // if there is a json file; otherwise read the dir ??
     while (!paths.empty()) {
+        if (!fs::exists(paths.top())) {
+            std::cerr << "unable to find blueprint path " << paths.top() << std::endl;
+            paths.pop();
+            continue;
+        }
+        try {
+            fs::is_directory(paths.top());
+        } catch (fs::filesystem_error &) {
+            std::cerr << "unable to read directory " << paths.top() << std::endl;
+            paths.pop();
+            continue;
+        }
         const auto path = fs::directory_iterator(paths.top());
         paths.pop();
         const auto folder = folders.top();
