@@ -142,7 +142,8 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
-    if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
+    std::string pluginName = renderer.GetRendererDisplayName(currentPlugin);
+    if (ImGui::BeginCombo("Renderer", pluginName.c_str())) {
         DrawRendererSelectionList(renderer);
         ImGui::EndCombo();
     }
