@@ -192,10 +192,11 @@ void Viewport::Draw() {
         //}
         HandleManipulationEvents();
         HandleKeyboardShortcut();
-
+        ImGui::BeginDisabled(!bool(GetCurrentStage()));
         DrawToolBar(cursorPos + ImVec2(120, 40));
         DrawManipulatorToolbox(cursorPos + ImVec2(15, 40));
         DrawStageSelector(cursorPos + ImVec2(15, 15));
+        ImGui::EndDisabled();
     }
 }
 
@@ -205,7 +206,11 @@ void Viewport::DrawStageSelector(const ImVec2 widgetOrigin) {
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
     const ImVec4 selectedColor(ColorButtonHighlight);
     const ImGuiStyle &style = ImGui::GetStyle();
-    
+    ImGui::SetCursorPos(widgetOrigin);
+    if (!bool(GetCurrentStage())) {
+        ImGui::Text("No stage loaded");
+        return;
+    }
     // Background frame
     const std::string stageName = GetCurrentStage() ? GetCurrentStage()->GetRootLayer()->GetDisplayName() : "";
     const auto stageNameTextSize = ImGui::CalcTextSize(stageName.c_str(), nullptr, false, false);
@@ -213,9 +218,7 @@ void Viewport::DrawStageSelector(const ImVec2 widgetOrigin) {
     const auto editTargetNameTextSize = ImGui::CalcTextSize(editTargetName.c_str(), nullptr, false, false);
 
     ImVec2 frameSize(stageNameTextSize.x + editTargetNameTextSize.x + 2 * buttonSize.x + 4 * style.FramePadding.y, std::max(stageNameTextSize.y, editTargetNameTextSize.y));
-
     frameSize += ImVec2(2 * style.FramePadding.x, 2 * style.FramePadding.y);
-    ImGui::SetCursorPos(widgetOrigin);
     const ImVec2 frameTop = ImGui::GetCurrentWindow()->DC.CursorPos - style.FramePadding;
     const ImVec2 frameBot = frameTop + frameSize + style.FramePadding;
     ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
