@@ -35,6 +35,9 @@ constexpr float TimeBeforeTooltip = 2.f; // 2 seconds
 #define ColorEditableWidgetBg {0.260f, 0.300f, 0.360f, 1.000f}
 #define ColorPrimSelectedBg {0.75, 0.60, 0.33, 0.6}
 #define ColorAttributeSelectedBg {0.75, 0.60, 0.33, 0.6}
+#define ColorImGuiButton {1.f, 1.f, 1.f, 0.2f}
+#define ColorImGuiFrameBg {0.160f, 0.160f, 0.160f, 1.000f}
+#define ColorImGuiText {1.0, 1.0, 1.0, 1.000f}
 
 /// Predefined colors for dark mode ui components
 #define ColorPrimaryLight {0.900f, 0.900f, 0.900f, 1.000f}
@@ -73,3 +76,5 @@ constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 /// _UT_ stands for Usd Tweak
 #define ICON_UT_DELETE ICON_FA_TRASH
 #define ICON_UT_STAGE ICON_FA_BARS
+
+#define DefaultColorStyle  ImGuiCol_Text, ImVec4(ColorImGuiText), ImGuiCol_Button, ImVec4(ColorImGuiButton), ImGuiCol_FrameBg, ImVec4(ColorImGuiFrameBg)

@@ -3,6 +3,8 @@
 #include "ImagingSettings.h"
 #include "VtValueEditor.h"
 #include "Gui.h"
+#include "ImGuiHelpers.h"
+#include "Constants.h"
 
 
 template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
@@ -86,6 +88,7 @@ void InitializeRendererAov(UsdImagingGLEngine &renderer) {
 }
 
 void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     // General render parameters
     ImGui::ColorEdit4("Background color", renderparams.clearColor.data());
 
@@ -137,6 +140,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
 }
 
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
     if (ImGui::BeginCombo("Renderer", currentPlugin.GetText())) {
         DrawRendererSelectionList(renderer);
@@ -145,6 +149,7 @@ void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
 }
 
 void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
     auto plugins = renderer.GetRendererPlugins();
     for (int n = 0; n < plugins.size(); n++) {
@@ -164,6 +169,7 @@ void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
 }
 
 void DrawRendererControls(UsdImagingGLEngine &renderer) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (renderer.IsPauseRendererSupported()) {
         ImGui::Separator();
         if (ImGui::Button("Pause")) {
@@ -186,6 +192,7 @@ void DrawRendererControls(UsdImagingGLEngine &renderer) {
 }
 
 void DrawRendererCommands(UsdImagingGLEngine &renderer) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (ImGui::BeginMenu("Renderer Commands")) {
         HdCommandDescriptors commands = renderer.GetRendererCommandDescriptors();
         for (const auto &command : commands) {
@@ -201,6 +208,7 @@ void DrawRendererCommands(UsdImagingGLEngine &renderer) {
 
 
 void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     // Renderer settings
     for (auto setting : renderer.GetRendererSettingsList()) {
         VtValue currentValue = renderer.GetRendererSetting(setting.key);
@@ -214,7 +222,7 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderp
 }
 
 void DrawColorCorrection(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
-
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (renderer.IsColorCorrectionCapable() && GetAovSelection(renderer) == TfToken("color")) {
         ImGui::Separator();
         // Gamma correction is not implemented yet in usd
@@ -236,6 +244,7 @@ void DrawColorCorrection(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
 }
 
 void DrawAovSettings(UsdImagingGLEngine &renderer) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     TfToken newSelection;
     const TfToken selectedAov = GetAovSelection(renderer);
     if (ImGui::BeginCombo("AOV", selectedAov.GetString().c_str())) {

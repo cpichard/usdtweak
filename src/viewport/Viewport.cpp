@@ -28,6 +28,7 @@ static SdfPath perspectiveCameraPath("/usdtweak/cameras/cameraPerspective");
 
 /// Draw a camera selection
 void DrawCameraList(Viewport &viewport) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     // TODO: the viewport cameras and the stage camera should live in different lists
     constexpr char const *perspectiveCameraName = "Perspective";
     if (ImGui::BeginListBox("##CameraList")) {
@@ -110,6 +111,7 @@ static void DrawUsdGeomCameraEditor(const UsdGeomCamera &usdGeomCamera, UsdTimeC
 }
 
 void DrawCameraEditor(Viewport &viewport) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     // 2 cases:
     //   1) the camera selected is part of the scene
     //   2) the camera is handled by the viewport
@@ -158,6 +160,7 @@ Viewport::~Viewport() {
 }
 
 static void DrawOpenedStages() {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     const UsdStageCache &stageCache = UsdUtilsStageCache::Get();
     const auto allStages = stageCache.GetAllStages();
     for (const auto &stagePtr : allStages) {

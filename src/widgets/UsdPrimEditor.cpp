@@ -423,7 +423,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
 void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim)
         return;
-
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (ImGui::MenuItem("Session layer")) {
         ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
     }
