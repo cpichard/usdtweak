@@ -172,7 +172,11 @@ static inline void DrawLayerDescriptionRow(SdfLayerHandle layer, bool isStage, c
 }
 
 inline size_t ComputeLayerSetHash(SdfLayerHandleSet &layerSet) {
-    return boost::hash_range(layerSet.begin(), layerSet.end());
+    size_t seed = 0;
+    for (auto it = layerSet.begin(); it != layerSet.end(); ++it) {
+        seed ^= hash_value(*it) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
 }
 
 

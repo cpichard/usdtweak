@@ -1,4 +1,3 @@
-#include <boost/range/adaptor/reversed.hpp> // why reverse adaptor is not in std ?? seriously ...
 #include <memory>
 #include <iostream>
 #include "SdfCommandGroup.h"
@@ -35,8 +34,8 @@ template void SdfCommandGroup::StoreInstruction<UndoRedoPopChild<SdfPath>>(UndoR
 // Call all the functions stored in _commands in reverse order
 void SdfCommandGroup::UndoIt() {
     SdfChangeBlock block;
-    for (auto &cmd : boost::adaptors::reverse(_instructions)) {
-        cmd.UndoIt();
+    for (auto cmd = _instructions.rbegin(); cmd != _instructions.rend(); ++cmd) {
+        cmd->UndoIt();
     }
 }
 

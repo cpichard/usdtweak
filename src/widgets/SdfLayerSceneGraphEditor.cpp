@@ -4,8 +4,6 @@
 #include <sstream>
 #include <stack>
 
-#include <boost/range/adaptor/reversed.hpp>
-
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerUtils.h>
@@ -430,22 +428,22 @@ void TraverseOpenedPaths(const SdfLayerRefPtr &layer, std::vector<SdfPath> &path
             if (layer->HasField(path, SdfChildrenKeys->PrimChildren)) {
                 const std::vector<TfToken> &children =
                     layer->GetFieldAs<std::vector<TfToken>>(path, SdfChildrenKeys->PrimChildren);
-                for (const auto &tok : boost::adaptors::reverse(children)) {
-                    st.push(path.AppendChild(tok));
+                for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                    st.push(path.AppendChild(*it));
                 }
             }
             if (layer->HasField(path, SdfChildrenKeys->VariantSetChildren)) {
                 const std::vector<TfToken> &variantSetchildren =
                     layer->GetFieldAs<std::vector<TfToken>>(path, SdfChildrenKeys->VariantSetChildren);
                 // Skip the variantSet paths and show only the variantSetChildren
-                for (const auto &tok : boost::adaptors::reverse(variantSetchildren)) {
-                    auto variantSetPath = path.AppendVariantSelection(tok, "");
+                for (auto vSetIt = variantSetchildren.rbegin(); vSetIt != variantSetchildren.rend(); ++vSetIt) {
+                    auto variantSetPath = path.AppendVariantSelection(*vSetIt, "");
                     if (layer->HasField(variantSetPath, SdfChildrenKeys->VariantChildren)) {
                         const std::vector<TfToken> &variantChildren =
                             layer->GetFieldAs<std::vector<TfToken>>(variantSetPath, SdfChildrenKeys->VariantChildren);
-                        for (const auto &tok : boost::adaptors::reverse(variantChildren)) {
-                            const std::string &variantSet = variantSetPath.GetVariantSelection().first;
-                            st.push(path.AppendVariantSelection(TfToken(variantSet), tok));
+                        const std::string &variantSet = variantSetPath.GetVariantSelection().first;
+                        for (auto vChildrenIt = variantChildren.rbegin(); vChildrenIt != variantChildren.rend(); ++vChildrenIt) {
+                            st.push(path.AppendVariantSelection(TfToken(variantSet), *vChildrenIt));
                         }
                     }
                 }

@@ -28,8 +28,8 @@ UndoRedoDeleteSpec::UndoRedoDeleteSpec(SdfLayerHandle layer, const SdfPath &path
     // This can be really slow on big scenes
     SdfChangeBlock changeBlock;
     _deletedData = TfCreateRefPtr(new SdfData());
-    SdfLayer::TraversalFunction copyFunc = std::bind(&_CopySpec, std::cref(*boost::get_pointer(_layerData)),
-                                                     boost::get_pointer(_deletedData), std::placeholders::_1);
+    SdfLayer::TraversalFunction copyFunc = std::bind(&_CopySpec, std::cref(*get_pointer(_layerData)),
+                                                     get_pointer(_deletedData), std::placeholders::_1);
     _layer->Traverse(path, copyFunc);
 }
 
@@ -43,7 +43,7 @@ void UndoRedoDeleteSpec::DoIt() {
 void UndoRedoDeleteSpec::UndoIt() {
     if (_layer && _layer->GetStateDelegate()) {
         SdfChangeBlock changeBlock;
-        _SpecCopier copier(boost::get_pointer(_layerData));
+        _SpecCopier copier(get_pointer(_layerData));
         _layer->GetStateDelegate()->CreateSpec(_path, _deletedSpecType, _inert);
         _deletedData->VisitSpecs(&copier);
     }
