@@ -2,6 +2,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include <pxr/usd/sdf/fileFormat.h>
+
 std::string FindNextAvailableTokenString(std::string prefix) {
     // Find number in the prefix
     size_t end = prefix.size() - 1;
@@ -21,4 +23,12 @@ std::string FindNextAvailableTokenString(std::string prefix) {
         // There might be a better solution here
     } while (TfToken::Find(newName.str()) != TfToken());
     return newName.str();
+}
+
+const std::vector<std::string> GetUsdValidExtensions() {
+    const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
+    std::vector<std::string> validExtensions;
+    auto addDot = [](const std::string &str) { return "." + str; };
+    std::transform(usdExtensions.cbegin(), usdExtensions.cend(), std::back_inserter(validExtensions), addDot);
+    return validExtensions;
 }

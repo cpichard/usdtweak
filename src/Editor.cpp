@@ -35,7 +35,7 @@
 #include "ConnectionEditor.h"
 #include "Playblast.h"
 #include "Blueprints.h"
-
+#include "UsdHelpers.h"
 #include "Stamp.h"
 
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
@@ -58,15 +58,6 @@
 #define ViewportWindowTitle "Viewport"
 #define StatusBarWindowTitle "Status bar"
 #define LauncherBarWindowTitle "Launcher bar"
-
-// Get usd known file format extensions and returns then prefixed with a dot and in a vector
-static const std::vector<std::string> GetUsdValidExtensions() {
-    const auto usdExtensions = SdfFileFormat::FindAllFileFormatExtensions();
-    std::vector<std::string> validExtensions;
-    auto addDot = [](const std::string &str) { return "." + str; };
-    std::transform(usdExtensions.cbegin(), usdExtensions.cend(), std::back_inserter(validExtensions), addDot);
-    return validExtensions;
-}
 
 // Used only in the editor, so no point adding them to ImGuiHelpers yet
 inline bool BelongToSameDockTab(ImGuiWindow *w1, ImGuiWindow *w2) {

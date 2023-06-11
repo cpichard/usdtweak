@@ -105,6 +105,9 @@ template <typename ListEditorT, typename OpOrIntT, typename ItemsT> inline void 
     }
 };
 
-// Look for a new name. If prefix ends with a number, it will increase its value until
-// a valid name/token is found
+// Look for a new token. If prefix ends with a number, it will increase its value until
+// a valid token is found
 std::string FindNextAvailableTokenString(std::string prefix);
+
+// Find usd file format extensions and returns them prefixed with a dot
+const std::vector<std::string> GetUsdValidExtensions();
