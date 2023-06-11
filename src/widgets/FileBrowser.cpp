@@ -233,7 +233,7 @@ void DrawFileBrowser(int gutterSize) {
 
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
-    static std::string directoryContentPath;
+    static fs::path directoryContentPath;
     static bool mustUpdateDirectoryContent = true;
     static bool mustUpdateChosenFileName = false;
 
