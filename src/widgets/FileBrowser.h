@@ -2,8 +2,8 @@
 #include <vector>
 #include <set>
 
-/// Draw the file browser ui this can be used anywhere, except that there is only one instance of the FileBrowser. Also, there is
-/// no OK/Cancel button, or options, this is the responsibility of the caller to draw them.
+/// Draw a file browser ui which can be used anywhere, except that there is only one instance of the FileBrowser
+/// for the application. There is no OK/Cancel button, or options, this is the responsibility of the caller to draw them.
 void DrawFileBrowser(int gutterSize=190);
 
 /// Returns the current stored file browser path
@@ -20,6 +20,9 @@ void ResetFileBrowserFilePath();
 
 /// Set the filebrowser directory to look at
 void SetFileBrowserDirectory(const std::string &directory);
+
+/// Set the filebrowser directory to look at
+void SetFileBrowserFilePath(const std::string &path);
 
 /// Set the filebrowser directory to look at
 std::string GetFileBrowserDirectory();

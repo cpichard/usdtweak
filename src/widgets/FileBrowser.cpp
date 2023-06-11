@@ -88,12 +88,14 @@ inline void localtime_(struct tm *result, const time_t *timep) { localtime_r(tim
 
 #endif
 
+namespace {
 /// Browser returned file path, not thread safe
 static std::string filePath;
 static bool fileExists = false;
 static std::vector<std::string> validExts;
 static std::string lineEditBuffer;
 static fs::path displayedDirectory = fs::current_path();
+};
 
 void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
 
@@ -231,6 +233,7 @@ void DrawFileBrowser(int gutterSize) {
 
     static fs::path displayedFileName;
     static std::vector<fs::directory_entry> directoryContent;
+    static std::string directoryContentPath;
     static bool mustUpdateDirectoryContent = true;
     static bool mustUpdateChosenFileName = false;
 
@@ -271,6 +274,7 @@ void DrawFileBrowser(int gutterSize) {
         }
         std::sort(directoryContent.begin(), directoryContent.end(), compareDirectoryThenFile);
         mustUpdateDirectoryContent = false;
+        directoryContentPath = displayedDirectory;
     };
 
     if (mustUpdateChosenFileName) {
@@ -287,7 +291,7 @@ void DrawFileBrowser(int gutterSize) {
 
     // We scan the line buffer edit every second, no need to do it at every frame
     EverySecond(ParseLineBufferEdit);
-
+    mustUpdateDirectoryContent |= directoryContentPath != displayedDirectory;
     mustUpdateDirectoryContent |= DrawRefreshButton();
     ImGui::SameLine();
     mustUpdateDirectoryContent |= DrawNavigationBar(displayedDirectory);
@@ -408,3 +412,6 @@ void SetFileBrowserDirectory(const std::string &directory) {
     }
 }
 
+void SetFileBrowserFilePath(const std::string &path) {
+    lineEditBuffer = path;
+}
