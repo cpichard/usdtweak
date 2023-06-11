@@ -30,6 +30,112 @@
 #include "VtValueEditor.h"
 #include "TableLayouts.h"
 #include "VtDictionaryEditor.h"
+#include "UsdHelpers.h"
+
+#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#define GHC_WITH_EXCEPTIONS 0
+#include <ghc/filesystem.hpp>
+namespace fs = ghc::filesystem;
+#endif
+
+// This is very similar to AddSublayer, they should be merged together
+struct EditSublayerPath : public ModalDialog {
+
+    EditSublayerPath(const SdfLayerRefPtr &layer, const std::string sublayerPath) : layer(layer), _sublayerPath(sublayerPath) {
+        if (!layer) return;
+        // We have to setup the filebrowser first, setting the directory and filename it should point to
+        // 2 cases:
+        //    1. path is empty -> we want to create a new layer
+        //          -> set the fb directory to layer directory
+        //    2. path contains a name -> we want to edit this path using the browser
+        //      2.1 name is relative to layer and pointing to an existing layer
+        //            -> set relative on and
+        //      2.2 name is absolute and pointing to an existing layer
+        //            -> use the directory of path
+        //      2.3 name does not point to an existing file
+        //           -> set the directory to layer
+        fs::path layerPath(layer->GetRealPath());
+        SetFileBrowserDirectory(layerPath.parent_path().string());
+        if (!_sublayerPath.empty()) {
+            // Does the file exists ??
+            fs::path path(_sublayerPath);
+            if (fs::exists(path)) {
+                // Path is global
+                _relative = false;
+                SetFileBrowserDirectory(path.parent_path().string());
+                SetFileBrowserFilePath(path.string());
+            } else {
+                // Try relative to this layer
+                auto relativePath = layerPath.parent_path() / path;
+                auto absolutePath = fs::absolute(relativePath);
+                if (fs::exists(absolutePath) || fs::exists(absolutePath.parent_path())) {
+                    _relative = true;
+                    SetFileBrowserDirectory(absolutePath.parent_path().string());
+                    SetFileBrowserFilePath(absolutePath.string());
+                }
+            }
+            SetFileBrowserFilePath(_sublayerPath);
+        }
+        // Make sure we only use usd layers in the filebrowser
+        SetValidExtensions(GetUsdValidExtensions());
+        EnsureFileBrowserDefaultExtension("usd");
+    };
+
+    void Draw() override {
+        DrawFileBrowser();
+        auto filePath = GetFileBrowserFilePath();
+        auto insertedFilePath = _relative ? GetFileBrowserFilePathRelativeTo(layer->GetRealPath(), _unixify) : filePath;
+        if (insertedFilePath.empty()) insertedFilePath = _sublayerPath;
+        const bool filePathExits = FilePathExists();
+        const bool relativePathValid = _relative ? insertedFilePath != "" : true;
+        ImGui::Checkbox("Use relative path", &_relative);
+        ImGui::SameLine();
+        ImGui::Checkbox("Unix compatible", &_unixify);
+        ImGui::BeginDisabled(!relativePathValid || filePathExits);
+        ImGui::Checkbox("Create layer", &_createLayer);
+        ImGui::EndDisabled();
+
+        if (filePathExits && relativePathValid) {
+            ImGui::Text("Import found layer: ");
+        } else {
+            if (_createLayer) {
+                // TODO: do we also want to be able to create new layer ??
+                ImGui::Text("Creating and import layer: ");
+            } else {
+                ImGui::Text("Import unknown layer: ");
+            }
+        } // ... other messages like permission denied, or incorrect extension
+        ImGui::SameLine();
+        ImGui::Text("%s", insertedFilePath.c_str());
+        DrawOkCancelModal([&]() {
+            if (!insertedFilePath.empty()) {
+                if (!filePathExits && _createLayer) {
+                    SdfLayer::CreateNew(filePath); // TODO: in a command
+                }
+                if (_sublayerPath.empty()) {
+                    ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, insertedFilePath, 0);
+                } else {
+                    ExecuteAfterDraw<LayerRenameSubLayer>(layer, _sublayerPath, insertedFilePath);
+                }
+            }
+        });
+    }
+
+    const char *DialogId() const override { return "Edit sublayer path"; }
+    SdfLayerRefPtr layer;
+    std::string _sublayerPath;
+    bool _createLayer = false;
+    bool _relative = false;
+    bool _unixify = false;
+};
+
+void DrawSublayerPathEditDialog(const SdfLayerRefPtr &layer, const std::string &path) {
+    DrawModalDialog<EditSublayerPath>(layer, path);
+}
+
 
 void DrawDefaultPrim(const SdfLayerRefPtr &layer) {
     auto defautPrim = layer->GetDefaultPrim();
@@ -240,7 +346,7 @@ struct SublayerPathRow {
 template <> inline void DrawSecondColumn<SublayerPathRow>(const int rowId, const SdfLayerRefPtr &layer, const std::string &path) {
         std::string newPath(path);
     ImGui::PushID(rowId);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-2*28);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-3*28);
     ImGui::InputText("##sublayername", &newPath);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         ExecuteAfterDraw<LayerRenameSubLayer>(layer, path, newPath);
@@ -248,6 +354,10 @@ template <> inline void DrawSecondColumn<SublayerPathRow>(const int rowId, const
     if (ImGui::BeginPopupContextItem("sublayer")) {
         DrawSubLayerActionPopupMenu(layer, path);
         ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_FILE)) {
+        DrawSublayerPathEditDialog(layer, path);
     }
     ImGui::SameLine();
     if (ImGui::SmallButton(ICON_FA_ARROW_UP)) {

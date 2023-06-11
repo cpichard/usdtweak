@@ -17,3 +17,5 @@ void DrawLayerSublayerStack(SdfLayerRefPtr layer);
 
 
 void DrawSdfLayerEditorMenuBar(SdfLayerRefPtr layer);
+
+void DrawSublayerPathEditDialog(const SdfLayerRefPtr &layer, const std::string &path);

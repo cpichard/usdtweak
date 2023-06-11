@@ -8,48 +8,6 @@
 #include "FileBrowser.h"
 #include "ModalDialogs.h"
 
-struct AddSublayer : public ModalDialog {
-
-    AddSublayer(const SdfLayerRefPtr &layer) : layer(layer){};
-
-    void Draw() override {
-        DrawFileBrowser();
-        EnsureFileBrowserDefaultExtension("usd");
-        auto filePath = GetFileBrowserFilePath();
-        auto insertedFilePath = _relative ? GetFileBrowserFilePathRelativeTo(layer->GetRealPath(), _unixify) : filePath;
-        const bool filePathExits = FilePathExists();
-        const bool relativePathValid = _relative ? insertedFilePath != "" : true;
-        ImGui::Checkbox("Use relative path", &_relative);
-        ImGui::Checkbox("Unix compatible", &_unixify);
-
-        if (filePathExits && relativePathValid) {
-            ImGui::Text("Import layer: ");
-        } else {
-            if (relativePathValid && !filePathExits) {
-                ImGui::Text("Create new layer: ");
-            } else {
-                ImGui::Text("Not found: ");
-            }
-        } // ... other messages like permission denied, or incorrect extension
-        ImGui::SameLine();
-        ImGui::Text("%s", insertedFilePath.c_str());
-        DrawOkCancelModal([&]() {
-            if (!filePath.empty()) {
-                if (!filePathExits) {
-                    // TODO: Check extension
-                    SdfLayer::CreateNew(filePath); // SHould that be in a command ??
-                }
-
-                ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, insertedFilePath, 0);
-            }
-        });
-    }
-
-    const char *DialogId() const override { return "Import or create sublayer"; }
-    SdfLayerRefPtr layer;
-    bool _relative = false;
-    bool _unixify = false;
-};
 
 static void DrawSublayerTreeNodePopupMenu(const SdfLayerRefPtr &layer, const SdfLayerRefPtr &parent, const std::string &layerPath,
                                           const UsdStageRefPtr &stage) {
@@ -62,7 +20,7 @@ static void DrawSublayerTreeNodePopupMenu(const SdfLayerRefPtr &layer, const Sdf
         //    ExecuteAfterDraw(&SdfLayer::InsertSubLayerPath, layer, sublayer->GetIdentifier(), 0);
         //}
         if (layer && ImGui::MenuItem("Add sublayer")) {
-            DrawModalDialog<AddSublayer>(layer);
+            DrawSublayerPathEditDialog(layer, "");
         }
         if (parent && !layerPath.empty()) {
             if (ImGui::MenuItem("Remove sublayer")) {

@@ -363,6 +363,9 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
     if (ImGui::BeginPopupContextItem()) {
         DrawMiniToolbar(layer, SdfPrimSpec());
         ImGui::Separator();
+        if (ImGui::MenuItem("Add sublayer")) {
+            DrawSublayerPathEditDialog(layer, "");
+        }
         if (ImGui::MenuItem("Add root prim")) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         }
