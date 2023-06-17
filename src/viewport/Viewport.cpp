@@ -604,7 +604,10 @@ void Viewport::Render() {
     }
 
     // Draw grid. TODO: this should be in a usd render task
-    _grid.Render(*this);
+    // TODO the grid should handle the ortho case
+    if (_imagingSettings.showGrid) {
+        _grid.Render(*this);
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
