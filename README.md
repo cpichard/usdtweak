@@ -130,6 +130,10 @@ A cmake command will then look like:
 
     cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-21.11 -Dglfw3_DIR=C:\path\to\glfw3-3.3.6\lib\cmake\glfw3 ..
 
+## Known issues
+
+- When enabling the scene materials in Storm, the texture don't always load correctly. This can be solved by setting the USDIMAGINGGL_ENGINE_ENABLE_SCENE_INDEX environment variable to 1.
+
 ## Contact
 
 If you want to know more, or have any issues, questions, drop me an email: cpichard.github@gmail.com
