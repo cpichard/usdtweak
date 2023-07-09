@@ -26,7 +26,7 @@ void main()
     vec2 gridLine = 1.f - abs(clamp(mod(gridCoord, cellSize) / (2.0*gridCoordDerivative), 0.0, 1.0) * 2 - 1.f);
     float gridLineAlpha = max(gridLine.x, gridLine.y);
     vec4 c = vec4(0.7, 0.7, 0.7, 1.0);
-    c.a = gridLineAlpha * (1-fadeFactor*fadeFactor);
+    c.a = max(0, gridLineAlpha * (1-fadeFactor*fadeFactor));
     if (c.a == 0) discard;
     FragColor = c;
     // planeProj is the projection of the plane point on this fragment, it allows to compute its dept
