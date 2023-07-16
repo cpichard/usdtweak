@@ -159,6 +159,9 @@ void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
         bool is_selected = (currentPlugin == plugins[n]);
         std::string pluginName = renderer.GetRendererDisplayName(plugins[n]);
         if (ImGui::Selectable(pluginName.c_str(), is_selected)) {
+            // TODO: changing the plugin while metal is still processing will error and crash the app.
+            // We could create an ExecuteAferDraw command to defer the change of the plugin
+            // after the drawing but there is no certainty as if it will solve the issue.
             if (!renderer.SetRendererPlugin(plugins[n])) {
                 std::cerr << "unable to set default renderer plugin" << std::endl;
             } else {
