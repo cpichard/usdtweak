@@ -20,6 +20,7 @@ else ()
     set(GLFW_BUILD_EXAMPLES OFF)
     set(GLFW_BUILD_TESTS OFF)
     set(GLFW_BUILD_DOCS OFF)
+    set(GLFW_INSTALL OFF)
     FetchContent_MakeAvailable(glfw)
 endif (DEFINED glfw3_DIR)
 
@@ -38,15 +39,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 if (APPLE)
     set(MACOSX_BUNDLE_ICON_FILE icon.icns)
 
-# And this part tells CMake where to find and install the file itself
+    # And this part tells CMake where to find and install the file itself
     set(myApp_ICON ${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icon.icns)
     set_source_files_properties(${myApp_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
-add_executable(usdtweak MACOSX_BUNDLE ${myApp_ICON})
+    add_executable(usdtweak MACOSX_BUNDLE ${myApp_ICON})
 
-set_target_properties(usdtweak PROPERTIES
-    OUTPUT_NAME "usdtweak"
-    MACOSX_BUNDLE TRUE)
+    set_target_properties(usdtweak PROPERTIES
+        OUTPUT_NAME "usdtweak"
+        MACOSX_BUNDLE TRUE)
 else()
     add_executable(usdtweak)
 endif()
@@ -71,10 +72,16 @@ if(WIN32)
     include("cmake/windows_installer.cmake")
 endif()
 
+# Installer on macOS
+if(APPLE)
+    include("cmake/macos_installer.cmake")
+endif()
+
 # Remove warnings coming from usd and enable default multithreaded compilation on windows
 target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
+
 
 # Organise the sources using the same hierarchy as the filesystem in xcode and vs projects
 get_target_property(USDTWEAK_SOURCES usdtweak SOURCES)
