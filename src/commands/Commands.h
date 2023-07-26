@@ -53,6 +53,8 @@ struct EditorShutdown;
 struct EditorStartPlayback;
 struct EditorStopPlayback;
 struct EditorFindPrim;
+struct EditorExportUsdz;
+struct EditorExportFlattenedStage;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;

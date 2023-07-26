@@ -13,14 +13,21 @@ PXR_NAMESPACE_USING_DIRECTIVE
 class SdfCommandGroupRecorder final {
 public:
 
-    ///
+    /// RAII object for recording Sdf "instructions" on one or multiple layers
     SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer);
+    SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerHandleVector layers);
     ~SdfCommandGroupRecorder();
 
 private:
+    void SetUndoStateDelegates();
+    void UnsetUndoStateDelegates();
+    
+    // The _undoCommands is used to make sure we don't change the dele
     SdfCommandGroup &_undoCommands;
-    SdfLayerRefPtr _layer;
-    SdfLayerStateDelegateBaseRefPtr _previousDelegate;
+
+    // We keep the _previousDelegates of the _layers to restore them when the object is destroyed
+    SdfLayerHandleVector _layers;
+    SdfLayerStateDelegateBaseRefPtrVector _previousDelegates;
 };
 
 

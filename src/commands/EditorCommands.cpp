@@ -9,6 +9,7 @@
 #include "CommandsImpl.h"
 #include "Editor.h"
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/UsdUtils/dependencies.h>
 #include <string>
 #include "WildcardsCompare.h"
 
@@ -363,4 +364,36 @@ struct EditorFindPrim : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorFindPrim>(const std::string, bool useRegex);
 
+struct EditorExportUsdz : public EditorCommand {
+    EditorExportUsdz(const std::string destination, bool useArKit) : _destination(destination), _useArKit(useArKit) {}
+    bool DoIt() override {
+        // UsdUtilsCreateNewUsdzPackage is making changes to the scene, we just undo them when it has finished.
+        SdfCommandGroup _undoCommands;
+        {
+            SdfAssetPath stageAssetPath(_editor->GetCurrentStage()->GetRootLayer()->GetRealPath());
+            SdfCommandGroupRecorder recorder(_undoCommands, _editor->GetCurrentStage()->GetUsedLayers());
+            if (_useArKit) {
+                UsdUtilsCreateNewARKitUsdzPackage(stageAssetPath, _destination);
+            } else {
+                UsdUtilsCreateNewUsdzPackage(stageAssetPath, _destination);
+            }
+        }
+        _undoCommands.UndoIt();
+        return false; // Don't push this command on the undo/redo stack
+    }
+    
+    std::string _destination;
+    bool _useArKit;
+};
+template void ExecuteAfterDraw<EditorExportUsdz>(const std::string, bool);
 
+
+struct EditorExportFlattenedStage : public EditorCommand {
+    EditorExportFlattenedStage(const std::string destination) : _destination(destination) {}
+    bool DoIt() override {
+        _editor->GetCurrentStage()->Flatten()->Export(_destination);
+        return false;
+    }
+    std::string _destination;
+};
+template void ExecuteAfterDraw<EditorExportFlattenedStage>(const std::string);

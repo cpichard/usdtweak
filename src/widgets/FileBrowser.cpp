@@ -399,6 +399,14 @@ void EnsureFileBrowserDefaultExtension(const std::string &ext) {
     }
 }
 
+void EnsureFileBrowserExtension(const std::string &ext) {
+    fs::path path(filePath);
+    if (!path.empty()) {
+        path.replace_extension(ext);
+        filePath = path.generic_string();
+        fileExists = fs::exists(filePath);
+    }
+}
 
 void ResetFileBrowserFilePath() {
     filePath = "";

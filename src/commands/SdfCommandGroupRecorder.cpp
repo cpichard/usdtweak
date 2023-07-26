@@ -3,17 +3,43 @@
 #include "UndoLayerStateDelegate.h"
 
 SdfCommandGroupRecorder::SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerRefPtr layer)
-    : _undoCommands(undoCommands), _layer(layer) {
-    if (_layer) {
-        _previousDelegate = _layer->GetStateDelegate();
-        if (undoCommands.IsEmpty()) { // No undo commands were previously recorded
-            _layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(undoCommands));
+: _undoCommands(undoCommands), _layers({layer}) {
+    SetUndoStateDelegates();
+}
+
+SdfCommandGroupRecorder::SdfCommandGroupRecorder(SdfCommandGroup &undoCommands, SdfLayerHandleVector layers)
+: _undoCommands(undoCommands), _layers(layers) {
+    SetUndoStateDelegates();
+}
+
+SdfCommandGroupRecorder::~SdfCommandGroupRecorder() {
+    UnsetUndoStateDelegates();
+}
+
+
+void SdfCommandGroupRecorder::SetUndoStateDelegates() {
+    if (_undoCommands.IsEmpty()) {
+        auto stateDelegate = UndoRedoLayerStateDelegate::New(_undoCommands);
+        for (const auto &layer : _layers) {
+            if (layer) {
+                _previousDelegates.push_back(layer->GetStateDelegate());
+                layer->SetStateDelegate(stateDelegate);
+            } else {
+                _previousDelegates.push_back({});
+            }
         }
     }
 }
 
-SdfCommandGroupRecorder::~SdfCommandGroupRecorder() {
-    if (_layer && _previousDelegate) {
-        _layer->SetStateDelegate(_previousDelegate);
+
+void SdfCommandGroupRecorder::UnsetUndoStateDelegates() {
+    if (!_layers.empty() && !_previousDelegates.empty()) {
+        auto previousDelegateIt = _previousDelegates.begin();
+        for (const auto &layer : _layers) {
+            if (layer) {
+                layer->SetStateDelegate(*previousDelegateIt);
+            }
+            previousDelegateIt++;
+        }
     }
 }

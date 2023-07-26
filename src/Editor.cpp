@@ -256,6 +256,66 @@ struct SaveLayerAsDialog : public ModalDialog {
     SdfLayerRefPtr _layer;
 };
 
+struct ExportStageDialog : public ModalDialog {
+    typedef enum {ExportUSDZ=0, ExportArKit, ExportFlatten} ExportType;
+    ExportStageDialog(Editor &editor, ExportType exportType) : editor(editor), _exportType(exportType) {
+        switch(_exportType){
+            case ExportUSDZ:
+                _exportTypeStr = "Export Compressed USD (usdz)";
+                _defaultExtension = "usdz";
+                break;
+            case ExportArKit:
+                _exportTypeStr = "Export ArKit (usdz)";
+                _defaultExtension = "usdz";
+                break;
+            case ExportFlatten:
+                _exportTypeStr = "Export Flattened USD (usd)";
+                _defaultExtension = "usd";
+                break;
+        }
+    };
+    ~ExportStageDialog() override {}
+    void Draw() override {
+        DrawFileBrowser();
+        switch (_exportType) {
+            case ExportUSDZ: // falls through
+            case ExportArKit:
+                EnsureFileBrowserExtension(_defaultExtension);
+                break;
+            case ExportFlatten:
+                EnsureFileBrowserDefaultExtension(_defaultExtension);
+                break;
+        }
+        if (FilePathExists()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
+        } else {
+            ImGui::Text("Export to: ");
+        }
+        auto filePath = GetFileBrowserFilePath();
+        ImGui::Text("%s", filePath.c_str());
+        DrawOkCancelModal([&]() { // On Ok ->
+            if (!filePath.empty()) {
+                switch (_exportType){
+                    case ExportUSDZ:
+                        ExecuteAfterDraw<EditorExportUsdz>(filePath, false);
+                        break;
+                    case ExportArKit:
+                        ExecuteAfterDraw<EditorExportUsdz>(filePath, true);
+                        break;
+                    case ExportFlatten:
+                        ExecuteAfterDraw<EditorExportFlattenedStage>(filePath);
+                        break;
+                }
+            }
+        });
+    }
+    
+    const char *DialogId() const override { return _exportTypeStr.c_str(); }
+    Editor &editor;
+    ExportType _exportType;
+    std::string _exportTypeStr;
+    std::string _defaultExtension;
+};
 
 static void BeginBackgoundDock() {
     // Setup dockspace using experimental imgui branch
@@ -514,6 +574,25 @@ void Editor::DrawMainMenuBar() {
             }
             if (ImGui::MenuItem(ICON_FA_SAVE " Save current layer as", "CTRL+F", false, hasLayer)) {
                 ExecuteAfterDraw<EditorSaveLayerAs>(GetCurrentLayer());
+            }
+            const bool hasCurrentStage = GetCurrentStage();
+            if (ImGui::BeginMenu(ICON_FA_SHARE " Export Stage", hasCurrentStage)) {
+                if (ImGui::MenuItem("Compressed package (usdz)")) {
+                    if (GetCurrentStage()) {
+                        DrawModalDialog<ExportStageDialog>(*this, ExportStageDialog::ExportUSDZ);
+                    }
+                }
+                if (ImGui::MenuItem("Arkit package (usdz)")) {
+                    if (GetCurrentStage()) {
+                        DrawModalDialog<ExportStageDialog>(*this, ExportStageDialog::ExportArKit);
+                    }
+                }
+                if (ImGui::MenuItem("Flattened stage (usd)")) {
+                    if (GetCurrentStage()) {
+                        DrawModalDialog<ExportStageDialog>(*this, ExportStageDialog::ExportFlatten);
+                    }
+                }
+                ImGui::EndMenu();
             }
 
             ImGui::Separator();

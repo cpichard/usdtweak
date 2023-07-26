@@ -15,6 +15,9 @@ std::string GetFileBrowserFilePathRelativeTo(const std::string& root, bool unixi
 /// Make sure the file path has an extension, if not "ext" is append as an extension
 void EnsureFileBrowserDefaultExtension(const std::string& ext);
 
+/// Make sure the file extension is ext
+void EnsureFileBrowserExtension(const std::string& ext);
+
 /// Reset currently stored path in the file browser
 void ResetFileBrowserFilePath();
 
