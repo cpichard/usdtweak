@@ -9,7 +9,7 @@
 #include "CommandsImpl.h"
 #include "Editor.h"
 #include <pxr/usd/usd/primRange.h>
-#include <pxr/usd/UsdUtils/dependencies.h>
+#include <pxr/usd/usdUtils/dependencies.h>
 #include <string>
 #include "WildcardsCompare.h"
 
