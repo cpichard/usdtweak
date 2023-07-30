@@ -138,7 +138,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
         }
     }
 
-    if (ImGui::ListBoxHeader("##ComboWithFilter_itemList", show_count, popup_max_height_in_items)) {
+    if (ImGui::BeginListBox("##ComboWithFilter_itemList")) {
         for (int i = 0; i < show_count; i++) {
             int idx = is_filtering ? items_filtered[i] : i;
             ImGui::PushID((void *)(intptr_t)idx);
@@ -156,7 +156,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
             }
             ImGui::PopID();
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
 
         if (ImGui::IsKeyPressedMap(ImGuiKey_Enter)) {
             value_changed = true;
