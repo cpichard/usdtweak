@@ -15,6 +15,7 @@ void main()
     if (near4.w!=0) {near4.xyz /= near4.w;}
     vec4 far4 = invModelView*invProj*vec4(aPos.x, aPos.y, 1.0, 1.0);
     if (far4.w!=0) {far4.xyz /= far4.w;}
+    // The projection is done in the fragment code
     gl_Position = vec4(aPos, 1.0);
     model = modelView;
     proj = projection;

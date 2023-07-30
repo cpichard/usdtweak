@@ -2,7 +2,7 @@
 //
 // Near and far gives 2 points on the camera ray for a particular fragment, we can then compute a so ray intersection with the
 // plane in the fragment shader. Using this ray, [pos = near + alpha*(far-near)] to compute the intersection with the ground plane
-// (pos.y=0 or pos.z=0) The position of the plance on the ray is then alpha = -near.y/(far.y-near.y) alpha < 0 means it intersects
+// (pos.y=0 or pos.z=0) The position of the plane on the ray is then alpha = -near.y/(far.y-near.y) alpha < 0 means it intersects
 // behind the camera, so we won't see it in front, so we can discard the fragment
 //
 out vec4 FragColor;
@@ -29,7 +29,7 @@ void main()
     c.a = max(0, gridLineAlpha * (1-fadeFactor*fadeFactor));
     if (c.a == 0) discard;
     FragColor = c;
-    // planeProj is the projection of the plane point on this fragment, it allows to compute its dept
+    // planeProj is the projection of the plane point on this fragment, it allows to compute its depth
     vec4 planeProj = proj*model*vec4(pointOnPlane, 1.0);
     gl_FragDepth = (((gl_DepthRange.far-gl_DepthRange.near) * (planeProj.z/planeProj.w)) + gl_DepthRange.near + gl_DepthRange.far) / 2.0;
 }
