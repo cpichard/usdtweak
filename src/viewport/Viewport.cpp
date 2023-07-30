@@ -114,7 +114,7 @@ void DrawCameraEditor(Viewport &viewport) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     // 2 cases:
     //   1) the camera selected is part of the scene
-    //   2) the camera is handled by the viewport
+    //   2) the camera is managed by the viewport and does not belong to the scene
     auto usdGeomCamera = viewport.GetUsdGeomCamera();
     if (usdGeomCamera) {
         DrawUsdGeomCameraEditor(usdGeomCamera, viewport.GetCurrentTimeCode());
@@ -582,12 +582,26 @@ void Viewport::Render() {
     if (_renderer && GetCurrentStage()) {
         // Render hydra
         // Set camera and lighting state
-
         _imagingSettings.SetLightPositionFromCamera(GetCurrentCamera());
         _renderer->SetLightingState(_imagingSettings.GetLights(), _imagingSettings._material, _imagingSettings._ambient);
-        _renderer->SetRenderViewport(GfVec4d(0, 0, width, height));
-        _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
-        _imagingSettings.forceRefresh = true;
+        
+        // Clipping planes
+        _imagingSettings.clipPlanes.clear();
+        for (int i = 0; i < GetCurrentCamera().GetClippingPlanes().size(); ++i) {
+            _imagingSettings.clipPlanes.emplace_back(GetCurrentCamera().GetClippingPlanes()[i]); // convert float to double
+        }
+        
+        GfVec4d viewport(0, 0, width, height);
+        GfRect2i renderBufferRect(GfVec2i(0, 0), width, height);
+        GfRange2f displayWindow(GfVec2f(viewport[0], height-viewport[1]-viewport[3]),
+                                GfVec2f(viewport[0]+viewport[2],height-viewport[1]));
+        GfRect2i dataWindow = renderBufferRect.GetIntersection(
+                                                 GfRect2i(GfVec2i(viewport[0], height-viewport[1]-viewport[3]),
+                                                              viewport[2], viewport[3]             ));
+        CameraUtilFraming framing(displayWindow, dataWindow);
+        _renderer->SetRenderBufferSize(renderSize);
+        _renderer->SetFraming(framing);
+        _renderer->SetOverrideWindowPolicy(std::make_pair(true, CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
 
         // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
         // else set camera state
@@ -676,10 +690,17 @@ void Viewport::Update() {
         _drawTarget->Unbind();
     }
 
-    // This is useful when a different camera is selected, when the focal length is changed
-    GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_textureSize[0]) / double(_textureSize[1]),
-                                                                   _renderCamera->GetFieldOfView(GfCamera::FOVHorizontal),
-                                                                   GfCamera::FOVHorizontal);
+    // This is useful when a different camera is selected, or when the focal length is changed
+    // But ideally we shouldn't update the camera at every frame
+    if (GetCurrentCamera().GetProjection() == GfCamera::Perspective) {
+        GetCurrentCamera().SetPerspectiveFromAspectRatioAndFieldOfView(double(_textureSize[0]) / double(_textureSize[1]),
+                                                                       _renderCamera->GetFieldOfView(GfCamera::FOVHorizontal),
+                                                                       GfCamera::FOVHorizontal);
+    } else { // assuming ortho
+        GetCurrentCamera().SetOrthographicFromAspectRatioAndSize(double(_textureSize[0]) / double(_textureSize[1]),
+                                                                 _renderCamera->GetVerticalAperture() * GfCamera::APERTURE_UNIT,
+                                                                 GfCamera::FOVVertical);
+    }
     if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {
         _renderer->ClearSelected();
         _renderer->SetSelected(_selection.GetSelectedPaths(GetCurrentStage()));
@@ -701,7 +722,7 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
     GfFrustum pixelFrustum = GetCurrentCamera().GetFrustum().ComputeNarrowedFrustum(clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
     GfVec3d outHitPoint;
     GfVec3d outHitNormal;
-    return (_renderer && _renderer->TestIntersection(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
+    return (_renderer && GetCurrentStage() && _renderer->TestIntersection(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
             pixelFrustum.ComputeProjectionMatrix(),
             GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint, &outHitNormal,
             &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));

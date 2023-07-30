@@ -44,4 +44,5 @@ class CameraRig {
     GfMatrix4d _zUpMatrix;
     double _selectionSize; /// Last "FrameBoundingBox" selection size
     GfVec2i _viewportSize;
+    float _dist = 100;
 };

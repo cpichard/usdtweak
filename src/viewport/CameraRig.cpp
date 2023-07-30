@@ -1,17 +1,19 @@
-#include <iostream>
-#include <pxr/base/gf/rotation.h>
-#include <pxr/base/gf/transform.h>
-#include <pxr/base/gf/bbox3d.h>
-#include <pxr/base/gf/frustum.h>
 #include "CameraRig.h"
 #include "Constants.h"
+#include <iostream>
+#include <pxr/base/gf/bbox3d.h>
+#include <pxr/base/gf/frustum.h>
+#include <pxr/base/gf/rotation.h>
+#include <pxr/base/gf/transform.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
 ///
-/// Camera manipulator, this is basically following how usdview camera.manipulation works
-/// This doesn't handle orthographic cameras yet
+/// Camera manipulator, this is copying how usdview freeCamera.py works
 ///
+
+// TODO: Set near and far plane automatically - we need the stage BBox and closest object bbox
+//
 
 //
 using DistT = float;
@@ -35,8 +37,8 @@ static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMat
     center = cameraPosition + dist * cameraAxis;
 }
 
-static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, const GfVec3d &center,
-                              const RotationT &rotation, const float &dist) {
+static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, const GfVec3d &center, const RotationT &rotation,
+                              const DistT &dist) {
     GfMatrix4d trans;
     trans.SetTranslate(GfVec3d::ZAxis() * dist);
     GfMatrix4d roty(1.0);
@@ -51,7 +53,6 @@ static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, con
     camera.SetFocusDistance(dist);
 }
 
-
 CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
     : _movementType(MovementType::None), _selectionSize(1.0), _viewportSize(viewportSize) {
     SetZIsUp(isZUp);
@@ -59,14 +60,17 @@ CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
 
 void CameraRig::ResetPosition(GfCamera &camera) {
     GfRotation rotf;
-    camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
-    constexpr float focusDistance = 100.f;
-    camera.SetFocusDistance(focusDistance);
+    if (camera.GetProjection() == GfCamera::Perspective) {
+        camera.SetPerspectiveFromAspectRatioAndFieldOfView(16.0 / 9.0, 60, GfCamera::FOVHorizontal);
+        constexpr float focusDistance = 100.f;
+        camera.SetFocusDistance(focusDistance);
+    } else if (camera.GetProjection() == GfCamera::Orthographic) {
+        camera.SetOrthographicFromAspectRatioAndSize(16.0 / 9.0, camera.GetVerticalAperture() * GfCamera::APERTURE_UNIT,
+                                                     GfCamera::FOVHorizontal);
+    }
 }
 
-void CameraRig::SetZIsUp(bool isZUp) {
-    _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0));
-}
+void CameraRig::SetZIsUp(bool isZUp) { _zUpMatrix = GfMatrix4d().SetRotate(GfRotation(GfVec3d::XAxis(), isZUp ? -90 : 0)); }
 
 /// Frame a bounding box.
 void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
@@ -74,11 +78,10 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
         return;
     }
 
-    DistT dist;
     RotationT rotation;
     GfVec3d center;
 
-    FromCameraTransform(camera, _zUpMatrix, center, rotation, dist);
+    FromCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
 
     center = bbox.ComputeCentroid();
 
@@ -87,44 +90,52 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
     _selectionSize = std::max(rect[0], rect[1]) * 2; // This reset the selection size
     auto fov = camera.GetFieldOfView(GfCamera::FOVHorizontal);
     auto lengthToFit = _selectionSize * 0.5;
-    dist = lengthToFit / atan(fov * 0.5 * (PI_F / 180.f));
-    // TODO: handle orthographic cameras
-    ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
+    _dist = lengthToFit / atan(fov * 0.5 * (PI_F / 180.f));
+    ToCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
 }
 
-// Updates a GfCamera, basically updating the transform matrix
+// Updates the transform matrix of a GfCamera depending on the movement
 bool CameraRig::Move(GfCamera &camera, double deltaX, double deltaY) {
-    DistT dist;
     RotationT rotation;
     GfVec3d center;
-    if (deltaX == 0 && deltaY == 0) return false;
-    FromCameraTransform(camera, _zUpMatrix, center, rotation, dist);
+    if (deltaX == 0 && deltaY == 0)
+        return false;
+    FromCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
 
     if (_movementType == MovementType::Orbit) { // TUMBLE
         rotation[0] += deltaX;
         rotation[1] += deltaY;
-        ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
+        ToCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
     } else if (_movementType == MovementType::Truck) {
         auto frustum = camera.GetFrustum();
         auto up = frustum.ComputeUpVector();
         auto cameraAxis = frustum.ComputeViewDirection();
         auto right = GfCross(cameraAxis, up);
         // Pixel to world - usdview behavior
-        const GfRange2d &window = frustum.GetWindow();
-        auto pixelToWorld = window.GetSize()[1] * dist / static_cast<double>(_viewportSize[1]);
-        center += -deltaX * right * pixelToWorld + deltaY * up * pixelToWorld;
-        ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
-    } else if (_movementType == MovementType::Dolly) {
-        /// Zoom behaving like in usdview
-        auto scaleFactor = 1.0 + -0.002 * (deltaX + deltaY);
-        if (scaleFactor > 1.0 && dist < 2.0) {
-            const auto selBasedIncr = _selectionSize / 25.0;
-            scaleFactor -= 1.0;
-            dist += std::min(selBasedIncr, scaleFactor);
+        double pixelToWorld = 1.0;
+        if (camera.GetProjection() == GfCamera::Orthographic) {
+            pixelToWorld = camera.GetVerticalAperture() * GfCamera::APERTURE_UNIT / static_cast<double>(_viewportSize[1]);
         } else {
-            dist *= scaleFactor;
+            const GfRange2d &window = frustum.GetWindow();
+            pixelToWorld = window.GetSize()[1] * _dist / static_cast<double>(_viewportSize[1]);
         }
-        ToCameraTransform(camera, _zUpMatrix, center, rotation, dist);
+        center += -deltaX * right * pixelToWorld + deltaY * up * pixelToWorld;
+        ToCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
+    } else if (_movementType == MovementType::Dolly) { // Not really a dolly in the orthographic case
+        auto scaleFactor = 1.0 + -0.002 * (deltaX + deltaY);
+        if (camera.GetProjection() == GfCamera::Orthographic) {
+            auto value = camera.GetVerticalAperture() * GfCamera::APERTURE_UNIT * (scaleFactor);
+            camera.SetOrthographicFromAspectRatioAndSize(camera.GetAspectRatio(), value, GfCamera::FOVVertical);
+        } else {
+            if (scaleFactor > 1.0 && _dist < 2.0) {
+                const auto selBasedIncr = _selectionSize / 25.0;
+                scaleFactor -= 1.0;
+                _dist += std::min(selBasedIncr, scaleFactor);
+            } else {
+                _dist *= scaleFactor;
+            }
+            ToCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
+        }
     } else {
         return false; // NO updates
     }
