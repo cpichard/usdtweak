@@ -567,7 +567,11 @@ static void DrawAttributeRowPopupMenu(const SdfAttributeSpecHandle &attribute) {
     if (ImGui::MenuItem(ICON_FA_COPY " Copy property")) {
         ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(attribute));
     }
-
+    
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy property name")) {
+        ImGui::SetClipboardText(attribute->GetName().c_str());
+    }
+    
     if (ImGui::MenuItem(ICON_FA_COPY " Copy property path")) {
         ImGui::SetClipboardText(attribute->GetPath().GetString().c_str());
     }
