@@ -158,9 +158,30 @@ VtValue DrawVtValue(const std::string &label, const VtValue &value) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(GfHalf(fltValue));
         }
+    } else if (value.IsHolding<char>()) {
+        char charValue = value.Get<char>();
+        const char* format = "%" PRId8;
+        ImGui::InputScalar(label.c_str(), ImGuiDataType_S8, (void*)&charValue, nullptr, nullptr, format, ImGuiInputTextFlags());
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(charValue);
+        }
+    } else if (value.IsHolding<unsigned char>()) {
+        unsigned char charValue = value.Get<unsigned char>();
+        const char* format = "%" PRIu8;
+        ImGui::InputScalar(label.c_str(), ImGuiDataType_U8, (void*)&charValue, nullptr, nullptr, format, ImGuiInputTextFlags());
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(charValue);
+        }
     } else if (value.IsHolding<int>()) {
         int intValue = value.Get<int>();
         ImGui::InputInt(label.c_str(), &intValue);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            return VtValue(intValue);
+        }
+    } else if (value.IsHolding<unsigned int>()) {
+        unsigned int intValue = value.Get<unsigned int>();
+        const char* format = "%" PRIu32;
+        ImGui::InputScalar(label.c_str(), ImGuiDataType_U32, (void*)&intValue, nullptr, nullptr, format, ImGuiInputTextFlags());
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             return VtValue(intValue);
         }
