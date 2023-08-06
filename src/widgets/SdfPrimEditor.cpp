@@ -90,7 +90,8 @@ struct CreateAttributeDialog : public ModalDialog {
 
     void Draw() override {
         // Schema
-        ImGui::BeginDisabled(_custom);
+        ImGui::Checkbox("Find attribute in schema", &_useSchema);
+        ImGui::BeginDisabled(!_useSchema);
         const char *schemaStr = selectedSchemaTypeName == _schemaTypeNames.end() ? "" : selectedSchemaTypeName->c_str();
         if (ImGui::BeginCombo("From schema", schemaStr)) {
             for (size_t i = 0; i < _schemaTypeNames.size(); i++) {
@@ -104,7 +105,7 @@ struct CreateAttributeDialog : public ModalDialog {
         }
         ImGui::EndDisabled();
         // Attribute name
-        if (_custom) {
+        if (!_useSchema) {
             ImGui::InputText("Name", &_attributeName);
         } else {
             if (ImGui::BeginCombo("Name", _attributeName.c_str())) {
@@ -117,7 +118,7 @@ struct CreateAttributeDialog : public ModalDialog {
                 ImGui::EndCombo();
             }
         }
-        ImGui::BeginDisabled(!_custom);
+        ImGui::BeginDisabled(_useSchema);
         if (ImGui::BeginCombo("Type", _typeName.GetAsToken().GetString().c_str())) {
             for (int i = 0; i < GetAllValueTypeNames().size(); i++) {
                 if (ImGui::Selectable(GetAllValueTypeNames()[i].GetAsToken().GetString().c_str(), false)) {
@@ -149,6 +150,7 @@ struct CreateAttributeDialog : public ModalDialog {
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
     bool _custom = false;
     bool _createDefault = false;
+    bool _useSchema = true;
     std::vector<std::string> _schemaTypeNames;
     std::vector<std::string>::iterator selectedSchemaTypeName = _schemaTypeNames.end();
 
@@ -187,8 +189,8 @@ struct CreateRelationDialog : public ModalDialog {
     }
 
     void Draw() override {
-
-        ImGui::BeginDisabled(_custom);
+        ImGui::Checkbox("Find relation in schema", &_useSchema);
+        ImGui::BeginDisabled(!_useSchema);
         const char *schemaStr = _selectedSchemaName == _allSchemaNames.end() ? "" : _selectedSchemaName->c_str();
         if (ImGui::BeginCombo("From schema", schemaStr)) {
             for (size_t i = 0; i < _allSchemaNames.size(); i++) {
@@ -202,7 +204,7 @@ struct CreateRelationDialog : public ModalDialog {
         }
         ImGui::EndDisabled();
 
-        if (_custom) {
+        if (!_useSchema) {
             ImGui::InputText("Relationship name", &_relationName);
         } else {
             if (ImGui::BeginCombo("Name", _relationName.c_str())) {
@@ -224,7 +226,7 @@ struct CreateRelationDialog : public ModalDialog {
             }
             ImGui::EndCombo();
         }
-        ImGui::BeginDisabled(!_custom);
+        ImGui::BeginDisabled(_useSchema);
         bool varying = _variability == SdfVariabilityVarying;
         if (ImGui::Checkbox("Varying", &varying)) {
             _variability = _variability == SdfVariabilityVarying ? SdfVariabilityUniform : SdfVariabilityVarying;
@@ -245,6 +247,7 @@ struct CreateRelationDialog : public ModalDialog {
     SdfListOpType _operation = SdfListOpTypeExplicit;
     SdfVariability _variability = SdfVariabilityVarying;
     bool _custom = false;
+    bool _useSchema = true;
     std::vector<std::string> _allSchemaNames;
     std::vector<std::string>::iterator _selectedSchemaName = _allSchemaNames.end();
     std::vector<std::string> _allRelationshipNames;
