@@ -534,12 +534,14 @@ static void DrawSdfPathListOneLinerEditor(SdfSpecHandle spec, TfToken field) {
 
 static void DrawAttributeRowPopupMenu(const SdfAttributeSpecHandle &attribute) {
     if (ImGui::MenuItem(ICON_FA_TRASH " Remove attribute")) {
-        // attribute->GetLayer()->GetAttributeAtPath(attribute)
         SdfPrimSpecHandle primSpec = attribute->GetLayer()->GetPrimAtPath(attribute->GetOwner()->GetPath());
         ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(attribute->GetPath()));
     }
     if (!attribute->HasConnectionPaths() && ImGui::MenuItem(ICON_FA_LINK " Create connection")) {
         DrawModalDialog<CreateSdfAttributeConnectionDialog>(attribute);
+    }
+    if (attribute->HasConnectionPaths() && ImGui::MenuItem(ICON_FA_LINK " Clear connection paths")) {
+        ExecuteAfterDraw(&SdfAttributeSpec::ClearConnectionPaths, attribute);
     }
 
     // Only if there are no default
@@ -553,12 +555,7 @@ static void DrawAttributeRowPopupMenu(const SdfAttributeSpecHandle &attribute) {
         ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), createDefaultValue);
     }
     if (attribute->HasDefaultValue() && ImGui::MenuItem(ICON_FA_TRASH " Clear default value")) {
-        std::function<void()> clearDefaultValue = [=]() {
-            if (attribute) {
-                attribute->ClearDefaultValue();
-            }
-        };
-        ExecuteAfterDraw<UsdFunctionCall>(attribute->GetLayer(), clearDefaultValue);
+        ExecuteAfterDraw(&SdfAttributeSpec::ClearDefaultValue, attribute);
     }
 
     if (ImGui::MenuItem(ICON_FA_KEY " Add key value")) {
