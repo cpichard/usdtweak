@@ -681,6 +681,25 @@ void DrawPrimSpecAttributes(const SdfPrimSpecHandle &primSpec, const Selection &
     }
 }
 
+static void DrawRelationRowPopupMenu(const SdfRelationshipSpecHandle &relation) {
+    if (ImGui::MenuItem(ICON_FA_TRASH " Remove relation")) {
+        SdfPrimSpecHandle primSpec = relation->GetLayer()->GetPrimAtPath(relation->GetOwner()->GetPath());
+        ExecuteAfterDraw(&SdfPrimSpec::RemoveProperty, primSpec, primSpec->GetPropertyAtPath(relation->GetPath()));
+    }
+
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy relation")) {
+        ExecuteAfterDraw<PropertyCopy>(static_cast<SdfPropertySpecHandle>(relation));
+    }
+    
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy relation name")) {
+        ImGui::SetClipboardText(relation->GetName().c_str());
+    }
+    
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy relation path")) {
+        ImGui::SetClipboardText(relation->GetPath().GetString().c_str());
+    }
+}
+
 struct RelationRow {};
 template <>
 inline void DrawFirstColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
@@ -693,6 +712,10 @@ template <>
 inline void DrawSecondColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
                                           const SdfRelationshipSpecHandle &relation) {
     ImGui::Text("%s", relation->GetName().c_str());
+    if (ImGui::BeginPopupContextItem(relation->GetName().c_str())) {
+        DrawRelationRowPopupMenu(relation);
+        ImGui::EndPopup();
+    }
 };
 template <>
 inline void DrawThirdColumn<RelationRow>(const int rowId, const SdfPrimSpecHandle &primSpec,
