@@ -250,6 +250,7 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
         }
         if (!primIsVariant && ImGui::IsMouseDoubleClicked(0)) {
             editNamePrim = primSpec;
+            ImGui::ClearActiveID(); // see https://github.com/ocornut/imgui/issues/6690
         }
     }
     if (primSpec == editNamePrim) {
