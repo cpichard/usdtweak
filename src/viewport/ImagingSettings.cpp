@@ -120,6 +120,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
         }
         ImGui::EndCombo();
     }
+    ImGui::SliderFloat("Complexity", &renderparams.complexity, 1.0f, 1.4f, "%.1f");
     ImGui::Separator();
     if (ImGui::BeginMenu("Show purpose")) {
         ImGui::Checkbox("guides", &renderparams.showGuides);

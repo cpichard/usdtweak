@@ -12,6 +12,17 @@
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
 
+// The clipper has precision errors when there are millions of elements in the array, it doesn't compute the height of the widgets properly.
+// As a solution we pass the precomputed height of a line. This is not great, but that's the easiest solution for the moment.
+// TODO: fill an issue on the ImGui github 
+template <typename ValueT> inline int HeightOf() { return 26; }
+template <> int HeightOf<GfMatrix4d>() { return HeightOf<double>() * 4; }
+template <> int HeightOf<GfMatrix4f>() { return HeightOf<float>() * 4; }
+template <> int HeightOf<GfMatrix3d>() { return HeightOf<double>() * 3; }
+template <> int HeightOf<GfMatrix3f>() { return HeightOf<float>() * 3; }
+template <> int HeightOf<GfMatrix2d>() { return HeightOf<double>() * 2; }
+template <> int HeightOf<GfMatrix2f>() { return HeightOf<float>() * 2; }
+
 // Returns true if a modification happened
 template <typename ValueT> inline bool DrawVtArray(VtArray<ValueT> &values) {
     auto arraySize = values.size();
@@ -19,7 +30,7 @@ template <typename ValueT> inline bool DrawVtArray(VtArray<ValueT> &values) {
 
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX;
     if (ImGui::BeginTable("##DrawArrayEditor", 3, flags)) {
-        ImGui::TableSetupColumn("One", ImGuiTableColumnFlags_WidthFixed, 24);
+        ImGui::TableSetupColumn("One", ImGuiTableColumnFlags_WidthFixed, 55); // size == number of digits in a int * size of 1 digit
         ImGui::TableSetupColumn("Two", ImGuiTableColumnFlags_WidthFixed, 3 * 24);
         ImGui::TableSetupColumn("Three", ImGuiTableColumnFlags_WidthStretch);
 
@@ -30,7 +41,7 @@ template <typename ValueT> inline bool DrawVtArray(VtArray<ValueT> &values) {
         bool moveDown = false;
 
         ImGuiListClipper clipper;
-        clipper.Begin(arraySize);
+        clipper.Begin(arraySize, HeightOf<ValueT>()); // Normally the clipper deduce the height, but it doesn't work well with big arrays.
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
@@ -98,7 +109,7 @@ template <typename ValueT> inline VtValue DrawVtValueArrayTyped(const VtValue &v
         return VtValue();
 }
 
-#define DrawArrayIfHolding(ValueT)                                                                                                    \
+#define DrawArrayIfHolding(ValueT)                                                                                               \
     if (value.IsHolding<VtArray<ValueT>>()) {                                                                                    \
         newValue = DrawVtValueArrayTyped<ValueT>(value);                                                                         \
     } else
