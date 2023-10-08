@@ -1,6 +1,5 @@
 
 target_sources(usdtweak PRIVATE
-#    ${CMAKE_CURRENT_SOURCE_DIR}/Commands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Commands.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandsImpl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CommandsImpl.h
@@ -21,6 +20,7 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/EditorCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfUndoRedoRecorder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfUndoRedoRecorder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/UsdAPICommands.cpp
 )
 
 target_include_directories(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

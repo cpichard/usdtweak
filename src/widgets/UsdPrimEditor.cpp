@@ -1,5 +1,6 @@
 #include <iostream>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usd/primCompositionQuery.h>
 #include <pxr/usd/usdGeom/gprim.h>
@@ -17,6 +18,58 @@
 #include "TableLayouts.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+
+/// A material browser which keeps a cache of the current material list until it is reset.
+///
+struct MaterialList {
+
+    //
+    SdfPath Draw(const UsdStageWeakPtr &stage) {
+        if (!_cacheValid) {
+            FindMaterials(stage);
+        }
+        SdfPath selected;
+        if (_materialPaths.empty()) {
+            ImGui::Text("no materials");
+        }
+        for (auto &materialPath : _materialPaths) {
+            ImGui::PushID(materialPath.GetString().c_str());
+            if (ImGui::Selectable(materialPath.GetString().c_str(), false)) {
+                selected = materialPath;
+            }
+            ImGui::PopID();
+        }
+        return selected;
+    }
+
+    void ResetCache() {
+        if (_cacheValid) {
+            _materialPaths.clear();
+            _cacheValid = false;
+        }
+    }
+
+  private:
+    // Fills the materialPaths vector with the materials found in prim's stage
+    void FindMaterials(const UsdStageWeakPtr &stage) {
+        _cacheValid = true;
+        if (!stage)
+            return;
+
+        UsdPrimRange range = stage->Traverse();
+        for (const auto &prim : range) {
+            if (prim.IsA<UsdShadeMaterial>()) {
+                _materialPaths.push_back(prim.GetPath());
+            }
+        }
+    }
+
+    bool _cacheValid = false;
+    std::vector<SdfPath> _materialPaths;
+};
+
+
 
 /// Very basic ui to create a connection
 struct CreateConnectionDialog : public ModalDialog {
@@ -390,6 +443,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
 #else
     if (!prim)
         return false;
+
     UsdShadeMaterialBindingAPI materialBindingAPI(prim);
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 24); // 24 => size of the mini button
@@ -398,10 +452,30 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
         ImGui::TableHeadersRow();
         UsdShadeMaterial material;
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
-            ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
-            ImGui::TableSetColumnIndex(1);
             const std::string &purposeName = purpose.GetString();
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
+            
+            ImGui::TableSetColumnIndex(0);
+            ImGui::PushID(purposeName.c_str());
+            if (ImGui::Button(ICON_FA_COG)) {
+                ImGui::OpenPopup("MaterialList");
+            }
+            static MaterialList materialList; // We expect only one thread running this code
+            if (ImGui::BeginPopup("MaterialList")) {
+                SdfPath selectedMaterial = materialList.Draw(prim.GetStage());
+                if (selectedMaterial != SdfPath()) {
+                    ExecuteAfterDraw<UsdAPIMaterialBind>(prim, selectedMaterial, purpose);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            } else {
+                materialList.ResetCache();
+            }
+            ImGui::PopID();
+            
+            ImGui::TableSetColumnIndex(1);
             ImGui::Text("%s", purposeName == "" ? "All purposes" : purposeName.c_str());
+            
             ImGui::TableSetColumnIndex(2);
             material = materialBindingAPI.ComputeBoundMaterial(purpose);
             if (material) {
@@ -410,13 +484,14 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
                 ImGui::Text("unbound");
             }
         }
-
         ImGui::EndTable();
+
         return true;
     }
     return false;
 #endif
 }
+
 
 
 // Second version of an edit target selector

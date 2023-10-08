@@ -71,7 +71,12 @@ struct ClearUndoRedoCommand;
 struct AttributeSet;
 struct AttributeCreateDefaultValue;
 
-struct UsdFunctionCall;
+struct UsdFunctionCall; // This should be name a SdfLayerFunctionCall to be precise
+
+// Commands using the usd APIs
+struct UsdAPIMaterialBind;
+
+
 
 /// Post a command to be executed after the editor frame is rendered.
 /// The commands are defined in Commands.cpp and its included file
