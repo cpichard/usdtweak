@@ -24,6 +24,14 @@ namespace fs = ghc::filesystem;
 #include "Gui.h"
 
 namespace clk = std::chrono;
+
+// Convert different time representation to time_t
+template <typename TimePointT> std::time_t toTimet(TimePointT timePoint) {
+    const auto sysClockTimePoint =
+        clk::time_point_cast<clk::system_clock::duration>(timePoint - TimePointT::clock::now() + clk::system_clock::now());
+    return clk::system_clock::to_time_t(sysClockTimePoint);
+}
+
 using DrivesListT = std::vector<std::pair<std::string, std::string>>;
 
 #ifdef _WIN64
@@ -346,7 +354,7 @@ void DrawFileBrowser(int gutterSize) {
                 ImGui::TableSetColumnIndex(2);
                 try {
                     const auto lastModified = last_write_time(dirEntry.path());
-                    const time_t cftime = decltype(lastModified)::clock::to_time_t(lastModified);
+                    const time_t cftime = toTimet(lastModified);
                     struct tm lt; // Convert to local time
                     localtime_(&lt, &cftime);
                     ImGui::Text("%04d/%02d/%02d %02d:%02d", 1900 + lt.tm_year, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min);
