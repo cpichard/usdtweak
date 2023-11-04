@@ -362,7 +362,9 @@ void DrawFileBrowser(int gutterSize) {
                     ImGui::Text("Error reading file");
                 }
                 ImGui::TableSetColumnIndex(3);
-                DrawFileSize(dirEntry.file_size());
+                if (!isDirectory) {
+                    DrawFileSize(dirEntry.file_size());
+                }
             }
             ImGui::PopID(); // direntries
             ImGui::EndTable();
