@@ -1,10 +1,13 @@
 cmake_minimum_required (VERSION 3.14)
 project(usdtweak)
-set(CMAKE_CXX_STANDARD 14)
 find_package(OpenGL REQUIRED)
 find_package(pxr REQUIRED)
-if (${PXR_VERSION} VERSION_GREATER_EQUAL "2208")
+if (${PXR_VERSION} VERSION_GREATER_EQUAL 2208)
     find_package(MaterialX)
+endif()
+set(CMAKE_CXX_STANDARD 14)
+if (${PXR_VERSION} VERSION_GREATER_EQUAL 2311)
+    set(CMAKE_CXX_STANDARD 17)
 endif()
 
 # for glfw, if the user doesn't specify the glfw install dir, we attempt to

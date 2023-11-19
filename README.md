@@ -1,9 +1,9 @@
 
 # usdtweak
 
-usdtweak is a free and open source editor for Pixar's [USD](https://graphics.pixar.com/usd/release/index.html#) format. The project is still in early stage, but usdtweak can already be used for small and simple tasks like cleaning assets, creating and editing layers or inspecting and fixing existing usd stages.
+usdtweak is a free and open source editor for Pixar's [USD](https://graphics.pixar.com/usd/release/index.html#) format. The project is in alpha stage, but usdtweak can already be used for small and simple tasks like cleaning assets, creating and editing layers, inspecting and fixing existing usd stages.
 
-This project is written in C++ and relies on [ImGUI](https://github.com/ocornut/imgui) for the UI and [GLFW](https://github.com/glfw/glfw) for the windowing system.
+This project is written in C++ and is made possible by [ImGUI](https://github.com/ocornut/imgui) for the UI and [GLFW](https://github.com/glfw/glfw) for the windowing system.
 
 ## Sneak peek
 
@@ -11,7 +11,7 @@ This project is written in C++ and relies on [ImGUI](https://github.com/ocornut/
 
 ## Status
 
-There is no roadmap at the moment, it is my side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end. The original idea behind this project was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So my current goal driving the developments is to provide at least the same functionalities as usdview with some ability to edit the stages and layers.
+There is no roadmap, it is a side project and the development is slow and unpredictable, I can only work on it a few hours during the week-end, but anyone wanting to contribute is welcome. The original idea behind this project was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't necessarily know the USD ascii syntax or are not familiar with python. So my current goal driving the developments is to provide at least the same functionalities as usdview with some ability to edit the stages and layers.
 
 As of today usdtweak allows
 
@@ -27,7 +27,7 @@ As of today usdtweak allows
 - text editing (for small files)
 - and more ...
 
-If you want to usdtweak, you can download the latest windows installer here https://github.com/cpichard/usdtweak/releases. Feel free to reach out if you have feedbacks.
+If you want to try usdtweak without the burden of compiling it, you can download the latest windows installer here https://github.com/cpichard/usdtweak/releases. Feel free to reach out if you have feedbacks.
 
 You can also build usdtweak, here are the instructions to do so. 
 
@@ -38,10 +38,10 @@ You can also build usdtweak, here are the instructions to do so.
 The project is almost self contained and only needs:
 
 - [cmake](https://cmake.org/) installed (version > 3.14)
-- a C++14 compiler installed: MSVC 19 or 17, g++ or clang++.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v23.05) version >= 20.11. I am not sure the USD libraries provided with maya or houdini would work, in theory they should, let me know if you manage to compile with them.
+- a C++17 compiler installed: MSVC 19 or 17, g++ or clang++.
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v23.11) version >= 20.11. In theory the USD libraries provided with maya or houdini should work but they are not tested, let me know if you manage to compile with them.
 
-If you managed to build USD, compiling usdtweak should be easy, you need to provide cmake with only 1 required variables:
+If you built USD, compiling usdtweak should be easy, you need to provide cmake with only 1 required variables:
 
 - __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
 
@@ -59,12 +59,12 @@ On linux it should compile with:
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/path/to/usd-23.05 ..
+    cmake -Dpxr_DIR=/path/to/usd-23.11 ..
     make
 
 If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
 
-    cmake -Dpxr_DIR=/path/to/usd-22.08 -DMaterialX_DIR=/path/to/usd-22.08/lib/cmake/MaterialX ..
+    cmake -Dpxr_DIR=/path/to/usd-23.11 -DMaterialX_DIR=/path/to/usd-23.11/lib/cmake/MaterialX ..
 
 
 ### Compiling on MacOs
@@ -76,12 +76,12 @@ It compiles on MacOS Mojave. The viewport is now enabled for versions of USD sup
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/path/to/usd-22.05 ..
+    cmake -Dpxr_DIR=/path/to/usd-23.11 ..
     make
 
 If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
 
-    cmake -Dpxr_DIR=/path/to/usd-22.08 -DMaterialX_DIR=/path/to/usd-22.08/lib/cmake/MaterialX ..
+    cmake -Dpxr_DIR=/path/to/usd-23.11 -DMaterialX_DIR=/path/to/usd-23.11/lib/cmake/MaterialX ..
 
 ### Compiling on Windows
 
@@ -92,7 +92,7 @@ It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWit
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-23.05 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-23.11 ..
     cmake --build . --config RelWithDebInfo
 
 If you have USD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
