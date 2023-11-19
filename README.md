@@ -7,7 +7,7 @@ This project is written in C++ and is made possible by [ImGUI](https://github.co
 
 ## Sneak peek
 
-![screenshot1](https://media.giphy.com/media/9Nb4JmmqEXzO05DpvL/giphy.gif)
+![screenshot1](https://github.com/cpichard/usdtweak/assets/300243/757ee58e-3a91-483d-801f-5b20bbd291a2)
 
 ## Status
 
