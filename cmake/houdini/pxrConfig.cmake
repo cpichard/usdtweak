@@ -29,7 +29,7 @@ endforeach ()
 set(EXTRA_PXR_LIBRARIES usdImagingGL;glf;hgiGL;garch;usdAppUtils)
 foreach(extra_lib ${EXTRA_PXR_LIBRARIES})
     add_library(${extra_lib} SHARED IMPORTED)
-    set_target_properties(${extra_lib} PROPERTIES IMPORTED_IMPLIB ${_houdini_install_root}/custom/houdini/dsolib/libpxr_${extra_lib}L.lib)
+    set_target_properties(${extra_lib} PROPERTIES IMPORTED_IMPLIB ${_houdini_install_root}/custom/houdini/dsolib/libpxr_${extra_lib}.lib)
     list(APPEND PXR_LIBRARIES ${extra_lib})
 endforeach()
 
