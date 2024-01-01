@@ -91,6 +91,48 @@ struct CreateConnectionDialog : public ModalDialog {
     std::string _connectionEndPoint;
 };
 
+struct CreateRelationshipDialog : public ModalDialog {
+    
+    CreateRelationshipDialog(const UsdRelationship &relationship)
+    : _relationship(relationship), _listPositionToString({{UsdListPositionFrontOfAppendList, "Front of append list"},
+                                                          {UsdListPositionBackOfAppendList, "Back of append list"},
+                                                          {UsdListPositionFrontOfPrependList, "Front of prepend list"},
+                                                          {UsdListPositionBackOfPrependList, "Back of prepend list"}}){};
+    ~CreateRelationshipDialog() override {}
+
+    void Draw() override {
+        ImGui::Text("%s", _relationship.GetPath().GetString().c_str());
+        if (ImGui::BeginCombo("Position in list", _listPositionToString[_listPosition].c_str())) {
+            for (const auto &pos : _listPositionToString) {
+                if (ImGui::Selectable(pos.second.c_str())) {
+                    _listPosition = pos.first;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::InputText("Relationship path", &_relationshipPath);
+        const bool isValid =
+            SdfPath::IsValidPathString(_relationshipPath) && SdfPath(_relationshipPath) != SdfPath::AbsoluteRootPath();
+        if (isValid) {
+            ImGui::TextColored(ImVec4(0.0, 0.8, 0.0, 1.0), "Valid path");
+        } else {
+            ImGui::TextColored(ImVec4(0.8, 0.0, 0.0, 1.0), "Invalid path");
+        }
+        DrawOkCancelModal([&]() {
+            if (isValid) {
+                ExecuteAfterDraw(&UsdRelationship::AddTarget, _relationship, SdfPath(_relationshipPath), _listPosition);
+            }
+        });
+    }
+    const char *DialogId() const override { return "Create Relationship"; }
+
+    UsdRelationship _relationship;
+    std::string _relationshipPath;
+    UsdListPosition _listPosition = UsdListPositionFrontOfAppendList;
+    std::map<UsdListPosition, std::string> _listPositionToString;
+
+};
+
 /// Select and draw the appropriate editor depending on the type, metada and so on.
 /// Returns the modified value or VtValue
 static VtValue DrawAttributeValue(const std::string &label, UsdAttribute &attribute, const VtValue &value) {
@@ -222,6 +264,14 @@ template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
     }
 }
 
+template <> void DrawMenuClearAuthoredValues(UsdRelationship &relationship) {
+    if (relationship.HasAuthoredTargets()) {
+        if (ImGui::MenuItem(ICON_FA_EJECT " Clear targets")) {
+            ExecuteAfterDraw(&UsdRelationship::ClearTargets, relationship, true);
+        }
+    }
+}
+
 template <typename UsdPropertyT> void DrawMenuBlockValues(UsdPropertyT &property){};
 template <> void DrawMenuBlockValues(UsdAttribute &attribute) {
     if (ImGui::MenuItem(ICON_FA_STOP " Block values")) {
@@ -258,7 +308,7 @@ template <> void DrawMenuEditConnection(UsdAttribute &attribute) {
     }
 }
 
-// TODO: relationship
+
 template <typename UsdPropertyT> void DrawMenuCreateValue(UsdPropertyT &property){};
 
 template <> void DrawMenuCreateValue(UsdAttribute &attribute) {
@@ -266,6 +316,12 @@ template <> void DrawMenuCreateValue(UsdAttribute &attribute) {
         if (ImGui::MenuItem(ICON_FA_DONATE " Create value")) {
             ExecuteAfterDraw<AttributeCreateDefaultValue>(attribute);
         }
+    }
+}
+
+template <> void DrawMenuCreateValue(UsdRelationship &relationship) {
+    if (ImGui::MenuItem(ICON_FA_DONATE " Create relationship")) {
+        DrawModalDialog<CreateRelationshipDialog>(relationship);
     }
 }
 
