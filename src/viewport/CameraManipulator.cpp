@@ -35,7 +35,7 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     } else if (ImGui::IsMouseClicked(1)) {
         SetMovementType(MovementType::Dolly);
     }
-    auto &currentCamera = viewport.GetCurrentCamera();
+    auto &currentCamera = viewport.GetEditableCamera();
 
     if (Move(currentCamera, io.MouseDelta.x, io.MouseDelta.y)) {
         if (_stageCamera) {

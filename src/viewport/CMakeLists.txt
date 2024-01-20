@@ -24,6 +24,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/SelectionManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ViewportCameras.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ViewportCameras.h
 )
 
 target_include_directories(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

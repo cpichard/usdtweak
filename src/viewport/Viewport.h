@@ -15,6 +15,7 @@
 #include "ScaleManipulator.h"
 #include "Selection.h"
 #include "Grid.h"
+#include "ViewportCameras.h"
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -49,12 +50,14 @@ class Viewport final {
 
     // Cameras
     /// Return the camera used to render the viewport
-    GfCamera &GetCurrentCamera();
+    GfCamera &GetEditableCamera();
     const GfCamera &GetCurrentCamera() const;
 
     // Set the camera path
-    void SetCameraPath(const SdfPath &cameraPath);
-    const SdfPath &GetCameraPath() { return _selectedCameraPath; }
+    //void SetCameraPath(const SdfPath &cameraPath);
+    // TODO REMOVE ???
+    const SdfPath &GetCameraPath() { return _cameras.GetSelectedCameraPath(); }
+    
     // Returns a UsdGeom camera if the selected camera is in the stage
     UsdGeomCamera GetUsdGeomCamera();
 
@@ -113,6 +116,12 @@ class Viewport final {
     void StopPlayback();
 
   private:
+    // Viewport ID
+    std::string _viewportName;
+    
+    // Cameras
+    ViewportCameras _cameras;
+
     // Manipulators
     Manipulator *_currentEditingState; // Manipulator currently used by the FSM
     Manipulator *_activeManipulator;   // Manipulator chosen by the user
@@ -125,14 +134,6 @@ class Viewport final {
 
     Selection &_selection;
     SelectionHash _lastSelectionHash = 0;
-
-    /// Cameras
-    SdfPath _selectedCameraPath;
-    GfCamera *_renderCamera; // Points to a valid camera, stage or perspective
-    GfCamera _stageCamera;
-    // TODO: if we want to have multiple viewport, the persp camera shouldn't belong to the viewport but
-    // another shared object, CameraList or similar
-    GfCamera _perspectiveCamera; // opengl
 
     // Hydra canvas
     void BeginHydraUI(int width, int height);
