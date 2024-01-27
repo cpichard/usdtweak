@@ -140,7 +140,7 @@ public:
     EditorSettings _settings;
 
     UsdStageRefPtr _currentStage;
-    Viewport _viewport;
+    Viewport _viewport1;
 
     /// Selection for stages and layers
     Selection _selection;

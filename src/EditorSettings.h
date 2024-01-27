@@ -20,7 +20,7 @@ struct EditorSettings {
     bool _showLayerStackEditor = false;
     bool _showContentBrowser = false;
     bool _showPrimSpecEditor = false;
-    bool _showViewport = false;
+    bool _showViewport1 = false;
     bool _showStatusBar = true;
     bool _showLauncherBar = false;
     bool _textEditor = false;

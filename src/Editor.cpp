@@ -55,7 +55,7 @@
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define TimelineWindowTitle "Timeline"
-#define ViewportWindowTitle "Viewport"
+#define Viewport1WindowTitle "Viewport1"
 #define StatusBarWindowTitle "Status bar"
 #define LauncherBarWindowTitle "Launcher bar"
 
@@ -381,7 +381,8 @@ void Editor::WindowSizeCallback(GLFWwindow *window, int width, int height) {
     }
 }
 
-Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
+Editor::Editor() : _viewport1(UsdStageRefPtr(), _selection),
+_layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
@@ -417,7 +418,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
             SetCurrentLayer(_currentStage->GetRootLayer());
         }
         // TODO multiple viewport management
-        _viewport.SetCurrentStage(stage);
+        _viewport1.SetCurrentStage(stage);
     }
 }
 
@@ -481,7 +482,7 @@ void Editor::OpenStage(const std::string &path, bool openLoaded) {
         GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
-        _settings._showViewport = true;
+        _settings._showViewport1 = true;
         _settings.UpdateRecentFiles(path);
     }
 }
@@ -508,19 +509,21 @@ void Editor::CreateStage(const std::string &path) {
             GetStageCache().Insert(newStage);
             SetCurrentStage(newStage);
             _settings._showContentBrowser = true;
-            _settings._showViewport = true;
+            _settings._showViewport1 = true;
         }
     }
 }
 
 Viewport & Editor::GetViewport() {
-    return _viewport;
+    return _viewport1;
 }
 
 void Editor::HydraRender() {
 #if !( __APPLE__ && PXR_VERSION < 2208)
-    _viewport.Update();
-    _viewport.Render();
+    if (_settings._showViewport1) {
+        _viewport1.Update();
+        _viewport1.Render();
+    }
 #endif
 }
 
@@ -681,7 +684,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
-            ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
+            ImGui::MenuItem(Viewport1WindowTitle, nullptr, &_settings._showViewport1);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::EndMenu();
@@ -709,9 +712,12 @@ void Editor::Draw() {
     const auto &rootLayer = GetCurrentLayer();
     const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
 
-    if (_settings._showViewport) {
-        TRACE_SCOPE(ViewportWindowTitle);
-        ImGui::Begin(ViewportWindowTitle, &_settings._showViewport);
+    if (_settings._showViewport1) {
+        //
+        TRACE_SCOPE(Viewport1WindowTitle);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin(Viewport1WindowTitle, &_settings._showViewport1);
+        ImGui::PopStyleVar();
         GetViewport().Draw();
         ImGui::End();
     }
