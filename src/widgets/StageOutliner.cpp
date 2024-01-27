@@ -13,6 +13,7 @@
 #include "UsdPrimEditor.h" // for DrawUsdPrimEditTarget
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
+#include "ConnectionEditor.h"
 
 
 #define StageOutlinerSeed 2342934
@@ -123,6 +124,18 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
             ExploreComposition(rootNode);
         }
         ImGui::EndMenu();
+    }
+
+    if (ImGui::MenuItem("Create connection editor sheet")) {
+        // TODO: a command ?? do we want undo redo in the node graph ??
+        //AddPrimsToSession({prim});
+        // TODO if the prim is a material or NodeGraph, add all its children
+        CreateSession(prim, {prim});
+    }
+    
+    if (ImGui::MenuItem("Add to connection editor")) {
+        // TODO if the prim is a material or NodeGraph, add all its children
+        AddPrimsToCurrentSession({prim});
     }
 }
 

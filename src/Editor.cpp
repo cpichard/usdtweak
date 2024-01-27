@@ -49,6 +49,7 @@
 #define ContentBrowserWindowTitle "Content browser"
 #define UsdStageHierarchyWindowTitle "Stage outliner"
 #define UsdPrimPropertiesWindowTitle "Stage property editor"
+#define UsdConnectionEditorWindowTitle "Connection editor"
 #define SdfLayerHierarchyWindowTitle "Layer hierarchy"
 #define SdfLayerStackWindowTitle "Stage layer editor"
 #define SdfPrimPropertiesWindowTitle "Layer property editor"
@@ -675,6 +676,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
+            ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
@@ -826,13 +828,17 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-#if 0 // experimental connection editor is disabled
-    ImGui::Begin("Connection editor");
-    if (GetCurrentStage()) {
-        auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
-        DrawConnectionEditor(prim);
+#if 1 // experimental - connection editor is disabled
+    if (_settings._showUsdConnectionEditor) {
+        ImGui::Begin(UsdConnectionEditorWindowTitle);
+        TRACE_SCOPE(UsdConnectionEditorWindowTitle);
+        if (GetCurrentStage()) {
+            DrawConnectionEditor(GetCurrentStage());
+            //auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
+            //DrawConnectionEditor(prim);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 #endif
 
     if (_settings._textEditor) {
