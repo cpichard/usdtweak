@@ -23,24 +23,29 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// A material browser which keeps a cache of the current material list until it is reset.
 ///
 struct MaterialList {
-
-    //
-    SdfPath Draw(const UsdStageWeakPtr &stage) {
+    // Returns true if a material was selected. SdfPath() is the empty material.
+    bool Draw(const UsdStageWeakPtr &stage, SdfPath &selected) {
+        bool ret = false;
         if (!_cacheValid) {
             FindMaterials(stage);
         }
-        SdfPath selected;
         if (_materialPaths.empty()) {
-            ImGui::Text("no materials");
-        }
-        for (auto &materialPath : _materialPaths) {
-            ImGui::PushID(materialPath.GetString().c_str());
-            if (ImGui::Selectable(materialPath.GetString().c_str(), false)) {
-                selected = materialPath;
+            ImGui::Text("no materials found in the stage");
+        } else {
+            if (ImGui::Selectable(ICON_FA_TRASH " unbind material", false)) {
+                selected = SdfPath();
+                ret = true;
             }
-            ImGui::PopID();
+            for (auto &materialPath : _materialPaths) {
+                ImGui::PushID(materialPath.GetString().c_str());
+                if (ImGui::Selectable(materialPath.GetString().c_str(), false)) {
+                    selected = materialPath;
+                    ret = true;
+                }
+                ImGui::PopID();
+            }
         }
-        return selected;
+        return ret;
     }
 
     void ResetCache() {
@@ -518,8 +523,8 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             }
             static MaterialList materialList; // We expect only one thread running this code
             if (ImGui::BeginPopup("MaterialList")) {
-                SdfPath selectedMaterial = materialList.Draw(prim.GetStage());
-                if (selectedMaterial != SdfPath()) {
+                SdfPath selectedMaterial;
+                if (materialList.Draw(prim.GetStage(), selectedMaterial)) {
                     ExecuteAfterDraw<UsdAPIMaterialBind>(prim, selectedMaterial, purpose);
                     ImGui::CloseCurrentPopup();
                 }

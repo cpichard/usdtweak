@@ -31,9 +31,14 @@ struct UsdAPIMaterialBind : public SdfLayerCommand {
                 auto prim = _stage->GetPrimAtPath(_primPath);
                 if (prim) {
                     UsdShadeMaterialBindingAPI materialBindingAPI(prim);
-                    UsdShadeMaterial bindableMaterial(_stage->GetPrimAtPath(_materialPath));
-                    materialBindingAPI.Bind(bindableMaterial, UsdShadeTokens->strongerThanDescendants, _purpose);
-                    materialBindingAPI.Apply(prim);
+                    if (_materialPath == SdfPath()) {
+                        materialBindingAPI.UnbindDirectBinding(_purpose);
+                    } else {
+                        UsdShadeMaterial bindableMaterial(_stage->GetPrimAtPath(_materialPath));
+                        materialBindingAPI.Bind(bindableMaterial, UsdShadeTokens->strongerThanDescendants, _purpose);
+                        materialBindingAPI.Apply(prim);
+                    }
+
                 }
             }
             return true;
