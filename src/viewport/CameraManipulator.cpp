@@ -7,8 +7,8 @@
 CameraManipulator::CameraManipulator(const GfVec2i &viewportSize, bool isZUp) : CameraRig(viewportSize, isZUp) {}
 
 void CameraManipulator::OnBeginEdition(Viewport &viewport) {
-    _stageCamera = viewport.GetUsdGeomCamera();
-    if (_stageCamera) {
+    if (viewport.IsEditingStageCamera()) {
+        _stageCamera = UsdGeomCamera::Get(viewport.GetCurrentStage(), viewport.GetSelectedStageCameraPath());
         BeginEdition(viewport.GetCurrentStage());
     }
 }
