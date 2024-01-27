@@ -72,11 +72,10 @@ static void DrawOpenedStages() {
 /// Draw the viewport widget
 void Viewport::Draw() {
     const ImVec2 wsize = ImGui::GetWindowSize();
-
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
-    _textureSize = GfVec2i(std::max(1.f, wsize[0] - 2 * GImGui->Style.ItemSpacing.x),
-                           std::max(1.f, wsize[1] - cursorPos.y - 2 * GImGui->Style.ItemSpacing.y));
+    _textureSize = GfVec2i(std::max(1.f, wsize[0]),
+                           std::max(1.f, wsize[1] - cursorPos.y));
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
@@ -91,62 +90,11 @@ void Viewport::Draw() {
         HandleManipulationEvents();
         HandleKeyboardShortcut();
         ImGui::BeginDisabled(!bool(GetCurrentStage()));
-        DrawToolBar(cursorPos + ImVec2(120, 40));
-        DrawManipulatorToolbox(cursorPos + ImVec2(15, 40));
-        DrawStageSelector(cursorPos + ImVec2(15, 15));
+        DrawToolBar(cursorPos + ImVec2(120, 15));
+        DrawManipulatorToolbox(cursorPos + ImVec2(15, 15));
         ImGui::EndDisabled();
     }
 }
-
-
-void Viewport::DrawStageSelector(const ImVec2 widgetOrigin) {
-    const ImVec2 buttonSize(25, 25); // Button size
-    const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
-    const ImVec4 selectedColor(ColorButtonHighlight);
-    const ImGuiStyle &style = ImGui::GetStyle();
-    ImGui::SetCursorPos(widgetOrigin);
-    if (!bool(GetCurrentStage())) {
-        ImGui::Text("No stage loaded");
-        return;
-    }
-    // Background frame
-    const std::string stageName = GetCurrentStage() ? GetCurrentStage()->GetRootLayer()->GetDisplayName() : "";
-    const auto stageNameTextSize = ImGui::CalcTextSize(stageName.c_str(), nullptr, false, false);
-    const std::string editTargetName = GetCurrentStage() ? GetCurrentStage()->GetEditTarget().GetLayer()->GetDisplayName() : "";
-    const auto editTargetNameTextSize = ImGui::CalcTextSize(editTargetName.c_str(), nullptr, false, false);
-
-    ImVec2 frameSize(stageNameTextSize.x + editTargetNameTextSize.x + 2 * buttonSize.x + 4 * style.FramePadding.y, std::max(stageNameTextSize.y, editTargetNameTextSize.y));
-    frameSize += ImVec2(2 * style.FramePadding.x, 2 * style.FramePadding.y);
-    const ImVec2 frameTop = ImGui::GetCurrentWindow()->DC.CursorPos - style.FramePadding;
-    const ImVec2 frameBot = frameTop + frameSize + style.FramePadding;
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
-    ImGui::RenderFrame(frameTop, frameBot, ImGui::GetColorU32(ImGuiCol_FrameBg), false, false);
-    ImGui::PopStyleColor();
-
-    // Stage selector
-    ImGui::SetCursorPos(widgetOrigin);
-    ImGui::SmallButton(ICON_UT_STAGE);
-    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        DrawOpenedStages();
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Text("%s", stageName.c_str());
-
-    // Edit target selector
-    ImGui::SameLine();
-    ImGui::SmallButton(ICON_FA_PEN);
-    if (GetCurrentStage() && ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        const UsdPrim &selected = GetSelection().IsSelectionEmpty(GetCurrentStage())
-                                      ? GetCurrentStage()->GetPseudoRoot()
-                                      : GetCurrentStage()->GetPrimAtPath(GetSelection().GetAnchorPrimPath(GetCurrentStage()));
-        DrawUsdPrimEditTarget(selected);
-        ImGui::EndPopup();
-    }
-    ImGui::SameLine();
-    ImGui::Text("%s", editTargetName.c_str());
-}
-
 
 void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     const ImVec2 buttonSize(25, 25); // Button size

@@ -547,6 +547,43 @@ void Editor::SetStagePathSelection(const SdfPath &primPath) {
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
 }
 
+static void DrawOpenedStages() {
+   // ScopedStyleColor defaultStyle(DefaultColorStyle);
+    const UsdStageCache &stageCache = UsdUtilsStageCache::Get();
+    const auto allStages = stageCache.GetAllStages();
+    for (const auto &stagePtr : allStages) {
+        if (ImGui::MenuItem(stagePtr->GetRootLayer()->GetIdentifier().c_str())) {
+            ExecuteAfterDraw<EditorSetCurrentStage>(stagePtr->GetRootLayer());
+        }
+    }
+}
+
+static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &selection) {
+    // Stage selector
+    ImGui::SmallButton(ICON_UT_STAGE);
+    if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        DrawOpenedStages();
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    const std::string stageName = stage ? stage->GetRootLayer()->GetDisplayName() : "";
+
+    ImGui::Text("%s", stageName.c_str());
+    
+    // Edit target selector
+    ImGui::SameLine();
+    ImGui::SmallButton(ICON_FA_PEN);
+    if (stage && ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+        const UsdPrim &selected = selection.IsSelectionEmpty(stage)
+                                      ? stage->GetPseudoRoot()
+                                      : stage->GetPrimAtPath(selection.GetAnchorPrimPath(stage));
+        DrawUsdPrimEditTarget(selected);
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    const std::string editTargetName = stage ? stage->GetEditTarget().GetLayer()->GetDisplayName() : "";
+    ImGui::Text("%s", editTargetName.c_str());
+}
 
 void Editor::DrawMainMenuBar() {
 
@@ -655,7 +692,9 @@ void Editor::DrawMainMenuBar() {
             }
             ImGui::EndMenu();
         }
-
+        // Stage and edit layer selector&
+        DrawStageSelector(GetCurrentStage(), GetSelection());
+    
         ImGui::EndMainMenuBar();
     }
 }

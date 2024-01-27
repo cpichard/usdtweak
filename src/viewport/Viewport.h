@@ -84,9 +84,6 @@ class Viewport final {
     
     /// Draw toolbar: camera selection, renderer options, viewport options ...
     void DrawToolBar(const ImVec2 widgetPosition);
-    
-    /// Draw stage selector
-    void DrawStageSelector(const ImVec2 widgetPosition);
 
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents
