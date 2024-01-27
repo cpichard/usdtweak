@@ -21,76 +21,6 @@ namespace clk = std::chrono;
 
 // TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
 
-
-static void DrawViewportCameraEditor(Viewport &viewport) {
-    GfCamera &camera = viewport.GetEditableCamera();
-    float focal = camera.GetFocalLength();
-    ImGui::InputFloat("Focal length", &focal);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        camera.SetFocalLength(focal);
-    }
-    GfRange1f clippingRange = camera.GetClippingRange();
-    ImGui::InputFloat2("Clipping range", (float *)&clippingRange);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        camera.SetClippingRange(clippingRange);
-    }
-
-    if (ImGui::Button("Create camera from view")) {
-        UsdStageRefPtr stage = viewport.GetCurrentStage();
-        // Find the next camera path
-        std::string cameraPath = UsdGeomCameraDefaultPrefix;
-        for (int cameraNumber = 1; stage->GetPrimAtPath(SdfPath(cameraPath)); cameraNumber++) {
-            cameraPath = std::string(UsdGeomCameraDefaultPrefix) + std::to_string(cameraNumber);
-        }
-        if (stage) {
-            // It's not worth creating a command, just use a function
-            std::function<void()> duplicateCamera = [camera, cameraPath, stage]() {
-                UsdGeomCamera newGeomCamera = UsdGeomCamera::Define(stage, SdfPath(cameraPath));
-                newGeomCamera.SetFromCamera(camera, UsdTimeCode::Default());
-            };
-            ExecuteAfterDraw<UsdFunctionCall>(viewport.GetCurrentStage(), duplicateCamera);
-        }
-    }
-}
-
-static void DrawUsdGeomCameraEditor(const UsdGeomCamera &usdGeomCamera, UsdTimeCode keyframeTimeCode) {
-    auto camera = usdGeomCamera.GetCamera(keyframeTimeCode);
-    float focal = camera.GetFocalLength();
-    ImGui::InputFloat("Focal length", &focal);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        auto attr = usdGeomCamera.GetFocalLengthAttr(); // this is not ideal as
-        VtValue value(focal);
-        ExecuteAfterDraw<AttributeSet>(attr, value, keyframeTimeCode);
-    }
-    GfRange1f clippingRange = camera.GetClippingRange();
-    ImGui::InputFloat2("Clipping range", (float *)&clippingRange);
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        auto attr = usdGeomCamera.GetClippingRangeAttr();
-        VtValue value(GfVec2f(clippingRange.GetMin(), clippingRange.GetMax()));
-        ExecuteAfterDraw<AttributeSet>(attr, value, keyframeTimeCode);
-    }
-
-    if (ImGui::Button("Duplicate camera")) {
-        // TODO: We probably want to duplicate this camera prim using the same parent
-        // as the movement of the camera can be set on the parents
-        // so basically copy the whole prim as a sibling, find the next available name
-    }
-}
-
-// Should that go in ViewportCameras ?? as viewport camera will know if the cam is stage or ut ....
-void DrawCameraEditor(Viewport &viewport) {
-    ScopedStyleColor defaultStyle(DefaultColorStyle);
-    // 2 cases:
-    //   1) the camera selected is part of the scene
-    //   2) the camera is managed by the viewport and does not belong to the scene
-    auto usdGeomCamera = viewport.GetUsdGeomCamera();
-    if (usdGeomCamera) {
-        DrawUsdGeomCameraEditor(usdGeomCamera, viewport.GetCurrentTimeCode());
-    } else {
-        DrawViewportCameraEditor(viewport);
-    }
-}
-
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
@@ -284,11 +214,11 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     }
     ImGui::SameLine();
     std::string cameraName(ICON_FA_CAMERA);
-    cameraName += "  " + GetCameraPath().GetName();
+    cameraName += "  " + _cameras.GetCurrentCameraName();
     ImGui::Button(cameraName.c_str());
     if (_renderer && ImGui::BeginPopupContextItem(_viewportName.c_str(), flags)) { // should be name with the viewport name instead
         _cameras.DrawCameraList(GetCurrentStage());
-        DrawCameraEditor(*this);
+        _cameras.DrawCameraEditor(GetCurrentStage(), GetCurrentTimeCode());
         ImGui::EndPopup();
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
@@ -481,7 +411,6 @@ void Viewport::HandleManipulationEvents() {
 
 GfCamera &Viewport::GetEditableCamera() { return _cameras.GetEditableCamera(); }
 const GfCamera &Viewport::GetCurrentCamera() const { return _cameras.GetCurrentCamera(); }
-UsdGeomCamera Viewport::GetUsdGeomCamera() { return UsdGeomCamera::Get(GetCurrentStage(), GetCameraPath()); }
 
 
 void Viewport::BeginHydraUI(int width, int height) {
@@ -555,11 +484,8 @@ void Viewport::Render() {
         _renderer->SetFraming(framing);
         _renderer->SetOverrideWindowPolicy(std::make_pair(true, CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
 
-        // If using a usd camera, use SetCameraPath renderer.SetCameraPath(sceneCam.GetPath())
-        // else set camera state
-        auto usdCamera = GetUsdGeomCamera();
-        if (usdCamera) {
-            _renderer->SetCameraPath(usdCamera.GetPath());
+        if (_cameras.IsUsingStageCamera()) {
+            _renderer->SetCameraPath(_cameras.GetStageCameraPath());
         } else {
             _renderer->SetCameraState(GetCurrentCamera().GetFrustum().ComputeViewMatrix(),
                                   GetCurrentCamera().GetFrustum().ComputeProjectionMatrix());

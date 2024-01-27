@@ -48,19 +48,15 @@ class Viewport final {
     void FrameSelection(const Selection &);
     void FrameRootPrim();
 
-    // Cameras
-    /// Return the camera used to render the viewport
+    /// Return the camera structure used to render the viewport, it can be altered for reframing
     GfCamera &GetEditableCamera();
     const GfCamera &GetCurrentCamera() const;
-
-    // Set the camera path
-    //void SetCameraPath(const SdfPath &cameraPath);
-    // TODO REMOVE ???
-    const SdfPath &GetCameraPath() { return _cameras.GetSelectedCameraPath(); }
     
-    // Returns a UsdGeom camera if the selected camera is in the stage
-    UsdGeomCamera GetUsdGeomCamera();
-
+    /// Returns the path of the selected stage camera or SdfPath() if the camera is internal
+    const SdfPath &GetSelectedStageCameraPath () { return _cameras.GetStageCameraPath(); }
+    
+    bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
+    
     CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
 
     // Picking
@@ -98,13 +94,11 @@ class Viewport final {
     GfVec2d GetMousePosition() const { return _mousePosition; }
 
     UsdStageRefPtr GetCurrentStage() { return _stage; }
-    const UsdStageRefPtr GetCurrentStage() const { return _stage; };
+    const UsdStageRefPtr & GetCurrentStage() const { return _stage; };
 
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
     Selection &GetSelection() { return _selection; }
-
-    SelectionManipulator &GetSelectionManipulator() { return _selectionManipulator; }
 
     /// Handle events is implemented as a finite state machine.
     /// The state are simply the current manipulator used.
