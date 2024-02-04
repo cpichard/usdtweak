@@ -430,8 +430,11 @@ void Viewport::Render() {
         CameraUtilFraming framing(displayWindow, dataWindow);
         _renderer->SetRenderBufferSize(renderSize);
         _renderer->SetFraming(framing);
+#if PXR_VERSION <= 2311
         _renderer->SetOverrideWindowPolicy(std::make_pair(true, CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
-
+#else
+        _renderer->SetOverrideWindowPolicy(std::make_optional(CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
+#endif
         if (_cameras.IsUsingStageCamera()) {
             _renderer->SetCameraPath(_cameras.GetStageCameraPath());
         } else {
