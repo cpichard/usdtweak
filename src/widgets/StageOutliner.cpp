@@ -248,12 +248,12 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
                     ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prim.GetPath());
                 }
             }
-            {
-                ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
-                if (ImGui::BeginPopupContextItem()) {
-                    DrawUsdPrimEditMenuItems(prim);
-                    ImGui::EndPopup();
-                }
+        }
+        {
+            ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
+            if (ImGui::BeginPopupContextItem()) {
+                DrawUsdPrimEditMenuItems(prim);
+                ImGui::EndPopup();
             }
         }
         // Visibility
