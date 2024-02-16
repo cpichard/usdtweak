@@ -521,6 +521,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             if (ImGui::Button(ICON_FA_COG)) {
                 ImGui::OpenPopup("MaterialList");
             }
+            // TODO: we would like to copy/paste material path
             static MaterialList materialList; // We expect only one thread running this code
             if (ImGui::BeginPopup("MaterialList")) {
                 SdfPath selectedMaterial;
@@ -540,7 +541,11 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             ImGui::TableSetColumnIndex(2);
             material = materialBindingAPI.ComputeBoundMaterial(purpose);
             if (material) {
-                ImGui::Text("%s", material.GetPrim().GetPath().GetText());
+                // TODO: we would also like to copy/paste material path
+                ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+                if (ImGui::Button(material.GetPrim().GetPath().GetText())) {
+                    ExecuteAfterDraw<EditorSetSelection>(material.GetPrim().GetStage(), material.GetPrim().GetPath());
+                };
             } else {
                 ImGui::Text("unbound");
             }
