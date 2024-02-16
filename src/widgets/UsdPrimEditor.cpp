@@ -286,7 +286,7 @@ template <> void DrawMenuBlockValues(UsdAttribute &attribute) {
 
 template <typename UsdPropertyT> void DrawMenuRemoveProperty(UsdPropertyT &property){};
 template <> void DrawMenuRemoveProperty(UsdAttribute &attribute) {
-    if (ImGui::MenuItem(ICON_FA_TRASH " Remove property")) {
+    if (ImGui::MenuItem(ICON_FA_TRASH " Remove edit")) {
         ExecuteAfterDraw(&UsdPrim::RemoveProperty, attribute.GetPrim(), attribute.GetName());
     }
 }
