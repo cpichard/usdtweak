@@ -85,6 +85,12 @@ target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
 
+# Fix compilation error with C++17 on macos
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_STANDARD MATCHES "17")
+    add_compile_definitions(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION)
+endif()
+
+
 
 # Organise the sources using the same hierarchy as the filesystem in xcode and vs projects
 get_target_property(USDTWEAK_SOURCES usdtweak SOURCES)
