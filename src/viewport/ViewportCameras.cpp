@@ -21,8 +21,7 @@ static void DrawViewportCameraEditor(GfCamera &camera, const UsdStageRefPtr &sta
         camera.SetClippingRange(clippingRange);
     }
 
-    if (ImGui::Button("Create camera from view")) {
-        //UsdStageRefPtr stage = viewport.GetCurrentStage();
+    if (ImGui::Button("New camera")) {
         // Find the next camera path
         std::string cameraPath = UsdGeomCameraDefaultPrefix;
         for (int cameraNumber = 1; stage->GetPrimAtPath(SdfPath(cameraPath)); cameraNumber++) {
