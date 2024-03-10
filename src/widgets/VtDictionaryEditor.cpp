@@ -39,6 +39,7 @@ static VtValue DrawEditableKeyName(const std::string &keyNameSrc, const std::str
     if (!editingKey && ImGui::IsItemClicked() && ImGui::IsMouseDoubleClicked(0)) {
         editKeyName = keyNameSrc;
         editingKey = window->GetID(keyName.c_str());
+        ImGui::ClearActiveID(); // see https://github.com/ocornut/imgui/issues/6690
     }
 
     if (editingKey == window->GetID(keyName.c_str())) {

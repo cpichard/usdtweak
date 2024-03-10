@@ -56,7 +56,10 @@
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define TimelineWindowTitle "Timeline"
-#define ViewportWindowTitle "Viewport"
+#define Viewport1WindowTitle "Viewport1"
+#define Viewport2WindowTitle "Viewport2"
+#define Viewport3WindowTitle "Viewport3"
+#define Viewport4WindowTitle "Viewport4"
 #define StatusBarWindowTitle "Status bar"
 #define LauncherBarWindowTitle "Launcher bar"
 
@@ -382,7 +385,13 @@ void Editor::WindowSizeCallback(GLFWwindow *window, int width, int height) {
     }
 }
 
-Editor::Editor() : _viewport(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
+Editor::Editor() : _viewport1(UsdStageRefPtr(), _selection),
+#if ENABLE_MULTIPLE_VIEWPORTS
+_viewport2(UsdStageRefPtr(), _selection),
+_viewport3(UsdStageRefPtr(), _selection),
+_viewport4(UsdStageRefPtr(), _selection),
+#endif
+_layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
@@ -418,7 +427,12 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
             SetCurrentLayer(_currentStage->GetRootLayer());
         }
         // TODO multiple viewport management
-        _viewport.SetCurrentStage(stage);
+        _viewport1.SetCurrentStage(stage);
+#if ENABLE_MULTIPLE_VIEWPORTS
+        _viewport2.SetCurrentStage(stage);
+        _viewport3.SetCurrentStage(stage);
+        _viewport4.SetCurrentStage(stage);
+#endif
     }
 }
 
@@ -482,7 +496,7 @@ void Editor::OpenStage(const std::string &path, bool openLoaded) {
         GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
-        _settings._showViewport = true;
+        _settings._showViewport1 = true;
         _settings.UpdateRecentFiles(path);
     }
 }
@@ -509,20 +523,37 @@ void Editor::CreateStage(const std::string &path) {
             GetStageCache().Insert(newStage);
             SetCurrentStage(newStage);
             _settings._showContentBrowser = true;
-            _settings._showViewport = true;
+            _settings._showViewport1 = true;
         }
     }
 }
 
 Viewport & Editor::GetViewport() {
-    return _viewport;
+    return _viewport1;
 }
 
 void Editor::HydraRender() {
 #if !( __APPLE__ && PXR_VERSION < 2208)
-    _viewport.Update();
-    _viewport.Render();
+    if (_settings._showViewport1) {
+        _viewport1.Update();
+        _viewport1.Render();
+    }
+#if ENABLE_MULTIPLE_VIEWPORTS
+    if (_settings._showViewport2) {
+        _viewport2.Update();
+        _viewport2.Render();
+    }
+    if (_settings._showViewport3) {
+        _viewport3.Update();
+        _viewport3.Render();
+    }
+    if (_settings._showViewport4) {
+        _viewport4.Update();
+        _viewport4.Render();
+    }
 #endif
+#endif
+
 }
 
 void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDialog<SaveLayerAsDialog>(*this, layerToSaveAs); }
@@ -683,7 +714,12 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
-            ImGui::MenuItem(ViewportWindowTitle, nullptr, &_settings._showViewport);
+            ImGui::MenuItem(Viewport1WindowTitle, nullptr, &_settings._showViewport1);
+#if ENABLE_MULTIPLE_VIEWPORTS
+            ImGui::MenuItem(Viewport2WindowTitle, nullptr, &_settings._showViewport2);
+            ImGui::MenuItem(Viewport3WindowTitle, nullptr, &_settings._showViewport3);
+            ImGui::MenuItem(Viewport4WindowTitle, nullptr, &_settings._showViewport4);
+#endif
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::EndMenu();
@@ -711,13 +747,41 @@ void Editor::Draw() {
     const auto &rootLayer = GetCurrentLayer();
     const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
 
-    if (_settings._showViewport) {
-        TRACE_SCOPE(ViewportWindowTitle);
-        ImGui::Begin(ViewportWindowTitle, &_settings._showViewport);
+    if (_settings._showViewport1) {
+        //
+        TRACE_SCOPE(Viewport1WindowTitle);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin(Viewport1WindowTitle, &_settings._showViewport1);
+        ImGui::PopStyleVar();
         GetViewport().Draw();
         ImGui::End();
     }
-
+#if ENABLE_MULTIPLE_VIEWPORTS
+    if (_settings._showViewport2) {
+        TRACE_SCOPE(Viewport2WindowTitle);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin(Viewport2WindowTitle, &_settings._showViewport2);
+        ImGui::PopStyleVar();
+        _viewport2.Draw();
+        ImGui::End();
+    }
+    if (_settings._showViewport3) {
+        TRACE_SCOPE(Viewport3WindowTitle);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin(Viewport3WindowTitle, &_settings._showViewport3);
+        ImGui::PopStyleVar();
+        _viewport3.Draw();
+        ImGui::End();
+    }
+    if (_settings._showViewport4) {
+        TRACE_SCOPE(Viewport4WindowTitle);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin(Viewport4WindowTitle, &_settings._showViewport4);
+        ImGui::PopStyleVar();
+        _viewport4.Draw();
+        ImGui::End();
+    }
+#endif
     if (_settings._showDebugWindow) {
         TRACE_SCOPE(DebugWindowTitle);
         ImGui::Begin(DebugWindowTitle, &_settings._showDebugWindow);
@@ -770,6 +834,11 @@ void Editor::Draw() {
         UsdTimeCode tc = GetViewport().GetCurrentTimeCode();
         DrawTimeline(GetCurrentStage(), tc);
         GetViewport().SetCurrentTimeCode(tc);
+#if ENABLE_MULTIPLE_VIEWPORTS
+        _viewport2.SetCurrentTimeCode(tc);
+        _viewport3.SetCurrentTimeCode(tc);
+        _viewport4.SetCurrentTimeCode(tc);
+#endif
         ImGui::End();
     }
 

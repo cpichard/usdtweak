@@ -55,7 +55,13 @@ void EditorSettings::ParseLine(const char *line) {
     } else if (sscanf(line, "ShowPrimSpecEditor=%i", &value) == 1) {
         _showPrimSpecEditor = static_cast<bool>(value);
     } else if (sscanf(line, "ShowViewport=%i", &value) == 1) {
-        _showViewport = static_cast<bool>(value);
+        _showViewport1 = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowViewport2=%i", &value) == 1) {
+        _showViewport2 = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowViewport3=%i", &value) == 1) {
+        _showViewport3 = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowViewport4=%i", &value) == 1) {
+        _showViewport4 = static_cast<bool>(value);
     } else if (sscanf(line, "ShowStatusBar=%i", &value) == 1) {
         _showStatusBar = static_cast<bool>(value);
     } else if (sscanf(line, "ShowLauncherBar=%i", &value) == 1) {
@@ -103,7 +109,10 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowTimeline=%d\n", _showTimeline);
     buf->appendf("ShowContentBrowser=%d\n", _showContentBrowser);
     buf->appendf("ShowPrimSpecEditor=%d\n", _showPrimSpecEditor);
-    buf->appendf("ShowViewport=%d\n", _showViewport);
+    buf->appendf("ShowViewport=%d\n", _showViewport1);
+    buf->appendf("ShowViewport2=%d\n", _showViewport2);
+    buf->appendf("ShowViewport3=%d\n", _showViewport3);
+    buf->appendf("ShowViewport4=%d\n", _showViewport4);
     buf->appendf("ShowStatusBar=%d\n", _showStatusBar);
     buf->appendf("ShowLauncherBar=%d\n", _showLauncherBar);
     buf->appendf("ShowDebugWindow=%d\n", _showDebugWindow);

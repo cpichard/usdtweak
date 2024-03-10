@@ -174,6 +174,39 @@ template <> inline void DrawThirdColumn<CustomRow>(const int rowId, const SdfAtt
     }
 };
 
+///
+/// Interpolation metadata
+///
+struct InterpolationRow {};
+template <> inline bool HasEdits<InterpolationRow>(const SdfAttributeSpecHandle &attr) { return attr->HasInfo(TfToken("interpolation")); }
+
+template <> inline void DrawFirstColumn<InterpolationRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
+    if (ImGui::Button(ICON_FA_TRASH)) {
+        ExecuteAfterDraw(&SdfAttributeSpec::ClearInfo, attr, TfToken("interpolation"));
+    }
+};
+
+template <> inline void DrawSecondColumn<InterpolationRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
+    ImGui::Text("Interpolation");
+};
+
+// The list of possible values is defined in:
+// https://openusd.org/release/api/class_usd_geom_primvar.html#Usd_InterpolationVals
+template <> inline void DrawThirdColumn<InterpolationRow>(const int rowId, const SdfAttributeSpecHandle &attr) {
+    ImGui::PushItemWidth(-FLT_MIN);
+    auto interpolationValue = attr->GetInfo(TfToken("interpolation"));
+    TfToken interpolation = interpolationValue.CanCast<TfToken>() ? interpolationValue.Get<TfToken>() : TfToken("");
+    constexpr const char *names[5] = {"constant", "uniform", "varying", "vertex", "faceVarying"};
+    if (ImGui::BeginCombo("interpolation", interpolation.GetText())) {
+        for (int n = 0; n < 5; n++) {
+            if (ImGui::Selectable(names[n])) {
+                ExecuteAfterDraw(&SdfAttributeSpec::SetInfo, attr, TfToken("interpolation"), VtValue(TfToken(names[n])));
+            }
+        }
+        ImGui::EndCombo();
+    }
+};
+
 static void DrawSdfAttributeMetadata(SdfAttributeSpecHandle attr) {
     int rowId = 0;
     if (BeginThreeColumnsTable("##DrawSdfAttributeMetadata")) {
@@ -182,6 +215,7 @@ static void DrawSdfAttributeMetadata(SdfAttributeSpecHandle attr) {
         DrawThreeColumnsRow<ValueTypeRow>(rowId++, attr);
         DrawThreeColumnsRow<VariabilityRow>(rowId++, attr);
         DrawThreeColumnsRow<CustomRow>(rowId++, attr);
+        DrawThreeColumnsRow<InterpolationRow>(rowId++, attr);
         DrawThreeColumnsRow<DisplayNameRow>(rowId++, attr);
         DrawThreeColumnsRow<DisplayGroupRow>(rowId++, attr);
         // DrawThreeColumnsRow<Documentation>(rowId++, attr);

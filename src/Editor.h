@@ -13,6 +13,9 @@ struct GLFWwindow;
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+// Experimental
+#define ENABLE_MULTIPLE_VIEWPORTS 0
+
 /// Editor contains the data shared between widgets, like selections, stages, etc etc
 class Editor {
 
@@ -140,7 +143,12 @@ public:
     EditorSettings _settings;
 
     UsdStageRefPtr _currentStage;
-    Viewport _viewport;
+    Viewport _viewport1;
+#if ENABLE_MULTIPLE_VIEWPORTS
+    Viewport _viewport2;
+    Viewport _viewport3;
+    Viewport _viewport4;
+#endif
 
     /// Selection for stages and layers
     Selection _selection;

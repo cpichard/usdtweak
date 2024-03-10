@@ -137,7 +137,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
         _imagingSettings.enableCameraLight = !_imagingSettings.enableCameraLight;
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
-        ImGui::SetTooltip("Enable camera light");
+        ImGui::SetTooltip("Camera light on/off");
     }
     ImGui::PopStyleColor();
     ImGui::SameLine();
@@ -146,7 +146,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
         _imagingSettings.enableSceneMaterials = !_imagingSettings.enableSceneMaterials;
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
-        ImGui::SetTooltip("Enable scene materials");
+        ImGui::SetTooltip("Scene materials on/off");
     }
     ImGui::PopStyleColor();
     if (_renderer && _renderer->GetRendererPlugins().size() >= 2) {
@@ -430,8 +430,11 @@ void Viewport::Render() {
         CameraUtilFraming framing(displayWindow, dataWindow);
         _renderer->SetRenderBufferSize(renderSize);
         _renderer->SetFraming(framing);
+#if PXR_VERSION <= 2311
         _renderer->SetOverrideWindowPolicy(std::make_pair(true, CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
-
+#else
+        _renderer->SetOverrideWindowPolicy(std::make_optional(CameraUtilConformWindowPolicy::CameraUtilMatchVertically));
+#endif
         if (_cameras.IsUsingStageCamera()) {
             _renderer->SetCameraPath(_cameras.GetStageCameraPath());
         } else {

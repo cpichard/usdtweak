@@ -30,6 +30,7 @@ template <typename FieldT, typename... Args> inline void DrawThirdColumn(const i
 // Provides a standard/unified 3 columns layout
 //
 template <typename FieldT, typename... Args> inline void DrawThreeColumnsRow(const int rowId, const Args &...args) {
+    ImGui::PushID(rowId);
     ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowDefaultHeight);
     ScopedStyleColor style = GetRowStyle<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(0);
@@ -38,6 +39,7 @@ template <typename FieldT, typename... Args> inline void DrawThreeColumnsRow(con
     DrawSecondColumn<FieldT>(rowId, args...);
     ImGui::TableSetColumnIndex(2);
     DrawThirdColumn<FieldT>(rowId, args...);
+    ImGui::PopID();
 }
 
 //
