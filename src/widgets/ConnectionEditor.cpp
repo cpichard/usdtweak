@@ -646,7 +646,7 @@ struct ConnectionsSheet {
                 }
             }
         }
-        std::cout << "Connections " << connections.size() << std::endl;
+        //std::cout << "Connections " << connections.size() << std::endl;
     }
 
     // root prim to know the stage and the prim to add other prim under
@@ -750,8 +750,39 @@ static NodeConnectionEditorData editorData;
 
 
 struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
-
+    
+    // Testing with event and state machine
+    uint8_t state = 0; // current edition state of the canvas, (selecting, moving node, zoom/pan?)
+    uint8_t event = 0; // events on the current rendered frame
+    
+    // ??? events we need
+    enum Events : uint8_t {
+        IDLE = 0,
+        CANVAS_CLICKED,
+        CANVAS_CLICKED_BTN_SPACE,
+        CANVAS_CLICKED_BTN_CTRL,
+        NODE_CLICKED,
+        CONNECTOR_CLICKED,
+        CLICK_RELEASED
+    };
+    
+    // ???
+    enum States : uint8_t {
+        HOVERING_CANVAS, //
+        SELECTING_REGION,
+        CANVAS_ZOOMING,
+        CANVAS_PANING,
+        SELECTING_NODE,
+        MOVING_NODE,
+        CONNECTING_NODES,
+    };
+    
     void Begin(ImDrawList* drawList_) {
+        
+        // Reset state
+        event  = Events::IDLE; // reset event
+        hasSelectedNodes = false; // reset selected nodes
+
         drawList = drawList_;
         ImGuiContext& g = *GImGui;
         // Current widget position, in absolute coordinates. (relative to the main window)
@@ -760,11 +791,32 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // GetCursorPos gives the current position in window coordinates
         widgetSize = ImGui::GetWindowSize() - ImGui::GetCursorPos() - g.Style.WindowPadding; // Should also add the borders
         originOffset = (widgetSize / 2.f); // in window Coordinates
-        drawList->ChannelsSplit(2);
+        drawList->ChannelsSplit(2); // Foreground and background
         // TODO: we might want to use only widgetBB and get rid of widgetOrigin and widgetSize
         widgetBoundingBox.Min = widgetOrigin;
         widgetBoundingBox.Max = widgetOrigin + widgetSize;
         drawList->PushClipRect(widgetBoundingBox.Min, widgetBoundingBox.Max);
+        // There is no overlapping of widgets unfortunateluy
+        //if (ImGui::InvisibleButton("canvas", widgetBoundingBox.GetSize())) {
+        //    std::cout << "Canvas clicked" << std::endl;
+        //}
+        if (widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+            // Click on the canvas TODO test bounding box
+            if (ImGui::IsMouseClicked(0)) {
+                std::cout << "Mouse clicked" << std::endl;
+                if (ImGui::IsKeyDown(ImGuiKey_Space)) {
+                    event = Events::CANVAS_CLICKED_BTN_SPACE;
+                } else if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+                    event = Events::CANVAS_CLICKED_BTN_CTRL;
+                    ImGuiIO& io = ImGui::GetIO();
+                    zoomClick = io.MouseClickedPos[ImGuiMouseButton_Left];
+                } else {
+                    event = Events::CANVAS_CLICKED;
+                }
+            } else if (ImGui::IsMouseReleased(0)) { // TODO Should be any button ??
+                event = Events::CLICK_RELEASED;
+            }
+        }
     }
     
     void End() {
@@ -877,12 +929,23 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         float nodeHeight = (nbNodes+2)*(g.FontSize + 2.f) + headerHeight; // 50 == header size
         ImVec2 nodeMin = ImVec2(-80.f, -nodeHeight/2.f) + node.position;
         ImVec2 nodeMax = ImVec2(80.f, nodeHeight/2.f) + node.position;
+        // The invisible button will trigger the sliders if it's not clipped
+        ImRect nodeBoundingBox(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax));
+        nodeBoundingBox.ClipWith(widgetBoundingBox);
         
         drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), 0xFF090920, 4.0f);
-        drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), node.selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 255, 0, 255), 4.0f);
+        drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), node.selected ? IM_COL32(0, 255, 0, 255) : IM_COL32(255, 255, 255, 255), 4.0f);
 
         // TODO: add padding, truncate name if too long, add tooltip
         drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(nodeMin), IM_COL32(255, 255, 255, 255), node.prim.GetName().GetText());
+        
+        // Check if the user clicked on the node and update the event.
+        // The event might be updated later on, on the connectors as well
+        if (ImGui::IsMouseClicked(0)) {
+            if (nodeBoundingBox.Contains(ImGui::GetMousePos())) {
+                event = Events::NODE_CLICKED; // Node clicked
+            }
+        }
         
         // Draw properties
         const ImVec2 inputStartPos = nodeMin + ImVec2(10.f, headerHeight);
@@ -899,27 +962,36 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
             const auto outConMax = ImVec2(nodeMax.x + connectorSize/2, inputStartPos.y + 15.f + linePos);
             drawList->AddRectFilled(CanvasToScreen(outConMin), CanvasToScreen(outConMax), IM_COL32(255, 255, 255, 255));
      
-            
-            
             const auto textPos = inputStartPos + ImVec2(0, linePos); // TODO: padding and text size
             drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), properties[i].c_str());
         }
         
-        // The invisible button will trigger the sliders if it's not clipped
-        ImRect buttonBoundingBox(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax));
-        buttonBoundingBox.ClipWith(widgetBoundingBox);
-        ImGui::SetCursorScreenPos(buttonBoundingBox.Min);
-        if (buttonBoundingBox.GetArea() > 0.f && ImGui::InvisibleButton("node", buttonBoundingBox.GetSize())) {
-            node.selected = !node.selected;
-        }
-        // TODO we should have a IsItemDragging instead, first click on the item to make it "drag"
-        ImGuiIO& io = ImGui::GetIO();
+        // TODO: will we need invisible buttons ? code left here
+        //ImGui::SetCursorScreenPos(nodeBoundingBox.Min);
+//        if (buttonBoundingBox.GetArea() > 0.f && ImGui::InvisibleButton("node", nodeBoundingBox.GetSize())) {
+//            //node.selected = !node.selected; // TODO add info to event
+//            event = Events::NODE_CLICKED; // Node clicked
+//        }
         
-        if (ImGui::IsItemHovered())
-        {
-            if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-                node.position = ScreenToCanvas(io.MousePos);
+        
+        // Event now should be not changing anymore
+        if (event==NODE_CLICKED && !node.selected) {
+            nodeClicked = &node;
         }
+        // Update node data based on current state
+        if (state == SELECTING_REGION) { // Region selection
+            if (GetSelectionRegion().Overlaps(ImRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax)))) {
+                node.selected = true;
+            } else {
+                node.selected = false;
+            }
+        } else if (state == MOVING_NODE && !nodeClicked && node.selected) {
+            ImGuiIO& io = ImGui::GetIO();
+            node.position = node.position + io.MouseDelta/zooming;
+        }
+
+        // Update
+        hasSelectedNodes |= node.selected;
     }
     
     void DrawConnections() {
@@ -927,83 +999,83 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     }
     
     // Draw so test nodes to see how the coordinate system works as all are expressed in screen
-    void DrawNodeTest(ImVec2 &nodePos) {
-        ImGuiContext& g = *GImGui;
-        ImGuiIO& io = ImGui::GetIO();
-        //ImGuiWindow* window = g.CurrentWindow;
-        // Give the node a position in canvas coordinates
-        drawList->ChannelsSetCurrent(1); // Foreground
-        
-        // Node is centered here, is it a good idea in the end ??
-        int nbNodes = 8;
-        
-        const float headerHeight = 50.f;
-        const float conSize = 14.f; // square connector size
-        // Compute node size (node height)
-        float nodeHeight = (nbNodes+2)*(g.FontSize + 2.f) + headerHeight; // 50 == header size
-        
-        // Node bounding box
-        ImVec2 nodeMin = ImVec2(-80.f, -nodeHeight/2.f) + nodePos;
-        ImVec2 nodeMax = ImVec2(80.f, nodeHeight/2.f) + nodePos;
-        
-        drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), 0xFF090920, 4.0f);
-        drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), IM_COL32(255, 255, 255, 255), 4.0f);
-
-        // TODO: add padding, truncate name if too long, add tooltip
-        drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(nodeMin), IM_COL32(255, 255, 255, 255), "Node test");
-
-        // Draw inputs
-        const char *inputs[5] = {"size", "color", "height", "width", "radius"};
-        
-        // Start of the input list
-        const ImVec2 inputStartPos = nodeMin + ImVec2(10.f, headerHeight);
-        for (int i=0; i<5; i++) {
-            const float linePos = i * (g.FontSize + 2.f); // 2.f == padding
-            // Connector position min max
-            const auto conMin = ImVec2(nodeMin.x - conSize/2, inputStartPos.y + 1.f + linePos);
-            const auto conMax = ImVec2(nodeMin.x + conSize/2, inputStartPos.y + 15.f + linePos);
-            drawList->AddRectFilled(CanvasToScreen(conMin), CanvasToScreen(conMax), IM_COL32(255, 255, 255, 255));
-            
-            const auto textPos = inputStartPos + ImVec2(0, linePos); // TODO: padding and text size
-            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), inputs[i]);
-        }
-        
-        // Draw outputs, outputs start after the inputs
-        const char *outputs[3] = {"output", "material", "shader"};
-        const ImVec2 outputStartPos = nodeMin + ImVec2(10.f, headerHeight) + ImVec2(80.f, 0.f);
-        for (int i=0; i<3; i++) {
-            const float linePos = (i+6) * (g.FontSize + 2.f); // 2.f == padding, 6 == number of input nodes +1
-            // Connector position min max
-            const auto conMin = ImVec2(nodeMax.x - conSize/2, inputStartPos.y + 1.f + linePos);
-            const auto conMax = ImVec2(nodeMax.x + conSize/2, inputStartPos.y + 15.f + linePos);
-            drawList->AddRectFilled(CanvasToScreen(conMin), CanvasToScreen(conMax), IM_COL32(255, 255, 255, 255));
-            
-            const auto textPos = outputStartPos + ImVec2(0, linePos); // TODO: padding and text size
-            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), outputs[i]);
-        }
-        
-        // The invisible button will trigger the sliders
-        ImRect buttonBoundingBox(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax));
-        buttonBoundingBox.ClipWith(widgetBoundingBox);
-        
-        //drawList->AddRect(buttonBoundingBox.Min, buttonBoundingBox.Max, IM_COL32(255, 0, 0, 255), 4.0f);
-        
-        ImGui::SetCursorScreenPos(buttonBoundingBox.Min);
-        if (buttonBoundingBox.GetArea() > 0.f && ImGui::InvisibleButton("node", buttonBoundingBox.GetSize())) {
-        }
-        // TODO we should have a IsItemDragging instead, first click on the item to make it "drag"
-        
-        if (ImGui::IsItemHovered())
-        {
-            if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-                nodePos = nodePos + io.MouseDelta/zooming;
-        }
-    }
+//    void DrawNodeTest(ImVec2 &nodePos) {
+//        ImGuiContext& g = *GImGui;
+//        ImGuiIO& io = ImGui::GetIO();
+//        //ImGuiWindow* window = g.CurrentWindow;
+//        // Give the node a position in canvas coordinates
+//        drawList->ChannelsSetCurrent(1); // Foreground
+//
+//        // Node is centered here, is it a good idea in the end ??
+//        int nbNodes = 8;
+//
+//        const float headerHeight = 50.f;
+//        const float conSize = 14.f; // square connector size
+//        // Compute node size (node height)
+//        float nodeHeight = (nbNodes+2)*(g.FontSize + 2.f) + headerHeight; // 50 == header size
+//
+//        // Node bounding box
+//        ImVec2 nodeMin = ImVec2(-80.f, -nodeHeight/2.f) + nodePos;
+//        ImVec2 nodeMax = ImVec2(80.f, nodeHeight/2.f) + nodePos;
+//
+//        drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), 0xFF090920, 4.0f);
+//        drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), IM_COL32(255, 255, 255, 255), 4.0f);
+//
+//        // TODO: add padding, truncate name if too long, add tooltip
+//        drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(nodeMin), IM_COL32(255, 255, 255, 255), "Node test");
+//
+//        // Draw inputs
+//        const char *inputs[5] = {"size", "color", "height", "width", "radius"};
+//
+//        // Start of the input list
+//        const ImVec2 inputStartPos = nodeMin + ImVec2(10.f, headerHeight);
+//        for (int i=0; i<5; i++) {
+//            const float linePos = i * (g.FontSize + 2.f); // 2.f == padding
+//            // Connector position min max
+//            const auto conMin = ImVec2(nodeMin.x - conSize/2, inputStartPos.y + 1.f + linePos);
+//            const auto conMax = ImVec2(nodeMin.x + conSize/2, inputStartPos.y + 15.f + linePos);
+//            drawList->AddRectFilled(CanvasToScreen(conMin), CanvasToScreen(conMax), IM_COL32(255, 255, 255, 255));
+//
+//            const auto textPos = inputStartPos + ImVec2(0, linePos); // TODO: padding and text size
+//            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), inputs[i]);
+//        }
+//
+//        // Draw outputs, outputs start after the inputs
+//        const char *outputs[3] = {"output", "material", "shader"};
+//        const ImVec2 outputStartPos = nodeMin + ImVec2(10.f, headerHeight) + ImVec2(80.f, 0.f);
+//        for (int i=0; i<3; i++) {
+//            const float linePos = (i+6) * (g.FontSize + 2.f); // 2.f == padding, 6 == number of input nodes +1
+//            // Connector position min max
+//            const auto conMin = ImVec2(nodeMax.x - conSize/2, inputStartPos.y + 1.f + linePos);
+//            const auto conMax = ImVec2(nodeMax.x + conSize/2, inputStartPos.y + 15.f + linePos);
+//            drawList->AddRectFilled(CanvasToScreen(conMin), CanvasToScreen(conMax), IM_COL32(255, 255, 255, 255));
+//
+//            const auto textPos = outputStartPos + ImVec2(0, linePos); // TODO: padding and text size
+//            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), outputs[i]);
+//        }
+//
+//        // The invisible button will trigger the sliders
+//        ImRect buttonBoundingBox(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax));
+//        buttonBoundingBox.ClipWith(widgetBoundingBox);
+//
+//        //drawList->AddRect(buttonBoundingBox.Min, buttonBoundingBox.Max, IM_COL32(255, 0, 0, 255), 4.0f);
+//
+//        ImGui::SetCursorScreenPos(buttonBoundingBox.Min);
+//        if (buttonBoundingBox.GetArea() > 0.f && ImGui::InvisibleButton("node", buttonBoundingBox.GetSize())) {
+//        }
+//        // TODO we should have a IsItemDragging instead, first click on the item to make it "drag"
+//
+//        if (ImGui::IsItemHovered())
+//        {
+//            if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+//                nodePos = nodePos + io.MouseDelta/zooming;
+//        }
+//    }
     
-    void DrawNodeTest() {
-        static ImVec2 nodePos(0.f, 0.f); // Position in the canvas
-        DrawNodeTest(nodePos);
-    }
+//    void DrawNodeTest() {
+//        static ImVec2 nodePos(0.f, 0.f); // Position in the canvas
+//        DrawNodeTest(nodePos);
+//    }
     
     void DrawSheet(ConnectionsSheet &sheet) {
         ImGuiContext& g = *GImGui;
@@ -1017,22 +1089,92 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         }
     }
     
-    // Should we store sheet in the canvas directly ?? if it is used for storing scrolling and pos
-    void HandleManipulation(ConnectionsSheet &sheet) {
-        ImGuiIO& io = ImGui::GetIO();
-        if (//&& !ImGui::IsAnyItemActive()
-            ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
-            if (ImGui::IsKeyDown(ImGuiKey_Space)) {
-                scrolling = scrolling + io.MouseDelta;
-            } else if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
-                // We should zoom with the origin at the click
-                ImVec2 clickedAt = io.MouseClickedPos[ImGuiMouseButton_Left];
-                ZoomFromPosition(clickedAt, io.MouseDelta);
-            }
+    // TODO
+    void DrawRegionSelection() {
+        if (state == SELECTING_REGION) {
+            // Draw rect
+            // As we iterate on all the nodes anyway, we might as well test if they are in the region selection and
+            // add them in a special list _aboutToBeSelected ....
+            // And here we just have to draw the region
+            const ImRect selectionRegion = GetSelectionRegion();
+            drawList->AddRect(selectionRegion.Min, selectionRegion.Max, IM_COL32(0, 255, 0, 127));
         }
     }
     
-    // canvasToScreen = canvasToWindow * windowToScreen;
+    // Update the editing state given the last event and the current state
+    // Not very readable, but it works
+    void UpdateState() {
+        ImGuiIO& io = ImGui::GetIO();
+        if (state==States::HOVERING_CANVAS) {
+            if (event == NODE_CLICKED) {
+                state = SELECTING_NODE; // Single node selectio,
+            } else if (event == CANVAS_CLICKED) {
+                state = SELECTING_REGION; // Region selection
+                selectionOrigin = ImGui::GetMousePos();
+            } else if (event == CANVAS_CLICKED_BTN_SPACE) {
+                state = CANVAS_PANING;
+            } else if (event == CANVAS_CLICKED_BTN_CTRL) {
+                state = CANVAS_ZOOMING;
+            } else if (event == CLICK_RELEASED) {
+                state = HOVERING_CANVAS;
+            }
+        } else if (state == SELECTING_REGION) { // Region selection
+            if (event == CLICK_RELEASED) {
+                state = HOVERING_CANVAS;
+                // TODO PROCESS SELECTED NODE
+                // Or we could just select them if the state is region selection ??
+            }
+        } else if (state == SELECTING_NODE) {
+            if (event == CLICK_RELEASED) {
+                state = HOVERING_CANVAS;
+                // TODO PROCESS SELECTED NODE
+                // SELECT / DESELECT NODE
+            } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.f)) {
+                state = MOVING_NODE;
+                // TODO Store position ??
+            }
+        } else if (state == CANVAS_PANING) {
+            if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_Space)) {
+                state = HOVERING_CANVAS;
+            }
+            // Update scrolling
+            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
+                scrolling = scrolling + io.MouseDelta;
+            }
+        } else if (state == CANVAS_ZOOMING) {
+            if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+                state = HOVERING_CANVAS;
+            }
+            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
+                ZoomFromPosition(zoomClick, io.MouseDelta);
+            }
+        } else if (state == MOVING_NODE) {
+            if (event == CLICK_RELEASED) {
+                state = HOVERING_CANVAS;
+                nodeClicked = nullptr;
+            } else if (nodeClicked) {
+                // TODO this could be a function UpdateNodePosition(node)
+                nodeClicked->position = nodeClicked->position + io.MouseDelta/zooming;
+            }
+            
+        }
+        // Debug
+        ImGuiContext& g = *GImGui;
+        std::string stateDebug = "State " + std::to_string(state);
+        drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(ImVec2(0.2, 0.2)), IM_COL32(255, 255, 255, 255), stateDebug.c_str());
+    }
+    
+    void ProcessAction() {
+        // NODE_SELECTION and RELEASED : action select node, should we add actions for selections ??
+        // We certainly want actions for linking nodes
+    }
+    
+    ImRect GetSelectionRegion() const {
+        const ImVec2 mousePos = ImGui::GetMousePos();
+        const ImVec2 Min(std::min(selectionOrigin.x, mousePos.x), std::min(selectionOrigin.y, mousePos.y));
+        const ImVec2 Max(std::max(selectionOrigin.x, mousePos.x), std::max(selectionOrigin.y, mousePos.y));
+        return ImRect(Min, Max);
+    }
     
     // We want the origin to be at the center of the canvas
     // so we apply an offset which depends on the canvas size
@@ -1042,10 +1184,17 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     // is probably not what we want.
     // Zooming 10 means 10 times bigger than the pixel size
     float zooming = 1.f; // TODO: make sure zooming is never 0
-    
+    ImVec2 zoomClick = ImVec2(0.0f, 0.0f); // Zoom origin
+    ImVec2 selectionOrigin; // TODO this could be union with zoom click (origin)
     ImVec2 widgetOrigin = ImVec2(0.0f, 0.0f);  // canvasOrigin, canvasSize in screen coordinates
     ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
     ImRect widgetBoundingBox;
+    UsdPrimNode *nodeClicked = nullptr;
+    
+
+    
+    bool hasSelectedNodes = false; // computed at each frame
+    
     ImDrawList* drawList = nullptr;
 };
 
@@ -1087,9 +1236,9 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
         canvas.DrawSheet(sheet);
         //canvas.DrawBoundaries(); // for debugging
         //canvas.DrawNodeTest(); // for debugging
-        if (ImGui::IsWindowHovered()) {
-            canvas.HandleManipulation(sheet);
-        }
+        canvas.DrawRegionSelection();
+        canvas.UpdateState(); // Might move in End ???
+        // canvas.ProcessActions() // TODO ??
         canvas.End();
     }
 }
