@@ -591,17 +591,20 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
         auto filter = UsdPrimCompositionQuery::Filter();
         pxr::UsdPrimCompositionQuery arc(prim, filter);
         auto compositionArcs = arc.GetCompositionArcs();
+        int widgetId = 0;
         for (auto a : compositionArcs) {
             // NOTE: we can use GetIntroducingLayer() and GetIntroducingPrimPath() to add more information
             if (a.GetTargetNode()) {
                 std::string arcName = a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer->GetDisplayName() + " " +
                                       a.GetTargetNode().GetPath().GetString();
+                ImGui::PushID(widgetId++);
                 if (ImGui::MenuItem(arcName.c_str())) {
                     ExecuteAfterDraw<EditorSetEditTarget>(
                         prim.GetStage(),
                         UsdEditTarget(a.GetTargetNode().GetLayerStack()->GetIdentifier().rootLayer, a.GetTargetNode()),
                         a.GetTargetNode().GetPath());
                 }
+                ImGui::PopID();
             }
         }
         ImGui::EndMenu();

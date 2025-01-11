@@ -98,14 +98,18 @@ Viewport::~Viewport() {
 
 }
 
+// TODO : this is a duplicate, factorize the following function
 static void DrawOpenedStages() {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     const UsdStageCache &stageCache = UsdUtilsStageCache::Get();
     const auto allStages = stageCache.GetAllStages();
+    int widgetID = 0; // The same stage can be opened multiple times
     for (const auto &stagePtr : allStages) {
+        ImGui::PushID(widgetID++);
         if (ImGui::MenuItem(stagePtr->GetRootLayer()->GetIdentifier().c_str())) {
             ExecuteAfterDraw<EditorSetCurrentStage>(stagePtr->GetRootLayer());
         }
+        ImGui::PopID();
     }
 }
 
