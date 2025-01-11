@@ -271,6 +271,11 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
                 ImGui::EndPopup();
             }
         }
+
+        if (unfolded) {
+            ImGui::TreePop();
+        }
+
         // Visibility
         ImGui::TableSetColumnIndex(1);
         DrawVisibilityButton(prim);
@@ -278,9 +283,6 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
         // Type
         ImGui::TableSetColumnIndex(2);
         ImGui::Text("%s", prim.GetTypeName().GetText());
-    }
-    if (unfolded) {
-        ImGui::TreePop();
     }
 }
 

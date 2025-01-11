@@ -143,7 +143,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
     len = directoryPath.find(preferred_separator_char, pos);
-
+    int widgetID = 0;
     while (len != std::string::npos) {
         if (pos == 0 && !drivesList.empty()) {
             if (ImGui::Button(ICON_FA_HDD)) {
@@ -165,6 +165,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
             }
             ImGui::SameLine();
         }
+        ImGui::PushID(widgetID++);
         const std::string dirLabel = directoryPath.substr(pos, len - pos);
         if (ImGui::Button(dirLabel.empty() ? "###emptydirlabel" : dirLabel.c_str())) {
             lineEditBuffer = directoryPath.substr(0, len) + preferred_separator_char;
@@ -176,6 +177,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
         ImGui::SameLine();
         ImGui::Text(">");
         ImGui::SameLine();
+        ImGui::PopID();
     }
     len = directoryPath.size();
     const std::string dirLabel = directoryPath.substr(pos, len - pos);

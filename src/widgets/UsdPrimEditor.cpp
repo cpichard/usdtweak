@@ -523,7 +523,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
             const std::string &purposeName = purpose.GetString();
             ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-            
+           
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(purposeName.c_str());
             if (ImGui::Button(ICON_FA_COG)) {
@@ -541,7 +541,6 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             } else {
                 materialList.ResetCache();
             }
-            ImGui::PopID();
             
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%s", purposeName == "" ? "All purposes" : purposeName.c_str());
@@ -557,6 +556,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             } else {
                 ImGui::Text("unbound");
             }
+            ImGui::PopID();
         }
         ImGui::EndTable();
 

@@ -1,5 +1,6 @@
 #include "Debug.h"
 #include "Gui.h"
+#include "imgui_internal.h"
 #include "pxr/base/trace/reporter.h"
 #include "pxr/base/trace/trace.h"
 #include <pxr/base/plug/plugin.h>
@@ -75,11 +76,19 @@ static void DrawPlugins() {
 
 // Draw a preference like panel
 void DrawDebugUI() {
-    static const char *const panels[] = {"Timings", "Debug codes", "Trace reporter", "Plugins"};
+    static const char *const panels[] = {"Timings", "Debug codes", "Trace reporter", "Plugins", "ImGui"};
     static int current_item = 0;
-    const ImGuiContext &g = *GImGui;
+    ImGuiContext &g = *GImGui;
+    // Draw floating debug windows
+    // Code can be found in:
+    //    ImGui::ShowMetricsWindow(&open);
+    ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
+    if (cfg->ShowIDStackTool) {
+        ImGui::ShowIDStackToolWindow(&cfg->ShowIDStackTool);
+    }
+
     ImGui::PushItemWidth(g.FontSize * 7); // heuristic for the text in the list box
-    ImGui::ListBox("##DebugPanels", &current_item, panels, 4);
+    ImGui::ListBox("##DebugPanels", &current_item, panels, 5);
     ImGui::SameLine();
     if (current_item == 0) {
         ImGui::BeginChild("##Timing");
@@ -97,5 +106,8 @@ void DrawDebugUI() {
         ImGui::BeginChild("##Plugins");
         DrawPlugins();
         ImGui::EndChild();
+    } else if (current_item == 4) {
+        ImGui::Checkbox("Show ID Stack Tool", &cfg->ShowIDStackTool);
     }
+
 }
