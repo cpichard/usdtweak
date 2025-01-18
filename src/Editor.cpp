@@ -39,6 +39,10 @@
 #include "ManipulatorToolbox.h"
 #include "HydraBrowser.h"
 #include "Preferences.h"
+#ifdef HAVE_USDVALIDATION
+    #include "ValidationWindow.h"
+#endif
+
 namespace clk = std::chrono;
 
 // There is a bug in the Undo/Redo when reloading certain layers, here is the post
@@ -59,6 +63,7 @@ namespace clk = std::chrono;
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define HydraBrowserWindowTitle "Hydra browser"
+#define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
 #define Viewport1WindowTitle "Viewport1"
 #define Viewport2WindowTitle "Viewport2"
@@ -103,7 +108,7 @@ struct AboutModalDialog : public ModalDialog {
         ImGui::Text("https://github.com/cpichard/usdtweak/issues");
         ImGui::Text("or by mail: cpichard.github@gmail.com");
         ImGui::NewLine();
-        ImGui::Text("usdtweak - Copyright (c) 2016-2024 Cyril Pichard - Apache License 2.0");
+        ImGui::Text("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
         ImGui::NewLine();
         ImGui::Text("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
         ImGui::Text("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
@@ -798,6 +803,11 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
+#if ENABLE_VALIDATION_WINDOW
+#ifdef HAVE_USDVALIDATION
+            ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
+#endif
+#endif
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(Viewport1WindowTitle, nullptr, &_settings._showViewport1);
             ImGui::MenuItem(Viewport2WindowTitle, nullptr, &_settings._showViewport2);
@@ -1032,7 +1042,16 @@ void Editor::Draw() {
         DrawHydraBrowser();
         ImGui::End();
     }
-    
+#if ENABLE_VALIDATION_WINDOW
+#ifdef HAVE_USDVALIDATION 
+    if (_settings._showValidator) {
+        TRACE_SCOPE(ValidatorWindowTitle);
+        ImGui::Begin(ValidatorWindowTitle, &_settings._showValidator);
+        DrawValidationWindow(GetCurrentStage());
+        ImGui::End();
+    }
+#endif
+#endif
     DrawCurrentModal();
 
     ///////////////////////

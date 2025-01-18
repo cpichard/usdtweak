@@ -26,6 +26,7 @@ struct EditorSettings {
     bool _showViewport4 = false;
     bool _showStatusBar = true;
     bool _showLauncherBar = false;
+    bool _showValidator = false;
     bool _textEditor = false;
     bool _showSdfAttributeEditor = false;
     bool _showUsdConnectionEditor = false;

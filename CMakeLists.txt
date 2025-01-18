@@ -13,6 +13,7 @@ if (${PXR_VERSION} VERSION_GREATER_EQUAL 2311)
     set(CMAKE_CXX_STANDARD 17)
 endif()
 
+
 # for glfw, if the user doesn't specify the glfw install dir, we attempt to
 # download the latest version and add it to the project directly
 if (DEFINED glfw3_DIR)
@@ -67,7 +68,6 @@ add_dependencies(usdtweak stamp)
 
 add_subdirectory(src)
 
-target_compile_definitions(usdtweak PRIVATE NOMINMAX)
 target_link_libraries(usdtweak glfw resources ${OPENGL_gl_LIBRARY} ${PXR_LIBRARIES} ${MATERIALX_LIBRARIES} $<$<CXX_COMPILER_ID:MSVC>:Shlwapi.lib>)
 target_include_directories(usdtweak PUBLIC ${OPENGL_INCLUDE_DIR} ${PXR_INCLUDE_DIRS})
 
@@ -94,6 +94,9 @@ target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
 
+# NOMINMAX
+target_compile_definitions(usdtweak PRIVATE NOMINMAX)
+
 # Remove TBB deprecation warnings
 add_compile_definitions(TBB_SUPPRESS_DEPRECATED_MESSAGES)
 
@@ -103,6 +106,14 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_STANDARD MATCHES "17")
 endif()
 
 
+# Looking for the USD Validation API
+find_file(VALIDATOR_HEADER pxr/usdValidation/usdValidation/validator.h PATHS ${PXR_INCLUDE_DIRS})
+if (VALIDATOR_HEADER)
+    message(STATUS "UsdValidation API found")
+    add_compile_definitions(HAVE_USDVALIDATION)
+else()
+    message(STATUS "UsdValidation API not found")
+endif()
 
 # Organise the sources using the same hierarchy as the filesystem in xcode and vs projects
 get_target_property(USDTWEAK_SOURCES usdtweak SOURCES)

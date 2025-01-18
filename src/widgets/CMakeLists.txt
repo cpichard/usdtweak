@@ -47,6 +47,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/TfTokenLabel.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Preferences.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Preferences.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ValidationWindow.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ValidationWindow.cpp
 )
 
 target_include_directories(usdtweak PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
