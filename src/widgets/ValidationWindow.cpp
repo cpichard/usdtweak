@@ -1,4 +1,8 @@
 #include "ValidationWindow.h"
+
+#ifndef HAVE_USDVALIDATION
+void DrawValidationWindow(UsdStageRefPtr stage) {}
+#else
 #include "Gui.h"
 #include <deque>
 #include <pxr/usdValidation/usdValidation/context.h>
@@ -297,3 +301,4 @@ void DrawValidationWindow(UsdStageRefPtr stage) {
     // Draw the current selected step
     validationState.DrawSelectedStep();
 }
+#endif

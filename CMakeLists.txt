@@ -107,9 +107,9 @@ endif()
 
 
 # Looking for the USD Validation API
-find_file(VALIDATOR_HEADER pxr/usdValidation/usdValidation/validator.h PATHS ${PXR_INCLUDE_DIRS})
+find_file(VALIDATOR_HEADER pxr/usdValidation/usdValidation/validator.h PATHS ${PXR_INCLUDE_DIRS} NO_DEFAULT_PATH NO_SYSTEM_ENVIRONMENT_PATH)
 if (VALIDATOR_HEADER)
-    message(STATUS "UsdValidation API found")
+    message(STATUS "UsdValidation API found: ${VALIDATOR_HEADER}")
     add_compile_definitions(HAVE_USDVALIDATION)
 else()
     message(STATUS "UsdValidation API not found")
