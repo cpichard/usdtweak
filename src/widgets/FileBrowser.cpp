@@ -170,6 +170,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
         if (ImGui::Button(dirLabel.empty() ? "###emptydirlabel" : dirLabel.c_str())) {
             lineEditBuffer = directoryPath.substr(0, len) + preferred_separator_char;
             displayedDirectory = fs::path(lineEditBuffer);
+            ImGui::PopID();
             return true;
         }
         pos = len + 1;
