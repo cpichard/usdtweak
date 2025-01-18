@@ -87,6 +87,10 @@ struct UsdFunctionCall; // This should be name a SdfLayerFunctionCall to be prec
 struct UsdAPIMaterialBind;
 
 
+// Commands specific to the connection editor
+
+struct ConnectionEditorMoveNodes;
+
 
 /// Post a command to be executed after the editor frame is rendered.
 /// The commands are defined in Commands.cpp and its included file

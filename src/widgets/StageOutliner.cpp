@@ -130,13 +130,23 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
         // TODO: a command ?? do we want undo redo in the node graph ??
         //AddPrimsToSession({prim});
         // TODO if the prim is a material or NodeGraph, add all its children
-        CreateSession(prim, {prim});
+        ConnectionEditorCreateSheet(prim, {prim});
     }
     
     if (ImGui::MenuItem("Add to connection editor")) {
         // TODO if the prim is a material or NodeGraph, add all its children
-        AddPrimsToCurrentSession({prim});
+        ConnectionEditorAddPrims({prim});
     }
+    
+    if (ImGui::MenuItem("Add hierarchy")) {
+        // TODO if the prim is a material or NodeGraph, add all its children
+        std::vector<UsdPrim> all;
+        for (const auto &child: prim.GetAllDescendants()) {
+            all.push_back(child);
+        }
+        ConnectionEditorCreateSheet(prim, all);
+    }
+
 }
 
 static ImVec4 GetPrimColor(const UsdPrim &prim) {
