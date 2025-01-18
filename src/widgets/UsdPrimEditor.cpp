@@ -251,15 +251,34 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
     }
 }
 
-void DrawPropertyArcs(const UsdProperty &property, UsdTimeCode currentTime) {
+void DrawPropertyStack(const UsdProperty &property, UsdTimeCode currentTime) {
     SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
     for (const auto &prop : properties) {
-        if (ImGui::MenuItem(prop.GetSpec().GetPath().GetText())) {
-            ExecuteAfterDraw<EditorSelectAttributePath>(prop.GetSpec().GetPath());
+        const SdfPath& propPath = prop.GetSpec().GetPath();
+        std::string site = prop.GetSpec().GetLayer()->GetDisplayName() + " " + propPath.GetString();
+        if (ImGui::MenuItem(site.c_str())) {
+            ExecuteAfterDraw<EditorSetSelection>(prop.GetSpec().GetLayer(), propPath);
         }
     }
 }
 
+inline
+void SetEditTargetOnPropertyStrongestOpinion(const UsdProperty& property, UsdTimeCode currentTime) {
+    auto pcpIndex = property.GetPrim().GetPrimIndex();
+    if (pcpIndex.IsValid()) {
+        SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
+        if (!properties.empty()) {
+            auto prop = properties[0];
+            if (prop) {
+                PcpNodeRef node = pcpIndex.GetNodeProvidingSpec(prop->GetLayer(), prop->GetPath().GetPrimPath());
+                if (node) {
+                    UsdEditTarget editTarget(prop->GetLayer(), node);
+                    ExecuteAfterDraw<EditorSetEditTarget>(property.GetStage(), editTarget);
+                }
+            }
+        }
+    }
+}
 
 /// Specialization for DrawPropertyMiniButton, between UsdAttribute and UsdRelashionship
 template <typename UsdPropertyT> const char *SmallButtonLabel();
@@ -353,8 +372,11 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
         }
         if (ImGui::BeginMenu(ICON_FA_HAND_HOLDING_USD " Select SdfAttribute")) {
-            DrawPropertyArcs(property, currentTime);
+            DrawPropertyStack(property, currentTime);
             ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Set edit target")) {
+            SetEditTargetOnPropertyStrongestOpinion(property, currentTime);
         }
         ImGui::EndPopup();
     }
