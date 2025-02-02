@@ -6,11 +6,17 @@
 #include "ImGuiHelpers.h"
 #include "Constants.h"
 
+template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
+    GfVec3d camPos = camera.GetFrustum().GetPosition();
+    GfVec4f lightPos(camPos[0], camPos[1], camPos[2], 1.0);
+    object.SetPosition(lightPos);
+    object.SetTransform(camera.GetTransform());
+}
 
 void ImagingSettings::SetLightPositionFromCamera(const GfCamera &camera) {
     if (_lights.empty())
         return;
-    _lights[0].SetTransform(camera.GetTransform());
+    CopyCameraPosition(camera, _lights[0]);
 }
 
 ImagingSettings::ImagingSettings() {
