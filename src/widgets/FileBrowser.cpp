@@ -6,6 +6,7 @@
 #include <iostream>
 #include <functional>
 #include <ctime>
+#include <algorithm>
 #include <chrono>
 
 
