@@ -4,6 +4,26 @@
 
 #include <pxr/usd/sdf/fileFormat.h>
 
+
+inline void increment(std::string &number) {
+    unsigned char ret = 1;
+    // if (number == "") number = "0000"; // 4 padding default ? is it useful ?
+    for (int i = number.size() - 1; i >= 0; i--) {
+        if (ret) {
+            number[i] += ret;
+        }
+        if (number[i] > '9') {
+            number[i] = '0';
+            ret = 1;
+        } else {
+            ret = 0;
+        }
+    }
+    if (ret == 1) {
+        number = "1" + number;
+    }
+}
+
 std::string FindNextAvailableTokenString(std::string prefix) {
     // Find number in the prefix
     size_t end = prefix.size() - 1;
@@ -11,18 +31,13 @@ std::string FindNextAvailableTokenString(std::string prefix) {
         end--;
     }
     size_t padding = prefix.size() - 1 - end;
-    const std::string number = prefix.substr(end + 1, padding);
-    auto value = number.size() ? std::stoi(number) : 0;
-    std::ostringstream newName;
-    padding = padding == 0 ? 4 : padding; // 4: default padding
+    std::string number = prefix.substr(end + 1, padding);
+    std::string newName;
     do {
-        value += 1;
-        newName.seekp(0, std::ios_base::beg); // rewind
-        newName << prefix.substr(0, end + 1) << std::setfill('0') << std::setw(padding) << value;
-        // Looking for existing token with the same name.
-        // There might be a better solution here
-    } while (TfToken::Find(newName.str()) != TfToken());
-    return newName.str();
+        increment(number);
+        newName = prefix.substr(0, end + 1) + number;
+    } while (TfToken::Find(newName) != TfToken());
+    return newName;
 }
 
 const std::vector<std::string> GetUsdValidExtensions() {
