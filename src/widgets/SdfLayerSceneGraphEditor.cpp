@@ -63,7 +63,7 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
     auto parent = primSpec->GetNameParent();
     if (parent) {
         if (ImGui::MenuItem("Add sibling")) {
-            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailableTokenString(primSpec->GetName()));
+            ExecuteAfterDraw<PrimNew>(parent, primSpec->GetName());
         }
     }
     if (ImGui::BeginMenu("Add blueprint")) {
@@ -71,7 +71,7 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
         ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Duplicate")) {
-        ExecuteAfterDraw<PrimDuplicate>(primSpec, FindNextAvailableTokenString(primSpec->GetName()));
+        ExecuteAfterDraw<PrimDuplicate>(primSpec, primSpec->GetName());
     }
     if (ImGui::MenuItem("Remove")) {
         ExecuteAfterDraw<PrimRemove>(primSpec);
@@ -142,7 +142,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
     DrawTooltip("New sibbling prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_CLONE) && prim) {
-        ExecuteAfterDraw<PrimDuplicate>(prim, FindNextAvailableTokenString(prim->GetName()));
+        ExecuteAfterDraw<PrimDuplicate>(prim, prim->GetName());
     }
     DrawTooltip("Duplicate");
     ImGui::SameLine();
@@ -468,9 +468,9 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
     DrawLayerNavigation(layer);
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY;
 
-    ImGuiContext& g = *GImGui;
-    const float specColWidth = g.FontSize*3.f; // heuristic width for "Class"
-    const float typeColWidth = g.FontSize*6.f; // heuristic width for the largest type seen so far
+    ImGuiContext &g = *GImGui;
+    const float specColWidth = g.FontSize * 3.f; // heuristic width for "Class"
+    const float typeColWidth = g.FontSize * 6.f; // heuristic width for the largest type seen so far
     if (ImGui::BeginTable("##DrawArrayEditor", 4, flags)) {
         ImGui::TableSetupScrollFreeze(4, 1);
         ImGui::TableSetupColumn("Prim hierarchy");
@@ -506,11 +506,10 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
         }
         ImGui::EndTable();
     }
-    if (ImGui::IsItemHovered() && selectedPrim) {
+    if (ImGui::IsItemHovered() && selectedPrim && ImGui::TempInputIsActive(ImGui::GetActiveID())) {
         AddShortcut<PrimRemove, ImGuiKey_Delete>(selectedPrim);
         AddShortcut<PrimCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPrim);
         AddShortcut<PrimPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(selectedPrim);
-        AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim,
-                                                                  FindNextAvailableTokenString(selectedPrim->GetName()));
+        AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim, selectedPrim->GetName());
     }
 }

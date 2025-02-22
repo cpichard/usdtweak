@@ -274,7 +274,7 @@ struct PrimReorder : public SdfLayerCommand {
 };
 
 struct PrimDuplicate : public SdfLayerCommand {
-    PrimDuplicate(SdfPrimSpecHandle prim, std::string &newName) : _prim(std::move(prim)), _newName(newName){};
+    PrimDuplicate(SdfPrimSpecHandle prim, std::string &oldName) : _prim(std::move(prim)), _newName(FindNextAvailableTokenString(oldName)){};
     ~PrimDuplicate() override {}
     bool DoIt() override {
         if (_prim) {
