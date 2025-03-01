@@ -320,12 +320,15 @@ void DrawFileBrowser(int height) {
     ImVec2 sizeArg(-1, height);
     ImGui::PushItemWidth(-1); // List takes the full width
     if (ImGui::BeginListBox("##FileList", sizeArg)) {
-        constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg;
+        constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg
+            | ImGuiTableFlags_ScrollY
+            | ImGuiTableFlags_Resizable;
         if (ImGui::BeginTable("Files", 4, tableFlags)) {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+            ImGui::TableSetupScrollFreeze(4, 1);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize);
             ImGui::TableSetupColumn("Filename", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Date modified", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Date modified", ImGuiTableColumnFlags_WidthStretch|ImGuiTableColumnFlags_NoResize);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize);
             ImGui::TableHeadersRow();
             int i = 0;
             ImGui::PushID("direntries");
