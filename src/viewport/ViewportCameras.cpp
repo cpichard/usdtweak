@@ -22,7 +22,11 @@ static void DrawViewportCameraEditor(GfCamera &camera, const UsdStageRefPtr &sta
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         camera.SetClippingRange(clippingRange);
     }
-
+    float focusDistance = camera.GetFocusDistance();
+    ImGui::InputFloat("Focus distance", &focusDistance);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        camera.SetFocusDistance(focusDistance);
+    }
     if (ImGui::Button("New camera")) {
         // Find the next camera path
         std::string cameraPath = UsdGeomCameraDefaultPrefix;
@@ -56,7 +60,13 @@ static void DrawUsdGeomCameraEditor(const UsdGeomCamera &usdGeomCamera, UsdTimeC
         VtValue value(GfVec2f(clippingRange.GetMin(), clippingRange.GetMax()));
         ExecuteAfterDraw<AttributeSet>(attr, value, keyframeTimeCode);
     }
-
+    float focusDistance = camera.GetFocusDistance();
+    ImGui::InputFloat("Focus distance", &focusDistance);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        auto attr = usdGeomCamera.GetFocusDistanceAttr(); // this is not ideal as
+        VtValue value(focusDistance);
+        ExecuteAfterDraw<AttributeSet>(attr, value, keyframeTimeCode);
+    }
     if (ImGui::Button("Duplicate camera")) {
         // TODO: We probably want to duplicate this camera prim using the same parent
         // as the movement of the camera can be set on the parents
