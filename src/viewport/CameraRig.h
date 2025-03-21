@@ -47,4 +47,7 @@ class CameraRig {
     GfVec2i _viewportSize;
     float _dist = 100;
     GfVec2d _yawPitch;
+
+  protected:
+    double _camFlySpeed = 10.0;
 };

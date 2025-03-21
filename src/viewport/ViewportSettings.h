@@ -6,6 +6,7 @@ struct ViewportSettings {
     // Default value of the viewport use materials
     bool _useMaterials = false;
     bool _camLockMouse = true;
+    double _camFlySpeed = 10.0;
 
     // Serialization functions
     void ParseLine(const char *line);

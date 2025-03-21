@@ -134,14 +134,13 @@ bool CameraRig::Move(GfCamera &camera, double deltaX, double deltaY) {
         ToCameraTransform(camera, _zUpMatrix, center, rotY.GetQuat() * rotX.GetQuat(), 0);
 
         // speed control
-        static double camFlySpeed = 10.0;
-        static const double camFlySpeedIncrements = 1.1f;
+        const double camFlySpeedIncrements = 1.1f;
         if (ImGui::GetIO().MouseWheel > 0.0f) {
-            camFlySpeed *= camFlySpeedIncrements;
+            _camFlySpeed *= camFlySpeedIncrements;
         } else if (ImGui::GetIO().MouseWheel < 0.0f) {
-            camFlySpeed /= camFlySpeedIncrements;
+            _camFlySpeed /= camFlySpeedIncrements;
         }
-        float fly_speed = camFlySpeed;
+        float fly_speed = _camFlySpeed;
         if(ImGui::IsKeyDown(ImGuiKey_LeftShift)){
             fly_speed *= 2.0;
         }else if(ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {

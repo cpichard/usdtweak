@@ -110,8 +110,10 @@ class Viewport final {
 
     void SetMouseCaptured(bool set);
     bool GetMouseCaptured() { return _mouseCaptured; }
-    bool EnabledCamLockMouse() const {return _imagingSettings.camLockMouse;};
+    bool EnabledCamLockMouse() const { return _imagingSettings.camLockMouse; };
 
+    double GetCamFlySpeed() const { return _imagingSettings.camFlySpeed; };
+    void SetCamFlySpeed(double set) { _imagingSettings.camFlySpeed = set; };
 
     UsdStageRefPtr GetCurrentStage() { return _stage; }
     const UsdStageRefPtr & GetCurrentStage() const { return _stage; };

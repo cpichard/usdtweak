@@ -25,6 +25,7 @@ struct ImagingSettings : UsdImagingGLRenderParams {
     bool showUI;
     bool showViewportMenu;
     bool camLockMouse;
+    double camFlySpeed;
 
 private:
     GlfSimpleLightVector _lights;

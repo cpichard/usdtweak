@@ -24,8 +24,8 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     auto &cameraManipulator = viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
     SetViewportSize(viewport.GetViewportSize());
-    // TODO: expose this as a config?
     bool EnableMouseLock = viewport.EnabledCamLockMouse();
+    _camFlySpeed = viewport.GetCamFlySpeed();
     if (!ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
         if(ImGui::IsMouseDown(1) && !viewport.IsEditingInternalOrthoCamera()) {
             viewport.SetMouseCaptured(EnableMouseLock);
@@ -49,6 +49,7 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     }
     GfCamera &currentCamera = viewport.GetEditableCamera();
     if (Move(currentCamera, io.MouseDelta.x, io.MouseDelta.y)) {
+        viewport.SetCamFlySpeed(_camFlySpeed);
         if (viewport.IsEditingStageCamera() && _stageCamera) {
             // This is going to fill the undo/redo buffer :S
             _stageCamera.SetFromCamera(currentCamera, viewport.GetCurrentTimeCode());

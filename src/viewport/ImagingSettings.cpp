@@ -145,6 +145,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
     ImGui::Checkbox("Show gizmos", &renderparams.showGizmos);
     ImGui::Checkbox("Lock mouse when rotating camera", &renderparams.camLockMouse);
+    ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
 }
 
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
