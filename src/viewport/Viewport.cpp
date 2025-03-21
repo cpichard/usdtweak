@@ -9,6 +9,7 @@
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdUtils/stageCache.h>
 
+#include "CameraManipulator.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
 #include "Viewport.h"
@@ -72,11 +73,12 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     auto color = _drawTarget->GetAttachment("color");
     _textureId = color->GetGlTextureName();
     _drawTarget->Unbind();
-    
+
 
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
+    _imagingSettings.camLockMouse = _defaultSettings._camLockMouse;
 }
 
 Viewport::~Viewport() {
@@ -240,7 +242,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(widgetPosition.x);
-    
+
     if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
         ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
     }
@@ -344,6 +346,11 @@ inline bool IsModifierDown() {
 }
 
 void Viewport::HandleKeyboardShortcut() {
+    if(_currentEditingState == GetManipulator<CameraManipulator>()) {
+        // ignore keyboard shortcuts while manipulating the camera
+        return;
+    }
+
     if (ImGui::IsItemHovered()) {
         ImGuiIO &io = ImGui::GetIO();
         static bool SelectionManipulatorPressedOnce = true;
@@ -391,6 +398,13 @@ void Viewport::HandleKeyboardShortcut() {
     }
 }
 
+void Viewport::SetMouseCaptured(bool set)
+{
+    _mouseCaptured = set;
+    if (auto window = glfwGetCurrentContext()) {
+        glfwSetInputMode(window, GLFW_CURSOR, set ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
+}
 
 void Viewport::HandleManipulationEvents() {
 
@@ -398,7 +412,7 @@ void Viewport::HandleManipulationEvents() {
     ImGuiIO &io = ImGui::GetIO();
 
     // Check the mouse is over this widget
-    if (ImGui::IsItemHovered()) {
+    if (ImGui::IsItemHovered() || GetMouseCaptured()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
         if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0) return;
         _mousePosition[0] = 2.0 * (static_cast<double>(io.MousePos.x - (g->LastItemData.Rect.Min.x)) /
@@ -514,13 +528,13 @@ void Viewport::Render() {
         // Set camera and lighting state
         _imagingSettings.SetLightPositionFromCamera(GetCurrentCamera());
         _renderer->SetLightingState(_imagingSettings.GetLights(), _imagingSettings._material, _imagingSettings._ambient);
-        
+
         // Clipping planes
         _imagingSettings.clipPlanes.clear();
         for (int i = 0; i < GetCurrentCamera().GetClippingPlanes().size(); ++i) {
             _imagingSettings.clipPlanes.emplace_back(GetCurrentCamera().GetClippingPlanes()[i]); // convert float to double
         }
-        
+
         GfVec4d viewport(0, 0, width, height);
         GfRect2i renderBufferRect(GfVec2i(0, 0), width, height);
         GfRange2f displayWindow(GfVec2f(viewport[0], height-viewport[1]-viewport[3]),

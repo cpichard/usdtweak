@@ -60,17 +60,17 @@ class Viewport final {
 
     /// Return the camera selected by the user.
     const GfCamera &GetCurrentCamera() const;
-    
+
     /// Return the camera used to render the viewport. TODO make it const &
     GfCamera GetViewportCamera() const;
-    
+
     /// Returns the path of the selected stage camera or SdfPath() if the camera is internal
     inline const SdfPath &GetSelectedStageCameraPath () { return _cameras.GetStageCameraPath(); }
-    
+
 
     inline bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
     inline bool IsEditingInternalOrthoCamera() const { return _cameras.IsUsingInternalOrthoCamera(); }
-    
+
     inline CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
 
     // Picking
@@ -95,18 +95,23 @@ class Viewport final {
 
     /// Draw manipulator toolbox, to select translate, rotate, scale
     void DrawManipulatorToolbox(const ImVec2 widgetPosition);
-    
+
     /// Draw toolbar: camera selection, renderer options, viewport options ...
     void DrawToolBar(const ImVec2 widgetPosition);
 
     /// Draw a menu bar on top of the viewport
     void DrawMenuBar();
     bool HasMenuBar() const {return _imagingSettings.showViewportMenu;};
-    
+
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents
 
     GfVec2d GetMousePosition() const { return _mousePosition; }
+
+    void SetMouseCaptured(bool set);
+    bool GetMouseCaptured() { return _mouseCaptured; }
+    bool EnabledCamLockMouse() const {return _imagingSettings.camLockMouse;};
+
 
     UsdStageRefPtr GetCurrentStage() { return _stage; }
     const UsdStageRefPtr & GetCurrentStage() const { return _stage; };
@@ -122,13 +127,15 @@ class Viewport final {
 
 
   private:
-    
+
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
-    
+
+    bool _mouseCaptured = false;
+
     // Viewport ID
     std::string _viewportName;
-    
+
     // Cameras
     ViewportCameras _cameras;
 
