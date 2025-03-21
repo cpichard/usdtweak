@@ -5,10 +5,11 @@
 
 #include <pxr/base/gf/camera.h>
 #include <pxr/base/gf/vec2i.h>
+#include <pxr/base/gf/vec2d.h>
 
 /// Type of camera movement
 /// TODO add arcball and turntable options
-enum struct MovementType { None, Orbit, Truck, Dolly };
+enum struct MovementType { None, Orbit, Truck, Dolly, Fly };
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -45,4 +46,5 @@ class CameraRig {
     double _selectionSize; /// Last "FrameBoundingBox" selection size
     GfVec2i _viewportSize;
     float _dist = 100;
+    GfVec2d _yawPitch;
 };

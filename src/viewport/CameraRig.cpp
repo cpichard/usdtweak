@@ -1,6 +1,6 @@
 #include "CameraRig.h"
 #include "Constants.h"
-#include "GeometricFunctions.h"
+#include "Gui.h"
 #include <pxr/base/gf/bbox3d.h>
 #include <pxr/base/gf/frustum.h>
 #include <pxr/base/gf/rotation.h>
@@ -8,6 +8,7 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+#define FEPSILON 0.00001
 ///
 /// Camera manipulator, this is copying how usdview freeCamera.py works
 ///
@@ -17,7 +18,8 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 //
 using DistT = float;
-using RotationT = GfVec3d;
+// Excerpt from:
+using RotationT = GfQuatd;
 
 /// Updates manipulator internal
 // similar to _pullFromCameraTransform in usdviewq
@@ -29,32 +31,28 @@ static void FromCameraTransform(const GfCamera &camera, const GfMatrix4d &zUpMat
     const auto &cameraAxis = frustum.ComputeViewDirection();
     auto transform = camera.GetTransform() * zUpMatrix;
     transform.Orthonormalize();
-    auto camRotation = transform.ExtractRotation();
-
-    // Theta, Phi, Psi
-    rotation = -camRotation.Decompose(GfVec3d::YAxis(), GfVec3d::XAxis(), GfVec3d::ZAxis());
+    rotation = transform.ExtractRotation().GetQuat();
     dist = camera.GetFocusDistance();
     center = cameraPosition + dist * cameraAxis;
 }
 
 static void ToCameraTransform(GfCamera &camera, const GfMatrix4d &zUpMatrix, const GfVec3d &center, const RotationT &rotation,
                               const DistT &dist) {
-    GfMatrix4d trans;
+    GfMatrix4d trans, rot, toCenter;
     trans.SetTranslate(GfVec3d::ZAxis() * dist);
-    GfMatrix4d roty(1.0);
-    GfMatrix4d rotz(1.0);
-    GfMatrix4d rotx(1.0);
-    roty.SetRotate(GfRotation(GfVec3d::YAxis(), -rotation[0]));
-    rotx.SetRotate(GfRotation(GfVec3d::XAxis(), -rotation[1]));
-    rotz.SetRotate(GfRotation(GfVec3d::ZAxis(), -rotation[2]));
-    GfMatrix4d toCenter;
+    rot.SetRotate(rotation);
     toCenter.SetTranslate(center);
-    camera.SetTransform(trans * rotz * rotx * roty * zUpMatrix.GetInverse() * toCenter);
-    camera.SetFocusDistance(dist);
+    camera.SetTransform(trans * rot * zUpMatrix.GetInverse() * toCenter);
+    // maintain orbit distance when using fly camera
+    if(std::abs(dist) > FEPSILON){
+        camera.SetFocusDistance(dist);
+    }
 }
 
 CameraRig::CameraRig(const GfVec2i &viewportSize, bool isZUp)
     : _movementType(MovementType::None), _selectionSize(1.0), _viewportSize(viewportSize) {
+    // Match look direction from ViewportCameras::InitPerspCamera so camera doesn't jump on first interaction
+    _yawPitch = {0, -90};
     SetZIsUp(isZUp);
 }
 
@@ -82,11 +80,11 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
     if (camera.GetProjection() == GfCamera::Perspective) {
         RotationT rotation;
         GfVec3d center;
-        
+
         FromCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
-        
+
         center = bbox.ComputeCentroid();
-        
+
         auto bboxRange = bbox.ComputeAlignedRange();
         auto rect = bboxRange.GetMax() - bboxRange.GetMin();
         _selectionSize = std::max(rect[0], rect[1]) * 2; // This reset the selection size
@@ -106,7 +104,7 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
         GfMatrix4d mat = camera.GetTransform();
         mat.SetTranslateOnly(bbox.ComputeCentroid() - 1000.f*frustum.ComputeViewDirection());
         camera.SetTransform(mat);
-        
+
         // Compute framing
         const GfRange3d bboxRange = bbox.ComputeAlignedRange();
         const GfVec3d frameSize = bboxRange.GetSize();
@@ -116,18 +114,67 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
     }
 }
 
-// Updates the transform matrix of a GfCamera depending on the movement
 bool CameraRig::Move(GfCamera &camera, double deltaX, double deltaY) {
     RotationT rotation;
     GfVec3d center;
-    if (deltaX == 0 && deltaY == 0)
-        return false;
+
     FromCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
 
-    if (_movementType == MovementType::Orbit) { // TUMBLE
-        rotation[0] += deltaX;
-        rotation[1] += deltaY;
-        ToCameraTransform(camera, _zUpMatrix, center, rotation, _dist);
+    // convert pixels (deltaX/Y) to degrees (_yawPitch)
+    const double dtFactor = 0.15;
+
+    if (_movementType == MovementType::Fly) {
+
+        // rotation
+        _yawPitch[0] -= deltaX * dtFactor;
+        _yawPitch[1] -= deltaY * dtFactor;
+        GfRotation rotY(GfVec3d::YAxis(), _yawPitch[0]);
+        GfRotation rotX(GfVec3d::XAxis(), _yawPitch[1]);
+        center = camera.GetTransform().ExtractTranslation();
+        ToCameraTransform(camera, _zUpMatrix, center, rotY.GetQuat() * rotX.GetQuat(), 0);
+
+        // speed control
+        static double camFlySpeed = 10.0;
+        static const double camFlySpeedIncrements = 1.1f;
+        if (ImGui::GetIO().MouseWheel > 0.0f) {
+            camFlySpeed *= camFlySpeedIncrements;
+        } else if (ImGui::GetIO().MouseWheel < 0.0f) {
+            camFlySpeed /= camFlySpeedIncrements;
+        }
+        float fly_speed = camFlySpeed;
+        if(ImGui::IsKeyDown(ImGuiKey_LeftShift)){
+            fly_speed *= 2.0;
+        }else if(ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
+            fly_speed *= 0.5;
+        }
+
+        // movement
+        GfMatrix4d tcam = camera.GetTransform();
+        GfVec3d vpos { tcam[3][0], tcam[3][1], tcam[3][2] };
+        if(ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
+            vpos += tcam.GetRow3(2) * -fly_speed;
+        } else if(ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
+            vpos += tcam.GetRow3(2) * fly_speed;
+        }
+        if(ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
+            vpos += tcam.GetRow3(0) * -fly_speed;
+        } else if(ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
+            vpos += tcam.GetRow3(0) * fly_speed;
+        }
+        if(ImGui::IsKeyDown(ImGuiKey_E) || ImGui::IsKeyDown(ImGuiKey_PageUp)) {
+            vpos += tcam.GetRow3(1) * fly_speed;
+        } else if(ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_PageDown)) {
+            vpos += tcam.GetRow3(1) * -fly_speed;
+        }
+
+        tcam.SetTranslateOnly(vpos);
+        camera.SetTransform(tcam);
+    } else if (_movementType == MovementType::Orbit) { // TUMBLE
+        _yawPitch[0] -= deltaX * dtFactor;
+        _yawPitch[1] -= deltaY * dtFactor;
+        GfRotation rotY(GfVec3d::YAxis(), _yawPitch[0]);
+        GfRotation rotX(GfVec3d::XAxis(), _yawPitch[1]);
+        ToCameraTransform(camera, _zUpMatrix, center, rotY.GetQuat() * rotX.GetQuat(), _dist);
     } else if (_movementType == MovementType::Truck) {
         auto frustum = camera.GetFrustum();
         auto up = frustum.ComputeUpVector();

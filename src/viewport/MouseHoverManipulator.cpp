@@ -4,8 +4,9 @@
 
 Manipulator * MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
-
-    if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
+    /// instead of IsMouseClicked(1), could also switch on click+drag, or click+[W/A/S/D]
+    /// that way, regular right click can be used for other purposes
+    if (ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsMouseClicked(1)) {
         return viewport.GetManipulator<CameraManipulator>();
     }
     else if (ImGui::IsMouseClicked(0)) {

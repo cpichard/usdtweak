@@ -24,16 +24,27 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     auto &cameraManipulator = viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
     SetViewportSize(viewport.GetViewportSize());
-    /// If the user released key alt, escape camera manipulation
+    // TODO: expose this as a config?
+    bool EnableMouseLock = viewport.EnabledCamLockMouse();
     if (!ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-        return viewport.GetManipulator<MouseHoverManipulator>();
+        if(ImGui::IsMouseDown(1) && !viewport.IsEditingInternalOrthoCamera()) {
+            viewport.SetMouseCaptured(EnableMouseLock);
+            SetMovementType(MovementType::Fly);
+        } else {
+            viewport.SetMouseCaptured(false);
+            return viewport.GetManipulator<MouseHoverManipulator>();
+        }
     } else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
+        viewport.SetMouseCaptured(false);
         SetMovementType(MovementType::None);
     } else if (ImGui::IsMouseClicked(0) && !viewport.IsEditingInternalOrthoCamera()) {
+        viewport.SetMouseCaptured(EnableMouseLock);
         SetMovementType(MovementType::Orbit);
     } else if (ImGui::IsMouseClicked(2)) {
+        viewport.SetMouseCaptured(EnableMouseLock);
         SetMovementType(MovementType::Truck);
     } else if (ImGui::IsMouseClicked(1)) {
+        viewport.SetMouseCaptured(EnableMouseLock);
         SetMovementType(MovementType::Dolly);
     }
     GfCamera &currentCamera = viewport.GetEditableCamera();
@@ -43,6 +54,5 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
             _stageCamera.SetFromCamera(currentCamera, viewport.GetCurrentTimeCode());
         }
     }
-
     return this;
 }
