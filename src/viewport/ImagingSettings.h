@@ -15,15 +15,16 @@ struct ImagingSettings : UsdImagingGLRenderParams {
     // Defaults GL lights and materials
     bool enableCameraLight;
     const GlfSimpleLightVector &GetLights();
-    
+
     GlfSimpleMaterial _material;
     GfVec4f _ambient;
-    
+
     // Viewport
     bool showGrid;
     bool showGizmos;
     bool showUI;
     bool showViewportMenu;
+    bool camLockMouse;
 
 private:
     GlfSimpleLightVector _lights;
