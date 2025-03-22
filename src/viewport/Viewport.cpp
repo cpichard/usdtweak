@@ -399,11 +399,16 @@ void Viewport::HandleKeyboardShortcut() {
     }
 }
 
-void Viewport::SetMouseCaptured(bool set)
-{
+void Viewport::SetMouseCaptured(bool set) {
     _mouseCaptured = set;
     if (auto window = glfwGetCurrentContext()) {
-        glfwSetInputMode(window, GLFW_CURSOR, set ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if(set) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+        }else{
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+        }
     }
 }
 
