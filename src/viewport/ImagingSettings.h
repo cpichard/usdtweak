@@ -24,7 +24,6 @@ struct ImagingSettings : UsdImagingGLRenderParams {
     bool showGizmos;
     bool showUI;
     bool showViewportMenu;
-    bool camLockMouse;
     double camFlySpeed;
 
 private:

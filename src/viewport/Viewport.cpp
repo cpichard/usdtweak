@@ -78,7 +78,6 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
-    _imagingSettings.camLockMouse = _defaultSettings._camLockMouse;
     _imagingSettings.camFlySpeed = _defaultSettings._camFlySpeed;
 }
 

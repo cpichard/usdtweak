@@ -16,9 +16,6 @@ void ViewportSettings::ParseLine(const char *line) {
     if (sscanf(line, "UseMaterials=%i", &value) == 1) {
         _useMaterials = value;
     }
-    if (sscanf(line, "CamLockMouse=%i", &value) == 1) {
-        _camLockMouse = value;
-    }
     if (sscanf(line, "CamFlySpeed=%lf", &doubleValue) == 1) {
         _camFlySpeed = doubleValue;
     }
@@ -28,6 +25,5 @@ void ViewportSettings::ParseLine(const char *line) {
 // TODO: rewrite the function to use an internal buffer to avoid dependency on imgui
 void ViewportSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("UseMaterials=%d\n", _useMaterials);
-    buf->appendf("CamLockMouse=%d\n", _camLockMouse);
     buf->appendf("CamFlySpeed=%lf\n", _camFlySpeed);
 }
