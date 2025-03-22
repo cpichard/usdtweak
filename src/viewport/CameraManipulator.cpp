@@ -24,11 +24,10 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
     auto &cameraManipulator = viewport.GetCameraManipulator();
     ImGuiIO &io = ImGui::GetIO();
     SetViewportSize(viewport.GetViewportSize());
-    bool EnableMouseLock = viewport.EnabledCamLockMouse();
     _camFlySpeed = viewport.GetCamFlySpeed();
     if (!ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
         if(ImGui::IsMouseDown(1) && !viewport.IsEditingInternalOrthoCamera()) {
-            viewport.SetMouseCaptured(EnableMouseLock);
+            viewport.SetMouseCaptured(true);
             SetMovementType(MovementType::Fly);
         } else {
             viewport.SetMouseCaptured(false);
@@ -38,13 +37,13 @@ Manipulator *CameraManipulator::OnUpdate(Viewport &viewport) {
         viewport.SetMouseCaptured(false);
         SetMovementType(MovementType::None);
     } else if (ImGui::IsMouseClicked(0) && !viewport.IsEditingInternalOrthoCamera()) {
-        viewport.SetMouseCaptured(EnableMouseLock);
+        viewport.SetMouseCaptured(true);
         SetMovementType(MovementType::Orbit);
     } else if (ImGui::IsMouseClicked(2)) {
-        viewport.SetMouseCaptured(EnableMouseLock);
+        viewport.SetMouseCaptured(true);
         SetMovementType(MovementType::Truck);
     } else if (ImGui::IsMouseClicked(1)) {
-        viewport.SetMouseCaptured(EnableMouseLock);
+        viewport.SetMouseCaptured(true);
         SetMovementType(MovementType::Dolly);
     }
     GfCamera &currentCamera = viewport.GetEditableCamera();
