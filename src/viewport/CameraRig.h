@@ -1,15 +1,11 @@
 ///
-/// Camera manipulator handling many types of camera movement
+/// Common base for camera manipulators
 ///
 #pragma once
 
 #include <pxr/base/gf/camera.h>
+#include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/vec2i.h>
-#include <pxr/base/gf/vec2d.h>
-
-/// Type of camera movement
-/// TODO add arcball and turntable options
-enum struct MovementType { None, Orbit, Truck, Dolly, Fly };
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -25,12 +21,6 @@ class CameraRig {
     /// Reset the camera position to the original position
     void ResetPosition(GfCamera &);
 
-    /// Set the type of movement
-    void SetMovementType(MovementType mode) { _movementType = mode; }
-
-    /// Update the camera position depending on the Movement type
-    bool Move(GfCamera &, double deltaX, double deltaY);
-
     /// Frame the camera so that the bounding box is visible.
     void FrameBoundingBox(GfCamera &, const GfBBox3d &);
 
@@ -40,14 +30,24 @@ class CameraRig {
     ///
     void SetViewportSize(const GfVec2i &viewportSize) { _viewportSize = viewportSize; }
 
-  private:
-    MovementType _movementType;
-    GfMatrix4d _zUpMatrix;
-    double _selectionSize; /// Last "FrameBoundingBox" selection size
-    GfVec2i _viewportSize;
-    float _dist = 100;
-    GfVec2d _yawPitch;
+    /// Set camera's transform, assuming +Y-up (conversion is done internally)
+    void SetCameraTransform(GfCamera &camera, const GfVec3d &center, const GfQuatd &rotation, const float &dist);
+    void SetCameraTransform(GfCamera &camera, const GfMatrix4d& transform);
+
+    /// Set camera's transform, always as +Y-up
+    void GetCameraTransform(const GfCamera &camera, GfVec3d &center, GfQuatd &rotation, float &dist);    
+    void GetCameraTransform(const GfCamera &camera, GfMatrix4d &transform);
+
+    // Get camera vectors, always as +Y-up
+    void GetCameraVectors(const GfCamera& camera, GfVec3d& right, GfVec3d& up, GfVec3d& fwd);
+
+    static double computePlaneAngle(const GfVec3d& axis0, const GfVec3d& axis1, const GfVec3d& vec);
+
+    GfVec2d GetYawPitch(const GfCamera& camera);
+    void SetYawPitch(GfCamera& camera, const GfVec2d& yawPitch);
 
   protected:
-    double _camFlySpeed = 10.0;
+    GfMatrix4d _zUpMatrix;
+    GfVec2i _viewportSize;
+    double _selectionSize; /// Last "FrameBoundingBox" selection size
 };
