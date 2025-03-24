@@ -20,6 +20,8 @@ public:
     Editor();
     ~Editor();
 
+    static Editor& GetInstance();
+
     /// Removing the copy constructors as we want to make sure there are no unwanted copies of the
     /// editor. There should be only one editor for now but we want to control the construction
     /// and destruction of the editor to delete properly the contexts, so it's not a singleton
@@ -117,6 +119,10 @@ public:
     void ScaleUI(float scaleValue);
     float GetScaleUI() const;
 
+    void SetMouseCaptured(bool set);
+    bool GetMouseCaptured() { return _mouseCaptured; }
+    GfVec2d GetMouseDelta();
+
   private:
     /// Interface with the settings
     void LoadSettings();
@@ -166,5 +172,6 @@ public:
     /// Playback controls
     bool _isPlaying = false;
     std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
-    
+
+    bool _mouseCaptured = false;
 };

@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <pxr/imaging/garch/glApi.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/boundable.h>
@@ -9,8 +7,9 @@
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdUtils/stageCache.h>
 
-#include "CameraManipulator.h"
+#include "OrbitCameraManipulator.h"
 #include "Gui.h"
+#include "Editor.h"
 #include "ImGuiHelpers.h"
 #include "Viewport.h"
 #include "Commands.h"
@@ -59,12 +58,13 @@ void Viewport::DrawMenuBar() {
 }
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
-    : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
+    : _stage(stage), _orbitCameraManipulator({InitialWindowWidth, InitialWindowHeight}), _flyCameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
       _textureSize(1, 1), _viewportName("Viewport 1") {
 
     // Viewport draw target
-    _cameraManipulator.ResetPosition(GetEditableCamera());
+    _orbitCameraManipulator.ResetPosition(GetEditableCamera());
+    _flyCameraManipulator.ResetPosition(GetEditableCamera());
 
     _drawTarget = GlfDrawTarget::New(_textureSize, false);
     _drawTarget->Bind();
@@ -270,6 +270,12 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
      ImGui::PopStyleColor();
 }
 
+void Viewport::FrameCameraManipulatorsOnBBox(GfCamera& cam, const GfBBox3d& bbox) {
+    for(CameraRig* c : _cameraManipulators) {
+        c->FrameBoundingBox(cam, bbox);
+    }
+}
+
 /// Frame the viewport using the bounding box of the selection
 void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera manipulator ???
     if (GetCurrentStage() && !selection.IsSelectionEmpty(GetCurrentStage())) {
@@ -279,7 +285,7 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bbox);
+        FrameCameraManipulatorsOnBBox(GetEditableCamera(), bbox);
     }
 }
 
@@ -289,10 +295,10 @@ void Viewport::FrameCameraOnRootPrim() {
         UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         if (defaultPrim) {
-            _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
+            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
         } else {
             auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-            _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
+            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
         }
     }
 }
@@ -303,12 +309,12 @@ void Viewport::FrameAllCameras() {
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         if (defaultPrim) {
             for (GfCamera *camera: _cameras.GetEditableCameras(GetCurrentStage())) {
-                _cameraManipulator.FrameBoundingBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
+                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
             }
         } else {
             for (GfCamera *camera: _cameras.GetEditableCameras(GetCurrentStage())) {
                 auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-                _cameraManipulator.FrameBoundingBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
+                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
             }
         }
     }
@@ -346,7 +352,7 @@ inline bool IsModifierDown() {
 }
 
 void Viewport::HandleKeyboardShortcut() {
-    if(_currentEditingState == GetManipulator<CameraManipulator>()) {
+    if(_currentEditingState == GetManipulator<OrbitCameraManipulator>()) {
         // ignore keyboard shortcuts while manipulating the camera
         return;
     }
@@ -398,26 +404,13 @@ void Viewport::HandleKeyboardShortcut() {
     }
 }
 
-void Viewport::SetMouseCaptured(bool set) {
-    _mouseCaptured = set;
-    if (auto window = glfwGetCurrentContext()) {
-        if(set) {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
-        }else{
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-        }
-    }
-}
-
 void Viewport::HandleManipulationEvents() {
 
     ImGuiContext *g = ImGui::GetCurrentContext();
     ImGuiIO &io = ImGui::GetIO();
 
     // Check the mouse is over this widget
-    if (ImGui::IsItemHovered() || GetMouseCaptured()) {
+    if (ImGui::IsItemHovered() || Editor::GetInstance().GetMouseCaptured()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
         if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0) return;
         _mousePosition[0] = 2.0 * (static_cast<double>(io.MousePos.x - (g->LastItemData.Rect.Min.x)) /
@@ -596,16 +589,18 @@ void Viewport::Update() {
             SdfPathVector excludedPaths;
             _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
             _renderers[GetCurrentStage()] = _renderer;
-            _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             InitializeRendererAov(*_renderer);
         } else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
-            _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: should reset the camera otherwise, depending on the position of the camera, the transform is incorrect
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
             //_selection =
+        }
+
+        for(CameraRig* c : _cameraManipulators) {
+            c->SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         }
 
         // Update cameras state, this will assign the user selected camera for the current stage at
@@ -618,7 +613,12 @@ void Viewport::Update() {
                 // TODO: framing should probably move in the update as we want to also frame when an
                 // internal ortho camera is selected
                 // With the multiple viewport we might want to frame all cameras, not just the current one
-                //
+                
+                // reset initial camera angle now that scene coordinate system is known
+                for(CameraRig* c: _cameraManipulators) {
+                    c->SetYawPitch(GetEditableCamera(), GfVec2d(0, 0));
+                }
+
                 FrameCameraOnRootPrim(); // TODO rename to FrameCurrentCamera
                 FrameAllCameras();
             }

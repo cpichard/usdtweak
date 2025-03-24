@@ -5,9 +5,9 @@
 /// has grown too much and doing too many thing
 ///
 #include <map>
-#include <chrono>
 #include "Manipulator.h"
-#include "CameraManipulator.h"
+#include "OrbitCameraManipulator.h"
+#include "FlyCameraManipulator.h"
 #include "PositionManipulator.h"
 #include "MouseHoverManipulator.h"
 #include "SelectionManipulator.h"
@@ -71,7 +71,8 @@ class Viewport final {
     inline bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
     inline bool IsEditingInternalOrthoCamera() const { return _cameras.IsUsingInternalOrthoCamera(); }
 
-    inline CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
+    inline OrbitCameraManipulator &GetOrbitCameraManipulator() { return _orbitCameraManipulator; }
+    inline FlyCameraManipulator &GetFlyCameraManipulator() { return _flyCameraManipulator; }
 
     // Picking
     bool TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex);
@@ -108,9 +109,6 @@ class Viewport final {
 
     GfVec2d GetMousePosition() const { return _mousePosition; }
 
-    void SetMouseCaptured(bool set);
-    bool GetMouseCaptured() { return _mouseCaptured; }
-
     double GetCamFlySpeed() const { return _imagingSettings.camFlySpeed; };
     void SetCamFlySpeed(double set) { _imagingSettings.camFlySpeed = set; };
 
@@ -129,6 +127,8 @@ class Viewport final {
 
   private:
 
+    void FrameCameraManipulatorsOnBBox(GfCamera& cam, const GfBBox3d& bbox);
+
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
 
@@ -144,7 +144,9 @@ class Viewport final {
     //ManipulatorStateHandler _manipulators; // TODO one per stage or pass the stage
     Manipulator *_currentEditingState; // Manipulator currently used by the FSM
     Manipulator *_activeManipulator;   // Manipulator chosen by the user
-    CameraManipulator _cameraManipulator;
+    OrbitCameraManipulator _orbitCameraManipulator;
+    FlyCameraManipulator _flyCameraManipulator;
+    CameraRig* _cameraManipulators[2] = {&_orbitCameraManipulator, &_flyCameraManipulator};
     PositionManipulator _positionManipulator;
     RotationManipulator _rotationManipulator;
     MouseHoverManipulator _mouseHover;
@@ -175,6 +177,7 @@ class Viewport final {
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() { return &_rotationManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
-template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<OrbitCameraManipulator>() { return &_orbitCameraManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<FlyCameraManipulator>() { return &_flyCameraManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<SelectionManipulator>() { return &_selectionManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<ScaleManipulator>() { return &_scaleManipulator; }

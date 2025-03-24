@@ -28,6 +28,9 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+/// editor singleton pointer
+Editor *gEditor = nullptr;
+
 // https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
 #ifdef _WIN64
 static std::vector<char *> ArchCurrentEnviron() {
@@ -67,7 +70,7 @@ int main(int argc, char *const *argv) {
     ResourcesLoader loader;
 
     // Adding the plugin paths specified in the config file to the environment. It potentially means restarting the
-    // application with a new environment. Unfortunately USD is not able to dynamically load plugin 
+    // application with a new environment. Unfortunately USD is not able to dynamically load plugin
     // functionalities after startup time, the functions like RegisterPlugins or Load simply does not
     // do what one would expect, more there:
     // https://groups.google.com/g/usd-interest/c/fpLYyf6elmU/m/haZf9bZDAgAJ
@@ -168,6 +171,7 @@ int main(int argc, char *const *argv) {
     { // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
         ImGui::SetCurrentContext(mainUIContext);
         Editor editor;
+        gEditor = &editor;
 
         // Connect the window callbacks to the editor
         editor.InstallCallbacks(window);
@@ -222,7 +226,7 @@ int main(int argc, char *const *argv) {
     ImGui::SetCurrentContext(hydraUIContext);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui::DestroyContext(hydraUIContext);
-    
+
     // Shutdown imgui
     ImGui::SetCurrentContext(mainUIContext);
     ImGui_ImplOpenGL3_Shutdown();

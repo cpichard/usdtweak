@@ -12,6 +12,7 @@
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usd/usdGeom/gprim.h>
 #include <pxr/base/trace/trace.h>
+#include "3rdparty/imgui/imgui.h"
 #include "Gui.h"
 #include "Editor.h"
 #include "Debug.h"
@@ -147,6 +148,11 @@ struct CloseEditorModalDialog : public ModalDialog {
     Editor &editor;
     std::string confirmReasons;
 };
+
+extern Editor *gEditor;
+Editor& Editor::GetInstance() {
+    return *gEditor;
+}
 
 
 void Editor::RequestShutdown() {
@@ -838,7 +844,41 @@ float Editor::GetScaleUI() const {
     return  _settings._uiScale;
 }
 
+static int gSkippedFirstMouseEventAfterCapture = 0;
+GfVec2d Editor::GetMouseDelta() {
+    ImGuiIO& io = ImGui::GetIO();
+    if(_mouseCaptured && gSkippedFirstMouseEventAfterCapture > 0) {
+        return {0, 0};
+    }
+    return {io.MouseDelta.x, io.MouseDelta.y};
+}
+
+
+void Editor::SetMouseCaptured(bool set) {
+    if(_mouseCaptured != set){
+        _mouseCaptured = set;
+        if (auto window = glfwGetCurrentContext()) {
+            ImGuiIO &io = ImGui::GetIO();
+            if(set) {
+                gSkippedFirstMouseEventAfterCapture = 3;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+            }else{
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+            }
+        }
+    }
+}
+
 void Editor::Draw() {
+    if(gSkippedFirstMouseEventAfterCapture > 0){
+        ImGuiIO& io = ImGui::GetIO();
+        if(std::abs(io.MouseDelta.x) > 0 || std::abs(io.MouseDelta.y) > 0){
+            printf("SKIPPED (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
+            gSkippedFirstMouseEventAfterCapture--;
+        }
+    }
 
     // Main Menu bar
     DrawMainMenuBar();
