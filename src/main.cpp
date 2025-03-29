@@ -25,7 +25,6 @@
 
 // clang-format on
 
-
 PXR_NAMESPACE_USING_DIRECTIVE
 
 /// editor singleton pointer
@@ -58,9 +57,7 @@ static bool InstallApplicationPluginPaths(const std::vector<std::string> &plugin
     return false;
 }
 
-static void glfw_error_callback(int error, const char* description) {
-    std::cerr << "Error: " << description << std::endl;
-}
+static void glfw_error_callback(int error, const char *description) { std::cerr << "Error: " << description << std::endl; }
 
 int main(int argc, char *const *argv) {
 

@@ -21,11 +21,9 @@ double CameraRig::computePlaneAngle(const GfVec3d &axis0, const GfVec3d &axis1, 
     return ret;
 }
 
-void CameraRig::SetYawPitch(GfCamera& camera, const GfVec2d& yawPitch)
-{
+void CameraRig::SetYawPitch(GfCamera &camera, const GfVec2d &yawPitch) {
     // calculate assuming +Y up
-    auto rot = GfRotation(GfVec3d::YAxis(), yawPitch[0]).GetQuat() *
-               GfRotation(GfVec3d::XAxis(), yawPitch[1]).GetQuat();
+    auto rot = GfRotation(GfVec3d::YAxis(), yawPitch[0]).GetQuat() * GfRotation(GfVec3d::XAxis(), yawPitch[1]).GetQuat();
 
     // convert cam trans to +Y up before applying rotation
     GfMatrix4d mat_cam;
@@ -71,9 +69,7 @@ void CameraRig::GetCameraTransform(const GfCamera &camera, GfMatrix4d &trans) {
     trans = camera.GetTransform() * _zUpMatrix.GetInverse();
 }
 
-void CameraRig::SetCameraTransform(GfCamera &camera, const GfMatrix4d &trans) {
-    camera.SetTransform(trans * _zUpMatrix);
-}
+void CameraRig::SetCameraTransform(GfCamera &camera, const GfMatrix4d &trans) { camera.SetTransform(trans * _zUpMatrix); }
 
 void CameraRig::GetCameraVectors(const GfCamera &camera, GfVec3d &right, GfVec3d &up, GfVec3d &fwd) {
     GfMatrix4d mat_cam = camera.GetTransform() * _zUpMatrix.GetInverse();

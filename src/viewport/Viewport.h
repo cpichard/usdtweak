@@ -4,18 +4,18 @@
 /// This will eventually be split in 2 different files as the code
 /// has grown too much and doing too many thing
 ///
-#include <map>
-#include "Manipulator.h"
-#include "OrbitCameraManipulator.h"
 #include "FlyCameraManipulator.h"
-#include "PositionManipulator.h"
+#include "Grid.h"
+#include "Manipulator.h"
 #include "MouseHoverManipulator.h"
-#include "SelectionManipulator.h"
+#include "OrbitCameraManipulator.h"
+#include "PositionManipulator.h"
 #include "RotationManipulator.h"
 #include "ScaleManipulator.h"
 #include "Selection.h"
-#include "Grid.h"
+#include "SelectionManipulator.h"
 #include "ViewportCameras.h"
+#include <map>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -52,7 +52,6 @@ class Viewport final {
     /// Viewport size
     GfVec2i GetViewportSize() const;
 
-
     /// Return the camera structure used to render the viewport which can be modified for reframing, movement, etc
     /// The modification is then applied to the actual camera data, prim or internal at the followin
     /// Update() call.
@@ -65,8 +64,7 @@ class Viewport final {
     GfCamera GetViewportCamera() const;
 
     /// Returns the path of the selected stage camera or SdfPath() if the camera is internal
-    inline const SdfPath &GetSelectedStageCameraPath () { return _cameras.GetStageCameraPath(); }
-
+    inline const SdfPath &GetSelectedStageCameraPath() { return _cameras.GetStageCameraPath(); }
 
     inline bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
     inline bool IsEditingInternalOrthoCamera() const { return _cameras.IsUsingInternalOrthoCamera(); }
@@ -102,7 +100,7 @@ class Viewport final {
 
     /// Draw a menu bar on top of the viewport
     void DrawMenuBar();
-    bool HasMenuBar() const {return _imagingSettings.showViewportMenu;};
+    bool HasMenuBar() const { return _imagingSettings.showViewportMenu; };
 
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents
@@ -113,7 +111,7 @@ class Viewport final {
     void SetCamFlySpeed(double set) { _imagingSettings.camFlySpeed = set; };
 
     UsdStageRefPtr GetCurrentStage() { return _stage; }
-    const UsdStageRefPtr & GetCurrentStage() const { return _stage; };
+    const UsdStageRefPtr &GetCurrentStage() const { return _stage; };
 
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
@@ -124,10 +122,8 @@ class Viewport final {
     void HandleManipulationEvents();
     void HandleKeyboardShortcut();
 
-
   private:
-
-    void FrameCameraManipulatorsOnBBox(GfCamera& cam, const GfBBox3d& bbox);
+    void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
 
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
@@ -141,12 +137,12 @@ class Viewport final {
     ViewportCameras _cameras;
 
     // Manipulators
-    //ManipulatorStateHandler _manipulators; // TODO one per stage or pass the stage
+    // ManipulatorStateHandler _manipulators; // TODO one per stage or pass the stage
     Manipulator *_currentEditingState; // Manipulator currently used by the FSM
     Manipulator *_activeManipulator;   // Manipulator chosen by the user
     OrbitCameraManipulator _orbitCameraManipulator;
     FlyCameraManipulator _flyCameraManipulator;
-    CameraRig* _cameraManipulators[2] = {&_orbitCameraManipulator, &_flyCameraManipulator};
+    CameraRig *_cameraManipulators[2] = {&_orbitCameraManipulator, &_flyCameraManipulator};
     PositionManipulator _positionManipulator;
     RotationManipulator _rotationManipulator;
     MouseHoverManipulator _mouseHover;
@@ -171,7 +167,6 @@ class Viewport final {
     UsdImagingGLEngine *_renderer = nullptr;
     ImagingSettings _imagingSettings;
     GlfDrawTargetRefPtr _drawTarget;
-
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }

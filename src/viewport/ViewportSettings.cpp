@@ -6,7 +6,6 @@
 
 #include <imgui.h> // for ImGuiTextBuffer
 
-
 void ViewportSettings::ParseLine(const char *line) {
     int value = 0;
     double doubleValue = 0.0;
@@ -20,7 +19,6 @@ void ViewportSettings::ParseLine(const char *line) {
         _camFlySpeed = doubleValue;
     }
 }
-
 
 // TODO: rewrite the function to use an internal buffer to avoid dependency on imgui
 void ViewportSettings::Dump(ImGuiTextBuffer *buf) {

@@ -1,8 +1,8 @@
 #include "FlyCameraManipulator.h"
 #include "Commands.h"
+#include "Editor.h"
 #include "Gui.h"
 #include "Viewport.h"
-#include "Editor.h"
 #include <cmath>
 #include <pxr/base/gf/plane.h>
 #include <pxr/usd/usdGeom/camera.h>

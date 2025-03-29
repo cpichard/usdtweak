@@ -15,13 +15,13 @@ class OrbitCameraManipulator : public CameraRig, public Manipulator {
     void OnBeginEdition(Viewport &) override;
     Manipulator *OnUpdate(Viewport &) override;
     void OnEndEdition(Viewport &) override;
-    
+
     /// Set the type of movement
     void SetMovementType(MovementType mode) { _movementType = mode; }
 
   protected:
     /// Update the camera position depending on the Movement type
-    bool Move(GfCamera &, const GfVec2d& delta);
+    bool Move(GfCamera &, const GfVec2d &delta);
 
   private:
     UsdGeomCamera _stageCamera;

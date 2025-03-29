@@ -32,19 +32,19 @@ class CameraRig {
 
     /// Set camera's transform, assuming +Y-up (conversion is done internally)
     void SetCameraTransform(GfCamera &camera, const GfVec3d &center, const GfQuatd &rotation, const float &dist);
-    void SetCameraTransform(GfCamera &camera, const GfMatrix4d& transform);
+    void SetCameraTransform(GfCamera &camera, const GfMatrix4d &transform);
 
     /// Set camera's transform, always as +Y-up
-    void GetCameraTransform(const GfCamera &camera, GfVec3d &center, GfQuatd &rotation, float &dist);    
+    void GetCameraTransform(const GfCamera &camera, GfVec3d &center, GfQuatd &rotation, float &dist);
     void GetCameraTransform(const GfCamera &camera, GfMatrix4d &transform);
 
     // Get camera vectors, always as +Y-up
-    void GetCameraVectors(const GfCamera& camera, GfVec3d& right, GfVec3d& up, GfVec3d& fwd);
+    void GetCameraVectors(const GfCamera &camera, GfVec3d &right, GfVec3d &up, GfVec3d &fwd);
 
-    static double computePlaneAngle(const GfVec3d& axis0, const GfVec3d& axis1, const GfVec3d& vec);
+    static double computePlaneAngle(const GfVec3d &axis0, const GfVec3d &axis1, const GfVec3d &vec);
 
-    GfVec2d GetYawPitch(const GfCamera& camera);
-    void SetYawPitch(GfCamera& camera, const GfVec2d& yawPitch);
+    GfVec2d GetYawPitch(const GfCamera &camera);
+    void SetYawPitch(GfCamera &camera, const GfVec2d &yawPitch);
 
   protected:
     GfMatrix4d _zUpMatrix;

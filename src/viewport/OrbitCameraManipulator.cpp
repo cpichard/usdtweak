@@ -1,8 +1,8 @@
 #include "OrbitCameraManipulator.h"
 #include "Commands.h"
+#include "Editor.h"
 #include "Gui.h"
 #include "Viewport.h"
-#include "Editor.h"
 #include <pxr/usd/usdGeom/camera.h>
 
 OrbitCameraManipulator::OrbitCameraManipulator(const GfVec2i &viewportSize, bool isZUp) : CameraRig(viewportSize, isZUp) {}
@@ -52,7 +52,7 @@ Manipulator *OrbitCameraManipulator::OnUpdate(Viewport &viewport) {
     return this;
 }
 
-bool OrbitCameraManipulator::Move(GfCamera &camera, const GfVec2d& delta) {
+bool OrbitCameraManipulator::Move(GfCamera &camera, const GfVec2d &delta) {
     GfQuatd rotation;
     GfVec3d center;
     GetCameraTransform(camera, center, rotation, _dist);
