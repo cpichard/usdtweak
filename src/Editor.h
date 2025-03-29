@@ -119,7 +119,7 @@ class Editor {
     void ScaleUI(float scaleValue);
     float GetScaleUI() const;
 
-    void SetMouseCaptured(bool set);
+    void SetMouseCaptured(bool captured);
     bool GetMouseCaptured() { return _mouseCaptured; }
     GfVec2d GetMouseDelta();
 

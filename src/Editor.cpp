@@ -832,12 +832,12 @@ GfVec2d Editor::GetMouseDelta() {
     return {io.MouseDelta.x, io.MouseDelta.y};
 }
 
-void Editor::SetMouseCaptured(bool set) {
-    if (_mouseCaptured != set) {
-        _mouseCaptured = set;
+void Editor::SetMouseCaptured(bool captured) {
+    if (_mouseCaptured != captured) {
+        _mouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
             ImGuiIO &io = ImGui::GetIO();
-            if (set) {
+            if (captured) {
                 gSkippedFirstMouseEventAfterCapture = 3;
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
@@ -853,7 +853,6 @@ void Editor::Draw() {
     if (gSkippedFirstMouseEventAfterCapture > 0) {
         ImGuiIO &io = ImGui::GetIO();
         if (std::abs(io.MouseDelta.x) > 0 || std::abs(io.MouseDelta.y) > 0) {
-            printf("SKIPPED (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
             gSkippedFirstMouseEventAfterCapture--;
         }
     }

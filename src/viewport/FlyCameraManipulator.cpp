@@ -25,7 +25,7 @@ void FlyCameraManipulator::OnEndEdition(Viewport &viewport) {
 float FlyCameraManipulator::InputForward() {
     if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow))
         return 1.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow))
+    else if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow))
         return -1.0f;
     return 0.0f;
 }
@@ -33,7 +33,7 @@ float FlyCameraManipulator::InputForward() {
 float FlyCameraManipulator::InputRight() {
     if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow))
         return 1.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow))
+    else if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow))
         return -1.0f;
     return 0.0f;
 }
@@ -41,7 +41,7 @@ float FlyCameraManipulator::InputRight() {
 float FlyCameraManipulator::InputUp() {
     if (ImGui::IsKeyDown(ImGuiKey_E) || ImGui::IsKeyDown(ImGuiKey_PageUp))
         return 1.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_PageDown))
+    else if (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_PageDown))
         return -1.0f;
     return 0.0f;
 }
@@ -49,7 +49,7 @@ float FlyCameraManipulator::InputUp() {
 float FlyCameraManipulator::InputSpeedBoost() {
     if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
         return 2.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
+    else if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
         return 0.5f;
     return 1.0f;
 }
