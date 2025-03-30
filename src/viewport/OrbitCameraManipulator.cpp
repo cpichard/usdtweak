@@ -26,23 +26,23 @@ Manipulator *OrbitCameraManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
     SetViewportSize(viewport.GetViewportSize());
     if (!ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-        Editor::GetInstance().SetMouseCaptured(false);
+        Editor::SetMouseCaptured(false);
         return viewport.GetManipulator<MouseHoverManipulator>();
     } else if (ImGui::IsMouseReleased(1) || ImGui::IsMouseReleased(2) || ImGui::IsMouseReleased(0)) {
-        Editor::GetInstance().SetMouseCaptured(false);
+        Editor::SetMouseCaptured(false);
         SetMovementType(MovementType::None);
     } else if (ImGui::IsMouseClicked(0) && !viewport.IsEditingInternalOrthoCamera()) {
-        Editor::GetInstance().SetMouseCaptured(true);
+        Editor::SetMouseCaptured(true);
         SetMovementType(MovementType::Orbit);
     } else if (ImGui::IsMouseClicked(2)) {
-        Editor::GetInstance().SetMouseCaptured(true);
+        Editor::SetMouseCaptured(true);
         SetMovementType(MovementType::Truck);
     } else if (ImGui::IsMouseClicked(1)) {
-        Editor::GetInstance().SetMouseCaptured(true);
+        Editor::SetMouseCaptured(true);
         SetMovementType(MovementType::Dolly);
     }
     GfCamera &currentCamera = viewport.GetEditableCamera();
-    GfVec2d mouseDelta = Editor::GetInstance().GetMouseDelta();
+    GfVec2d mouseDelta(io.MouseDelta.x, io.MouseDelta.y);
     if (Move(currentCamera, mouseDelta)) {
         if (viewport.IsEditingStageCamera() && _stageCamera) {
             // This is going to fill the undo/redo buffer :S

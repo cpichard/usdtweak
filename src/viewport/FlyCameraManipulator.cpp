@@ -56,11 +56,11 @@ float FlyCameraManipulator::InputSpeedBoost() {
 
 Manipulator *FlyCameraManipulator::OnUpdate(Viewport &viewport) {
     if (!ImGui::IsMouseDown(1) || viewport.IsEditingInternalOrthoCamera()) {
-        Editor::GetInstance().SetMouseCaptured(false);
+        Editor::SetMouseCaptured(false);
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
 
-    Editor::GetInstance().SetMouseCaptured(true);
+    Editor::SetMouseCaptured(true);
     SetViewportSize(viewport.GetViewportSize());
 
     ImGuiIO &io = ImGui::GetIO();
@@ -75,7 +75,7 @@ Manipulator *FlyCameraManipulator::OnUpdate(Viewport &viewport) {
     }
     viewport.SetCamFlySpeed(_camFlySpeed);
 
-    GfVec2d rotVec = Editor::GetInstance().GetMouseDelta();
+    GfVec2d rotVec(io.MouseDelta.x, io.MouseDelta.y);
     GfVec3d moveVec(InputRight(), InputUp(), InputForward());
     moveVec *= _camFlySpeed * InputSpeedBoost();
 

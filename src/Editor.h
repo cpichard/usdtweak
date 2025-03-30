@@ -119,9 +119,8 @@ class Editor {
     void ScaleUI(float scaleValue);
     float GetScaleUI() const;
 
-    void SetMouseCaptured(bool captured);
-    bool GetMouseCaptured() { return _mouseCaptured; }
-    GfVec2d GetMouseDelta();
+    static void SetMouseCaptured(bool captured);
+    static bool GetMouseCaptured();
 
   private:
     /// Interface with the settings
@@ -172,6 +171,4 @@ class Editor {
     /// Playback controls
     bool _isPlaying = false;
     std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
-
-    bool _mouseCaptured = false;
 };

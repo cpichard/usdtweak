@@ -168,7 +168,6 @@ int main(int argc, char *const *argv) {
     { // we use a scope as the editor should be deleted before imgui and glfw, to release correctly the memory
         ImGui::SetCurrentContext(mainUIContext);
         Editor editor;
-        gEditor = &editor;
 
         // Connect the window callbacks to the editor
         editor.InstallCallbacks(window);
@@ -180,7 +179,6 @@ int main(int argc, char *const *argv) {
 
         // Loop until the user closes the window
         while (!editor.IsShutdown()) {
-
             // Poll and process events
             glfwMakeContextCurrent(window);
             glfwPollEvents();

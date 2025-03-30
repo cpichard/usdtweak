@@ -823,24 +823,23 @@ void Editor::ScaleUI(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetScaleUI() const { return _settings._uiScale; }
 
-static int gSkippedFirstMouseEventAfterCapture = 0;
-GfVec2d Editor::GetMouseDelta() {
-    ImGuiIO &io = ImGui::GetIO();
-    if (_mouseCaptured && gSkippedFirstMouseEventAfterCapture > 0) {
-        return {0, 0};
-    }
-    return {io.MouseDelta.x, io.MouseDelta.y};
-}
+static bool gMouseCaptured = false;
+
+// workaround for GLFW bug that reports wrong mouse delta after mouse capture
+static int gSkipCapturedMouseDelta = 0;
+
+bool Editor::GetMouseCaptured() { return gMouseCaptured; }
 
 void Editor::SetMouseCaptured(bool captured) {
-    if (_mouseCaptured != captured) {
-        _mouseCaptured = captured;
+    if (gMouseCaptured != captured) {
+        gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
             ImGuiIO &io = ImGui::GetIO();
             if (captured) {
-                gSkippedFirstMouseEventAfterCapture = 3;
+                gSkipCapturedMouseDelta = 2;
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+                io.MouseDelta = {0, 0};
             } else {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
@@ -850,11 +849,10 @@ void Editor::SetMouseCaptured(bool captured) {
 }
 
 void Editor::Draw() {
-    if (gSkippedFirstMouseEventAfterCapture > 0) {
+    if (gSkipCapturedMouseDelta > 0) {
         ImGuiIO &io = ImGui::GetIO();
-        if (std::abs(io.MouseDelta.x) > 0 || std::abs(io.MouseDelta.y) > 0) {
-            gSkippedFirstMouseEventAfterCapture--;
-        }
+        gSkipCapturedMouseDelta--;
+        io.MouseDelta = {0, 0};
     }
 
     // Main Menu bar

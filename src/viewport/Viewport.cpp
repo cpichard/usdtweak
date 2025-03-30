@@ -404,7 +404,7 @@ void Viewport::HandleManipulationEvents() {
     ImGuiIO &io = ImGui::GetIO();
 
     // Check the mouse is over this widget
-    if (ImGui::IsItemHovered() || Editor::GetInstance().GetMouseCaptured()) {
+    if (ImGui::IsItemHovered() || Editor::GetMouseCaptured()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
         if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0)
             return;
