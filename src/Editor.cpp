@@ -149,9 +149,6 @@ struct CloseEditorModalDialog : public ModalDialog {
     std::string confirmReasons;
 };
 
-extern Editor *gEditor;
-Editor &Editor::GetInstance() { return *gEditor; }
-
 void Editor::RequestShutdown() {
     if (!_isShutdown) {
         ExecuteAfterDraw<EditorShutdown>();

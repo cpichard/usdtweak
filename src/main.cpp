@@ -27,9 +27,6 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-/// editor singleton pointer
-Editor *gEditor = nullptr;
-
 // https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
 #ifdef _WIN64
 static std::vector<char *> ArchCurrentEnviron() {
