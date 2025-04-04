@@ -1,13 +1,13 @@
 #pragma once
+#include "Constants.h"
 #include "EditorSettings.h"
 #include "Selection.h"
 #include "Viewport.h"
+#include <future>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usdUtils/stageCache.h>
-#include "Constants.h"
 #include <set>
-#include <future>
 
 struct GLFWwindow;
 
@@ -16,9 +16,11 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Editor contains the data shared between widgets, like selections, stages, etc etc
 class Editor {
 
-public:
+  public:
     Editor();
     ~Editor();
+
+    static Editor &GetInstance();
 
     /// Removing the copy constructors as we want to make sure there are no unwanted copies of the
     /// editor. There should be only one editor for now but we want to control the construction
@@ -57,7 +59,7 @@ public:
     void AddLayerPathSelection(const SdfPath &primPath);
     void SetStagePathSelection(const SdfPath &primPath);
     void AddStagePathSelection(const SdfPath &primPath);
-    
+
     /// Create a new layer in file path
     void CreateNewLayer(const std::string &path);
     void FindOrOpenLayer(const std::string &path);
@@ -117,6 +119,9 @@ public:
     void ScaleUI(float scaleValue);
     float GetScaleUI() const;
 
+    static void SetMouseCaptured(bool captured);
+    static bool GetMouseCaptured();
+
   private:
     /// Interface with the settings
     void LoadSettings();
@@ -159,12 +164,11 @@ public:
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
-    
+
     /// Storing the tasks created by launchers.
     std::vector<std::future<int>> _launcherTasks;
 
     /// Playback controls
     bool _isPlaying = false;
     std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
-    
 };

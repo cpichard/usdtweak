@@ -1,10 +1,10 @@
-#include <iostream>
-#include <map>
 #include "ImagingSettings.h"
-#include "VtValueEditor.h"
+#include "Constants.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
-#include "Constants.h"
+#include "VtValueEditor.h"
+#include <iostream>
+#include <map>
 
 template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
     GfVec3d camPos = camera.GetFrustum().GetPosition();
@@ -68,7 +68,6 @@ const GlfSimpleLightVector &ImagingSettings::GetLights() {
     return _lights;
 }
 
-
 // We keep the currently selected AOV per engine here as there is it not really store in UsdImagingGLEngine.
 // When setting a color aov, the engine adds multiple other aov to render, in short there is no easy way to know
 // which aov is rendered.
@@ -87,9 +86,7 @@ static TfToken GetAovSelection(UsdImagingGLEngine &renderer) {
     }
 }
 
-void InitializeRendererAov(UsdImagingGLEngine &renderer) {
-    renderer.SetRendererAov(GetAovSelection(renderer));
-}
+void InitializeRendererAov(UsdImagingGLEngine &renderer) { renderer.SetRendererAov(GetAovSelection(renderer)); }
 
 void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
@@ -144,6 +141,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
     ImGui::Checkbox("Show gizmos", &renderparams.showGizmos);
+    ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
 }
 
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
@@ -176,7 +174,6 @@ void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
         if (is_selected)
             ImGui::SetItemDefaultFocus();
     }
-
 }
 
 void DrawRendererControls(UsdImagingGLEngine &renderer) {
@@ -216,7 +213,6 @@ void DrawRendererCommands(UsdImagingGLEngine &renderer) {
         ImGui::EndMenu();
     }
 }
-
 
 void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
