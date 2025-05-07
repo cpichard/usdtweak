@@ -136,7 +136,9 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
     ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
+#if PXR_VERSION < 2505
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
+#endif
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
