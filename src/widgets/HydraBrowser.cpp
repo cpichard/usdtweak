@@ -142,10 +142,10 @@ static void DrawSceneIndexTreeView(HdSceneIndexBasePtr inputIndex, const std::st
                             }
                         }
                     }
-                    ImGui::PopID();
                     if (unfolded) {
                         ImGui::TreePop();
                     }
+                    ImGui::PopID();
                 }
             }
             ImGui::EndTable();
@@ -244,9 +244,17 @@ void DrawHydraBrowser() {
     int height = currentWindow->Size[1] - 100;
     static float size1 = 0.f;
     static float size2 = 0.f;
-    size1 = currentWindow->Size[0] / 2;
-    size2 = currentWindow->Size[0] / 2;
-    // Splitter(true, 4.f, &size1, &size2, 20, 20);
+
+    static float ratio = 0.5;
+    size1 = currentWindow->Size[0] * ratio;
+    size2 = currentWindow->Size[0] * (1.f - ratio);
+    
+    if (Splitter(true, 4.f, &size1, &size2, 20, 20)) {
+        // Assuming size1 + size2 is never null
+        ratio = size1 / (size1 + size2) ;
+    }
+    
+    
     ImGui::BeginChild("1", ImVec2(size1, height), true);
     DrawSceneIndexTreeView(selectedFilter, selectedInputName, selectedPrimIndexPath);
     ImGui::EndChild();
