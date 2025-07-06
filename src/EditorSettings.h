@@ -31,6 +31,7 @@ struct EditorSettings {
     bool _showSdfAttributeEditor = false;
     bool _showUsdConnectionEditor = false;
     bool _showHydraBrowser = false;
+    bool _showHydraNoticeLogger = false;
     int _mainWindowWidth;
     int _mainWindowHeight;
     float _uiScale = 1.f;

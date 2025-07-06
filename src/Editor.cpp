@@ -8,6 +8,7 @@
 #include "FileBrowser.h"
 #include "Gui.h"
 #include "HydraBrowser.h"
+#include "HydraNoticeLogger.h"
 #include "ImGuiHelpers.h"
 #include "LauncherBar.h"
 #include "ManipulatorToolbox.h"
@@ -64,6 +65,7 @@ namespace clk = std::chrono;
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define HydraBrowserWindowTitle "Hydra browser"
+#define HydraNoticeLoggerWindowTitle "Hydra notice logger"
 #define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
 #define Viewport1WindowTitle "Viewport1"
@@ -789,6 +791,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
+            ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
 #if ENABLE_VALIDATION_WINDOW
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
@@ -1050,10 +1053,19 @@ void Editor::Draw() {
 
     if (_settings._showHydraBrowser) {
         TRACE_SCOPE(HydraBrowserWindowTitle);
-        ImGui::Begin(HydraBrowserWindowTitle, &_settings._showHydraBrowser);
+        ImGui::Begin(HydraBrowserWindowTitle, &_settings._showHydraBrowser, ImGuiChildFlags_Border| ImGuiChildFlags_ResizeX);
         DrawHydraBrowser();
         ImGui::End();
     }
+    
+    if (_settings._showHydraNoticeLogger) {
+        TRACE_SCOPE(HydraNoticeLoggerWindowTitle);
+        ImGui::Begin(HydraNoticeLoggerWindowTitle, &_settings._showHydraNoticeLogger);
+        DrawHydraNoticeLogger();
+        ImGui::End();
+    }
+    
+    
 #if ENABLE_VALIDATION_WINDOW
 #ifdef HAVE_USDVALIDATION
     if (_settings._showValidator) {
