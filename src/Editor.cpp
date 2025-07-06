@@ -792,10 +792,8 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
-#if ENABLE_VALIDATION_WINDOW
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
-#endif
 #endif
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(Viewport1WindowTitle, nullptr, &_settings._showViewport1);
@@ -1066,7 +1064,6 @@ void Editor::Draw() {
     }
     
     
-#if ENABLE_VALIDATION_WINDOW
 #ifdef HAVE_USDVALIDATION
     if (_settings._showValidator) {
         TRACE_SCOPE(ValidatorWindowTitle);
@@ -1074,7 +1071,6 @@ void Editor::Draw() {
         DrawValidationWindow(GetCurrentStage());
         ImGui::End();
     }
-#endif
 #endif
     DrawCurrentModal();
 

@@ -9,10 +9,36 @@ void DrawValidationWindow(UsdStageRefPtr stage) {}
 #include <pxr/usdValidation/usdValidation/registry.h>
 #include <pxr/usdValidation/usdValidation/validator.h>
 
+// Fixes
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+
 #include "Commands.h"
-#include <iostream>
+
+#define USE_VALIDATION_FIXERS 0
+
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+// TODO: Fixers should be in a command for undo/redo
+
+struct ErrorFixer {
+    virtual void FixError(const UsdValidationError& error) {};
+};
+
+struct MissingMaterialBindingAPIFixer : public ErrorFixer {
+    void FixError(const UsdValidationError& error) override {
+        const UsdValidationErrorSites &errorSites = error.GetSites();
+        for (const auto& errorSite : errorSites) {
+            const UsdStagePtr &errorStage = errorSite.GetStage();
+            const SdfLayerHandle &errorLayer = errorSite.GetLayer();
+            //std::cout << errorLayer.GetUniqueIdentifier() << std::endl;
+            //UsdPrim& prim = error.GetPrim();
+            //std::cout << "Applying MaterialBindingAPI" << std::endl;
+            UsdShadeMaterialBindingAPI::Apply(errorSite.GetPrim());
+        }
+
+    }
+};
 
 struct ValidationState {
 
@@ -47,6 +73,7 @@ struct ValidationState {
         } else if (errorType == UsdValidationErrorType::Info) {
             return "Info";
         }
+        return "None";
     }
 
     // Load the list of validators coming from the registry
@@ -118,17 +145,19 @@ struct ValidationState {
         ImGui::SameLine();
 
         ImGui::BeginDisabled(!hasTestsResults);
-        if (ImGui::SmallButton("Tests results")) {
+        if (ImGui::SmallButton("See tests results")) {
             step = 1;
         }
+#if USE_VALIDATION_FIXERS
         ImGui::SameLine();
         ImGui::Text(" > ");
         ImGui::SameLine();
         ImGui::BeginDisabled(!hasFixesResults);
-        if (ImGui::SmallButton("Fixing results")) {
+        if (ImGui::SmallButton("Fix errors")) {
             step = 2;
         }
         ImGui::EndDisabled(); // fix results
+#endif // USE_VALIDATION_FIXERS
         ImGui::EndDisabled(); // test results
         ImGui::Separator();
     }
@@ -153,9 +182,9 @@ struct ValidationState {
         const SdfLayerHandle &errorLayer = error.GetLayer();
 
         // I am not sure if the error can return a stage and a layer, testing that here
-        if (errorStage && errorLayer) {
-            std::cout << "Error has layer and stage" << std::endl; // TODO remove this test code
-        }
+        //if (errorStage && errorLayer) {
+        //    std::cout << "Error has layer and stage" << std::endl; // TODO remove this test code
+        //}
 
         if (errorStage) {
             UsdPrim errorPrim = error.GetPrim();
@@ -175,7 +204,7 @@ struct ValidationState {
         }
     }
 
-    void SelectErrorSite(const UsdValidationError &error) {
+    void SelectError(const UsdValidationError &error) {
         const UsdValidationErrorSites &errorSites = error.GetSites();
         // 3 cases:
         // 0 sites -> do nothing
@@ -189,6 +218,24 @@ struct ValidationState {
             SelectErrorSite(errorSites[0]);
         }
         // TODO Popup when there are multiple sites linked to an error
+    }
+
+    ErrorFixer * GetFixerFor(const UsdValidationError& error) const {
+        if (error.GetName() == TfToken("MissingMaterialBindingAPI")) {
+            return new MissingMaterialBindingAPIFixer();
+        }
+        return nullptr;
+    }
+
+    void FixErrors() {
+        for (const UsdValidationError& error : errorList) {
+            // Find a fix 
+            ErrorFixer *errorFixer = GetFixerFor(error);
+            if (errorFixer) {
+                errorFixer->FixError(error);
+            }
+           // std::cout << error.GetName().GetString() << std::endl;
+        }
     }
 
     void DrawTestResults() {
@@ -209,11 +256,13 @@ struct ValidationState {
             ImGui::PushID(0);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
             static bool checkAll = false;
+#if USE_VALIDATION_FIXERS
             if (ImGui::Checkbox("##checkall", &checkAll)) {
                 for (bool &check : selectedErrors) {
                     check = checkAll;
                 }
             }
+#endif
             ImGui::PopStyleVar();
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             ImGui::PopID();
@@ -236,13 +285,15 @@ struct ValidationState {
                 ImGuiSelectableFlags selectable_flags =
                     ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
                 if (ImGui::Selectable("##Nothing", false, selectable_flags, ImVec2(0, textSize.y))) {
-                    SelectErrorSite(error);
+                    SelectError(error);
                 }
                 ImGui::SameLine();
                 bool &selectedError = selectedErrors[errorIndex++];
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
                 // TODO check if the error is fixable or not
+#if USE_VALIDATION_FIXERS
                 ImGui::Checkbox("##SelectedText", &selectedError);
+#endif
                 ImGui::PopStyleVar();
 
                 ImGui::TableSetColumnIndex(1);
@@ -266,16 +317,21 @@ struct ValidationState {
             }
             DrawValidators();
         } else if (step == 1) {
+#if USE_VALIDATION_FIXERS
             ImGui::Text("Tests results - Select the error you want to fix then ");
             ImGui::SameLine();
             if (ImGui::Button("Fix errors")) {
                 // TODO
-                // step = 2;
-                // hasFixesResults = true;
+                FixErrors();
+                step = 2;
+                hasFixesResults = true;
             }
+#else
+            ImGui::Text("Tests results");
+#endif
             DrawTestResults();
         } else if (step == 2) {
-            ImGui::Text("Fixing results");
+            ImGui::Text("Fix failing tests");
         }
     }
 };
