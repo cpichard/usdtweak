@@ -97,7 +97,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
     }
     popup_max_height_in_items = ImMin(popup_max_height_in_items, show_count);
 
-    if (!(g.NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSizeConstraint)) {
+    if (!(g.NextWindowData.HasFlags & ImGuiNextWindowDataFlags_HasSizeConstraint)) {
         int items = popup_max_height_in_items + search_bar_height;
         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, CalcMaxPopupHeightFromItemCount(items)));
     }

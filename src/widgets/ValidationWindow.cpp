@@ -300,7 +300,7 @@ struct ValidationState {
                 ImGui::Text("%s", GetErrorTypeName(error.GetType()));
 
                 ImGui::TableSetColumnIndex(2);
-                ImGui::TextWrapped(error.GetMessage().c_str());
+                ImGui::TextWrapped("%s", error.GetMessage().c_str());
 
                 ImGui::PopID();
             }
