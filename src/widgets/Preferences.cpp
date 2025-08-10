@@ -97,6 +97,7 @@ void PreferencesModalDialog::Draw() {
             ImGui::Text("C:\\Windows\\Fonts\\ARIALUNI.TTF");
             if (ImGui::Button("Try Unicode font")) {
                 ResourcesLoader::RequestNewFontRegular("C:\\Windows\\Fonts\\ARIALUNI.TTF");
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
             ImGui::SameLine();
 #endif
