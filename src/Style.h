@@ -2,6 +2,6 @@
 
 struct ImGuiStyle;
 
-void ApplyDarkUTStyle();
+ImGuiStyle CreateUsdTweakStyle();
 
 void ShowStyleEditor(ImGuiStyle *ref);

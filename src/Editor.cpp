@@ -817,9 +817,9 @@ void Editor::DrawMainMenuBar() {
     }
 }
 
-void Editor::ScaleUI(float scaleValue) { _settings._uiScale = scaleValue; }
+void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
-float Editor::GetScaleUI() const { return _settings._uiScale; }
+float Editor::GetUIScale() const { return _settings._uiScale; }
 
 static bool gMouseCaptured = false;
 
@@ -853,6 +853,7 @@ void Editor::Draw() {
         io.MouseDelta = {0, 0};
     }
 
+    ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();
 
@@ -1079,6 +1080,7 @@ void Editor::Draw() {
     AddShortcut<UndoCommand, ImGuiKey_LeftCtrl, ImGuiKey_Z>();
     AddShortcut<RedoCommand, ImGuiKey_LeftCtrl, ImGuiKey_R>();
     EndBackgroundDock();
+    ResourcesLoader::PopFontRegular();
 }
 
 void Editor::RunLauncher(const std::string &launcherName) {

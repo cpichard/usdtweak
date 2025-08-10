@@ -8,13 +8,13 @@
 ///
 #include "CommandsImpl.h"
 #include "Editor.h"
+#include "WildcardsCompare.h"
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdUtils/dependencies.h>
 #include <string>
-#include "WildcardsCompare.h"
 
-#include "SdfUndoRedoRecorder.h"
 #include "ResourcesLoader.h"
+#include "SdfUndoRedoRecorder.h"
 
 ///
 /// Base class for an editor command, contai ns only a pointer of the editor
@@ -36,25 +36,21 @@ struct EditorSetDataPointer : public EditorCommand {
 template void ExecuteAfterDraw<EditorSetDataPointer>(Editor *editor);
 
 struct EditorSetSelection : public EditorCommand {
-    EditorSetSelection(UsdStageRefPtr stage, SdfPath path)
-    : _stageRefPtr(stage), _path(path) {}
-    
-    EditorSetSelection(const UsdStageWeakPtr & stage, SdfPath path)
-    : _stageRefPtr(stage), _path(path) {}
-    
-    EditorSetSelection(SdfLayerRefPtr layer, SdfPath path)
-    : _layer(layer), _path(path) {}
-    
-    EditorSetSelection(SdfLayerHandle layer, SdfPath path)
-    : _layer(layer), _path(path) {}
-    
+    EditorSetSelection(UsdStageRefPtr stage, SdfPath path) : _stageRefPtr(stage), _path(path) {}
+
+    EditorSetSelection(const UsdStageWeakPtr &stage, SdfPath path) : _stageRefPtr(stage), _path(path) {}
+
+    EditorSetSelection(SdfLayerRefPtr layer, SdfPath path) : _layer(layer), _path(path) {}
+
+    EditorSetSelection(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
+
     ~EditorSetSelection() override {}
 
     // TODO: wip, we want an "Selection" object to be passed around
     // At the moment it is just the pointer to the current selection held by the editor
     bool DoIt() override {
-        if(_editor) {
-            auto & selection = _editor->GetSelection();
+        if (_editor) {
+            auto &selection = _editor->GetSelection();
             if (_layer) {
                 _editor->SetCurrentLayer(_layer);
                 _editor->SetLayerPathSelection(_path);
@@ -171,7 +167,6 @@ struct EditorShutdown : public EditorCommand {
     }
 };
 template void ExecuteAfterDraw<EditorShutdown>();
-
 
 struct EditorSetCurrentLayer : public EditorCommand {
 
@@ -338,7 +333,7 @@ struct EditorFindPrim : public EditorCommand {
             _matches = [&](const std::string &str) { return str == _pattern; };
         }
     }
-    ~EditorFindPrim() override{};
+    ~EditorFindPrim() override {};
 
     bool DoIt() override {
         if (_editor) {
@@ -395,12 +390,11 @@ struct EditorExportUsdz : public EditorCommand {
         _undoCommands.UndoIt();
         return false; // Don't push this command on the undo/redo stack
     }
-    
+
     std::string _destination;
     bool _useArKit;
 };
 template void ExecuteAfterDraw<EditorExportUsdz>(const std::string, bool);
-
 
 struct EditorExportFlattenedStage : public EditorCommand {
     EditorExportFlattenedStage(const std::string destination) : _destination(destination) {}
@@ -421,7 +415,6 @@ struct ViewportsSelectMouseHoverManipulator : public EditorCommand {
 };
 template void ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
 
-
 struct ViewportsSelectPositionManipulator : public EditorCommand {
     ViewportsSelectPositionManipulator() {}
     bool DoIt() override {
@@ -440,7 +433,6 @@ struct ViewportsSelectRotationManipulator : public EditorCommand {
 };
 template void ExecuteAfterDraw<ViewportsSelectRotationManipulator>();
 
-
 struct ViewportsSelectScaleManipulator : public EditorCommand {
     ViewportsSelectScaleManipulator() {}
     bool DoIt() override {
@@ -455,11 +447,20 @@ struct EditorScaleUI : public EditorCommand {
     EditorScaleUI(float scaleValue) : _scaleValue(scaleValue) {}
     bool DoIt() override {
         if (_scaleValue > 0) {
-            _editor->ScaleUI(_scaleValue);
-            // ResourcesLoader::ScaleUI(_scaleValue);
+            _editor->SetUIScale(_scaleValue);
+            ResourcesLoader::ScaleUI(_scaleValue);
         }
         return false;
     }
     float _scaleValue;
 };
 template void ExecuteAfterDraw<EditorScaleUI>(float scaleValue);
+
+struct EditorReloadFonts : public EditorCommand {
+    EditorReloadFonts() {}
+    bool DoIt() override {
+        ResourcesLoader::LoadFonts();
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorReloadFonts>();

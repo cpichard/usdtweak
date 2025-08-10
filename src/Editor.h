@@ -116,8 +116,8 @@ class Editor {
         }
     }
 
-    void ScaleUI(float scaleValue);
-    float GetScaleUI() const;
+    void SetUIScale(float scaleValue);
+    float GetUIScale() const;
 
     static void SetMouseCaptured(bool captured);
     static bool GetMouseCaptured();

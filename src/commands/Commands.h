@@ -57,6 +57,7 @@ struct EditorFindPrim;
 struct EditorExportUsdz;
 struct EditorExportFlattenedStage;
 struct EditorScaleUI;
+struct EditorReloadFonts;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;
