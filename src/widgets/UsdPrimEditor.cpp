@@ -326,9 +326,9 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
 }
 
 // TODO Share the code,
-static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(ColorMiniButtonUnauthored)) {
+static bool DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(ColorMiniButtonUnauthored)) {
     ScopedStyleColor miniButtonStyle(ImGuiCol_Text, btnColor, ImGuiCol_Button, ImVec4(ColorTransparent) );
-    ImGui::SmallButton(btnStr);
+    return ImGui::SmallButton(btnStr);
 }
 
 template <typename UsdPropertyT> void DrawMenuEditConnection(UsdPropertyT &property) {}
@@ -502,6 +502,26 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
     }
 }
 
+static bool DrawPrimSchemas(UsdPrim &prim, bool &edit) {
+    // Create the text from the schemas
+    static std::string schemaString; // static to avoid reallocating
+    schemaString.clear();
+    for (const auto &schema:prim.GetAppliedSchemas()) {
+        schemaString += schema.GetString() + " ";
+    }
+    if (edit) {
+        ImGui::InputText("##AppliedSchemas", &schemaString);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            std::vector<std::string> editedSchemas = TfStringTokenize(schemaString);
+            ExecuteAfterDraw<PrimApplySchemas>(prim, editedSchemas);
+            edit = false;
+        }
+    } else {
+        ImGui::Text("%s", schemaString.c_str());
+    }
+    return true;
+}
+
 /// Draws a menu list of all the sublayers, indented to reveal the parenting
 static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHandle layer, int indent = 0) {
     if (layer) {
@@ -656,26 +676,32 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
 void DrawUsdPrimHeader(UsdPrim &prim) {
     auto editTarget = prim.GetStage()->GetEditTarget();
     const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
-
+    static bool editSchemas = false;
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
-        ImGui::TableSetupColumn("Identity");
-        ImGui::TableSetupColumn("Value");
-        ImGui::TableHeadersRow();
+        ImGui::TableSetupColumn("button", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-        ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Stage");
-        ImGui::TableSetColumnIndex(2);
-        ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+        ImGui::TableSetColumnIndex(0);
+        if(DrawPropertyMiniButton(ICON_FA_COPY)) {
+            ImGui::SetClipboardText(prim.GetPrimPath().GetString().c_str());
+        }
 
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Path");
+        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
         ImGui::TableSetColumnIndex(2);
         {
             ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
             ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
         }
+        
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Stage");
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+        
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::TableSetColumnIndex(0);
         DrawPropertyMiniButton(ICON_FA_PEN);
@@ -693,13 +719,19 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
                                    targetPath == SdfPath() ? ImVec4(1.0, 0.0, 0.0, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
             ImGui::Text("%s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
         }
-
+        
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::PushID("Schemas");
+        ImGui::TableSetColumnIndex(0);
+        if (DrawPropertyMiniButton(ICON_FA_PEN)) {
+            editSchemas = true;
+        }
         ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Type");
+        ImGui::Text("Schemas");
         ImGui::TableSetColumnIndex(2);
-        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
-
+        ImGui::PushItemWidth(-FLT_MIN);
+        DrawPrimSchemas(prim, editSchemas);
+        ImGui::PopID(); // "Schemas"
         ImGui::EndTable();
     }
 }
@@ -710,7 +742,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = ImGui::GetFrameHeight()*5; // 5 rows (4 + header)
+        headerSize.y = ImGui::GetFrameHeight() * 4; // 4 rows (4 + no header)
         headerSize.x = -FLT_MIN; // expand as much as possible
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);
@@ -720,7 +752,6 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
-        
         if (DrawMaterialBindings(prim)) {
             ImGui::Separator();
         }
