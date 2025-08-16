@@ -76,7 +76,7 @@ class HydraNoticeLogger {
         }
 
         // Rename constructor
-        LogEntry(const SdfPath &oldPrimPath, const SdfPath &newPrimPath_) : primPath(primPath), logType(3), repetitions(1) {
+        LogEntry(const SdfPath &oldPrimPath, const SdfPath &newPrimPath_) : primPath(oldPrimPath), logType(3), repetitions(1) {
             newPrimPath = newPrimPath_;
         }
 
