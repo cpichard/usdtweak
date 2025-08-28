@@ -724,7 +724,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::PushID("Schemas");
         ImGui::TableSetColumnIndex(0);
         if (DrawPropertyMiniButton(ICON_FA_PEN)) {
-            editSchemas = true;
+            editSchemas = !editSchemas;
         }
         ImGui::TableSetColumnIndex(1);
         ImGui::Text("Schemas");
