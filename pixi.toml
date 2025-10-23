@@ -1,0 +1,44 @@
+[workspace]
+authors = ["cpichard <cpichard@users.noreply.github.com>"]
+channels = ["conda-forge"]
+name = "usdtweak"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks.ut]
+cmd = ["open", "./build/usdtweak.app"]
+depends-on = ["install"]
+
+[dependencies]
+cmake = ">=3.31.6,<4"
+openusd = ">=25.5.1,<26"
+glfw = ">=3.5.0,<4"
+
+[feature.build.dependencies]
+ninja = ">1.12.1,<2"
+
+[feature.build.tasks.configure]
+cmd = ["cmake",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+        "-GNinja",
+        "-DCMAKE_INSTALL_PREFIX=./build",
+        "-B.build"
+]
+inputs = ["CMakeLists.txt"]
+outputs = [".build/CMakeFiles/"]
+
+[feature.build.tasks.build]
+cmd = ["cmake", "--build", ".build"]
+depends-on = ["configure"]
+inputs = ["CMakeLists.txt", "src/*"]
+outputs = [".build/usdtweak.app"]
+
+[feature.build.tasks.install]
+cmd = ["cmake", "--install", ".build"]
+depends-on = ["build"]
+inputs = ["CMakeLists.txt", "src/*"]
+outputs = [".build/usdtweak.app"]
+
+
+[environments]
+install = ["build"]

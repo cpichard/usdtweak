@@ -246,12 +246,19 @@ template <> void DrawArcCreationDialog<SdfInherit>(const SdfPrimSpecHandle &prim
 template <> void DrawArcCreationDialog<SdfSpecialize>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
     DrawModalDialog<CreateSpecializeModalDialog>(primSpec);
 }
+
+template <typename ArcT>
+inline bool IsEmpty(const ArcT &arc) {
+    return arc.GetExplicitItems().empty() && arc.GetAddedItems().empty() && arc.GetPrependedItems().empty() &&
+           arc.GetAppendedItems().empty() && arc.GetDeletedItems().empty() && arc.GetOrderedItems().empty();
+}
+
 template<typename ArcT>
 inline void RemoveArc(const SdfPrimSpecHandle &primSpec, const ArcT &arc) {
     std::function<void()> removeItem = [=]() {
         GetCompositionArcList(primSpec, arc).RemoveItemEdits(arc);
         // Also clear the arc list if there are no more items
-        if (!GetCompositionArcList(primSpec, arc).HasKeys()) {
+        if (IsEmpty(GetCompositionArcList(primSpec, arc))) {
             ClearArcList(primSpec, arc);
         }
     };
