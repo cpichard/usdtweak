@@ -822,15 +822,23 @@ void Editor::DrawMainMenuBar() {
 void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
-
+#if ENABLE_MOUSE_CAPTURE
 static bool gMouseCaptured = false;
 
 // workaround for GLFW bug that reports wrong mouse delta after mouse capture
 static int gSkipCapturedMouseDelta = 0;
+#endif // ENABLE_MOUSE_CAPTURE
 
-bool Editor::GetMouseCaptured() { return gMouseCaptured; }
+bool Editor::GetMouseCaptured() {
+#if ENABLE_MOUSE_CAPTURE
+    return gMouseCaptured;
+#else
+    return false;
+#endif // ENABLE_MOUSE_CAPTURE
+}
 
 void Editor::SetMouseCaptured(bool captured) {
+#if ENABLE_MOUSE_CAPTURE
     if (gMouseCaptured != captured) {
         gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
@@ -846,15 +854,17 @@ void Editor::SetMouseCaptured(bool captured) {
             }
         }
     }
+#endif // ENABLE_MOUSE_CAPTURE
 }
 
 void Editor::Draw() {
+#if ENABLE_MOUSE_CAPTURE
     if (gSkipCapturedMouseDelta > 0) {
         ImGuiIO &io = ImGui::GetIO();
         gSkipCapturedMouseDelta--;
         io.MouseDelta = {0, 0};
     }
-
+#endif // ENABLE_MOUSE_CAPTURE
     ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();

@@ -127,9 +127,9 @@ class Viewport final {
 
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
-
+#if ENABLE_MOUSE_CAPTURE
     bool _mouseCaptured = false;
-
+#endif // ENABLE_MOUSE_CAPTURE
     // Viewport ID
     std::string _viewportName;
 
