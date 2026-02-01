@@ -111,6 +111,12 @@ find_file(VALIDATOR_HEADER pxr/usdValidation/usdValidation/validator.h PATHS ${P
 if (VALIDATOR_HEADER)
     message(STATUS "UsdValidation API found: ${VALIDATOR_HEADER}")
     add_compile_definitions(HAVE_USDVALIDATION)
+    
+    # Add validation fixers starting from usd 25.11
+    if (PXR_VERSION VERSION_GREATER_EQUAL "2511" )
+        add_compile_definitions(ENABLE_VALIDATION_FIXERS)
+    endif()
+    
 else()
     message(STATUS "UsdValidation API not found")
 endif()

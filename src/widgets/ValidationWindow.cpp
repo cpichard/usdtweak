@@ -14,49 +14,39 @@ void DrawValidationWindow(UsdStageRefPtr stage) {}
 
 #include "Commands.h"
 
-#define USE_VALIDATION_FIXERS 0
-
-
 PXR_NAMESPACE_USING_DIRECTIVE
 
-// TODO: Fixers should be in a command for undo/redo
+// We keep a cache of the validator description to avoid querying it at each frame
+struct ValidatorDescription {
 
-struct ErrorFixer {
-    virtual void FixError(const UsdValidationError& error) {};
-};
-
-struct MissingMaterialBindingAPIFixer : public ErrorFixer {
-    void FixError(const UsdValidationError& error) override {
-        const UsdValidationErrorSites &errorSites = error.GetSites();
-        for (const auto& errorSite : errorSites) {
-            const UsdStagePtr &errorStage = errorSite.GetStage();
-            const SdfLayerHandle &errorLayer = errorSite.GetLayer();
-            //std::cout << errorLayer.GetUniqueIdentifier() << std::endl;
-            //UsdPrim& prim = error.GetPrim();
-            //std::cout << "Applying MaterialBindingAPI" << std::endl;
-            UsdShadeMaterialBindingAPI::Apply(errorSite.GetPrim());
-        }
-
+    ValidatorDescription(const UsdValidationValidator *validator) : _validator(validator), _checked(true) {
+        std::string pluginAndTestName = validator->GetMetadata().name;
+        const auto splitAt = pluginAndTestName.find(':');
+        _pluginName = pluginAndTestName.substr(0, splitAt).c_str();
+        _validatorName = pluginAndTestName.substr(splitAt + 1).c_str();
     }
+    std::string _pluginName;
+    std::string _validatorName;
+    bool _checked;
+    const UsdValidationValidator *_validator;
 };
 
-struct ValidationState {
+// ValidationState keeps the progress of the validation workflow per stage.
+struct ValidationState final {
 
-    ValidationState(UsdStageRefPtr stage) : stage(stage) {}
-    ValidationState() {}
+    ValidationState(UsdStageRefPtr stage) : _stage(stage) {}
+    ValidationState() = delete;
 
     // Stage
-    UsdStageRefPtr stage;
+    UsdStageRefPtr _stage;
 
     // Step state
-    int step = 0; // current selected step
+    uint8_t step = 0; // current selected step
     bool hasTestsResults = false;
     bool hasFixesResults = false;
 
-    // Copy of the list of validators
-    std::vector<const UsdValidationValidator *> allValidators;
-    // Tests the user selected. It should have the same size as allValidators
-    std::deque<bool> selectedTests; // deque because vector<bool> is specialized
+    // List of validators
+    static std::vector<ValidatorDescription> validatorsDescriptions;
 
     //
     UsdValidationErrorVector errorList;
@@ -76,58 +66,87 @@ struct ValidationState {
         return "None";
     }
 
-    // Load the list of validators coming from the registry
-    void LoadValidatorsOnce() {
-        if (allValidators.empty()) {
-            ReloadValidators();
-        }
-    }
-
-    void ReloadValidators() {
-        allValidators = UsdValidationRegistry::GetInstance().GetOrLoadAllValidators();
-        selectedTests.resize(allValidators.size(), true);
-        errorList.clear();
-        selectedErrors.clear();
-    }
-
     void DrawValidators() {
-        if (ImGui::BeginTable("##DrawValidators", 2,
-                              ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("Check", ImGuiTableColumnFlags_WidthFixed);
+        // Create and fill a structure containing the plugins and validators names.
+        // This structure is initialized once the first time it is used.
+        static std::once_flag called_once;
+        std::call_once(called_once, [&]() {
+            for (const UsdValidationValidator *validator : UsdValidationRegistry::GetInstance().GetOrLoadAllValidators()) {
+                validatorsDescriptions.emplace_back(validator);
+            }
+        });
+
+        if (ImGui::BeginTable("##DrawValidators", 3,
+                              ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                                  ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable |
+                                  ImGuiTableFlags_SortMulti)) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+            ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_DefaultSort);
             ImGui::TableSetupColumn("Test Name");
-
-            ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
-
+            ImGui::TableSetupScrollFreeze(0, 1); // Make row always visible
+            ImGui::TableHeadersRow();
+            // ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
             ImGui::TableSetColumnIndex(0);
             const char *column_name = ImGui::TableGetColumnName(0); // Retrieve name passed to TableSetupColumn()
             ImGui::PushID(0);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
             static bool checkAll = true;
             if (ImGui::Checkbox("##checkall", &checkAll)) {
-                for (bool &check : selectedTests) {
-                    check = checkAll;
+                for (auto &val : validatorsDescriptions) {
+                    val._checked = checkAll;
                 }
             }
             ImGui::PopStyleVar();
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             ImGui::PopID();
-            ImGui::TableSetColumnIndex(1);
-            column_name = ImGui::TableGetColumnName(1); // Retrieve name passed to TableSetupColumn()
-            ImGui::TableHeader(column_name);
 
+            // Sorting
             int testIndex = 0;
-            for (const UsdValidationValidator *validator : allValidators) {
+            if (ImGuiTableSortSpecs *sort_specs = ImGui::TableGetSortSpecs()) {
+                if (sort_specs->SpecsDirty && sort_specs->Specs) {
+                    // TOD a function ???
+                    // Sort by pluginName
+                    if (sort_specs->Specs->ColumnIndex == 1) {
+                        if (sort_specs->Specs->SortDirection == ImGuiSortDirection_Ascending) {
+                            std::sort(validatorsDescriptions.begin(), validatorsDescriptions.end(),
+                                      [](const ValidatorDescription &a, const ValidatorDescription &b) {
+                                          return a._pluginName < b._pluginName;
+                                      });
+                        } else if (sort_specs->Specs->SortDirection == ImGuiSortDirection_Descending) {
+                            std::sort(validatorsDescriptions.begin(), validatorsDescriptions.end(),
+                                      [](const ValidatorDescription &a, const ValidatorDescription &b) {
+                                          return a._pluginName > b._pluginName;
+                                      });
+                        }
+                    // Sort by validator name
+                    } else if (sort_specs->Specs->ColumnIndex == 2) {
+                        if (sort_specs->Specs->SortDirection == ImGuiSortDirection_Ascending) {
+                            std::sort(validatorsDescriptions.begin(), validatorsDescriptions.end(),
+                                      [](const ValidatorDescription &a, const ValidatorDescription &b) {
+                                          return a._validatorName < b._validatorName;
+                                      });
+                        } else if (sort_specs->Specs->SortDirection == ImGuiSortDirection_Descending) {
+                            std::sort(validatorsDescriptions.begin(), validatorsDescriptions.end(),
+                                      [](const ValidatorDescription &a, const ValidatorDescription &b) {
+                                          return a._validatorName > b._validatorName;
+                                      });
+                        }
+                    }
+                    sort_specs->SpecsDirty = false;
+                }
+            }
+            for (ValidatorDescription &val : validatorsDescriptions) {
                 ImGui::TableNextRow();
-
                 ImGui::TableSetColumnIndex(0);
-                ImGui::PushID(testIndex);
-                bool &selectedTest = selectedTests[testIndex++];
+                ImGui::PushID(testIndex++);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-                ImGui::Checkbox("##SelectedText", &selectedTest);
+                ImGui::Checkbox("##SelectedText", &val._checked);
                 ImGui::PopStyleVar();
                 ImGui::PopID();
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%s", validator->GetMetadata().name.GetString().c_str());
+                ImGui::Text("%s", val._pluginName.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%s", val._validatorName.c_str());
             }
             ImGui::EndTable();
         }
@@ -145,33 +164,26 @@ struct ValidationState {
         ImGui::SameLine();
 
         ImGui::BeginDisabled(!hasTestsResults);
-        if (ImGui::SmallButton("See tests results")) {
+        if (ImGui::SmallButton("Tests results")) {
             step = 1;
         }
-#if USE_VALIDATION_FIXERS
-        ImGui::SameLine();
-        ImGui::Text(" > ");
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!hasFixesResults);
-        if (ImGui::SmallButton("Fix errors")) {
-            step = 2;
-        }
-        ImGui::EndDisabled(); // fix results
-#endif // USE_VALIDATION_FIXERS
         ImGui::EndDisabled(); // test results
         ImGui::Separator();
     }
 
     void RunValidationTests() {
         std::vector<const UsdValidationValidator *> testsToRun;
-        for (int i = 0; i < selectedTests.size(); ++i) {
-            if (selectedTests[i])
-                testsToRun.push_back(allValidators[i]);
+
+        for (const auto &val : validatorsDescriptions) {
+            if (val._checked) {
+                testsToRun.push_back(val._validator);
+            }
         }
+
         // TODO we might want a command and run the task in the background.
         // Some available scenes like caldera take minutes to validate.
         UsdValidationContext context(testsToRun);
-        errorList = context.Validate(stage);
+        errorList = context.Validate(_stage);
         selectedErrors.resize(errorList.size(), 0);
         hasTestsResults = true;
         step = 1;
@@ -180,11 +192,6 @@ struct ValidationState {
     void SelectErrorSite(const UsdValidationErrorSite &error) {
         const UsdStagePtr &errorStage = error.GetStage();
         const SdfLayerHandle &errorLayer = error.GetLayer();
-
-        // I am not sure if the error can return a stage and a layer, testing that here
-        //if (errorStage && errorLayer) {
-        //    std::cout << "Error has layer and stage" << std::endl; // TODO remove this test code
-        //}
 
         if (errorStage) {
             UsdPrim errorPrim = error.GetPrim();
@@ -220,22 +227,17 @@ struct ValidationState {
         // TODO Popup when there are multiple sites linked to an error
     }
 
-    ErrorFixer * GetFixerFor(const UsdValidationError& error) const {
-        if (error.GetName() == TfToken("MissingMaterialBindingAPI")) {
-            return new MissingMaterialBindingAPIFixer();
-        }
-        return nullptr;
-    }
-
+    // TODO Undo/Redo recording the fix process. It might need some work to get the error fixed by the validators
+    // Alternatively we could just re-run the validation after the fix and just print the fix results in the terminal
     void FixErrors() {
-        for (const UsdValidationError& error : errorList) {
-            // Find a fix 
-            ErrorFixer *errorFixer = GetFixerFor(error);
-            if (errorFixer) {
-                errorFixer->FixError(error);
+        std::vector<UsdValidationError> toFix;
+        assert(errorList.size() == selectedErrors.size());
+        for (int i = 0; i < errorList.size(); ++i) {
+            if (selectedErrors[i]) {
+                toFix.push_back(errorList[i]);
             }
-           // std::cout << error.GetName().GetString() << std::endl;
         }
+        ExecuteAfterDraw<LayerFixErrors>(_stage->GetEditTarget(), toFix);
     }
 
     void DrawTestResults() {
@@ -256,7 +258,7 @@ struct ValidationState {
             ImGui::PushID(0);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
             static bool checkAll = false;
-#if USE_VALIDATION_FIXERS
+#ifdef ENABLE_VALIDATION_FIXERS
             if (ImGui::Checkbox("##checkall", &checkAll)) {
                 for (bool &check : selectedErrors) {
                     check = checkAll;
@@ -291,8 +293,14 @@ struct ValidationState {
                 bool &selectedError = selectedErrors[errorIndex++];
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
                 // TODO check if the error is fixable or not
-#if USE_VALIDATION_FIXERS
-                ImGui::Checkbox("##SelectedText", &selectedError);
+#ifdef ENABLE_VALIDATION_FIXERS
+                if(error.GetFixers().empty()){
+                    ImGui::BeginDisabled();
+                    ImGui::Text(ICON_FA_STOP);
+                    ImGui::EndDisabled();
+                } else {
+                    ImGui::Checkbox("##SelectedText", &selectedError);
+                }
 #endif
                 ImGui::PopStyleVar();
 
@@ -317,11 +325,11 @@ struct ValidationState {
             }
             DrawValidators();
         } else if (step == 1) {
-#if USE_VALIDATION_FIXERS
-            ImGui::Text("Tests results - Select the error you want to fix then ");
+#ifdef ENABLE_VALIDATION_FIXERS
+            ImGui::Text("Tests results - Select the error you want to fix then click ");
             ImGui::SameLine();
-            if (ImGui::Button("Fix errors")) {
-                // TODO
+            if (ImGui::Button("Fix selected errors")) {
+                // TODO add a UI to confirm the user is ok with the files beeing saved
                 FixErrors();
                 step = 2;
                 hasFixesResults = true;
@@ -331,7 +339,14 @@ struct ValidationState {
 #endif
             DrawTestResults();
         } else if (step == 2) {
-            ImGui::Text("Fix failing tests");
+#ifdef ENABLE_VALIDATION_FIXERS
+            // Once the command has run we can run the validation once again
+            RunValidationTests();
+            step = 1;
+#else
+            ImGui::Text("Validation fixers are not available in this version of USD");
+#endif
+
         }
     }
 };
@@ -349,12 +364,12 @@ void DrawValidationWindow(UsdStageRefPtr stage) {
         foundValidationState = validationStates.find(stageID);
     }
     ValidationState &validationState = foundValidationState->second;
-
-    validationState.LoadValidatorsOnce();
     // Draw a step bar, to show which steps we are in, something like:
     //  "Select tests > Tests results > Fixing results
     validationState.DrawStepsNavigationBar();
     // Draw the current selected step
     validationState.DrawSelectedStep();
 }
+
+std::vector<ValidatorDescription> ValidationState::validatorsDescriptions = {};
 #endif

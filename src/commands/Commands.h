@@ -67,6 +67,7 @@ struct LayerMute;
 struct LayerUnmute;
 struct LayerTextEdit;
 struct LayerCreateOversFromPath;
+struct LayerFixErrors;
 
 struct ViewportsSelectMouseHoverManipulator;
 struct ViewportsSelectPositionManipulator;
