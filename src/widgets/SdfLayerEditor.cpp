@@ -469,6 +469,14 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer, bool isStage) {
     if (layer->IsDirty() && !layer->IsAnonymous() && ImGui::MenuItem("Save layer")) {
         ExecuteAfterDraw(&SdfLayer::Save, layer, true);
     }
+    if (ImGui::MenuItem("Open in file browser")) {
+        // TODO windows and linux
+        std::string command;
+        command += "open ";
+        fs::path layerPath = layer->GetRealPath();
+        command += layerPath.parent_path();
+        system(command.c_str());
+    }
     if (ImGui::MenuItem("Save layer as")) {
         ExecuteAfterDraw<EditorSaveLayerAs>(layer);
     }
