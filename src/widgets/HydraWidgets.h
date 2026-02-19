@@ -43,9 +43,14 @@ inline void DrawSceneIndexFilterSelector(std::string &selectedSceneIndexName, Hd
                         indent(label);
                         label += scene->GetDisplayName();
                         ImGui::PushID(currentImGuiID++);
-                        if (ImGui::Selectable(label.c_str(), selectedInputName == scene->GetDisplayName())) {
+                        const bool isSelected = selectedInputName == scene->GetDisplayName();
+                        if (ImGui::Selectable(label.c_str(), isSelected)) {
                             inputIndex = scene;
                         }
+                        if (isSelected) {
+                            ImGui::SetItemDefaultFocus(); // Set focus on the selected item
+                        }
+                        
                         ImGui::PopID();
                         HdFilteringSceneIndexBaseRefPtr filteringIndex = TfDynamic_cast<HdFilteringSceneIndexBaseRefPtr>(scene);
                         if (filteringIndex) {

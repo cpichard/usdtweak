@@ -25,10 +25,10 @@ static void DrawSceneIndexTreeView(HdSceneIndexBasePtr inputIndex, const std::st
     if (inputIndex) {
         // Get all the opened paths in a vector
         ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
-        constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY;
+        constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY;
         if (ImGui::BeginTable("##DrawSceneIndexHierarchy", 2, tableFlags)) {
             ImGui::TableSetupColumn("Hierarchy");
-            ImGui::TableSetupColumn("Type");
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed);
 
             ImGuiContext &g = *GImGui;
             ImGuiWindow *window = g.CurrentWindow;

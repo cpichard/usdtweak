@@ -29,7 +29,7 @@ ImGuiStyle CreateUsdTweakStyle() {
     colors[ImGuiCol_Button] = ImVec4(1.f, 1.f, 1.f, 0.2f);
     colors[ImGuiCol_ButtonHovered] = ImVec4(1.000f, 1.000f, 1.000f, 0.156f);
     colors[ImGuiCol_ButtonActive] = ImVec4(1.000f, 1.000f, 1.000f, 0.391f);
-    colors[ImGuiCol_Header] = ImVec4(0.313f, 0.313f, 0.313f, 1.000f);
+    colors[ImGuiCol_Header] = ImVec4(0.5f, 0.5f, 0.5f, 1.000f);
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.469f, 0.469f, 0.469f, 1.000f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.469f, 0.469f, 0.469f, 1.000f);
     colors[ImGuiCol_Separator] = colors[ImGuiCol_BorderShadow];
