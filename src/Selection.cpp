@@ -92,10 +92,50 @@ template <> void Selection::AddSelected(const SdfLayerRefPtr &layer, const SdfPa
 ImplementStageAddSelected(UsdStageRefPtr);
 ImplementStageAddSelected(UsdStageWeakPtr);
 
-// Not called at the moment
-template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const SdfPath &path) {
-    if (!_data || !stage)
+template <> void Selection::RemoveSelected(const SdfLayerRefPtr &layer, const SdfPath &path) {
+    if (!_data || !layer)
         return;
+    auto handle = layer->GetObjectAtPath(path);
+    if (path.IsPropertyPath()) {
+        _data->_sdfPropSelectionDomain.erase(handle);
+    } else {
+        _data->_sdfPrimSelectionDomain.erase(handle);
+    }
+}
+
+template <> void Selection::RemoveSelected(const SdfLayerHandle &layer, const SdfPath &path) {
+    if (!_data || !layer)
+        return;
+    auto handle = layer->GetObjectAtPath(path);
+    if (path.IsPropertyPath()) {
+        _data->_sdfPropSelectionDomain.erase(handle);
+    } else {
+        _data->_sdfPrimSelectionDomain.erase(handle);
+    }
+}
+
+template <> void Selection::RemoveSelected(const UsdStageRefPtr &stage, const SdfPath &path) {
+    if (!_data || !stage || !_data->_stageSelection)
+        return;
+    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
+    _data->_stageSelection.reset(new HdSelection());
+    for (const auto &p : paths) {
+        if (p != path)
+            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
+    }
+    _data->_stageSelection.mustRecomputeHash = true;
+}
+
+template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const SdfPath &path) {
+    if (!_data || !stage || !_data->_stageSelection)
+        return;
+    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
+    _data->_stageSelection.reset(new HdSelection());
+    for (const auto &p : paths) {
+        if (p != path)
+            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
+    }
+    _data->_stageSelection.mustRecomputeHash = true;
 }
 
 #define ImplementLayerSetSelected(LayerT)                                                                                        \
