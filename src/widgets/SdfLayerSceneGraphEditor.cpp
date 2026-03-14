@@ -47,23 +47,23 @@ static void DrawBlueprintMenus(SdfPrimSpecHandle &primSpec, const std::string &f
     }
     for (const auto &item : blueprints.GetItems(folder)) {
         if (ImGui::MenuItem(item.first.c_str())) {
-            ExecuteAfterDraw<PrimAddBlueprint>(primSpec, FindNextAvailableTokenString(primSpec->GetName()), item.second);
+            ExecuteAfterDraw<PrimAddBlueprint>(primSpec->GetLayer(), primSpec->GetPath(), FindNextAvailableTokenString(primSpec->GetName()), item.second);
         }
     }
 }
 
-
-void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
+// TODO check if we can remove primSpec and use only SdfLayer and Selection
+void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec, const SdfLayerHandle &layer, const Selection &selection) {
     if (!primSpec)
         return;
 
     if (ImGui::MenuItem("Add child")) {
-        ExecuteAfterDraw<PrimNew>(primSpec, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
+        ExecuteAfterDraw<PrimNew>(primSpec->GetLayer(), primSpec->GetPath(), FindNextAvailableTokenString(SdfPrimSpecDefaultName));
     }
     auto parent = primSpec->GetNameParent();
     if (parent) {
         if (ImGui::MenuItem("Add sibling")) {
-            ExecuteAfterDraw<PrimNew>(parent, primSpec->GetName());
+            ExecuteAfterDraw<PrimNew>(primSpec->GetLayer(), parent->GetPath(), primSpec->GetName());
         }
     }
     if (ImGui::BeginMenu("Add blueprint")) {
@@ -71,17 +71,23 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec) {
         ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Duplicate")) {
-        ExecuteAfterDraw<PrimDuplicate>(primSpec, primSpec->GetName());
+        ExecuteAfterDraw<PrimDuplicate>(primSpec->GetLayer(), primSpec->GetPath(), primSpec->GetName());
     }
     if (ImGui::MenuItem("Remove")) {
-        ExecuteAfterDraw<PrimRemove>(primSpec);
+        ExecuteAfterDraw<PrimRemove>(primSpec->GetLayer(), primSpec->GetPath());
+    }
+    auto selectedPaths = selection.GetSelectedPaths(layer);
+    if (selectedPaths.size() > 1) {
+        if (ImGui::MenuItem("Remove (selection)")) {
+            ExecuteAfterDraw<PrimRemove>(layer, std::move(selectedPaths));
+        }
     }
     ImGui::Separator();
     if (ImGui::MenuItem("Copy")) {
-        ExecuteAfterDraw<PrimCopy>(primSpec);
+        ExecuteAfterDraw<PrimCopy>(primSpec->GetLayer(), primSpec->GetPath());
     }
     if (ImGui::MenuItem("Paste")) {
-        ExecuteAfterDraw<PrimPaste>(primSpec);
+        ExecuteAfterDraw<PrimPaste>(primSpec->GetLayer(), primSpec->GetPath());
     }
     ImGui::Separator();
     if (ImGui::BeginMenu("Create composition")) {
@@ -122,7 +128,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
         if (prim == SdfPrimSpecHandle()) {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         } else {
-            ExecuteAfterDraw<PrimNew>(prim, FindNextAvailableTokenString(SdfPrimSpecDefaultName));
+            ExecuteAfterDraw<PrimNew>(prim->GetLayer(), prim->GetPath(), FindNextAvailableTokenString(SdfPrimSpecDefaultName));
         }
     }
     DrawTooltip("New child prim");
@@ -130,7 +136,7 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
     if (ImGui::Button(ICON_FA_PLUS_SQUARE) && prim) {
         auto parent = prim->GetNameParent();
         if (parent) {
-            ExecuteAfterDraw<PrimNew>(parent, FindNextAvailableTokenString(prim->GetName()));
+            ExecuteAfterDraw<PrimNew>(prim->GetLayer(), parent->GetPath(), FindNextAvailableTokenString(prim->GetName()));
         } else {
             ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(prim->GetName()));
         }
@@ -138,32 +144,32 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim) {
     DrawTooltip("New sibbling prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_CLONE) && prim) {
-        ExecuteAfterDraw<PrimDuplicate>(prim, prim->GetName());
+        ExecuteAfterDraw<PrimDuplicate>(prim->GetLayer(), prim->GetPath(), prim->GetName());
     }
     DrawTooltip("Duplicate");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROW_UP) && prim) {
-        ExecuteAfterDraw<PrimReorder>(prim, true);
+        ExecuteAfterDraw<PrimReorder>(prim->GetLayer(), prim->GetPath(), true);
     }
     DrawTooltip("Move up");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROW_DOWN) && prim) {
-        ExecuteAfterDraw<PrimReorder>(prim, false);
+        ExecuteAfterDraw<PrimReorder>(prim->GetLayer(), prim->GetPath(), false);
     }
     DrawTooltip("Move down");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_TRASH) && prim) {
-        ExecuteAfterDraw<PrimRemove>(prim);
+        ExecuteAfterDraw<PrimRemove>(prim->GetLayer(), prim->GetPath());
     }
     DrawTooltip("Remove");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_COPY) && prim) {
-        ExecuteAfterDraw<PrimCopy>(prim);
+        ExecuteAfterDraw<PrimCopy>(prim->GetLayer(), prim->GetPath());
     }
     DrawTooltip("Copy");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_PASTE) && prim) {
-        ExecuteAfterDraw<PrimPaste>(prim);
+        ExecuteAfterDraw<PrimPaste>(prim->GetLayer(), prim->GetPath());
     }
     DrawTooltip("Paste");
 }
@@ -307,7 +313,7 @@ static void DrawSdfPrimRow(const SdfLayerRefPtr &layer, const SdfPath &primPath,
     if (ImGui::BeginPopupContextItem()) {
         DrawMiniToolbar(layer, primSpec);
         ImGui::Separator();
-        DrawTreeNodePopup(primSpec);
+        DrawTreeNodePopup(primSpec, layer, selection);
         ImGui::EndPopup();
     }
 
@@ -379,7 +385,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
             ExecuteAfterDraw<LayerCreateOversFromPath>(layer, std::string(ImGui::GetClipboardText()));
         }
         if (ImGui::MenuItem("Paste")) {
-            ExecuteAfterDraw<PrimPaste>(rootPrim);
+            ExecuteAfterDraw<PrimPaste>(SdfLayerHandle(layer), SdfPath::AbsoluteRootPath());
         }
         ImGui::Separator();
         DrawLayerActionPopupMenu(layer);
@@ -521,9 +527,16 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
         ImGui::EndTable();
     }
     if (ImGui::IsItemHovered() && selectedPrim && ImGui::TempInputIsActive(ImGui::GetActiveID())) {
-        AddShortcut<PrimRemove, ImGuiKey_Delete>(selectedPrim);
-        AddShortcut<PrimCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPrim);
-        AddShortcut<PrimPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(selectedPrim);
-        AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim, selectedPrim->GetName());
+        // TODO: OPTIM we don't want to call GetSelectedPaths in this loop, it should be called only once when needed.
+        // Also ->GetLayer() selectedPrim->GetPath() are called every time, this might not be necessary, but less costly
+        // We might want to pass the layer and the selection object and completely remove the selectedPrim.
+        // A new function AddSelectionShortcut taking the selection as argument could be useful
+        // AddSelectionShortcut<PrimRemove, ImGuiKey_Backspace>(selectedPrim->GetLayer(), selection);
+        AddShortcut<PrimRemove, ImGuiKey_Backspace>(selectedPrim->GetLayer(), selection.GetSelectedPaths(SdfLayerHandle(layer)));
+        // TODO: PrimCopy with selection instead of one selected prim
+        AddShortcut<PrimCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPrim->GetLayer(), selectedPrim->GetPath());
+        AddShortcut<PrimPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(selectedPrim->GetLayer(), selectedPrim->GetPath());
+        // TODO: Duplicate selection instead of just the prim 
+        AddShortcut<PrimDuplicate, ImGuiKey_LeftCtrl, ImGuiKey_D>(selectedPrim->GetLayer(), selectedPrim->GetPath(), selectedPrim->GetName());
     }
 }
