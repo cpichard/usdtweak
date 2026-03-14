@@ -230,7 +230,8 @@ static void DrawBackgroundSelection(const UsdPrim &prim, bool selected) {
 static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, StageOutlinerDisplayOptions &displayOptions, int selectionIndex) {
     ImGuiTreeNodeFlags flags =
         ImGuiTreeNodeFlags_OpenOnArrow |
-        ImGuiTreeNodeFlags_AllowItemOverlap; // for testing worse case scenario add | ImGuiTreeNodeFlags_DefaultOpen;
+        ImGuiTreeNodeFlags_AllowItemOverlap |
+        ImGuiTreeNodeFlags_SpanFullWidth;
 
     // Another way ???
     const auto &children = prim.GetFilteredChildren(displayOptions.GetPrimFlagsPredicate());
@@ -247,7 +248,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
     {
         {
             TreeIndenter<StageOutlinerSeed, SdfPath> indenter(prim.GetPath());
-            ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
+            ScopedStyleColor textColor(ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
             const ImGuiID pathHash = IdOf(GetHash(prim.GetPath()));
             //ImGui::AlignTextToFramePadding();
             ImGui::SetNextItemSelectionUserData(selectionIndex);
@@ -276,6 +277,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
 }
 
 static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPaths) {
+    ScopedStyleColor textColor(ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
 
@@ -420,6 +422,8 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
 
     static SelectionHash lastSelectionHash = 0;
 
+    ScopedStyleColor selectionRectangleStyle(ImGuiCol_NavCursor, ImVec4(ColorTransparent));
+
     const ImGuiContext &g = *GImGui;
     const ImVec2 tableOuterSize(0, RemainingHeight(2));
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | /*ImGuiTableFlags_RowBg |*/ ImGuiTableFlags_ScrollY;
@@ -461,7 +465,6 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
                 const auto &prim = stage->GetPrimAtPath(path);
-                ImGui::SetNextItemSelectionUserData(row);
                 DrawPrimTreeRow(prim, selectedPaths, displayOptions, row);
                 ImGui::PopID();
             }
