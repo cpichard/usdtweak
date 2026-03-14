@@ -222,6 +222,8 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         if (openAsStage) {
             ImGui::SameLine();
             ImGui::Checkbox("Load payloads", &openLoaded);
+            ImGui::SameLine();
+            ImGui::Checkbox("Enable viewport rendering", &enableHydra);
         }
         if (!FilePathExists()) {
             ImGui::Text("Not found: ");
@@ -232,7 +234,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         DrawModalButtonsOkCancel([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 if (openAsStage) {
-                    editor.OpenStage(filePath, openLoaded);
+                    editor.OpenStage(filePath, openLoaded, enableHydra);
                 } else {
                     editor.FindOrOpenLayer(filePath);
                 }
@@ -244,6 +246,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
     Editor &editor;
     bool openAsStage = true;
     bool openLoaded = true;
+    bool enableHydra = true;
 };
 
 struct SaveLayerAsDialog : public ModalDialog {
@@ -490,9 +493,10 @@ void Editor::FindOrOpenLayer(const std::string &path) {
 }
 
 //
-void Editor::OpenStage(const std::string &path, bool openLoaded) {
+void Editor::OpenStage(const std::string &path, bool openLoaded, bool enableHydra) {
     auto newStage = UsdStage::Open(path, openLoaded ? UsdStage::LoadAll : UsdStage::LoadNone); // TODO: as an option
     if (newStage) {
+        Viewport::SetStageHydraEnabled(newStage, enableHydra);
         GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
