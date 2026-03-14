@@ -230,9 +230,9 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
     }
     ScopedStyleColor textColor(ImGuiCol_Text,
                                primIsVariant ? ImU32(ImColor::HSV(0.2 / 7.0f, 0.5f, 0.8f)) : ImGui::GetColorU32(ImGuiCol_Text),
-                               ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
+                               ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
 
-    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap;
+    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanFullWidth;
     nodeFlags |= hasChildren && !primSpec->HasVariantSetNames() ? ImGuiTreeNodeFlags_Leaf
                                                                 : ImGuiTreeNodeFlags_None; // ImGuiTreeNodeFlags_DefaultOpen;
     if (selection.IsSelected(primSpec))
@@ -293,15 +293,15 @@ static void DrawSdfPrimRow(const SdfLayerRefPtr &layer, const SdfPath &primPath,
 
     DrawBackgroundSelection(primSpec, selection, selection.IsSelected(primSpec));
 
-    // Drag and drop on Selectable
-    HandleDragAndDrop(primSpec, selection);
-
     // Draw the tree column
     auto childrenNames = primSpec->GetNameChildren();
 
     ImGui::SameLine();
     TreeIndenter<LayerHierarchyEditorSeed, SdfPath> indenter(primPath);
     bool unfolded = DrawTreeNodePrimName(primIsVariant, primSpec, selection, childrenNames.empty(), selectionIndex);
+
+    // Drag and drop on TreeNode (must be after TreeNode since SpanFullWidth makes it the active item)
+    HandleDragAndDrop(primSpec, selection);
 
     // Right click will open the quick edit popup menu
     if (ImGui::BeginPopupContextItem()) {
@@ -340,7 +340,7 @@ static void DrawSdfPrimRow(const SdfLayerRefPtr &layer, const SdfPath &primPath,
 }
 
 static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &selection, float &selectedPosY, int selectionIndex) {
-    ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap;
+    ImGuiTreeNodeFlags treeNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanFullWidth;
     int nodeId = 0;
     if (layer->GetRootPrims().empty()) {
         treeNodeFlags |= ImGuiTreeNodeFlags_Leaf;
@@ -355,11 +355,14 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
     ImGui::SetItemAllowOverlap();
     std::string label = std::string(ICON_FA_FILE) + " " + layer->GetDisplayName();
 
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, 0);
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, 0);
-    ImGui::SetNextItemSelectionUserData(selectionIndex);
-    bool unfolded = ImGui::TreeNodeBehavior(IdOf(SdfPath::AbsoluteRootPath().GetHash()), treeNodeFlags, label.c_str());
-    ImGui::PopStyleColor(2);
+    bool unfolded = false;
+    {
+        ScopedStyleColor textColor(ImGuiCol_Header, ImVec4(ColorTransparent), 
+                                    ImGuiCol_HeaderHovered, 0, 
+                                    ImGuiCol_HeaderActive, 0);
+        ImGui::SetNextItemSelectionUserData(selectionIndex);
+        unfolded = ImGui::TreeNodeBehavior(IdOf(SdfPath::AbsoluteRootPath().GetHash()), treeNodeFlags, label.c_str());
+    }
 
     if (ImGui::BeginPopupContextItem()) {
         DrawMiniToolbar(layer, SdfPrimSpec());
@@ -462,6 +465,8 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
     if (!layer)
         return;
 
+    ScopedStyleColor selectionRectangleStyle(ImGuiCol_NavCursor, ImVec4(ColorTransparent));
+
     SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPrimPath(layer));
     DrawLayerNavigation(layer);
     auto flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY;
@@ -502,7 +507,6 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
-                ImGui::SetNextItemSelectionUserData(row);
                 if (path.IsAbsoluteRootPath()) {
                     DrawTopNodeLayerRow(layer, selection, selectedPosY, row);
                 } else {
