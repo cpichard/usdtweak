@@ -41,6 +41,8 @@ struct Selection::SelectionData {
     // Selection data for the layers
     // Instead of keeping selected path for the layers, we keep handles as the paths can change when the prims are renamed or
     // moved and it invalidates the selection. The handles on spec stays consistent with renaming and moving
+    // But ... when we delete a SdfPrim, the handle becomes invalid and access to it is incorrect.
+    // We allows to keep invalid handles in the container, but each access to their data must be protected.
     std::unordered_set<SdfSpecHandle> _sdfPrimSelectionDomain;
 
     std::unordered_set<SdfSpecHandle> _sdfPropSelectionDomain;
@@ -276,10 +278,12 @@ template <> std::vector<SdfPath> Selection::GetSelectedPaths(const SdfLayerHandl
     if (!_data || !layer)
         return {};
     std::vector<SdfPath> paths;
-    std::transform(_data->_sdfPrimSelectionDomain.begin(), _data->_sdfPrimSelectionDomain.end(), std::back_inserter(paths),
-                   [](const SdfSpecHandle &p) { return p->GetPath(); });
-    std::transform(_data->_sdfPropSelectionDomain.begin(), _data->_sdfPropSelectionDomain.end(), std::back_inserter(paths),
-                   [](const SdfSpecHandle &p) { return p->GetPath(); });
+    for (const auto &prim:_data->_sdfPrimSelectionDomain) {
+        if (prim) paths.emplace_back(prim->GetPath());
+    }
+    for (const auto &prim:_data->_sdfPropSelectionDomain) {
+        if (prim) paths.emplace_back(prim->GetPath());
+    }
     return paths;
 }
 
