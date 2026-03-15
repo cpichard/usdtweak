@@ -74,14 +74,14 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec, const SdfLayerHandle &layer,
         ExecuteAfterDraw<PrimDuplicate>(layer, selection.GetSelectedPaths(layer));
     }
     if (ImGui::MenuItem("Remove")) {
-        ExecuteAfterDraw<PrimRemove>(primSpec->GetLayer(), primSpec->GetPath());
-    }
-    auto selectedPaths = selection.GetSelectedPaths(layer);
-    if (selectedPaths.size() > 1) {
-        if (ImGui::MenuItem("Remove (selection)")) {
+        auto selectedPaths = selection.GetSelectedPaths(layer);
+        if (selectedPaths.size() > 1) {
             ExecuteAfterDraw<PrimRemove>(layer, std::move(selectedPaths));
+        } else {
+            ExecuteAfterDraw<PrimRemove>(primSpec->GetLayer(), primSpec->GetPath());
         }
     }
+
     ImGui::Separator();
     if (ImGui::MenuItem("Copy")) {
         ExecuteAfterDraw<PrimCopy>(layer, selection.GetSelectedPaths(layer));
