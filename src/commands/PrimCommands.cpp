@@ -1,6 +1,7 @@
 
 
 #include <algorithm>
+#include <unordered_map>
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/copyUtils.h>
 #include <pxr/usd/sdf/layer.h>
@@ -248,37 +249,63 @@ struct PrimCreateRelationship : public SdfLayerCommand {
 };
 
 struct PrimReorder : public SdfLayerCommand {
-    PrimReorder(SdfLayerHandle layer, SdfPath primPath, bool up) : _layer(std::move(layer)), _primPath(std::move(primPath)), _up(up) {}
+    PrimReorder(SdfLayerHandle layer, std::vector<SdfPath> primPaths, bool up)
+        : _layer(std::move(layer)), _primPaths(std::move(primPaths)), _up(up) {}
     ~PrimReorder() override {}
     bool DoIt() override {
-        if (!_layer) return false;
-        auto prim = _layer->GetPrimAtPath(_primPath);
-        if (!prim) return false;
+        if (!_layer || _primPaths.empty()) return false;
 
-        TfToken name = prim->GetNameToken();
-        // Look for parent .. layer or prim
-        // and find the position of the prim in the parent
-        int position = -1;
-        auto parent = prim->GetNameParent();
-        const auto &nameChildren = parent ? parent->GetNameChildren() : _layer->GetRootPrims();
-        for (int i = 0; i < nameChildren.size(); ++i) {
-            if (nameChildren[i]->GetNameToken() == name) {
-                position = i;
-                break;
-            }
+        // Group paths by parent path so each sibling group is handled independently
+        std::unordered_map<SdfPath, std::vector<SdfPath>, SdfPath::Hash> groups;
+        for (const auto &path : _primPaths) {
+            groups[path.GetParentPath()].push_back(path);
         }
 
-        if (position == -1)
-            return false;
-        position = _up ? position - 1 : position + 2;
-        if (position < 0 || position > nameChildren.size())
-            return false;
-
         SdfCommandGroupRecorder recorder(_undoCommands, _layer);
-        SdfNamespaceEdit reorderEdit = SdfNamespaceEdit::Reorder(_primPath, position);
         SdfBatchNamespaceEdit batchEdit;
-        batchEdit.Add(reorderEdit);
-        if (_layer->CanApply(batchEdit)) {
+        bool anyEdit = false;
+
+        for (auto &[parentPath, paths] : groups) {
+            auto parent = parentPath.IsAbsoluteRootPath() ? SdfPrimSpecHandle()
+                                                          : _layer->GetPrimAtPath(parentPath);
+            const auto &siblings = parent ? parent->GetNameChildren() : _layer->GetRootPrims();
+            const int siblingCount = static_cast<int>(siblings.size());
+
+            // Map each selected path to its current index in the sibling list
+            std::vector<std::pair<int, SdfPath>> indexed; // (index, path)
+            for (const auto &path : paths) {
+                for (int i = 0; i < siblingCount; ++i) {
+                    if (siblings[i]->GetPath() == path) {
+                        indexed.emplace_back(i, path);
+                        break;
+                    }
+                }
+            }
+            if (indexed.empty()) continue;
+
+            // Sort ascending by position
+            std::sort(indexed.begin(), indexed.end());
+
+            // Boundary check: skip this group if the block can't move
+            if (_up  && indexed.front().first == 0) continue;
+            if (!_up && indexed.back().first == siblingCount - 1) continue;
+
+            if (_up) {
+                // Process topmost first (ascending): each moves one slot up
+                for (const auto &[idx, path] : indexed) {
+                    batchEdit.Add(SdfNamespaceEdit::Reorder(path, idx - 1));
+                }
+            } else {
+                // Process bottommost first (descending): each moves one slot down
+                for (int i = static_cast<int>(indexed.size()) - 1; i >= 0; --i) {
+                    const auto &[idx, path] = indexed[i];
+                    batchEdit.Add(SdfNamespaceEdit::Reorder(path, idx + 2));
+                }
+            }
+            anyEdit = true;
+        }
+
+        if (anyEdit && _layer->CanApply(batchEdit)) {
             _layer->Apply(batchEdit);
             return true;
         }
@@ -286,23 +313,33 @@ struct PrimReorder : public SdfLayerCommand {
     }
 
     SdfLayerHandle _layer;
-    SdfPath _primPath;
+    std::vector<SdfPath> _primPaths;
     bool _up = true;
 };
 
 struct PrimDuplicate : public SdfLayerCommand {
-    PrimDuplicate(SdfLayerHandle layer, SdfPath primPath, std::string &oldName)
-        : _layer(std::move(layer)), _primPath(std::move(primPath)), _newName(FindNextAvailableTokenString(oldName)){};
+    PrimDuplicate(SdfLayerHandle layer, std::vector<SdfPath> primPaths)
+        : _layer(std::move(layer)), _primPaths(std::move(primPaths)){};
     ~PrimDuplicate() override {}
     bool DoIt() override {
-        if (!_layer) return false;
+        if (!_layer || _primPaths.empty()) return false;
         SdfCommandGroupRecorder recorder(_undoCommands, _layer);
-        return SdfCopySpec(_layer, _primPath, _layer, _primPath.ReplaceName(TfToken(_newName)));
+        // Compute names inside DoIt so each SdfCopySpec interns the new token
+        // before the next FindNextAvailableTokenString call, avoiding inter-prim collisions.
+        bool allOk = true;
+        for (const auto &primPath : _primPaths) {
+            auto prim = _layer->GetPrimAtPath(primPath);
+            if (!prim) { allOk = false; continue; }
+            const std::string newName = FindNextAvailableTokenString(prim->GetName());
+            if (!SdfCopySpec(_layer, primPath, _layer, primPath.ReplaceName(TfToken(newName)))) {
+                allOk = false;
+            }
+        }
+        return allOk;
     }
 
     SdfLayerHandle _layer;
-    SdfPath _primPath;
-    std::string _newName;
+    std::vector<SdfPath> _primPaths;
 };
 
 struct PrimAddBlueprint : public SdfLayerCommand {
@@ -346,12 +383,10 @@ struct CopyPasteCommand : public SdfLayerCommand {
 SdfLayerRefPtr CopyPasteCommand::_copyPasteLayer(SdfLayer::CreateAnonymous("CopyPasteBuffer"));
 
 struct PrimCopy : public CopyPasteCommand {
-    PrimCopy(SdfLayerHandle layer, SdfPath primPath) : _layer(std::move(layer)), _primPath(std::move(primPath)){};
+    PrimCopy(SdfLayerHandle layer, std::vector<SdfPath> primPaths) : _layer(std::move(layer)), _primPaths(std::move(primPaths)){};
     ~PrimCopy() override {}
     bool DoIt() override {
-        if (_layer && _copyPasteLayer) {
-            auto prim = _layer->GetPrimAtPath(_primPath);
-            if (!prim) return false;
+        if (_layer && _copyPasteLayer && !_primPaths.empty()) {
             SdfCommandGroupRecorder recorder(_undoCommands, _copyPasteLayer);
             // Ditch root prim
             const SdfPath CopiedPrimRoot = SdfPath::AbsoluteRootPath().AppendChild(GetCopyRoot());
@@ -361,16 +396,21 @@ struct PrimCopy : public CopyPasteCommand {
             }
             _copyPasteLayer->InsertRootPrim(SdfPrimSpec::New(_copyPasteLayer, GetCopyRoot().GetString(), SdfSpecifierDef));
 
-            // Copy
-            const bool copyOk = SdfCopySpec(_layer, _primPath, _copyPasteLayer,
-                                            CopiedPrimRoot.AppendChild(_primPath.GetNameToken()));
-
-            return copyOk;
+            // Copy all selected prims
+            bool allOk = true;
+            for (const auto &primPath : _primPaths) {
+                if (!_layer->GetPrimAtPath(primPath)) { allOk = false; continue; }
+                if (!SdfCopySpec(_layer, primPath, _copyPasteLayer,
+                                 CopiedPrimRoot.AppendChild(primPath.GetNameToken()))) {
+                    allOk = false;
+                }
+            }
+            return allOk;
         }
         return false;
     }
     SdfLayerHandle _layer;
-    SdfPath _primPath;
+    std::vector<SdfPath> _primPaths;
 };
 
 struct PrimPaste : public CopyPasteCommand {
@@ -482,10 +522,10 @@ template void ExecuteAfterDraw<PrimCreateAttribute>(SdfLayerHandle layer, SdfPat
                                                     SdfVariability variability, bool custom, bool createDefault);
 template void ExecuteAfterDraw<PrimCreateRelationship>(SdfLayerHandle layer, SdfPath primPath, std::string name, SdfVariability variability,
                                                        bool custom, SdfListOpType operation, std::string targetPath);
-template void ExecuteAfterDraw<PrimReorder>(SdfLayerHandle layer, SdfPath primPath, bool up);
-template void ExecuteAfterDraw<PrimDuplicate>(SdfLayerHandle layer, SdfPath primPath, std::string newName);
+template void ExecuteAfterDraw<PrimReorder>(SdfLayerHandle layer, std::vector<SdfPath> primPaths, bool up);
+template void ExecuteAfterDraw<PrimDuplicate>(SdfLayerHandle layer, std::vector<SdfPath> primPaths);
 template void ExecuteAfterDraw<PrimAddBlueprint>(SdfLayerHandle layer, SdfPath primPath, std::string primName, std::string bluePrintPath);
-template void ExecuteAfterDraw<PrimCopy>(SdfLayerHandle layer, SdfPath primPath);
+template void ExecuteAfterDraw<PrimCopy>(SdfLayerHandle layer, std::vector<SdfPath> primPaths);
 template void ExecuteAfterDraw<PrimPaste>(SdfLayerHandle layer, SdfPath primPath);
 template void ExecuteAfterDraw<PrimCreateAttributeConnection>(SdfAttributeSpecHandle attr, SdfListOpType operation,
                                                               std::string connectionEndPoint);
