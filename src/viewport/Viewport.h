@@ -16,6 +16,7 @@
 #include "SelectionManipulator.h"
 #include "ViewportCameras.h"
 #include <map>
+#include <set>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -98,6 +99,9 @@ class Viewport final {
     /// Draw toolbar: camera selection, renderer options, viewport options ...
     void DrawToolBar(const ImVec2 widgetPosition);
 
+    /// Draw a button to enable/disable Hydra rendering
+    void DrawHydraEnableButton(bool enabled);
+
     /// Draw a menu bar on top of the viewport
     void DrawMenuBar();
     bool HasMenuBar() const { return _imagingSettings.showViewportMenu; };
@@ -114,6 +118,9 @@ class Viewport final {
     const UsdStageRefPtr &GetCurrentStage() const { return _stage; };
 
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
+
+    /// Enable or disable Hydra rendering for a given stage. Shared across all viewports.
+    static void SetStageHydraEnabled(UsdStageRefPtr stage, bool enabled);
 
     Selection &GetSelection() { return _selection; }
 
@@ -165,6 +172,9 @@ class Viewport final {
     GLuint _textureId = 0;
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
     UsdImagingGLEngine *_renderer = nullptr;
+
+    /// Stages for which Hydra rendering is disabled. Static: shared across all Viewport instances.
+    static std::set<UsdStageRefPtr> _hydraDisabledStages;
     ImagingSettings _imagingSettings;
     GlfDrawTargetRefPtr _drawTarget;
 };

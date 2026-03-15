@@ -474,7 +474,7 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer, bool isStage) {
         std::string command;
         command += "open ";
         fs::path layerPath = layer->GetRealPath();
-        command += layerPath.parent_path();
+        command += layerPath.parent_path().string();
         system(command.c_str());
     }
     if (ImGui::MenuItem("Save layer as")) {

@@ -64,7 +64,7 @@ class Editor {
     void CreateNewLayer(const std::string &path);
     void FindOrOpenLayer(const std::string &path);
     void CreateStage(const std::string &path);
-    void OpenStage(const std::string &path, bool openLoaded = true);
+    void OpenStage(const std::string &path, bool openLoaded = true, bool enableHydra = true);
     void SaveLayerAs(SdfLayerRefPtr layer, const std::string &path);
 
     /// Render the hydra viewport

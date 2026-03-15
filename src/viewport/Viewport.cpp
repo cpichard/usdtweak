@@ -21,6 +21,16 @@
 
 namespace clk = std::chrono;
 
+std::set<UsdStageRefPtr> Viewport::_hydraDisabledStages;
+
+void Viewport::SetStageHydraEnabled(UsdStageRefPtr stage, bool enabled) {
+    if (enabled) {
+        _hydraDisabledStages.erase(stage);
+    } else {
+        _hydraDisabledStages.insert(stage);
+    }
+}
+
 // TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
 
 void Viewport::DrawMenuBar() {
@@ -144,11 +154,18 @@ void Viewport::Draw() {
 }
 
 void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
-    const ImVec2 buttonSize(25, 25); // Button size
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
+    const bool hydraDisabled = _hydraDisabledStages.count(GetCurrentStage());
+
+    const ImVec2 buttonSize(25, 25); // Button size
     const ImVec4 selectedColor(ColorButtonHighlight);
 
     ImGui::SetCursorPos(widgetPosition);
+    if (!GetCurrentStage()) return;
+    DrawHydraEnableButton(hydraDisabled);
+    ImGui::SameLine();
+
+    if (hydraDisabled) return;
     ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
@@ -222,7 +239,23 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
         ImGui::SetTooltip("Cameras");
     }
+    // ImGui::SameLine();
+    // if (ImGui::Button(ICON_FA_FILM)) {
+    //     SetStageHydraEnabled(GetCurrentStage(), false);
+    // }
+    // if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+    //     ImGui::SetTooltip("Disable rendering");
+    // }
     ImGui::PopStyleColor(2);
+}
+
+void Viewport::DrawHydraEnableButton(bool enabled) {
+    if (ImGui::Button(ICON_FA_FILM)) {
+        SetStageHydraEnabled(GetCurrentStage(), enabled);
+    }
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Enable/Disable Hydra rendering for this stage");
+    }
 }
 
 // Poor man manipulator toolbox
@@ -575,17 +608,34 @@ void Viewport::Update() {
         auto whichRenderer = _renderers.find(GetCurrentStage()); /// We expect a very limited number of opened stages
         if (whichRenderer == _renderers.end()) {
             firstTimeStageLoaded = true;
+            if (_hydraDisabledStages.count(GetCurrentStage()) == 0) {
+                SdfPathVector excludedPaths;
+                _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
+                _renderers[GetCurrentStage()] = _renderer;
+                InitializeRendererAov(*_renderer);
+            } else {
+                _renderer = nullptr;
+                _renderers[GetCurrentStage()] = nullptr;
+            }
+            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+        } else if (whichRenderer->second == nullptr && _hydraDisabledStages.count(GetCurrentStage()) == 0) {
+            // Hydra was re-enabled for this stage after being loaded without a renderer
+            //firstTimeStageLoaded = true;
             SdfPathVector excludedPaths;
             _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
             _renderers[GetCurrentStage()] = _renderer;
-            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             InitializeRendererAov(*_renderer);
+            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         } else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
             // TODO: should reset the camera otherwise, depending on the position of the camera, the transform is incorrect
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
             //_selection =
+        } else if (whichRenderer->second != nullptr && _hydraDisabledStages.count(GetCurrentStage())) {
+            delete whichRenderer->second;
+            _renderer = nullptr;
+            _renderers[GetCurrentStage()] = nullptr;
         }
 
         for (CameraRig *c : _cameraManipulators) {
