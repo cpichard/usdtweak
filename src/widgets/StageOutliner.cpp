@@ -248,7 +248,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
     {
         {
             TreeIndenter<StageOutlinerSeed, SdfPath> indenter(prim.GetPath());
-            ScopedStyleColor textColor(ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
+            ScopedStyleColor textColor(ImGuiCol_Text, GetPrimColor(prim), ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
             const ImGuiID pathHash = IdOf(GetHash(prim.GetPath()));
             //ImGui::AlignTextToFramePadding();
             ImGui::SetNextItemSelectionUserData(selectionIndex);
