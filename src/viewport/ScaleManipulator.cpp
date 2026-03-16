@@ -64,9 +64,23 @@ bool ScaleManipulator::IsMouseOver(const Viewport &viewport) {
 // Same as rotation manipulator now -- TODO : share in a common class
 void ScaleManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
-    auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
-    _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
+    auto stage = viewport.GetCurrentStage();
+    auto primPath = selection.GetAnchorPrimPath(stage);
+    _xformAPI = UsdGeomXformCommonAPI(stage->GetPrimAtPath(primPath));
     _xformable = UsdGeomXformable(_xformAPI.GetPrim());
+
+    // Build multi-select list, filtering out descendants of other selected prims
+    _selectedXformables.clear();
+    auto allPaths = selection.GetSelectedPaths(stage);
+    std::sort(allPaths.begin(), allPaths.end());
+
+    SdfPath lastAccepted;
+    for (const auto &path : allPaths) {
+        if (!lastAccepted.IsEmpty() && path.HasPrefix(lastAccepted)) continue;
+        lastAccepted = path;
+        UsdGeomXformable xf(stage->GetPrimAtPath(path));
+        if (xf) _selectedXformables.push_back(xf);
+    }
 }
 
 GfMatrix4d ScaleManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
@@ -139,7 +153,7 @@ void ScaleManipulator::OnDrawFrame(const Viewport &viewport) {
 }
 
 void ScaleManipulator::OnBeginEdition(Viewport &viewport) {
-    // Save original translation values
+    // Save original scale for anchor prim
     GfVec3d translation;
     GfVec3f pivot, rotation;
     UsdGeomXformCommonAPI::RotationOrder rotOrder;
@@ -150,6 +164,30 @@ void ScaleManipulator::OnBeginEdition(Viewport &viewport) {
     const GfMatrix4d objectTransform = ComputeManipulatorToWorldTransform(viewport);
     _axisLine = GfLine(objectTransform.ExtractTranslation(), objectTransform.GetRow3(_selectedAxis));
     ProjectMouseOnAxis(viewport, _originMouseOnAxis);
+
+    // Snapshot scales for all selected prims
+    _scalesOnBegin.clear();
+    _scalesOnBegin.reserve(_selectedXformables.size());
+    for (const auto &xf : _selectedXformables) {
+        UsdGeomXformCommonAPI xformAPI(xf.GetPrim());
+        if (xformAPI) {
+            GfVec3d t; GfVec3f r, s, p;
+            UsdGeomXformCommonAPI::RotationOrder ro;
+            xformAPI.GetXformVectorsByAccumulation(&t, &r, &s, &p, &ro, viewport.GetCurrentTimeCode());
+            _scalesOnBegin.push_back(s);
+        } else {
+            bool reset = false;
+            auto ops = xf.GetOrderedXformOps(&reset);
+            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                GfMatrix4d m = ops[0].GetOpTransform(viewport.GetCurrentTimeCode());
+                GfMatrix4d rotMat, perspMat; GfVec3d scale3d, translation;
+                m.Factor(&perspMat, &scale3d, &rotMat, &translation, &perspMat);
+                _scalesOnBegin.push_back(GfVec3f(scale3d));
+            } else {
+                _scalesOnBegin.push_back(GfVec3f(1.f, 1.f, 1.f));
+            }
+        }
+    }
 
     BeginEdition(viewport.GetCurrentStage());
 }
@@ -164,41 +202,44 @@ Manipulator *ScaleManipulator::OnUpdate(Viewport &viewport) {
         GfVec3d mouseOnAxis;
         ProjectMouseOnAxis(viewport, mouseOnAxis);
 
-        // Get the sign
-        double ori;
-        double cur;
-        _axisLine.FindClosestPoint(_originMouseOnAxis, &ori);
-        _axisLine.FindClosestPoint(mouseOnAxis, &cur);
-        double sign = cur > ori ? 1.0 : -1.0;
+        // Compute scale ratio from anchor axis geometry (same for all prims)
+        // TODO: division by zero check
+        const double ratio = mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+        const bool uniform = ImGui::IsKeyDown(ImGuiKey_LeftShift);
 
-        GfVec3f scale = _scaleOnBegin;
+        // Apply ratio to every selected xformable
+        for (size_t i = 0; i < _selectedXformables.size(); ++i) {
+            auto &xf = _selectedXformables[i];
+            GfVec3f scale = _scalesOnBegin[i];
 
-        // TODO division per zero check
-        scale[_selectedAxis] = _scaleOnBegin[_selectedAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
+            if (uniform) {
+                scale[XAxis] = _scalesOnBegin[i][XAxis] * ratio;
+                scale[YAxis] = _scalesOnBegin[i][YAxis] * ratio;
+                scale[ZAxis] = _scalesOnBegin[i][ZAxis] * ratio;
+            } else {
+                scale[_selectedAxis] = _scalesOnBegin[i][_selectedAxis] * ratio;
+            }
 
-        if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
-            scale[XAxis] = _scaleOnBegin[XAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
-            scale[YAxis] = _scaleOnBegin[YAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
-            scale[ZAxis] = _scaleOnBegin[XAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
-        } else {
-            scale[_selectedAxis] = _scaleOnBegin[_selectedAxis] * mouseOnAxis.GetLength() / _originMouseOnAxis.GetLength();
-        }
-
-        if (_xformAPI) {
-            _xformAPI.SetScale(scale, GetEditionTimeCode(viewport));
-        } else {
-            bool reset = false;
-            auto ops = _xformable.GetOrderedXformOps(&reset);
-            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
-                GfVec3d translation;
-                GfVec3f scale_, pivot, rotation;
-                UsdGeomXformCommonAPI::RotationOrder rotOrder;
-                _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale_, &pivot, &rotOrder,
-                                                        GetEditionTimeCode(viewport));
-                const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
-                const auto rotMat = _xformAPI.GetRotationTransform(rotation, rotOrder);
-                GfMatrix4d current = GfMatrix4d().SetScale(scale) * rotMat * transMat;
-                ops[0].Set(current, GetEditionTimeCode(viewport));
+            UsdGeomXformCommonAPI xformAPI(xf.GetPrim());
+            if (xformAPI) {
+                xformAPI.SetScale(scale, GetEditionTimeCode(viewport, xf));
+            } else {
+                bool reset = false;
+                auto ops = xf.GetOrderedXformOps(&reset);
+                if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                    GfVec3d translation;
+                    GfVec3f scale_, pivot, rotation;
+                    UsdGeomXformCommonAPI::RotationOrder rotOrder;
+                    UsdGeomXformCommonAPI fallbackAPI(xf.GetPrim());
+                    if (fallbackAPI) {
+                        fallbackAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale_, &pivot, &rotOrder,
+                                                                  GetEditionTimeCode(viewport, xf));
+                    }
+                    const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
+                    const auto rotMat = UsdGeomXformCommonAPI::GetRotationTransform(rotation, rotOrder);
+                    GfMatrix4d current = GfMatrix4d().SetScale(scale) * rotMat * transMat;
+                    ops[0].Set(current, GetEditionTimeCode(viewport, xf));
+                }
             }
         }
     }
@@ -228,4 +269,10 @@ UsdTimeCode ScaleManipulator::GetEditionTimeCode(const Viewport &viewport) {
     } else {
         return viewport.GetCurrentTimeCode();
     }
+}
+
+UsdTimeCode ScaleManipulator::GetEditionTimeCode(const Viewport &viewport, const UsdGeomXformable &xf) {
+    std::vector<double> timeSamples;
+    xf.GetTimeSamples(&timeSamples);
+    return timeSamples.empty() ? UsdTimeCode::Default() : viewport.GetCurrentTimeCode();
 }
