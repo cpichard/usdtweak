@@ -79,9 +79,31 @@ bool PositionManipulator::IsMouseOver(const Viewport &viewport) {
 // Same as rotation manipulator now -- TODO : share in a common class
 void PositionManipulator::OnSelectionChange(Viewport &viewport) {
     auto &selection = viewport.GetSelection();
-    auto primPath = selection.GetAnchorPrimPath(viewport.GetCurrentStage());
-    _xformAPI = UsdGeomXformCommonAPI(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
-    _xformable = UsdGeomXformable(viewport.GetCurrentStage()->GetPrimAtPath(primPath));
+    auto stage = viewport.GetCurrentStage();
+
+    // Anchor prim — drives gizmo position and axis orientation
+    auto primPath = selection.GetAnchorPrimPath(stage);
+    _xformAPI  = UsdGeomXformCommonAPI(stage->GetPrimAtPath(primPath));
+    _xformable = UsdGeomXformable(stage->GetPrimAtPath(primPath));
+
+    // Build multi-select list, filtering out descendants of other selected prims
+    // (moving a parent already moves the child via inherited transform)
+    _selectedXformables.clear();
+    auto allPaths = selection.GetSelectedPaths(stage);
+    std::sort(allPaths.begin(), allPaths.end()); // parents sort before children
+
+    for (const auto &path : allPaths) {
+        bool hasSelectedAncestor = false;
+        for (const auto &other : allPaths) {
+            if (other != path && path.HasPrefix(other)) {
+                hasSelectedAncestor = true;
+                break;
+            }
+        }
+        if (hasSelectedAncestor) continue;
+        UsdGeomXformable xf(stage->GetPrimAtPath(path));
+        if (xf) _selectedXformables.push_back(xf);
+    }
 }
 
 GfMatrix4d PositionManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
@@ -163,7 +185,7 @@ void PositionManipulator::OnDrawFrame(const Viewport &viewport) {
 }
 
 void PositionManipulator::OnBeginEdition(Viewport &viewport) {
-    // Save original translation values
+    // Save original translation for anchor prim (drives gizmo reference)
     GfMatrix4d localTransform;
     bool resetsXformStack = false;
     _xformable.GetLocalTransformation(&localTransform, &resetsXformStack, viewport.GetCurrentTimeCode());
@@ -173,6 +195,16 @@ void PositionManipulator::OnBeginEdition(Viewport &viewport) {
     const GfMatrix4d objectTransform = ComputeManipulatorToWorldTransform(viewport);
     _axisLine = GfLine(objectTransform.ExtractTranslation(), objectTransform.GetRow3(_selectedAxis));
     ProjectMouseOnAxis(viewport, _originMouseOnAxis);
+
+    // Snapshot translations for every selected prim
+    _translationsOnBegin.clear();
+    _translationsOnBegin.reserve(_selectedXformables.size());
+    for (const auto &xf : _selectedXformables) {
+        GfMatrix4d mat;
+        bool resets = false;
+        xf.GetLocalTransformation(&mat, &resets, viewport.GetCurrentTimeCode());
+        _translationsOnBegin.push_back(mat.ExtractTranslation());
+    }
 
     BeginEdition(viewport.GetCurrentStage());
 }
@@ -187,24 +219,31 @@ Manipulator *PositionManipulator::OnUpdate(Viewport &viewport) {
         GfVec3d mouseOnAxis;
         ProjectMouseOnAxis(viewport, mouseOnAxis);
 
-        // Get the sign
-        double ori = 0.0; // = _axisLine.GetDirection()*_originMouseOnAxis;
-        double cur = 0.0; // = _axisLine.GetDirection()*mouseOnAxis;
+        // Compute signed scalar delta along the active axis
+        double ori = 0.0;
+        double cur = 0.0;
         _axisLine.FindClosestPoint(_originMouseOnAxis, &ori);
         _axisLine.FindClosestPoint(mouseOnAxis, &cur);
         double sign = cur > ori ? 1.0 : -1.0;
+        double delta = sign * (_originMouseOnAxis - mouseOnAxis).GetLength();
 
-        GfVec3d translation = _translationOnBegin;
-        translation[_selectedAxis] += sign * (_originMouseOnAxis - mouseOnAxis).GetLength();
-        if (_xformAPI) {
-            _xformAPI.SetTranslate(translation, GetEditionTimeCode(viewport));
-        } else {
-            bool reset = false;
-            auto ops = _xformable.GetOrderedXformOps(&reset);
-            if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
-                GfMatrix4d current = ops[0].GetOpTransform(GetEditionTimeCode(viewport));
-                current.SetTranslateOnly(translation); // TODO: what happens if there is a pivot ???
-                ops[0].Set(current, GetEditionTimeCode(viewport));
+        // Apply the same delta to every selected xformable
+        for (size_t i = 0; i < _selectedXformables.size(); ++i) {
+            auto &xf = _selectedXformables[i];
+            GfVec3d translation = _translationsOnBegin[i];
+            translation[_selectedAxis] += delta;
+
+            UsdGeomXformCommonAPI xformAPI(xf.GetPrim());
+            if (xformAPI) {
+                xformAPI.SetTranslate(translation, GetEditionTimeCode(viewport, xf));
+            } else {
+                bool reset = false;
+                auto ops = xf.GetOrderedXformOps(&reset);
+                if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
+                    GfMatrix4d current = ops[0].GetOpTransform(GetEditionTimeCode(viewport, xf));
+                    current.SetTranslateOnly(translation);
+                    ops[0].Set(current, GetEditionTimeCode(viewport, xf));
+                }
             }
         }
     }
@@ -229,6 +268,16 @@ UsdTimeCode PositionManipulator::GetEditionTimeCode(const Viewport &viewport) {
     std::vector<double> timeSamples; // TODO: is there a faster way to know it the xformable has timesamples ?
     const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
     xformable.GetTimeSamples(&timeSamples);
+    if (timeSamples.empty()) {
+        return UsdTimeCode::Default();
+    } else {
+        return viewport.GetCurrentTimeCode();
+    }
+}
+
+UsdTimeCode PositionManipulator::GetEditionTimeCode(const Viewport &viewport, const UsdGeomXformable &xf) {
+    std::vector<double> timeSamples;
+    xf.GetTimeSamples(&timeSamples);
     if (timeSamples.empty()) {
         return UsdTimeCode::Default();
     } else {
