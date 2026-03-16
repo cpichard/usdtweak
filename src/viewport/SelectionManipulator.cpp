@@ -39,6 +39,7 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
     SdfPath outHitPrimPath;
     SdfPath outHitInstancerPath;
     int outHitInstanceIndex = 0;
+    const bool shiftHeld = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     viewport.TestIntersection(mousePosition, outHitPrimPath, outHitInstancerPath, outHitInstanceIndex);
     if (!outHitPrimPath.IsEmpty()) {
         if (viewport.GetCurrentStage()) {
@@ -46,14 +47,15 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
                 outHitPrimPath = outHitPrimPath.GetParentPath();
             }
         }
-
-        if (ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
-            // TODO: a command
-            selection.AddSelected(viewport.GetCurrentStage(), outHitPrimPath);
+        if (shiftHeld) {
+            if (selection.IsSelected(viewport.GetCurrentStage(), outHitPrimPath))
+                selection.RemoveSelected(viewport.GetCurrentStage(), outHitPrimPath);
+            else
+                selection.AddSelected(viewport.GetCurrentStage(), outHitPrimPath);
         } else {
             ExecuteAfterDraw<EditorSetSelection>(viewport.GetCurrentStage(), outHitPrimPath);
         }
-    } else if (outHitInstancerPath.IsEmpty()) {
+    } else if (outHitInstancerPath.IsEmpty() && !shiftHeld) {
         selection.Clear(viewport.GetCurrentStage());
     }
     return viewport.GetManipulator<MouseHoverManipulator>();
