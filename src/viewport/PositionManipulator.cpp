@@ -92,15 +92,10 @@ void PositionManipulator::OnSelectionChange(Viewport &viewport) {
     auto allPaths = selection.GetSelectedPaths(stage);
     std::sort(allPaths.begin(), allPaths.end()); // parents sort before children
 
+    SdfPath lastAccepted;
     for (const auto &path : allPaths) {
-        bool hasSelectedAncestor = false;
-        for (const auto &other : allPaths) {
-            if (other != path && path.HasPrefix(other)) {
-                hasSelectedAncestor = true;
-                break;
-            }
-        }
-        if (hasSelectedAncestor) continue;
+        if (!lastAccepted.IsEmpty() && path.HasPrefix(lastAccepted)) continue;
+        lastAccepted = path;
         UsdGeomXformable xf(stage->GetPrimAtPath(path));
         if (xf) _selectedXformables.push_back(xf);
     }
