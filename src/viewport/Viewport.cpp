@@ -70,7 +70,8 @@ void Viewport::DrawMenuBar() {
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     : _stage(stage), _orbitCameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _flyCameraManipulator({InitialWindowWidth, InitialWindowHeight}), _currentEditingState(new MouseHoverManipulator()),
-      _activeManipulator(&_positionManipulator), _selection(selection), _textureSize(1, 1), _viewportName("Viewport 1") {
+      _activeManipulator(&_positionManipulator),
+      _selection(selection), _textureSize(1, 1), _viewportName("Viewport 1") {
 
     // Viewport draw target
     _orbitCameraManipulator.ResetPosition(GetEditableCamera());
@@ -535,6 +536,8 @@ void Viewport::Render() {
     if (_imagingSettings.showGizmos) {
         BeginHydraUI(width, height);
         GetActiveManipulator().OnDrawFrame(*this);
+        if (_currentEditingState && _currentEditingState != _activeManipulator)
+            _currentEditingState->OnDrawFrame(*this);
         // DrawHUD(this);
         EndHydraUI();
     }

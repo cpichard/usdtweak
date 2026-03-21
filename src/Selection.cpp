@@ -212,6 +212,17 @@ template <> bool Selection::IsSelected(const UsdStageWeakPtr &stage, const SdfPa
     return false;
 }
 
+template <> bool Selection::IsSelected(const UsdStageRefPtr &stage, const SdfPath &selectedPath) const {
+    if (!_data || !stage)
+        return false;
+    if (_data->_stageSelection) {
+        if (_data->_stageSelection->GetPrimSelectionState(HdSelection::HighlightModeSelect, selectedPath)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 template <> bool Selection::UpdateSelectionHash(const UsdStageRefPtr &stage, SelectionHash &lastSelectionHash) {
     if (!_data || !stage)
         return false;
