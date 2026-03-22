@@ -556,6 +556,8 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
                 ImGui::PopID();
             }
         }
+        // We might want to have a command for the changes of selection if it appears that 
+        // the UI behaves inconsistently
         if (selectionHasChanged) {
             FocusedOnFirstSelectedPath(selection.GetAnchorPrimPath(layer), paths, clipper);
         }
