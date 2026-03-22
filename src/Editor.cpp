@@ -8,6 +8,7 @@
 #include "FileBrowser.h"
 #include "Gui.h"
 #include "HydraBrowser.h"
+#include "ShaderRegistryInspector.h"
 #include "HydraNoticeLogger.h"
 #include "ImGuiHelpers.h"
 #include "LauncherBar.h"
@@ -65,6 +66,7 @@ namespace clk = std::chrono;
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define HydraBrowserWindowTitle "Hydra browser"
+#define ShaderRegistryInspectorWindowTitle "Shader registry inspector"
 #define HydraNoticeLoggerWindowTitle "Hydra notice logger"
 #define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
@@ -795,6 +797,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
+            ImGui::MenuItem(ShaderRegistryInspectorWindowTitle, nullptr, &_settings._showShaderInspector);
 #if ENABLE_HYDRA_NOTICE_LOGGER
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
 #endif
@@ -1070,6 +1073,13 @@ void Editor::Draw() {
         TRACE_SCOPE(HydraBrowserWindowTitle);
         ImGui::Begin(HydraBrowserWindowTitle, &_settings._showHydraBrowser);
         DrawHydraBrowser();
+        ImGui::End();
+    }
+
+    if (_settings._showShaderInspector) {
+        TRACE_SCOPE(ShaderRegistryInspectorWindowTitle);
+        ImGui::Begin(ShaderRegistryInspectorWindowTitle, &_settings._showShaderInspector);
+        DrawShaderRegistryInspector();
         ImGui::End();
     }
 #if ENABLE_HYDRA_NOTICE_LOGGER

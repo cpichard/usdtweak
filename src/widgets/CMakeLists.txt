@@ -11,6 +11,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraBrowser.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderRegistryInspector.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderRegistryInspector.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraNoticeLogger.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraNoticeLogger.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraWidgets.cpp
