@@ -1,13 +1,15 @@
 #include "ShaderRegistryInspector.h"
 
 #include "Gui.h"
+// We need to fix all the api changes to get it working for older versions
+#if PXR_VERSION >= 2511
 #include <algorithm>
 #include <cctype>
 #include <pxr/pxr.h>
 #include <pxr/usd/sdr/registry.h>
 #include <pxr/usd/sdr/shaderNode.h>
 #include <pxr/usd/sdr/shaderProperty.h>
-#if PXR_VERSION <= 2511
+#if PXR_VERSION == 2511
 #include <pxr/base/vt/dictionary.h>
 #endif
 #include <sstream>
@@ -66,7 +68,7 @@ static void DrawShaderNodeProperties(SdrShaderNodeConstPtr node) {
             ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(prop->GetName().GetText());
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_Stationary)) {
-#if PXR_VERSION <= 2511
+#if PXR_VERSION == 2511
                 const SdrTokenMap &metadata = prop->GetMetadata();
                 if (!metadata.empty()) {
                     if (ImGui::BeginTooltip()) {
@@ -141,7 +143,7 @@ void DrawShaderRegistryInspector() {
     static bool filterDirty = true;
 
     if (!initialized) {
-#if PXR_VERSION <= 2511
+#if PXR_VERSION == 2511
         shaderNodes = SdrRegistry::GetInstance().GetShaderNodesByFamily();
 #else
         shaderNodes = SdrRegistry::GetInstance().GetAllShaderNodes();
@@ -231,7 +233,7 @@ void DrawShaderRegistryInspector() {
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_Stationary)) {
                 const std::string help = node->GetHelp();
-#if PXR_VERSION <= 2511
+#if PXR_VERSION == 2511
                 const SdrTokenMap &metadata = node->GetMetadata();
 #else
                 const VtDictionary &metadata = node->GetMetadataObject().GetItems();
@@ -247,7 +249,7 @@ void DrawShaderRegistryInspector() {
                             }
                             ImGui::TextDisabled("Metadata:");
                             for (const auto &entry : metadata) {
-#if PXR_VERSION <= 2511
+#if PXR_VERSION == 2511
                                 ImGui::Text("  %s: %s", entry.first.GetText(), entry.second.c_str());
 #else
                                 std::ostringstream oss;
@@ -286,3 +288,9 @@ void DrawShaderRegistryInspector() {
     }
     ImGui::EndChild();
 }
+#else
+void DrawShaderRegistryInspector() {
+    ImGui::Text("Shader registry editor not available in this version");   
+}
+
+#endif
