@@ -37,9 +37,14 @@ void InitializeRendererAov(UsdImagingGLEngine &);
 ///
 void DrawRendererSelectionCombo(UsdImagingGLEngine &);
 void DrawRendererSelectionList(UsdImagingGLEngine &);
+void DrawRendererSelectionList();
 void DrawRendererControls(UsdImagingGLEngine &);
 void DrawRendererCommands(UsdImagingGLEngine &);
 void DrawRendererSettings(UsdImagingGLEngine &, ImagingSettings &);
 void DrawImagingSettings(UsdImagingGLEngine &, ImagingSettings &);
 void DrawAovSettings(UsdImagingGLEngine &);
 void DrawColorCorrection(UsdImagingGLEngine &, ImagingSettings &);
+
+void SetDefaultRendererId(const TfToken &renderDelegateId);
+const TfToken & GetDefaultRendererId();
+const std::string GetDefaultRendererDisplayName();
