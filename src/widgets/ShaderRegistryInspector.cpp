@@ -3,9 +3,13 @@
 #include "Gui.h"
 #include <algorithm>
 #include <cctype>
+#include <pxr/pxr.h>
 #include <pxr/usd/sdr/registry.h>
 #include <pxr/usd/sdr/shaderNode.h>
 #include <pxr/usd/sdr/shaderProperty.h>
+#if PXR_VERSION <= 2511
+#include <pxr/base/vt/dictionary.h>
+#endif
 #include <sstream>
 #include <string_view>
 
@@ -62,6 +66,18 @@ static void DrawShaderNodeProperties(SdrShaderNodeConstPtr node) {
             ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(prop->GetName().GetText());
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_Stationary)) {
+#if PXR_VERSION <= 2511
+                const SdrTokenMap &metadata = prop->GetMetadata();
+                if (!metadata.empty()) {
+                    if (ImGui::BeginTooltip()) {
+                        ImGui::TextDisabled("Metadata:");
+                        for (const auto &entry : metadata) {
+                            ImGui::Text("  %s: %s", entry.first.GetText(), entry.second.c_str());
+                        }
+                        ImGui::EndTooltip();
+                    }
+                }
+#else
                 const VtDictionary &metadata = prop->GetMetadataObject().GetItems();
                 if (!metadata.empty()) {
                     if (ImGui::BeginTooltip()) {
@@ -74,6 +90,7 @@ static void DrawShaderNodeProperties(SdrShaderNodeConstPtr node) {
                         ImGui::EndTooltip();
                     }
                 }
+#endif
             }
             ImGui::TableSetColumnIndex(1);
             ImGui::TextUnformatted(prop->GetType().GetText());
@@ -124,7 +141,11 @@ void DrawShaderRegistryInspector() {
     static bool filterDirty = true;
 
     if (!initialized) {
+#if PXR_VERSION <= 2511
+        shaderNodes = SdrRegistry::GetInstance().GetShaderNodesByFamily();
+#else
         shaderNodes = SdrRegistry::GetInstance().GetAllShaderNodes();
+#endif
         initialized = true;
     }
 
@@ -210,7 +231,11 @@ void DrawShaderRegistryInspector() {
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_Stationary)) {
                 const std::string help = node->GetHelp();
+#if PXR_VERSION <= 2511
+                const SdrTokenMap &metadata = node->GetMetadata();
+#else
                 const VtDictionary &metadata = node->GetMetadataObject().GetItems();
+#endif
                 if (!help.empty() || !metadata.empty()) {
                     if (ImGui::BeginTooltip()) {
                         if (!help.empty()) {
@@ -222,9 +247,13 @@ void DrawShaderRegistryInspector() {
                             }
                             ImGui::TextDisabled("Metadata:");
                             for (const auto &entry : metadata) {
+#if PXR_VERSION <= 2511
+                                ImGui::Text("  %s: %s", entry.first.GetText(), entry.second.c_str());
+#else
                                 std::ostringstream oss;
                                 oss << entry.second;
                                 ImGui::Text("  %s: %s", entry.first.c_str(), oss.str().c_str());
+#endif
                             }
                         }
                         ImGui::EndTooltip();
