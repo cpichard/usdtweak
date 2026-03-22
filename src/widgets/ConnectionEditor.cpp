@@ -9,6 +9,11 @@
 #include <pxr/usd/usd/primRange.h>
 #include <iostream>
 #include <stack>
+#include <queue>
+#include <algorithm>
+#include <unordered_set>
+#include <map>
+#include <numeric>
 
 /*
  Notes on the connection editor.
@@ -312,6 +317,43 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         drawList->ChannelsMerge();
         drawList->PopClipRect();
     };
+
+    // Adjust zoom and scroll so all nodes are visible in the current widget.
+    // Must be called after Begin() so widgetSize is up to date.
+    void FitView(const ConnectionsSheet &sheet) {
+        if (sheet.nodes.empty() || widgetSize.x <= 0.f || widgetSize.y <= 0.f) return;
+
+        constexpr float fitPadding  = 40.f; // screen-space margin around the graph
+        constexpr float headerHeight = 50.f;
+        constexpr float lineHeight   = 15.f;
+
+        ImVec2 bboxMin( FLT_MAX,  FLT_MAX);
+        ImVec2 bboxMax(-FLT_MAX, -FLT_MAX);
+        for (const auto &node : sheet.nodes) {
+            float h = static_cast<float>(node.properties.size() + 2) * lineHeight + headerHeight;
+            ImVec2 nodeMin = node.position + ImVec2(-80.f, -h / 2.f);
+            ImVec2 nodeMax = node.position + ImVec2( 80.f,  h / 2.f);
+            bboxMin.x = std::min(bboxMin.x, nodeMin.x);
+            bboxMin.y = std::min(bboxMin.y, nodeMin.y);
+            bboxMax.x = std::max(bboxMax.x, nodeMax.x);
+            bboxMax.y = std::max(bboxMax.y, nodeMax.y);
+        }
+
+        const float bboxW = bboxMax.x - bboxMin.x;
+        const float bboxH = bboxMax.y - bboxMin.y;
+        if (bboxW <= 0.f || bboxH <= 0.f) return;
+
+        // Compute zoom to fit, then clamp to a reasonable range.
+        const float fitZoomX = (widgetSize.x - 2.f * fitPadding) / bboxW;
+        const float fitZoomY = (widgetSize.y - 2.f * fitPadding) / bboxH;
+        zooming = std::max(0.05f, std::min(std::min(fitZoomX, fitZoomY), 5.f));
+
+        // Set scroll so the bbox center maps to the widget center.
+        // CanvasToWindow(pos) = pos*zoom + scroll + originOffset
+        // We want CanvasToWindow(center) = originOffset  →  scroll = -center*zoom
+        const ImVec2 bboxCenter = (bboxMin + bboxMax) * 0.5f;
+        scrolling = bboxCenter * (-zooming);
+    }
 
     // What we call canvas is the infinite normalized region
     inline ImVec2 CanvasToWindow(const ImVec2 &posInCanvas) {
@@ -751,6 +793,227 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
 };
 
 
+// Sugiyama layered graph auto-layout with connected-component splitting and
+// per-type subgraph layout within each component.
+//
+//  1. Find connected components (Union-Find, undirected).
+//  2. Within each component: group nodes by USD prim type name.
+//     Run Sugiyama on each type group using only intra-group edges
+//     (avoids cross-type cycles, e.g. Material ↔ Shader).
+//     Stack type groups vertically, centred on the component origin.
+//  3. Arrange connected components horizontally, centred on canvas (0,0).
+static void AutoLayout(ConnectionsSheet &sheet) {
+    const int n = static_cast<int>(sheet.nodes.size());
+    if (n == 0) return;
+
+    constexpr float nodeWidth    = 160.f; // node spans position.x ± 80
+    constexpr float hGap         = 80.f;  // horizontal gap between layer columns
+    constexpr float vGap         = 30.f;  // vertical gap between nodes in a column
+    constexpr float typeGroupGap = 80.f;  // vertical gap between type groups in a component
+    constexpr float compGap      = 120.f; // horizontal gap between connected components
+    constexpr float headerHeight = 50.f;
+    constexpr float lineHeight   = 15.f;  // ~ImGui fontSize + 2px padding
+
+    auto getNodeHeight = [&](int idx) -> float {
+        return static_cast<float>(sheet.nodes[idx].properties.size() + 2) * lineHeight + headerHeight;
+    };
+
+    // --- Build attribute-path and prim-path lookup maps ---
+    std::unordered_map<SdfPath, int, SdfPath::Hash> attrToIdx, primToIdx;
+    primToIdx.reserve(n);
+    attrToIdx.reserve(n * 8);
+    for (int i = 0; i < n; i++) {
+        primToIdx[sheet.nodes[i].primPath] = i;
+        for (const auto &prop : sheet.nodes[i].properties)
+            attrToIdx[prop] = i;
+    }
+
+    auto findNode = [&](const SdfPath &p) -> int {
+        auto it = attrToIdx.find(p);
+        if (it != attrToIdx.end()) return it->second;
+        auto it2 = primToIdx.find(p.GetPrimPath());
+        return it2 != primToIdx.end() ? it2->second : -1;
+    };
+
+    // --- 1. Find connected components via Union-Find (path-halving) ---
+    std::vector<int> parent(n);
+    std::iota(parent.begin(), parent.end(), 0);
+
+    auto findComp = [&](int x) -> int {   // iterative path halving
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    };
+    auto unite = [&](int x, int y) {
+        x = findComp(x); y = findComp(y);
+        if (x != y) parent[x] = y;
+    };
+
+    for (const auto &con : sheet.connections) {
+        int src = findNode(con.end), dst = findNode(con.begin);
+        if (src >= 0 && dst >= 0 && src != dst)
+            unite(src, dst);
+    }
+
+    // Group global node indices by component root (std::map → deterministic order).
+    std::map<int, std::vector<int>> components;
+    for (int i = 0; i < n; i++)
+        components[findComp(i)].push_back(i);
+
+    // --- Sugiyama layout for one type group ---
+    // Writes node positions centred at (0, 0); returns {totalWidth, maxColHeight}.
+    auto layoutGroup = [&](const std::vector<int> &grp) -> std::pair<float, float> {
+        const int g = static_cast<int>(grp.size());
+        if (g == 0) return {0.f, 0.f};
+
+        std::unordered_map<int, int> globalToLocal;
+        globalToLocal.reserve(g);
+        for (int li = 0; li < g; li++) globalToLocal[grp[li]] = li;
+
+        std::vector<std::unordered_set<int>> dn(g), up(g);
+        for (const auto &con : sheet.connections) {
+            int src = findNode(con.end), dst = findNode(con.begin);
+            if (src < 0 || dst < 0 || src == dst) continue;
+            auto si = globalToLocal.find(src), di = globalToLocal.find(dst);
+            if (si == globalToLocal.end() || di == globalToLocal.end()) continue;
+            dn[si->second].insert(di->second);
+            up[di->second].insert(si->second);
+        }
+
+        // Layer assignment (Kahn / longest-path variant).
+        std::vector<int> layer(g, 0);
+        std::vector<int> inDeg(g);
+        for (int i = 0; i < g; i++) inDeg[i] = static_cast<int>(up[i].size());
+        std::queue<int> q;
+        for (int i = 0; i < g; i++) if (inDeg[i] == 0) q.push(i);
+        while (!q.empty()) {
+            int u = q.front(); q.pop();
+            for (int v : dn[u]) {
+                layer[v] = std::max(layer[v], layer[u] + 1);
+                if (--inDeg[v] == 0) q.push(v);
+            }
+        }
+
+        const int maxLayer = *std::max_element(layer.begin(), layer.end());
+        std::vector<std::vector<int>> layers(maxLayer + 1);
+        for (int i = 0; i < g; i++) layers[layer[i]].push_back(i);
+
+        // Barycenter crossing minimisation — 3 alternating passes.
+        auto buildPos = [&]() {
+            std::vector<int> pos(g, 0);
+            for (int l = 0; l <= maxLayer; l++)
+                for (int p = 0; p < static_cast<int>(layers[l].size()); p++)
+                    pos[layers[l][p]] = p;
+            return pos;
+        };
+        for (int pass = 0; pass < 3; pass++) {
+            {
+                auto pos = buildPos();
+                for (int l = 1; l <= maxLayer; l++) {
+                    std::vector<std::pair<float, int>> order;
+                    order.reserve(layers[l].size());
+                    for (int li : layers[l]) {
+                        float bc = 0.f; int cnt = 0;
+                        for (int u : up[li]) { bc += static_cast<float>(pos[u]); cnt++; }
+                        order.push_back({cnt > 0 ? bc / static_cast<float>(cnt) : 0.f, li});
+                    }
+                    std::stable_sort(order.begin(), order.end());
+                    layers[l].clear();
+                    for (auto &[b, li] : order) layers[l].push_back(li);
+                }
+            }
+            {
+                auto pos = buildPos();
+                for (int l = maxLayer - 1; l >= 0; l--) {
+                    std::vector<std::pair<float, int>> order;
+                    order.reserve(layers[l].size());
+                    for (int li : layers[l]) {
+                        float bc = 0.f; int cnt = 0;
+                        for (int d : dn[li]) { bc += static_cast<float>(pos[d]); cnt++; }
+                        order.push_back({cnt > 0 ? bc / static_cast<float>(cnt) : 0.f, li});
+                    }
+                    std::stable_sort(order.begin(), order.end());
+                    layers[l].clear();
+                    for (auto &[b, li] : order) layers[l].push_back(li);
+                }
+            }
+        }
+
+        // Coordinate assignment — centred at (0, 0).
+        const float totalWidth = static_cast<float>(maxLayer) * (nodeWidth + hGap) + nodeWidth;
+        const float startX     = -totalWidth / 2.f;
+
+        float maxColHeight = 0.f;
+        for (int l = 0; l <= maxLayer; l++) {
+            float colH = vGap * static_cast<float>(std::max(0, static_cast<int>(layers[l].size()) - 1));
+            for (int li : layers[l]) colH += getNodeHeight(grp[li]);
+            maxColHeight = std::max(maxColHeight, colH);
+        }
+        for (int l = 0; l <= maxLayer; l++) {
+            const float cx = startX + static_cast<float>(l) * (nodeWidth + hGap) + nodeWidth / 2.f;
+            float colH = vGap * static_cast<float>(std::max(0, static_cast<int>(layers[l].size()) - 1));
+            for (int li : layers[l]) colH += getNodeHeight(grp[li]);
+            float y = -colH / 2.f;
+            for (int li : layers[l]) {
+                const float h = getNodeHeight(grp[li]);
+                sheet.nodes[grp[li]].position = ImVec2(cx, y + h / 2.f);
+                y += h + vGap;
+            }
+        }
+        return {totalWidth, maxColHeight};
+    };
+
+    // --- 2. Layout each connected component ---
+    // For each component: group by type, run Sugiyama per type group,
+    // stack type groups vertically. Returns component {width, height}.
+    struct CompInfo { float width = 0.f; float height = 0.f; };
+    std::vector<CompInfo>          compInfos;
+    std::vector<std::vector<int>>  compNodes; // global node indices per component
+
+    for (auto &[root, nodeIndices] : components) {
+        // Group by prim type within this component.
+        std::map<std::string, std::vector<int>> typeGroups;
+        for (int idx : nodeIndices)
+            typeGroups[sheet.nodes[idx].prim.GetTypeName().GetString()].push_back(idx);
+
+        // Layout each type group; nodes are initially centred at (0, 0).
+        std::vector<std::pair<float, float>> groupSizes;
+        std::vector<const std::vector<int>*> groupPtrs;
+        float compWidth = 0.f;
+        for (auto &[typeName, grp] : typeGroups) {
+            groupSizes.push_back(layoutGroup(grp));
+            groupPtrs.push_back(&grp);
+            compWidth = std::max(compWidth, groupSizes.back().first);
+        }
+
+        // Stack type groups vertically, centred on y = 0.
+        float totalH = typeGroupGap * static_cast<float>(std::max(0, static_cast<int>(groupSizes.size()) - 1));
+        for (auto &[w, h] : groupSizes) totalH += h;
+
+        float yTop = -totalH / 2.f;
+        for (int gi = 0; gi < static_cast<int>(groupPtrs.size()); gi++) {
+            const float yShift = yTop + groupSizes[gi].second / 2.f;
+            for (int idx : *groupPtrs[gi])
+                sheet.nodes[idx].position.y += yShift;
+            yTop += groupSizes[gi].second + typeGroupGap;
+        }
+
+        compInfos.push_back({compWidth, totalH});
+        compNodes.push_back(nodeIndices);
+    }
+
+    // --- 3. Arrange connected components horizontally, centred on x = 0 ---
+    float totalWidth = compGap * static_cast<float>(std::max(0, static_cast<int>(compInfos.size()) - 1));
+    for (auto &ci : compInfos) totalWidth += ci.width;
+
+    float xLeft = -totalWidth / 2.f;
+    for (int ci = 0; ci < static_cast<int>(compInfos.size()); ci++) {
+        const float xShift = xLeft + compInfos[ci].width / 2.f;
+        for (int idx : compNodes[ci])
+            sheet.nodes[idx].position.x += xShift;
+        xLeft += compInfos[ci].width + compGap;
+    }
+}
+
 void DrawConnectionEditor(const UsdStageRefPtr &stage) {
     // We are maintaining a list of graph edit session per stage
     // Each session contains a list of edited node, node visible on the whiteboard
@@ -777,13 +1040,24 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
         // fmodf floating point remainder of the division operation
         // -> so the first line is aligned in the range 0 ___ 1
         ConnectionsSheet &sheet = sheets->GetSelectedSheet();
-        
+
         // Update the node positions, inputs, outputs`
         // update the connections as well
         sheet.Update();
-        
+
+        ImGui::SameLine();
+        static bool pendingFitView = false;
+        if (ImGui::Button(ICON_FA_PROJECT_DIAGRAM " Auto Layout")) {
+            AutoLayout(sheet);
+            pendingFitView = true;
+        }
+
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         canvas.Begin(drawList);
+        if (pendingFitView) {
+            canvas.FitView(sheet);
+            pendingFitView = false;
+        }
         canvas.DrawGrid();
         canvas.DrawSheet(sheet);
         //canvas.DrawBoundaries(); // for debugging
