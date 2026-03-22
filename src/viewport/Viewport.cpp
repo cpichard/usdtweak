@@ -70,7 +70,8 @@ void Viewport::DrawMenuBar() {
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     : _stage(stage), _orbitCameraManipulator({InitialWindowWidth, InitialWindowHeight}),
       _flyCameraManipulator({InitialWindowWidth, InitialWindowHeight}), _currentEditingState(new MouseHoverManipulator()),
-      _activeManipulator(&_positionManipulator), _selection(selection), _textureSize(1, 1), _viewportName("Viewport 1") {
+      _activeManipulator(&_positionManipulator),
+      _selection(selection), _textureSize(1, 1), _viewportName("Viewport 1") {
 
     // Viewport draw target
     _orbitCameraManipulator.ResetPosition(GetEditableCamera());
@@ -154,6 +155,7 @@ void Viewport::Draw() {
 }
 
 void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
+    if (!GetCurrentStage()) return;
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
     const bool hydraDisabled = _hydraDisabledStages.count(GetCurrentStage());
 
@@ -161,14 +163,37 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     const ImVec4 selectedColor(ColorButtonHighlight);
 
     ImGui::SetCursorPos(widgetPosition);
-    if (!GetCurrentStage()) return;
+    ScopedStyleColor toolBarStyle(ImGuiCol_Button, defaultColor, ImGuiCol_FrameBg, defaultColor);
     DrawHydraEnableButton(hydraDisabled);
     ImGui::SameLine();
-
-    if (hydraDisabled) return;
-    ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
+    if (hydraDisabled) {
+        ImGui::Button(GetDefaultRendererDisplayName().c_str());
+        if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+            ImGui::SetTooltip("Default render delegate");
+        }
+        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+            DrawRendererSelectionList();
+            ImGui::EndPopup();
+        }
+    } else {
+        if (_renderer) {
+            ImGui::Button(_renderer->GetRendererDisplayName(_renderer->GetCurrentRendererId()).c_str());
+            //ImGui::Button(_renderer->GetCurrentRendererId().GetString().c_str());
+            if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+                ImGui::SetTooltip("Render delegate");
+            }
+            if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+                DrawRendererSelectionList(*_renderer);
+                ImGui::EndPopup();
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    // Do not draw the rest if hydra is disabled.
+    if (hydraDisabled) return;
+
     DrawPickMode(_selectionManipulator);
     ImGui::SameLine();
     ImGui::Button(ICON_FA_USER_COG);
@@ -215,17 +240,6 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
         ImGui::SetTooltip("Scene materials on/off");
     }
     ImGui::PopStyleColor();
-    if (_renderer && _renderer->GetRendererPlugins().size() >= 2) {
-        ImGui::SameLine();
-        ImGui::Button(_renderer->GetRendererDisplayName(_renderer->GetCurrentRendererId()).c_str());
-        if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
-            ImGui::SetTooltip("Render delegate");
-        }
-        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
-            DrawRendererSelectionList(*_renderer);
-            ImGui::EndPopup();
-        }
-    }
     ImGui::SameLine();
     std::string cameraName(ICON_FA_CAMERA);
     cameraName += "  " + _cameras.GetCurrentCameraName();
@@ -239,14 +253,6 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
         ImGui::SetTooltip("Cameras");
     }
-    // ImGui::SameLine();
-    // if (ImGui::Button(ICON_FA_FILM)) {
-    //     SetStageHydraEnabled(GetCurrentStage(), false);
-    // }
-    // if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
-    //     ImGui::SetTooltip("Disable rendering");
-    // }
-    ImGui::PopStyleColor(2);
 }
 
 void Viewport::DrawHydraEnableButton(bool enabled) {
@@ -535,6 +541,8 @@ void Viewport::Render() {
     if (_imagingSettings.showGizmos) {
         BeginHydraUI(width, height);
         GetActiveManipulator().OnDrawFrame(*this);
+        if (_currentEditingState && _currentEditingState != _activeManipulator)
+            _currentEditingState->OnDrawFrame(*this);
         // DrawHUD(this);
         EndHydraUI();
     }
@@ -609,8 +617,11 @@ void Viewport::Update() {
         if (whichRenderer == _renderers.end()) {
             firstTimeStageLoaded = true;
             if (_hydraDisabledStages.count(GetCurrentStage()) == 0) {
-                SdfPathVector excludedPaths;
-                _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
+                //SdfPathVector excludedPaths;
+                UsdImagingGLEngine::Parameters parameters;
+                parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
+                parameters.rendererPluginId = GetDefaultRendererId();
+                _renderer = new UsdImagingGLEngine(parameters);
                 _renderers[GetCurrentStage()] = _renderer;
                 InitializeRendererAov(*_renderer);
             } else {
@@ -621,8 +632,11 @@ void Viewport::Update() {
         } else if (whichRenderer->second == nullptr && _hydraDisabledStages.count(GetCurrentStage()) == 0) {
             // Hydra was re-enabled for this stage after being loaded without a renderer
             //firstTimeStageLoaded = true;
-            SdfPathVector excludedPaths;
-            _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
+            //SdfPathVector excludedPaths;
+            UsdImagingGLEngine::Parameters parameters;
+            parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
+            parameters.rendererPluginId = GetDefaultRendererId();
+            _renderer = new UsdImagingGLEngine(parameters);
             _renderers[GetCurrentStage()] = _renderer;
             InitializeRendererAov(*_renderer);
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");

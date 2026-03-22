@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Gui.h"
+#include "Selection.h"
+#include <algorithm>
 #include <vector>
 
 /// One liner for creating multiple calls to ImGui::TableSetupColumn
@@ -96,4 +98,32 @@ inline
 float GetMiniButtonSize() {
     const ImGuiContext& g = *GImGui;
     return g.FontSize * 1.4;
+}
+
+/// Apply ImGui multi-select IO requests to a Selection object.
+/// Call once after BeginMultiSelect() (for SetAll/SetRange from keyboard) and once after EndMultiSelect()
+/// (for the click/range requests produced by the frame).
+/// indexToPath must be callable as: SdfPath indexToPath(int index)
+template <typename OwnerT, typename IndexToPathFn>
+inline void ApplyMultiSelectRequests(ImGuiMultiSelectIO *msIO, Selection &selection, const OwnerT &owner,
+                                     int itemCount, IndexToPathFn indexToPath) {
+    for (const ImGuiSelectionRequest &req : msIO->Requests) {
+        if (req.Type == ImGuiSelectionRequestType_SetAll) {
+            selection.Clear(owner);
+            if (req.Selected) {
+                for (int i = 0; i < itemCount; ++i)
+                    selection.AddSelected(owner, indexToPath(i));
+            }
+        } else if (req.Type == ImGuiSelectionRequestType_SetRange) {
+            int first = static_cast<int>(req.RangeFirstItem);
+            int last  = static_cast<int>(req.RangeLastItem);
+            if (first > last) std::swap(first, last);
+            for (int i = first; i <= last; ++i) {
+                if (req.Selected)
+                    selection.AddSelected(owner, indexToPath(i));
+                else
+                    selection.RemoveSelected(owner, indexToPath(i));
+            }
+        }
+    }
 }

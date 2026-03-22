@@ -140,7 +140,7 @@ struct CreateAttributeDialog : public ModalDialog {
         ImGui::Checkbox("Create default value", &_createDefault);
         DrawModalButtonsOkCancel(
             [&]() {
-                ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim, _attributeName, _typeName, _variability, _custom, _createDefault);
+                ExecuteAfterDraw<PrimCreateAttribute>(_sdfPrim->GetLayer(), _sdfPrim->GetPath(), _attributeName, _typeName, _variability, _custom, _createDefault);
             },
             bool(_attributeName == ""));
     }
@@ -238,7 +238,7 @@ struct CreateRelationDialog : public ModalDialog {
         ImGui::Checkbox("Custom relationship", &_custom);
         DrawModalButtonsOkCancel(
             [=]() {
-                ExecuteAfterDraw<PrimCreateRelationship>(_sdfPrim, _relationName, _variability, _custom, _operation, _targetPath);
+                ExecuteAfterDraw<PrimCreateRelationship>(_sdfPrim->GetLayer(), _sdfPrim->GetPath(), _relationName, _variability, _custom, _operation, _targetPath);
             },
             _relationName == "");
     }
@@ -877,7 +877,7 @@ void DrawSdfPrimEditorMenuBar(const SdfPrimSpecHandle &primSpec) {
         }
         if (ImGui::BeginMenu("Edit", enabled)) {
             if (ImGui::MenuItem("Paste")) {
-                ExecuteAfterDraw<PropertyPaste>(primSpec);
+                ExecuteAfterDraw<PropertyPaste>(primSpec->GetLayer(), primSpec->GetPath());
             }
             ImGui::EndMenu();
         }
@@ -908,6 +908,6 @@ void DrawSdfPrimEditor(const SdfPrimSpecHandle &primSpec, const Selection &selec
             SdfPropertySpecHandle selectedPropertySpec = primSpec->GetLayer()->GetPropertyAtPath(selectedProperty);
             AddShortcut<PropertyCopy, ImGuiKey_LeftCtrl, ImGuiKey_C>(selectedPropertySpec);
         }
-        AddShortcut<PropertyPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(primSpec);
+        AddShortcut<PropertyPaste, ImGuiKey_LeftCtrl, ImGuiKey_V>(primSpec->GetLayer(), primSpec->GetPath());
     }
 }

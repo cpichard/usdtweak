@@ -227,10 +227,11 @@ static void DrawBackgroundSelection(const UsdPrim &prim, bool selected) {
 
 
 
-static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, StageOutlinerDisplayOptions &displayOptions) {
+static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, StageOutlinerDisplayOptions &displayOptions, int selectionIndex) {
     ImGuiTreeNodeFlags flags =
         ImGuiTreeNodeFlags_OpenOnArrow |
-        ImGuiTreeNodeFlags_AllowItemOverlap; // for testing worse case scenario add | ImGuiTreeNodeFlags_DefaultOpen;
+        ImGuiTreeNodeFlags_AllowItemOverlap |
+        ImGuiTreeNodeFlags_SpanFullWidth;
 
     // Another way ???
     const auto &children = prim.GetFilteredChildren(displayOptions.GetPrimFlagsPredicate());
@@ -240,29 +241,18 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
 
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
-    DrawBackgroundSelection(prim, selectedPaths.IsSelected(prim.GetStage(), prim.GetPath()));
+    const bool isSelected = selectedPaths.IsSelected(prim.GetStage(), prim.GetPath());
+    if (isSelected) flags |= ImGuiTreeNodeFlags_Selected;
+    DrawBackgroundSelection(prim, isSelected);
     bool unfolded = true;
     {
         {
             TreeIndenter<StageOutlinerSeed, SdfPath> indenter(prim.GetPath());
-            ScopedStyleColor primColor(ImGuiCol_Text, GetPrimColor(prim), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
+            ScopedStyleColor textColor(ImGuiCol_Text, GetPrimColor(prim), ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
             const ImGuiID pathHash = IdOf(GetHash(prim.GetPath()));
             //ImGui::AlignTextToFramePadding();
+            ImGui::SetNextItemSelectionUserData(selectionIndex);
             unfolded = ImGui::TreeNodeBehavior(pathHash, flags, prim.GetName().GetText());
-            // TreeSelectionBehavior(selectedPaths, &prim);
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                // TODO selection, should go in commands, ultimately the selection is passed
-                // as const
-                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) {
-                    if (selectedPaths.IsSelected(prim.GetStage(), prim.GetPath())) {
-                        selectedPaths.RemoveSelected(prim.GetStage(), prim.GetPath());
-                    } else {
-                        selectedPaths.AddSelected(prim.GetStage(), prim.GetPath());
-                    }
-                } else {
-                    ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prim.GetPath());
-                }
-            }
         }
         {
             ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
@@ -287,6 +277,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
 }
 
 static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPaths) {
+    ScopedStyleColor textColor(ImGuiCol_Header, ImVec4(ColorTransparent), ImGuiCol_HeaderHovered, 0, ImGuiCol_HeaderActive, 0);
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
 
@@ -431,6 +422,8 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
 
     static SelectionHash lastSelectionHash = 0;
 
+    ScopedStyleColor selectionRectangleStyle(ImGuiCol_NavCursor, ImVec4(ColorTransparent));
+
     const ImGuiContext &g = *GImGui;
     const ImVec2 tableOuterSize(0, RemainingHeight(2));
     constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | /*ImGuiTableFlags_RowBg |*/ ImGuiTableFlags_ScrollY;
@@ -457,14 +450,22 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         DrawStageTreeRow(stage, selectedPaths);
 
         // Display only the visible paths with a clipper
+        const int primCount = static_cast<int>(paths.size());
+        ImGuiMultiSelectIO *msIO = ImGui::BeginMultiSelect(
+            ImGuiMultiSelectFlags_ClearOnEscape | ImGuiMultiSelectFlags_ClearOnClickVoid | ImGuiMultiSelectFlags_BoxSelect1d,
+            -1, primCount);
+        ApplyMultiSelectRequests(msIO, selectedPaths, stage, primCount, [&](int i) { return paths[i]; });
+
         ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(paths.size()));
+        clipper.Begin(primCount);
+        if (msIO->RangeSrcItem != -1)
+            clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
                 const auto &prim = stage->GetPrimAtPath(path);
-                DrawPrimTreeRow(prim, selectedPaths, displayOptions);
+                DrawPrimTreeRow(prim, selectedPaths, displayOptions, row);
                 ImGui::PopID();
             }
         }
@@ -472,6 +473,9 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
             // This function can only be called in this context and after the clipper.Step()
             FocusedOnFirstSelectedPath(selectedPaths.GetAnchorPrimPath(stage), paths, clipper);
         }
+        msIO = ImGui::EndMultiSelect();
+        ApplyMultiSelectRequests(msIO, selectedPaths, stage, primCount, [&](int i) { return paths[i]; });
+
         ImGui::EndTable();
     }
 

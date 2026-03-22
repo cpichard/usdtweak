@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec2d.h>
@@ -36,12 +37,16 @@ class PositionManipulator : public Manipulator {
     GfMatrix4d ComputeManipulatorToWorldTransform(const Viewport &viewport);
 
     UsdTimeCode GetEditionTimeCode(const Viewport &viewport);
+    UsdTimeCode GetEditionTimeCode(const Viewport &viewport, const UsdGeomXformable &xf);
 
     ManipulatorAxis _selectedAxis;
 
     GfVec3d _originMouseOnAxis;
     GfVec3d _translationOnBegin;
     GfLine _axisLine;
+
+    std::vector<UsdGeomXformable> _selectedXformables;
+    std::vector<GfVec3d>          _translationsOnBegin;
 
     UsdGeomXformable _xformable;
     UsdGeomXformCommonAPI _xformAPI;
