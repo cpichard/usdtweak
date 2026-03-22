@@ -243,6 +243,20 @@ template <> std::vector<SdfPath> Selection::GetSelectedPaths(const SdfLayerHandl
     return paths;
 }
 
+template <> bool Selection::UpdateSelectionHash(const SdfLayerRefPtr &layer, SelectionHash &lastSelectionHash) {
+    if (!_data || !layer)
+        return false;
+    SelectionHash currentHash = 0;
+    for (const auto &spec : _data->_sdfPrimSelectionDomain) {
+        currentHash ^= std::hash<SdfSpecHandle>{}(spec) + 0x9e3779b9 + (currentHash << 6) + (currentHash >> 2);
+    }
+    if (currentHash != lastSelectionHash) {
+        lastSelectionHash = currentHash;
+        return true;
+    }
+    return false;
+}
+
 template <> std::vector<SdfPath> Selection::GetSelectedPaths(const UsdStageRefPtr &stage) const {
     if (!_data || !stage)
         return {};

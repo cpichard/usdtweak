@@ -416,6 +416,33 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
     }
 }
 
+/// Called when the selection has changed: opens (unfolds) the tree nodes leading to the selected path.
+static void OpenSelectedPaths(const SdfLayerRefPtr &layer, const Selection &selection) {
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+    ImGuiStorage *storage = window->DC.StateStorage;
+    const SdfPath anchorPath = selection.GetAnchorPrimPath(layer);
+    if (!anchorPath.IsEmpty()) {
+        for (const auto &element : anchorPath.GetParentPath().GetPrefixes()) {
+            ImGuiID id = IdOf(GetHash(element));
+            storage->SetInt(id, true);
+        }
+    }
+}
+
+/// Scrolls the table so the selected path is visible. Must be called after clipper.Step().
+static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::vector<SdfPath> &paths,
+                                       ImGuiListClipper &clipper) {
+    for (int i = 0; i < (int)paths.size(); ++i) {
+        if (paths[i] == selectedPath) {
+            if (i < clipper.DisplayStart || i > clipper.DisplayEnd) {
+                ImGui::SetScrollY(clipper.ItemsHeight * i + 1);
+            }
+            return;
+        }
+    }
+}
+
 /// Traverse all the path of the layer and store them in a vector. Apply a filter to only traverse the path
 /// that should be displayed, the ones inside the collapsed part of the tree view
 void TraverseOpenedPaths(const SdfLayerRefPtr &layer, std::vector<SdfPath> &paths) {
@@ -459,10 +486,12 @@ void TraverseOpenedPaths(const SdfLayerRefPtr &layer, std::vector<SdfPath> &path
     }
 }
 
-void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
+void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
 
     if (!layer)
         return;
+
+    static SelectionHash lastSelectionHash = 0;
 
     SdfPrimSpecHandle selectedPrim = layer->GetPrimAtPath(selection.GetAnchorPrimPath(layer));
     DrawLayerNavigation(layer);
@@ -479,6 +508,12 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
         ImGui::TableSetupColumn("Composition");
 
         ImGui::TableHeadersRow();
+
+        // Unfold the tree to reveal the selected path when selection changes
+        const bool selectionHasChanged = selection.UpdateSelectionHash(layer, lastSelectionHash);
+        if (selectionHasChanged) {
+            OpenSelectedPaths(layer, selection);
+        }
 
         std::vector<SdfPath> paths;
 
@@ -503,6 +538,9 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, const Selection &selection) {
                 }
                 ImGui::PopID();
             }
+        }
+        if (selectionHasChanged) {
+            FocusedOnFirstSelectedPath(selection.GetAnchorPrimPath(layer), paths, clipper);
         }
         ImGui::EndTable();
     }
