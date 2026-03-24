@@ -417,15 +417,9 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
 
     if (selectedPosY != -1) {
         ScopedStyleColor highlightButton(ImGuiCol_Button, ImVec4(ColorButtonHighlight));
-        float toolbarX = ImGui::GetWindowContentRegionMax().x - 160;
-        printf("[SdfLayerSceneGraphEditor] MiniToolbar FIRED: selectedPosY=%.1f toolbarX=%.1f contentMaxX=%.1f scrollX=%.1f\n",
-               selectedPosY, toolbarX, ImGui::GetWindowContentRegionMax().x, ImGui::GetScrollX());
-        ImGui::SetCursorPosX(toolbarX);
+        ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 160);
         ImGui::SetCursorPosY(selectedPosY);
-        float cursorBefore = ImGui::GetCursorPosX();
         DrawMiniToolbar(layer, layer->GetPrimAtPath(selection.GetAnchorPrimPath(layer)), selection);
-        printf("[SdfLayerSceneGraphEditor]   after toolbar cursorX=%.1f (toolbar width=%.1f)\n",
-               ImGui::GetCursorPosX(), ImGui::GetCursorPosX() - cursorBefore);
     }
 }
 
@@ -550,29 +544,11 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
             -1, primCount);
         ApplyMultiSelectRequests(msIO, selection, layer, primCount, [&](int i) { return paths[i]; });
 
-        static int dbg_framesLeft = 0;
-        if (selectionHasChanged) dbg_framesLeft = 6;
-        const bool dbg_log = dbg_framesLeft > 0;
-        if (dbg_log) {
-            --dbg_framesLeft;
-            printf("[SdfLayerSceneGraphEditor] frame=%d selChanged=%d RangeSrcItem=%lld primCount=%d\n",
-                   ImGui::GetFrameCount(), (int)selectionHasChanged,
-                   msIO->RangeSrcItem, primCount);
-            printf("[SdfLayerSceneGraphEditor]   scrollX=%.1f scrollY=%.1f windowW=%.1f windowH=%.1f contentAvailX=%.1f contentMaxX=%.1f\n",
-                   ImGui::GetScrollX(), ImGui::GetScrollY(),
-                   ImGui::GetWindowWidth(), ImGui::GetWindowHeight(),
-                   ImGui::GetContentRegionAvail().x, ImGui::GetWindowContentRegionMax().x);
-        }
-
         ImGuiListClipper clipper;
         clipper.Begin(primCount);
         if (msIO->RangeSrcItem != -1)
             clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
-        int dbg_step = 0;
         while (clipper.Step()) {
-            if (dbg_log)
-                printf("[SdfLayerSceneGraphEditor]   step=%d DisplayStart=%d DisplayEnd=%d selectedPosY=%.1f\n",
-                       dbg_step++, clipper.DisplayStart, clipper.DisplayEnd, selectedPosY);
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
@@ -584,12 +560,7 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
                 ImGui::PopID();
             }
         }
-        if (dbg_log)
-            printf("[SdfLayerSceneGraphEditor]   post-loop scrollX=%.1f scrollY=%.1f contentAvailX=%.1f contentMaxX=%.1f itemsH=%.1f selectedPosY=%.1f\n",
-                   ImGui::GetScrollX(), ImGui::GetScrollY(),
-                   ImGui::GetContentRegionAvail().x, ImGui::GetWindowContentRegionMax().x,
-                   clipper.ItemsHeight, selectedPosY);
-        // We might want to have a command for the changes of selection if it appears that
+        // We might want to have a command for the changes of selection if it appears that 
         // the UI behaves inconsistently
         if (selectionHasChanged) {
             FocusedOnFirstSelectedPath(selection.GetAnchorPrimPath(layer), paths, clipper);
