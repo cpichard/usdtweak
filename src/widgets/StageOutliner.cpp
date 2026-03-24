@@ -463,11 +463,29 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
             -1, primCount);
         ApplyMultiSelectRequests(msIO, selectedPaths, stage, primCount, [&](int i) { return paths[i]; });
 
+        static int dbg_framesLeft = 0;
+        if (selectionHasChanged) dbg_framesLeft = 6;
+        const bool dbg_log = dbg_framesLeft > 0;
+        if (dbg_log) {
+            --dbg_framesLeft;
+            printf("[StageOutliner] frame=%d selChanged=%d RangeSrcItem=%lld primCount=%d\n",
+                   ImGui::GetFrameCount(), (int)selectionHasChanged,
+                   msIO->RangeSrcItem, primCount);
+            printf("[StageOutliner]   scrollX=%.1f scrollY=%.1f windowW=%.1f windowH=%.1f contentAvailX=%.1f\n",
+                   ImGui::GetScrollX(), ImGui::GetScrollY(),
+                   ImGui::GetWindowWidth(), ImGui::GetWindowHeight(),
+                   ImGui::GetContentRegionAvail().x);
+        }
+
         ImGuiListClipper clipper;
         clipper.Begin(primCount);
         if (msIO->RangeSrcItem != -1)
             clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
+        int dbg_step = 0;
         while (clipper.Step()) {
+            if (dbg_log)
+                printf("[StageOutliner]   step=%d DisplayStart=%d DisplayEnd=%d\n",
+                       dbg_step++, clipper.DisplayStart, clipper.DisplayEnd);
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
@@ -476,6 +494,10 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 ImGui::PopID();
             }
         }
+        if (dbg_log)
+            printf("[StageOutliner]   post-loop scrollX=%.1f scrollY=%.1f contentAvailX=%.1f itemsH=%.1f\n",
+                   ImGui::GetScrollX(), ImGui::GetScrollY(),
+                   ImGui::GetContentRegionAvail().x, clipper.ItemsHeight);
         if (selectionHasChanged) {
             // This function can only be called in this context and after the clipper.Step()
             FocusedOnFirstSelectedPath(selectedPaths.GetAnchorPrimPath(stage), paths, clipper);
