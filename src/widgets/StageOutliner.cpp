@@ -372,8 +372,15 @@ static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::v
     for (int i = 0; i < paths.size(); ++i) {
         if (paths[i] == selectedPath) {
             // scroll only if the item is not visible
-            if (i < clipper.DisplayStart || i > clipper.DisplayEnd) {
-                ImGui::SetScrollY(clipper.ItemsHeight * i + 1);
+            // Note: clipper.DisplayStart/DisplayEnd after the loop reflect the *last* step, which may
+            // be the forced anchor item (IncludeItemByIndex) rather than the visible range. Use the
+            // actual scroll position to determine visibility instead.
+            const float itemTop = clipper.ItemsHeight * i;
+            const float scrollY = ImGui::GetScrollY();
+            const float windowHeight = ImGui::GetWindowHeight();
+            const bool isVisible = itemTop >= scrollY && itemTop < scrollY + windowHeight;
+            if (!isVisible) {
+                ImGui::SetScrollY(itemTop + 1);
             }
             return;
         }
