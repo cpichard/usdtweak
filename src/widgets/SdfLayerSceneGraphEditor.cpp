@@ -442,8 +442,12 @@ static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::v
                                        ImGuiListClipper &clipper) {
     for (int i = 0; i < (int)paths.size(); ++i) {
         if (paths[i] == selectedPath) {
-            if (i < clipper.DisplayStart || i > clipper.DisplayEnd) {
-                ImGui::SetScrollY(clipper.ItemsHeight * i + 1);
+            const float itemTop = clipper.ItemsHeight * i;
+            const float scrollY = ImGui::GetScrollY();
+            const float windowHeight = ImGui::GetWindowHeight();
+            const bool isVisible = itemTop >= scrollY && itemTop < scrollY + windowHeight;
+            if (!isVisible) {
+                ImGui::SetScrollY(itemTop + 1);
             }
             return;
         }
