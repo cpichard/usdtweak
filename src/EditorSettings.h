@@ -33,6 +33,7 @@ struct EditorSettings {
     bool _showHydraBrowser = false;
     bool _showHydraNoticeLogger = false;
     bool _showShaderInspector = false;
+    bool _showSearch = false;
     int _mainWindowWidth;
     int _mainWindowHeight;
     float _uiScale = 1.f;
