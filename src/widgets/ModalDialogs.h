@@ -1,4 +1,5 @@
 #pragma once
+#include "imgui.h"
 #include <functional>
 
 // A modal dialog should know how to draw itself
@@ -6,6 +7,13 @@ struct ModalDialog {
     virtual void Draw() = 0;
     virtual ~ModalDialog(){};
     virtual const char *DialogId() const = 0;
+    // Override to pass custom window flags (e.g. NoTitleBar) to BeginPopupModal
+    virtual ImGuiWindowFlags WindowFlags() const { return ImGuiWindowFlags_None; }
+    // Override to call SetNextWindowSize/Pos before BeginPopupModal is called
+    virtual void PrepareModal() {}
+    // Override to push ImGui style vars before BeginPopupModal; return the count pushed.
+    // The caller will pop them immediately after BeginPopupModal.
+    virtual int PushStyles() { return 0; }
     static void CloseModal();
 };
 

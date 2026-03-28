@@ -36,6 +36,8 @@ void PreferencesModalDialog::Draw() {
             if (ImGui::Button("Reset scaling")) {
                 ExecuteAfterDraw<EditorScaleUI>(1.f);
             }
+            ImGui::Separator();
+            ImGui::Checkbox("Show splash screen at startup", &editor.GetShowSplashScreen());
             ImGui::EndChild();
         }
     } else if (current_item == 1) {

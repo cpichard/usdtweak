@@ -118,6 +118,7 @@ class Editor {
 
     void SetUIScale(float scaleValue);
     float GetUIScale() const;
+    bool &GetShowSplashScreen() { return _settings._showSplashScreen; }
 
     static void SetMouseCaptured(bool captured);
     static bool GetMouseCaptured();

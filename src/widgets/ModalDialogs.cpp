@@ -46,11 +46,15 @@ static void BeginPopupModalRecursive(const std::vector<ModalDialog *> &modals, i
     if (index < modals.size()) {
         ModalDialog *modal = modals[index];
         if (index == modals.size() - 1) {
+            modal->PrepareModal();
             if (ShouldOpenModal()) {
                 ImGui::OpenPopup(modal->DialogId());
             }
         }
-        if (ImGui::BeginPopupModal(modal->DialogId())) {
+        const int styleCount = modal->PushStyles();
+        const bool isOpen = ImGui::BeginPopupModal(modal->DialogId(), nullptr, modal->WindowFlags());
+        ImGui::PopStyleVar(styleCount);
+        if (isOpen) {
             modal->Draw();
             BeginPopupModalRecursive(modals, index + 1);
             ImGui::EndPopup();
