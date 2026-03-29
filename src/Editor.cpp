@@ -1065,7 +1065,7 @@ void Editor::Draw() {
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
         ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
-        DrawTextEditor(GetCurrentLayer());
+        DrawTextEditor(GetCurrentLayer(), GetSelection());
         ImGui::End();
     }
 
