@@ -154,37 +154,33 @@ struct LayerUnmute : public Command {
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerRefPtr layer);
 template void ExecuteAfterDraw<LayerUnmute>(SdfLayerHandle layer);
 
-/* WARNING: this is a brute force and dumb implementation of storing text modification.
- It basically stores the previous and new layer as text in a string. So .... this will eat up the memory
- quite quickly if used intensively.
- But for now it's a quick way to test if text editing is worth in the application.
- */
+// LayerTextEdit applies a full-text replacement to a layer.
+// Undo uses the SdfCommandGroupRecorder which captures the individual SDF field
+// mutations produced by ImportFromString, so the undo record is proportional to
+// what actually changed rather than storing a full copy of the layer text.
 struct LayerTextEdit : public SdfLayerCommand {
 
-    LayerTextEdit(SdfLayerRefPtr layer, std::string newText) : _layer(layer), _newText(newText) {}
+    LayerTextEdit(SdfLayerRefPtr layer, std::string newText)
+        : _layer(layer), _newText(std::move(newText)) {}
 
     ~LayerTextEdit() override {}
 
     bool DoIt() override {
-        if (!_layer)
-            return false;
+        if (!_layer) return false;
+        // Record all SDF mutations for undo.  _undoCommands is owned by
+        // SdfLayerCommand and replayed in reverse by UndoIt().
         SdfCommandGroupRecorder recorder(_undoCommands, _layer);
-        if (_oldText.empty()) {
-            _layer->ExportToString(&_oldText);
-        }
         return _layer->ImportFromString(_newText);
-        //_layer->SetDirty();
-    };
+    }
 
     bool UndoIt() override {
-        if (!_layer)
-            return false;
-        return _layer->ImportFromString(_oldText);
+        if (!_layer) return false;
+        _undoCommands.UndoIt();
+        return true;
     }
 
     SdfLayerRefPtr _layer;
-    std::string _oldText;
-    std::string _newText;
+    std::string    _newText; // kept for potential redo
 };
 template void ExecuteAfterDraw<LayerTextEdit>(SdfLayerRefPtr layer, std::string newText);
 
