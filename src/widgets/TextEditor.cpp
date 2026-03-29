@@ -31,7 +31,7 @@ static constexpr int    kUndoStackMax  = 64;
 // Token types and colors
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum class TokenType : uint8_t {
+enum class UsdaTokenType : uint8_t {
     Default  = 0,
     Comment,
     String,
@@ -55,7 +55,7 @@ static constexpr ImVec4 kTokenColors[] = {
     /* Folded    */ {0.70f, 0.70f, 0.40f, 1.00f},
 };
 
-static_assert(static_cast<size_t>(TokenType::Folded) + 1 == std::size(kTokenColors), "");
+static_assert(static_cast<size_t>(UsdaTokenType::Folded) + 1 == std::size(kTokenColors), "");
 
 static const std::unordered_set<std::string_view> &UssdaKeywords() {
     static const std::unordered_set<std::string_view> kw = {
@@ -93,7 +93,7 @@ static bool IsUsdTypeName(std::string_view w) {
 // Tokenizer
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct Token { TokenType type; int start; int end; };
+struct Token { UsdaTokenType type; int start; int end; };
 
 struct LineMetadata {
     std::vector<Token> tokens;
@@ -159,7 +159,7 @@ static void TokenizeLine(const char *start, size_t len,
 
     while (p < end) {
         if (*p == '#') {
-            tokens.push_back({TokenType::Comment, (int)(p-start), (int)(end-start)});
+            tokens.push_back({UsdaTokenType::Comment, (int)(p-start), (int)(end-start)});
             lastWasKeyword = false; break;
         }
         if (*p == '"') {
@@ -172,7 +172,7 @@ static void TokenizeLine(const char *start, size_t len,
                 while (q < end && *q != '"') { if (*q=='\\') { ++q; if (q<end) ++q; } else ++q; }
                 if (q < end) ++q;
             }
-            tokens.push_back({TokenType::String, (int)(p-start), (int)(q-start)});
+            tokens.push_back({UsdaTokenType::String, (int)(p-start), (int)(q-start)});
             lastWasKeyword = false; p = q; continue;
         }
         if (*p == '@') {
@@ -185,14 +185,14 @@ static void TokenizeLine(const char *start, size_t len,
                 while (q < end && *q != '@') ++q;
                 if (q < end) ++q;
             }
-            tokens.push_back({TokenType::AssetPath, (int)(p-start), (int)(q-start)});
+            tokens.push_back({UsdaTokenType::AssetPath, (int)(p-start), (int)(q-start)});
             lastWasKeyword = false; p = q; continue;
         }
         if (*p == '<' && p+1 < end && p[1] == '/') {
             const char *q = p+1;
             while (q < end && *q != '>') ++q;
             if (q < end) ++q;
-            tokens.push_back({TokenType::SdfPathTok, (int)(p-start), (int)(q-start)});
+            tokens.push_back({UsdaTokenType::SdfPathTok, (int)(p-start), (int)(q-start)});
             lastWasKeyword = false; p = q; continue;
         }
         if (std::isdigit(static_cast<unsigned char>(*p)) ||
@@ -201,7 +201,7 @@ static void TokenizeLine(const char *start, size_t len,
             if (*q=='-') ++q;
             while (q < end && (std::isdigit(static_cast<unsigned char>(*q)) ||
                    *q=='.' || *q=='e' || *q=='E' || *q=='+' || *q=='-')) ++q;
-            tokens.push_back({TokenType::Number, (int)(p-start), (int)(q-start)});
+            tokens.push_back({UsdaTokenType::Number, (int)(p-start), (int)(q-start)});
             lastWasKeyword = false; p = q; continue;
         }
         if (std::isalpha(static_cast<unsigned char>(*p)) || *p == '_') {
@@ -210,13 +210,13 @@ static void TokenizeLine(const char *start, size_t len,
             std::string_view word(p, q-p);
             const char *qEnd = q;
             while (qEnd < end && (*qEnd=='[' || *qEnd==']')) ++qEnd;
-            TokenType type;
+            UsdaTokenType type;
             if (UssdaKeywords().count(word)) {
-                type = TokenType::Keyword; lastWasKeyword = true;
+                type = UsdaTokenType::Keyword; lastWasKeyword = true;
             } else if (lastWasKeyword && IsUsdTypeName(word)) {
-                type = TokenType::TypeName; lastWasKeyword = false;
+                type = UsdaTokenType::TypeName; lastWasKeyword = false;
             } else {
-                type = TokenType::Default; lastWasKeyword = false;
+                type = UsdaTokenType::Default; lastWasKeyword = false;
             }
             tokens.push_back({type, (int)(p-start), (int)(qEnd-start)});
             p = qEnd; continue;
@@ -233,7 +233,7 @@ static void TokenizeLine(const char *start, size_t len,
                 bool allSpace = std::all_of(p, q, [](char c){
                     return std::isspace(static_cast<unsigned char>(c)); });
                 if (!allSpace) lastWasKeyword = false;
-                tokens.push_back({TokenType::Default, (int)(p-start), (int)(q-start)});
+                tokens.push_back({UsdaTokenType::Default, (int)(p-start), (int)(q-start)});
                 p = q;
             } else ++p;
         }
@@ -416,7 +416,7 @@ struct TextEditorState : public TfWeakBase {
                     auto placeholderStart = display.find("<large array>");
                     if (placeholderStart == std::string::npos) {
                         // Shouldn't happen, but fall back to full-line folded token
-                        meta.tokens.push_back({TokenType::Folded, 0, (int)display.size()});
+                        meta.tokens.push_back({UsdaTokenType::Folded, 0, (int)display.size()});
                     } else {
                         // Tokenize prefix normally
                         bool lk = false;
@@ -426,7 +426,7 @@ struct TextEditorState : public TfWeakBase {
                         // If there's a suffix after ']', stop the folded token at ']'+1
                         auto closeBracket = display.find(']', placeholderStart);
                         if (closeBracket != std::string::npos) foldedEnd = (int)closeBracket + 1;
-                        meta.tokens.push_back({TokenType::Folded, (int)placeholderStart, foldedEnd});
+                        meta.tokens.push_back({UsdaTokenType::Folded, (int)placeholderStart, foldedEnd});
                         // Tokenize any suffix (e.g. nothing, since ' (' is hidden)
                         if (foldedEnd < (int)display.size()) {
                             bool lk2 = false;
@@ -434,7 +434,7 @@ struct TextEditorState : public TfWeakBase {
                                          display.size() - foldedEnd, meta.tokens, lk2);
                             // Fix up token offsets (TokenizeLine starts at 0)
                             for (auto it = meta.tokens.end() - 1; ; --it) {
-                                if (it->type == TokenType::Folded) break;
+                                if (it->type == UsdaTokenType::Folded) break;
                                 it->start += foldedEnd;
                                 it->end   += foldedEnd;
                             }
@@ -1118,7 +1118,7 @@ void DrawTextEditor(SdfLayerRefPtr layer, Selection &selection) {
                               ImGui::GetFontSize(), FLT_MAX, 0.f, s, e).x;
 
                 // Click on folded array → select its SdfAttribute in the editor
-                if (tok.type == TokenType::Folded) {
+                if (tok.type == UsdaTokenType::Folded) {
                     // Underline to show it's clickable
                     drawList->AddLine(ImVec2(x, lineScreenY + lineHeight),
                                       ImVec2(x + w, lineScreenY + lineHeight), col, 1.f);
@@ -1135,7 +1135,7 @@ void DrawTextEditor(SdfLayerRefPtr layer, Selection &selection) {
                 }
 
                 // Underline and click for link tokens
-                if (tok.type == TokenType::AssetPath || tok.type == TokenType::SdfPathTok) {
+                if (tok.type == UsdaTokenType::AssetPath || tok.type == UsdaTokenType::SdfPathTok) {
                     ImVec2 p0(x, lineScreenY + lineHeight);
                     ImVec2 p1(x + w, lineScreenY + lineHeight);
                     drawList->AddLine(p0, p1, col, 1.f);
@@ -1146,7 +1146,7 @@ void DrawTextEditor(SdfLayerRefPtr layer, Selection &selection) {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                         if (ImGui::IsMouseDown(0)) clickedLink = true; // suppress drag-select while over a link
                         if (ImGui::IsMouseClicked(0)) {
-                            if (tok.type == TokenType::AssetPath) {
+                            if (tok.type == UsdaTokenType::AssetPath) {
                                 int skip = (e - s >= 6 && s[0]=='@' && s[1]=='@' && s[2]=='@') ? 3 : 1;
                                 std::string raw(s + skip, e - skip);
                                 std::string resolved = SdfComputeAssetPathRelativeToLayer(layer, raw);
