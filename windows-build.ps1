@@ -106,12 +106,28 @@ try {
     $pythonLibVersion = "312"
     $usdUrl = "https://developer.nvidia.com/downloads/usd/usd_binaries/25.08/usd.py312.windows-x86_64.usdview.release-v25.08.71e038c1.zip"
 
-    # Check if USD directory exists and has the expected version
+    # Check if USD directory exists with the correct version
     $usdPresent = $false
     if (Test-Path $usdDir) {
-        if (Test-Path (Join-Path $usdDir "pxrConfig.cmake")) {
-            Write-Host "`nFound existing USD installation in build/usd" -ForegroundColor Green
-            $usdPresent = $true
+        $pxrConfig = Join-Path $usdDir "pxrConfig.cmake"
+        $pythonLib = Join-Path $usdDir "python\libs\python${pythonLibVersion}.lib"
+        if ((Test-Path $pxrConfig) -and (Test-Path $pythonLib)) {
+            # Verify the USD version matches what we expect
+            $pxrContent = Get-Content $pxrConfig -Raw
+            if ($pxrContent -match 'set\(PXR_VERSION\s+"(\d+)"\)') {
+                $installedVersion = $Matches[1]
+                $expectedVersion = $usdVersion -replace '\.', ''  # "25.08" -> "2508"
+                if ($installedVersion -eq $expectedVersion) {
+                    Write-Host "`nFound existing USD $usdVersion installation in build/usd" -ForegroundColor Green
+                    $usdPresent = $true
+                } else {
+                    Write-Host "`nExisting USD is version $installedVersion but $expectedVersion is required, re-downloading..." -ForegroundColor Yellow
+                    Remove-Item -Path $usdDir -Recurse -Force
+                }
+            } else {
+                Write-Host "`nCould not determine USD version, re-downloading..." -ForegroundColor Yellow
+                Remove-Item -Path $usdDir -Recurse -Force
+            }
         } else {
             Write-Host "`nUSD directory exists but appears incomplete, re-downloading..." -ForegroundColor Yellow
             Remove-Item -Path $usdDir -Recurse -Force
