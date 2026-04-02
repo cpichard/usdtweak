@@ -1,0 +1,198 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+env:
+  USD_VERSION: "25.08"
+  USD_URL: "https://developer.nvidia.com/downloads/usd/usd_binaries/25.08/usd.py312.windows-x86_64.usdview.release-v25.08.71e038c1.zip"
+  BUILD_CONFIG: RelWithDebInfo
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache USD ${{ env.USD_VERSION }}
+        id: cache-usd
+        uses: actions/cache@v4
+        with:
+          path: build/usd
+          key: usd-windows-${{ env.USD_VERSION }}
+
+      - name: Download USD ${{ env.USD_VERSION }}
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/usd | Out-Null
+          Write-Host "Downloading USD ${{ env.USD_VERSION }} from NVIDIA..."
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "${{ env.USD_URL }}" -OutFile build/usd.zip
+          $ProgressPreference = 'Continue'
+
+          # Verify download
+          $size = (Get-Item build/usd.zip).Length
+          if ($size -lt 100000000) {
+              Write-Error "Download appears truncated ($size bytes)"
+              exit 1
+          }
+          Write-Host "Downloaded $([math]::Round($size / 1MB)) MB"
+
+          Write-Host "Extracting..."
+          Expand-Archive -Path build/usd.zip -DestinationPath build/usd -Force
+          Remove-Item build/usd.zip -Force
+
+          if (-not (Test-Path build/usd/pxrConfig.cmake)) {
+              Write-Error "Extraction failed - pxrConfig.cmake not found"
+              exit 1
+          }
+          Write-Host "USD ${{ env.USD_VERSION }} ready"
+
+      - name: Generate CMake configs for USD dependencies
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          # The NVIDIA USD package ships TBB, OpenSubdiv, and Imath libraries
+          # but omits their CMake config files. pxrConfig.cmake needs them.
+
+          $usdDir = "build/usd"
+
+          # --- TBB ---
+          $dir = "$usdDir/lib/cmake/TBB"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          @'
+          get_filename_component(_TBB_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+          if(NOT TARGET TBB::tbb)
+              add_library(TBB::tbb SHARED IMPORTED)
+              set_target_properties(TBB::tbb PROPERTIES
+                  IMPORTED_IMPLIB "${_TBB_ROOT}/lib/tbb.lib"
+                  IMPORTED_LOCATION "${_TBB_ROOT}/bin/tbb.dll"
+                  INTERFACE_INCLUDE_DIRECTORIES "${_TBB_ROOT}/include"
+              )
+          endif()
+          set(TBB_FOUND TRUE)
+          set(TBB_VERSION "2020.3")
+          '@ | Set-Content "$dir/TBBConfig.cmake" -Encoding UTF8
+          @'
+          set(PACKAGE_VERSION "2020.3")
+          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
+              set(PACKAGE_VERSION_COMPATIBLE FALSE)
+          else()
+              set(PACKAGE_VERSION_COMPATIBLE TRUE)
+              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
+                  set(PACKAGE_VERSION_EXACT TRUE)
+              endif()
+          endif()
+          '@ | Set-Content "$dir/TBBConfigVersion.cmake" -Encoding UTF8
+
+          # --- OpenSubdiv ---
+          $dir = "$usdDir/lib/cmake/OpenSubdiv"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          @'
+          get_filename_component(_OSD_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+          if(NOT TARGET opensubdiv::opensubdiv)
+              add_library(opensubdiv::opensubdiv INTERFACE IMPORTED)
+              add_library(opensubdiv::osdCPU STATIC IMPORTED)
+              set_target_properties(opensubdiv::osdCPU PROPERTIES
+                  IMPORTED_LOCATION "${_OSD_ROOT}/lib/osdCPU.lib"
+              )
+              add_library(opensubdiv::osdGPU STATIC IMPORTED)
+              set_target_properties(opensubdiv::osdGPU PROPERTIES
+                  IMPORTED_LOCATION "${_OSD_ROOT}/lib/osdGPU.lib"
+              )
+              set_target_properties(opensubdiv::opensubdiv PROPERTIES
+                  INTERFACE_LINK_LIBRARIES "opensubdiv::osdCPU;opensubdiv::osdGPU"
+                  INTERFACE_INCLUDE_DIRECTORIES "${_OSD_ROOT}/include"
+              )
+          endif()
+          set(OpenSubdiv_FOUND TRUE)
+          set(OpenSubdiv_VERSION "3.6.0")
+          '@ | Set-Content "$dir/OpenSubdivConfig.cmake" -Encoding UTF8
+          @'
+          set(PACKAGE_VERSION "3.6.0")
+          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
+              set(PACKAGE_VERSION_COMPATIBLE FALSE)
+          else()
+              set(PACKAGE_VERSION_COMPATIBLE TRUE)
+              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
+                  set(PACKAGE_VERSION_EXACT TRUE)
+              endif()
+          endif()
+          '@ | Set-Content "$dir/OpenSubdivConfigVersion.cmake" -Encoding UTF8
+
+          # --- Imath ---
+          $dir = "$usdDir/lib/cmake/Imath"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          @'
+          get_filename_component(_IMATH_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+          if(NOT TARGET Imath::Imath)
+              add_library(Imath::Imath SHARED IMPORTED)
+              set_target_properties(Imath::Imath PROPERTIES
+                  IMPORTED_IMPLIB "${_IMATH_ROOT}/lib/Imath-3_1.lib"
+                  IMPORTED_LOCATION "${_IMATH_ROOT}/bin/Imath-3_1.dll"
+                  INTERFACE_INCLUDE_DIRECTORIES "${_IMATH_ROOT}/include;${_IMATH_ROOT}/include/Imath"
+              )
+          endif()
+          if(NOT TARGET Imath::ImathConfig)
+              add_library(Imath::ImathConfig INTERFACE IMPORTED)
+              set_target_properties(Imath::ImathConfig PROPERTIES
+                  INTERFACE_INCLUDE_DIRECTORIES "${_IMATH_ROOT}/include;${_IMATH_ROOT}/include/Imath"
+              )
+          endif()
+          set(Imath_FOUND TRUE)
+          set(Imath_VERSION "3.1.12")
+          '@ | Set-Content "$dir/ImathConfig.cmake" -Encoding UTF8
+          @'
+          set(PACKAGE_VERSION "3.1.12")
+          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
+              set(PACKAGE_VERSION_COMPATIBLE FALSE)
+          else()
+              set(PACKAGE_VERSION_COMPATIBLE TRUE)
+              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
+                  set(PACKAGE_VERSION_EXACT TRUE)
+              endif()
+          endif()
+          '@ | Set-Content "$dir/ImathConfigVersion.cmake" -Encoding UTF8
+
+          Write-Host "CMake configs generated for TBB, OpenSubdiv, and Imath"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $usdDir = "${{ github.workspace }}/build/usd"
+          cmake `
+              -G "Visual Studio 17 2022" `
+              -A x64 `
+              -B build/cmake `
+              "-DCMAKE_PREFIX_PATH=$usdDir/lib/cmake" `
+              "-Dpxr_DIR=$usdDir" `
+              "-DMaterialX_DIR=$usdDir/lib/cmake/MaterialX" `
+              "-DImath_DIR=$usdDir/lib/cmake/Imath" `
+              "-DPython3_EXECUTABLE=$usdDir/python/python.exe" `
+              "-DPython3_LIBRARY=$usdDir/python/libs/python312.lib" `
+              "-DPython3_INCLUDE_DIR=$usdDir/python/include" `
+              "-DPython3_VERSION=3.12"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build build/cmake --config ${{ env.BUILD_CONFIG }} --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          $exe = "build/cmake/${{ env.BUILD_CONFIG }}/usdtweak.exe"
+          if (-not (Test-Path $exe)) {
+              Write-Error "usdtweak.exe not found at $exe"
+              exit 1
+          }
+          Write-Host "Build successful: $exe"
+          Write-Host "Size: $([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB"
