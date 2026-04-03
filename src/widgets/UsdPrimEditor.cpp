@@ -7,6 +7,7 @@
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/pcp/node.h>
 #include <pxr/usd/pcp/layerStack.h>
+#include <pxr/usd/pcp/primIndex.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include "Gui.h"
 #include "UsdPrimEditor.h"
@@ -616,28 +617,37 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
         return;
     ScopedStyleColor defaultStyle(DefaultColorStyle);
 
-    // Collect variant options from the prim and all its ancestors.
-    // GetVariantEditTarget(layer) maps prim paths through the variant-selection
-    // path (e.g. /Root{lod=high}/Mesh) in the chosen layer, so opinions land
-    // on top of un-varied specs in weaker layers.
+    // Collect variant options by traversing the PCP node graph.
+    // For each node, map its path to the root namespace via GetMapToRoot().
+    // A path that ContainsPrimVariantSelection() means the node lives inside
+    // a variant context; we collect all variant-selecting prefixes of that path
+    // so nested variants (variants inside variants) are each offered as a
+    // separate menu entry with the full stacked variant spec path.
     struct VariantOption {
-        UsdVariantSet varSet;
-        std::string   label;
+        SdfPath     varSpecPath; // e.g. /Root{lod=high} or /Root{lod=high}{mat=metal}
+        std::string label;
     };
     std::vector<VariantOption> variantOptions;
-    for (UsdPrim ancestor = prim; ancestor && !ancestor.IsPseudoRoot(); ancestor = ancestor.GetParent()) {
-        UsdVariantSets varSets = ancestor.GetVariantSets();
-        std::vector<std::string> names;
-        varSets.GetNames(&names);
-        for (const auto &name : names) {
-            UsdVariantSet varSet = varSets.GetVariantSet(name);
-            std::string selection = varSet.GetVariantSelection();
-            if (selection.empty())
-                continue;
-            std::string label = ancestor.GetPath().GetString() + "  " + name + " = " + selection;
-            variantOptions.push_back({varSet, label});
+
+    std::function<void(PcpNodeRef)> collectVariants = [&](PcpNodeRef node) {
+        const auto mapToRoot = node.GetMapToRoot();
+        const auto finc = mapToRoot.Evaluate();
+        const SdfPath rootPath = finc.MapSourceToTarget(node.GetPath());
+        if (rootPath.ContainsPrimVariantSelection()) {
+            for (const SdfPath &prefix : rootPath.GetPrefixes()) {
+                if (!prefix.IsPrimVariantSelectionPath())
+                    continue;
+                // deduplicate across nodes
+                bool seen = false;
+                for (const auto &opt : variantOptions)
+                    if (opt.varSpecPath == prefix) { seen = true; break; }
+                if (!seen)
+                    variantOptions.push_back({prefix, prefix.GetString()});
+            }
         }
-    }
+        TF_FOR_ALL(childNode, node.GetChildrenRange()) { collectVariants(*childNode); }
+    };
+    collectVariants(prim.GetPrimIndex().GetRootNode());
 
     // When variants are available, "Session layer" and "Root layer" become
     // submenus with a direct entry plus one entry per variant context.
@@ -651,7 +661,7 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
             ImGui::PushID(id++);
             if (ImGui::MenuItem(opt.label.c_str())) {
                 ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(),
-                                                     opt.varSet.GetVariantEditTarget(layer));
+                                                      UsdEditTarget::ForLocalDirectVariant(layer, opt.varSpecPath));
             }
             ImGui::PopID();
         }
