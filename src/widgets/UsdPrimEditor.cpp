@@ -615,11 +615,64 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim)
         return;
     ScopedStyleColor defaultStyle(DefaultColorStyle);
-    if (ImGui::MenuItem("Session layer")) {
-        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
+
+    // Collect variant options from the prim and all its ancestors.
+    // GetVariantEditTarget(layer) maps prim paths through the variant-selection
+    // path (e.g. /Root{lod=high}/Mesh) in the chosen layer, so opinions land
+    // on top of un-varied specs in weaker layers.
+    struct VariantOption {
+        UsdVariantSet varSet;
+        std::string   label;
+    };
+    std::vector<VariantOption> variantOptions;
+    for (UsdPrim ancestor = prim; ancestor && !ancestor.IsPseudoRoot(); ancestor = ancestor.GetParent()) {
+        UsdVariantSets varSets = ancestor.GetVariantSets();
+        std::vector<std::string> names;
+        varSets.GetNames(&names);
+        for (const auto &name : names) {
+            UsdVariantSet varSet = varSets.GetVariantSet(name);
+            std::string selection = varSet.GetVariantSelection();
+            if (selection.empty())
+                continue;
+            std::string label = ancestor.GetPath().GetString() + "  " + name + " = " + selection;
+            variantOptions.push_back({varSet, label});
+        }
     }
-    if (ImGui::MenuItem("Root layer")) {
-        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+
+    // When variants are available, "Session layer" and "Root layer" become
+    // submenus with a direct entry plus one entry per variant context.
+    // When there are no variants they remain flat menu items.
+    auto drawLayerItems = [&](const SdfLayerHandle &layer) {
+        if (ImGui::MenuItem("No variant")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(layer));
+        }
+        int id = 0;
+        for (const auto &opt : variantOptions) {
+            ImGui::PushID(id++);
+            if (ImGui::MenuItem(opt.label.c_str())) {
+                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(),
+                                                     opt.varSet.GetVariantEditTarget(layer));
+            }
+            ImGui::PopID();
+        }
+    };
+
+    if (variantOptions.empty()) {
+        if (ImGui::MenuItem("Session layer")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
+        }
+        if (ImGui::MenuItem("Root layer")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+        }
+    } else {
+        if (ImGui::BeginMenu("Session layer")) {
+            drawLayerItems(prim.GetStage()->GetSessionLayer());
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Root layer")) {
+            drawLayerItems(prim.GetStage()->GetRootLayer());
+            ImGui::EndMenu();
+        }
     }
 
     if (ImGui::BeginMenu("Sublayers")) {
