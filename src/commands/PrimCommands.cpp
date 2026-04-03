@@ -255,6 +255,43 @@ struct PrimReorder : public SdfLayerCommand {
     bool DoIt() override {
         if (!_layer || _primPaths.empty()) return false;
 
+        // Handle variant reordering: SdfNamespaceEdit doesn't work for variant paths
+        if (_primPaths[0].IsPrimVariantSelectionPath()) {
+            std::unordered_map<SdfPath, std::vector<TfToken>, SdfPath::Hash> variantGroups;
+            for (const auto &path : _primPaths) {
+                if (!path.IsPrimVariantSelectionPath()) continue;
+                auto sel = path.GetVariantSelection();
+                SdfPath variantSetPath = path.GetParentPath().AppendVariantSelection(TfToken(sel.first), TfToken(""));
+                variantGroups[variantSetPath].emplace_back(sel.second);
+            }
+            SdfCommandGroupRecorder recorder(_undoCommands, _layer);
+            bool anyEdit = false;
+            for (auto &[variantSetPath, selectedVariants] : variantGroups) {
+                auto children = _layer->GetFieldAs<std::vector<TfToken>>(variantSetPath, SdfChildrenKeys->VariantChildren);
+                const int n = (int)children.size();
+                std::vector<std::pair<int, TfToken>> indexed;
+                for (const auto &v : selectedVariants) {
+                    for (int i = 0; i < n; ++i) {
+                        if (children[i] == v) { indexed.emplace_back(i, v); break; }
+                    }
+                }
+                if (indexed.empty()) continue;
+                std::sort(indexed.begin(), indexed.end());
+                if (_up && indexed.front().first == 0) continue;
+                if (!_up && indexed.back().first == n - 1) continue;
+                if (_up) {
+                    for (auto &[idx, name] : indexed) { std::swap(children[idx], children[idx - 1]); }
+                } else {
+                    for (int i = (int)indexed.size() - 1; i >= 0; --i) {
+                        std::swap(children[indexed[i].first], children[indexed[i].first + 1]);
+                    }
+                }
+                _layer->GetStateDelegate()->SetField(variantSetPath, SdfChildrenKeys->VariantChildren, VtValue(children));
+                anyEdit = true;
+            }
+            return anyEdit;
+        }
+
         // Group paths by parent path so each sibling group is handled independently
         std::unordered_map<SdfPath, std::vector<SdfPath>, SdfPath::Hash> groups;
         for (const auto &path : _primPaths) {
@@ -328,11 +365,34 @@ struct PrimDuplicate : public SdfLayerCommand {
         // before the next FindNextAvailableTokenString call, avoiding inter-prim collisions.
         bool allOk = true;
         for (const auto &primPath : _primPaths) {
-            auto prim = _layer->GetPrimAtPath(primPath);
-            if (!prim) { allOk = false; continue; }
-            const std::string newName = FindNextAvailableTokenString(prim->GetName());
-            if (!SdfCopySpec(_layer, primPath, _layer, primPath.ReplaceName(TfToken(newName)))) {
-                allOk = false;
+            if (primPath.IsPrimVariantSelectionPath()) {
+                auto variantSelection = primPath.GetVariantSelection();
+                auto parentPrimSpec = _layer->GetPrimAtPath(primPath.GetParentPath());
+                if (!parentPrimSpec) { allOk = false; continue; }
+                SdfVariantSetSpecHandle variantSetSpec;
+                TF_FOR_ALL(it, parentPrimSpec->GetVariantSets()) {
+                    if (it->first == variantSelection.first) { variantSetSpec = it->second; break; }
+                }
+                if (!variantSetSpec) { allOk = false; continue; }
+                std::string newName = FindNextAvailableTokenString(variantSelection.second);
+                while (variantSetSpec->GetVariants().get(newName)) {
+                    newName = FindNextAvailableTokenString(newName);
+                }
+                auto newVariantSpec = SdfVariantSpec::New(variantSetSpec, newName);
+                if (!newVariantSpec) { allOk = false; continue; }
+                SdfPath newVariantPath = primPath.GetParentPath().AppendVariantSelection(
+                    TfToken(variantSelection.first), TfToken(newName));
+                if (!SdfCopySpec(_layer, primPath, _layer, newVariantPath)) {
+                    variantSetSpec->RemoveVariant(newVariantSpec);
+                    allOk = false;
+                }
+            } else {
+                auto prim = _layer->GetPrimAtPath(primPath);
+                if (!prim) { allOk = false; continue; }
+                const std::string newName = FindNextAvailableTokenString(prim->GetName());
+                if (!SdfCopySpec(_layer, primPath, _layer, primPath.ReplaceName(TfToken(newName)))) {
+                    allOk = false;
+                }
             }
         }
         return allOk;
@@ -506,6 +566,107 @@ struct PropertyPaste : public CopyPasteCommand {
     SdfPath _primPath;
 };
 template void ExecuteAfterDraw<PropertyPaste>(SdfLayerHandle layer, SdfPath primPath);
+
+struct VariantNew : public SdfLayerCommand {
+    VariantNew(SdfLayerHandle layer, SdfPath variantPath, std::string newName)
+        : _layer(std::move(layer)), _variantPath(std::move(variantPath)), _newName(std::move(newName)) {}
+    ~VariantNew() override {}
+    bool DoIt() override {
+        if (!_layer || !_variantPath.IsPrimVariantSelectionPath()) return false;
+        auto variantSelection = _variantPath.GetVariantSelection();
+        auto primSpec = _layer->GetPrimAtPath(_variantPath.GetParentPath());
+        if (!primSpec) return false;
+        SdfVariantSetSpecHandle variantSetSpec;
+        TF_FOR_ALL(it, primSpec->GetVariantSets()) {
+            if (it->first == variantSelection.first) { variantSetSpec = it->second; break; }
+        }
+        if (!variantSetSpec) return false;
+        if (variantSetSpec->GetVariants().get(_newName)) return false;
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
+        return SdfVariantSpec::New(variantSetSpec, _newName) != nullptr;
+    }
+    SdfLayerHandle _layer;
+    SdfPath _variantPath;
+    std::string _newName;
+};
+template void ExecuteAfterDraw<VariantNew>(SdfLayerHandle layer, SdfPath variantPath, std::string newName);
+
+struct VariantRename : public SdfLayerCommand {
+    VariantRename(SdfLayerHandle layer, SdfPath variantPath, std::string newName)
+        : _layer(std::move(layer)), _variantPath(std::move(variantPath)), _newName(std::move(newName)) {}
+    ~VariantRename() override {}
+
+    bool DoIt() override {
+        if (!_layer || !_variantPath.IsPrimVariantSelectionPath()) return false;
+        auto variantSelection = _variantPath.GetVariantSelection();
+        const std::string &variantSetName = variantSelection.first;
+        const std::string &oldName = variantSelection.second;
+        if (oldName == _newName || _newName.empty()) return false;
+
+        auto parentPath = _variantPath.GetParentPath();
+        auto primSpec = _layer->GetPrimAtPath(parentPath);
+        if (!primSpec) return false;
+
+        // Find the variant set spec
+        SdfVariantSetSpecHandle variantSetSpec;
+        TF_FOR_ALL(it, primSpec->GetVariantSets()) {
+            if (it->first == variantSetName) {
+                variantSetSpec = it->second;
+                break;
+            }
+        }
+        if (!variantSetSpec) return false;
+
+        SdfVariantSpecHandle oldVariantSpec = variantSetSpec->GetVariants().get(oldName);
+        if (!oldVariantSpec) return false;
+
+        // Reject if the new name already exists
+        if (variantSetSpec->GetVariants().get(_newName)) return false;
+
+        // Record the old variant's position before any mutations
+        SdfPath variantSetPath = parentPath.AppendVariantSelection(TfToken(variantSetName), TfToken(""));
+        int oldIndex = -1;
+        {
+            auto variantChildren = _layer->GetFieldAs<std::vector<TfToken>>(variantSetPath, SdfChildrenKeys->VariantChildren);
+            for (int i = 0; i < (int)variantChildren.size(); ++i) {
+                if (variantChildren[i] == TfToken(oldName)) {
+                    oldIndex = i;
+                    break;
+                }
+            }
+        }
+
+        SdfPath newVariantPath = parentPath.AppendVariantSelection(TfToken(variantSetName), TfToken(_newName));
+
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
+        // Pre-create the new SdfVariantSpec so SdfCopySpec has a valid destination
+        auto newVariantSpec = SdfVariantSpec::New(variantSetSpec, _newName);
+        if (!newVariantSpec) return false;
+
+        if (!SdfCopySpec(_layer, _variantPath, _layer, newVariantPath)) {
+            variantSetSpec->RemoveVariant(newVariantSpec);
+            return false;
+        }
+        variantSetSpec->RemoveVariant(oldVariantSpec);
+
+        // Restore original position in the variant list
+        if (oldIndex >= 0) {
+            auto newChildren = _layer->GetFieldAs<std::vector<TfToken>>(variantSetPath, SdfChildrenKeys->VariantChildren);
+            auto it = std::find(newChildren.begin(), newChildren.end(), TfToken(_newName));
+            if (it != newChildren.end() && (int)std::distance(newChildren.begin(), it) != oldIndex) {
+                newChildren.erase(it);
+                newChildren.insert(newChildren.begin() + std::min(oldIndex, (int)newChildren.size()), TfToken(_newName));
+                _layer->GetStateDelegate()->SetField(variantSetPath, SdfChildrenKeys->VariantChildren, VtValue(newChildren));
+            }
+        }
+        return true;
+    }
+
+    SdfLayerHandle _layer;
+    SdfPath _variantPath;
+    std::string _newName;
+};
+template void ExecuteAfterDraw<VariantRename>(SdfLayerHandle layer, SdfPath variantPath, std::string newName);
 
 /// TODO: how to avoid having to write the argument list ? it's the same as the constructor arguments
 template void ExecuteAfterDraw<PrimNew>(SdfLayerRefPtr layer, std::string newName);
