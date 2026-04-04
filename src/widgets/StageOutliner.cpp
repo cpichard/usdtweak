@@ -79,7 +79,7 @@ class StageOutlinerDisplayOptions {
     bool _showPrototypes = true;
 };
 
-static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
+static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node, int &itemId) {
     if (!tree)
         return;
     auto obj = tree->GetLayer()->GetObjectAtPath(node.GetPath());
@@ -88,19 +88,21 @@ static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
         format += tree->GetLayer()->GetDisplayName();
         format += " ";
         format += obj->GetPath().GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(format.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(tree->GetLayer(), obj->GetPath());
         }
+        ImGui::PopID();
     }
     for (auto subTree : tree->GetChildTrees()) {
-        ExploreLayerTree(subTree, node);
+        ExploreLayerTree(subTree, node, itemId);
     }
 }
 
-static void ExploreComposition(PcpNodeRef root) {
+static void ExploreComposition(PcpNodeRef root, int &itemId) {
     auto tree = root.GetLayerStack()->GetLayerTree();
-    ExploreLayerTree(tree, root);
-    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode); }
+    ExploreLayerTree(tree, root, itemId);
+    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode, itemId); }
 }
 
 static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selection) {
@@ -162,7 +164,8 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
         if (pcpIndex.IsValid()) {
             auto rootNode = pcpIndex.GetRootNode();
-            ExploreComposition(rootNode);
+            int itemId = 0;
+            ExploreComposition(rootNode, itemId);
         }
         ImGui::EndMenu();
     }
@@ -250,7 +253,9 @@ static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection
                     VtValue allowedTokens;
                     attr.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
                     if (allowedTokens.IsHolding<VtArray<TfToken>>()) {
+                        int tokenId = 0;
                         for (const auto &token : allowedTokens.Get<VtArray<TfToken>>()) {
+                            ImGui::PushID(tokenId++);
                             if (ImGui::MenuItem(token.GetText())) {
                                 UsdStageWeakPtr stageWeak = stage;
                                 ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths, token]() {
@@ -265,6 +270,7 @@ static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection
                                     }
                                 }));
                             }
+                            ImGui::PopID();
                         }
                     }
                     ImGui::EndPopup();
@@ -528,11 +534,26 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
             -1, primCount);
         ApplyMultiSelectRequests(msIO, selectedPaths, stage, primCount, [&](int i) { return paths[i]; });
 
+        ImGuiTable* table = GImGui->CurrentTable;
         ImGuiListClipper clipper;
         clipper.Begin(primCount);
         if (msIO->RangeSrcItem != -1)
             clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
         while (clipper.Step()) {
+            // Prevent off-screen steps (forced by IncludeItemByIndex for shift-click anchor)
+            // from affecting column auto-sizing and causing a one-frame horizontal resize glitch.
+            bool isOffScreenStep = false;
+            float savedContentMaxX[3] = {};
+            if (table && clipper.ItemsHeight > 0.0f) {
+                const float stepTop = clipper.ItemsHeight * clipper.DisplayStart;
+                const float stepBot = clipper.ItemsHeight * (clipper.DisplayEnd - 1);
+                const float scrollY = ImGui::GetScrollY();
+                const float windowH = ImGui::GetWindowHeight();
+                isOffScreenStep = (stepBot < scrollY) || (stepTop > scrollY + windowH);
+                if (isOffScreenStep)
+                    for (int c = 0; c < table->ColumnsCount; c++)
+                        savedContentMaxX[c] = table->Columns[c].ContentMaxXUnfrozen;
+            }
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
@@ -540,6 +561,9 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 DrawPrimTreeRow(prim, selectedPaths, displayOptions, row);
                 ImGui::PopID();
             }
+            if (isOffScreenStep && table)
+                for (int c = 0; c < table->ColumnsCount; c++)
+                    table->Columns[c].ContentMaxXUnfrozen = savedContentMaxX[c];
         }
         if (selectionHasChanged) {
             // This function can only be called in this context and after the clipper.Step()
