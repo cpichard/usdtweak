@@ -116,6 +116,7 @@ class Editor {
         }
     }
 
+    // Those 3 functions are used to pass data to the preference UI. We should find another way
     void SetUIScale(float scaleValue);
     float GetUIScale() const;
     bool &GetShowSplashScreen() { return _settings._showSplashScreen; }

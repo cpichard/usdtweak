@@ -224,12 +224,15 @@ struct AboutModalDialog : public ModalDialog {
         textShadowed("or by mail: cpichard.github@gmail.com");
         ImGui::NewLine();
         textShadowed("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
+        textShadowed("Splash screen artwork - Copyright (c) 2025 Nastasia Bois");
         ImGui::NewLine();
         textShadowed("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
         textShadowed("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
         ImGui::NewLine();
         textShadowed("IMGUI - https://github.com/ocornut/imgui");
         textShadowed("   Copyright (c) 2014-2024 Omar Cornut - The MIT License (MIT)");
+        textShadowed("stb_image - https://github.com/nothings/stb");
+        textShadowed("   Copyright (c) 2017 Sean Barrett - MIT License / Public Domain");
         ImGui::NewLine();
         textShadowed("GLFW - https://www.glfw.org/");
         textShadowed("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
