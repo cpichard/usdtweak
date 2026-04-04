@@ -711,10 +711,13 @@ void Editor::DrawMainMenuBar() {
                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
             }
             if (ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " Open Recent (as stage)")) {
+                int recentId = 0;
                 for (const auto &recentFile : _settings.GetRecentFiles()) {
+                    ImGui::PushID(recentId++);
                     if (ImGui::MenuItem(recentFile.c_str())) {
                         ExecuteAfterDraw<EditorOpenStage>(recentFile);
                     }
+                    ImGui::PopID();
                 }
                 ImGui::EndMenu();
             }
