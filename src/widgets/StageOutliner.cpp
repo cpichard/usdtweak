@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 
 #include <vector>
@@ -102,20 +103,60 @@ static void ExploreComposition(PcpNodeRef root) {
     TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode); }
 }
 
-static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
+static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selection) {
+    const UsdStageRefPtr stage = prim.GetStage();
+    std::vector<SdfPath> paths =
+        selection.IsSelected(stage, prim.GetPath())
+            ? selection.GetSelectedPaths(stage)
+            : std::vector<SdfPath>{prim.GetPath()};
     if (ImGui::MenuItem("Toggle active")) {
-        const bool active = !prim.IsActive();
-        ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
+        UsdStageWeakPtr stageWeak = stage;
+        ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+            for (const auto &path : paths) {
+                auto p = stageWeak->GetPrimAtPath(path);
+                if (p) p.SetActive(!p.IsActive());
+            }
+        }));
     }
     // TODO: Load and Unload are not in the undo redo :( ... make a command for them
-    if (prim.HasAuthoredPayloads() && prim.IsLoaded() && ImGui::MenuItem("Unload")) {
-        ExecuteAfterDraw(&UsdPrim::Unload, prim);
+    {
+        const bool anyLoaded = std::any_of(paths.begin(), paths.end(), [&](const SdfPath &p) {
+            auto pr = stage->GetPrimAtPath(p);
+            return pr && pr.HasAuthoredPayloads() && pr.IsLoaded();
+        });
+        if (anyLoaded && ImGui::MenuItem("Unload")) {
+            UsdStageWeakPtr stageWeak = stage;
+            ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                for (const auto &path : paths) {
+                    auto p = stageWeak->GetPrimAtPath(path);
+                    if (p && p.HasAuthoredPayloads() && p.IsLoaded())
+                        p.Unload();
+                }
+            }));
+        }
     }
-    if (prim.HasAuthoredPayloads() && !prim.IsLoaded() && ImGui::MenuItem("Load")) {
-        ExecuteAfterDraw(&UsdPrim::Load, prim, UsdLoadWithDescendants);
+    {
+        const bool anyUnloaded = std::any_of(paths.begin(), paths.end(), [&](const SdfPath &p) {
+            auto pr = stage->GetPrimAtPath(p);
+            return pr && pr.HasAuthoredPayloads() && !pr.IsLoaded();
+        });
+        if (anyUnloaded && ImGui::MenuItem("Load")) {
+            UsdStageWeakPtr stageWeak = stage;
+            ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                for (const auto &path : paths) {
+                    auto p = stageWeak->GetPrimAtPath(path);
+                    if (p && p.HasAuthoredPayloads() && !p.IsLoaded())
+                        p.Load(UsdLoadWithDescendants);
+                }
+            }));
+        }
     }
-    if (ImGui::MenuItem("Copy prim path")) {
-        ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
+    if (ImGui::MenuItem(paths.size() > 1 ? "Copy prim paths" : "Copy prim path")) {
+        std::string text;
+        for (const auto &p : paths)
+            text += p.GetString() + "\n";
+        if (!text.empty()) text.pop_back();
+        ImGui::SetClipboardText(text.c_str());
     }
     if (ImGui::BeginMenu("Edit layer")) {
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
@@ -127,15 +168,15 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
     }
 
     if (ImGui::MenuItem("Create connection editor sheet")) {
-        // TODO: a command ?? do we want undo redo in the node graph ??
-        //AddPrimsToSession({prim});
-        // TODO if the prim is a material or NodeGraph, add all its children
-        CreateSession(prim, {prim});
+        std::vector<UsdPrim> prims;
+        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+        CreateSession(prim, prims);
     }
-    
+
     if (ImGui::MenuItem("Add to connection editor")) {
-        // TODO if the prim is a material or NodeGraph, add all its children
-        AddPrimsToCurrentSession({prim});
+        std::vector<UsdPrim> prims;
+        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+        AddPrimsToCurrentSession(prims);
     }
 }
 
@@ -171,7 +212,12 @@ static inline const char *GetVisibilityIcon(const TfToken &visibility) {
     return ICON_FA_EYE;
 }
 
-static void DrawVisibilityButton(const UsdPrim &prim) {
+static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection) {
+    const UsdStageRefPtr stage = prim.GetStage();
+    std::vector<SdfPath> paths =
+        selection.IsSelected(stage, prim.GetPath())
+            ? selection.GetSelectedPaths(stage)
+            : std::vector<SdfPath>{prim.GetPath()};
     // TODO: this should work with animation
     UsdGeomImageable imageable(prim);
     if (imageable) {
@@ -190,15 +236,34 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
             {
                 ScopedStyleColor menuTextColor(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0));
                 if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-                    if (attr.HasAuthoredValue() && ImGui::MenuItem("clear visibiliy")) {
-                        ExecuteAfterDraw(&UsdPrim::RemoveProperty, prim, attr.GetName());
+                    if (attr.HasAuthoredValue() && ImGui::MenuItem("clear visibility")) {
+                        UsdStageWeakPtr stageWeak = stage;
+                        ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                            for (const auto &path : paths) {
+                                auto p = stageWeak->GetPrimAtPath(path);
+                                if (!p) continue;
+                                UsdGeomImageable im(p);
+                                if (im) p.RemoveProperty(im.GetVisibilityAttr().GetName());
+                            }
+                        }));
                     }
                     VtValue allowedTokens;
                     attr.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
                     if (allowedTokens.IsHolding<VtArray<TfToken>>()) {
                         for (const auto &token : allowedTokens.Get<VtArray<TfToken>>()) {
                             if (ImGui::MenuItem(token.GetText())) {
-                                ExecuteAfterDraw<AttributeSet>(attr, VtValue(token), UsdTimeCode::Default());
+                                UsdStageWeakPtr stageWeak = stage;
+                                ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths, token]() {
+                                    for (const auto &path : paths) {
+                                        auto p = stageWeak->GetPrimAtPath(path);
+                                        if (!p) continue;
+                                        UsdGeomImageable im(p);
+                                        if (!im) continue;
+                                        auto visAttr = im.GetVisibilityAttr();
+                                        if (!visAttr) visAttr = im.CreateVisibilityAttr();
+                                        visAttr.Set(token, UsdTimeCode::Default());
+                                    }
+                                }));
                             }
                         }
                     }
@@ -257,7 +322,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
         {
             ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
             if (ImGui::BeginPopupContextItem()) {
-                DrawUsdPrimEditMenuItems(prim);
+                DrawUsdPrimEditMenuItems(prim, selectedPaths);
                 ImGui::EndPopup();
             }
         }
@@ -268,7 +333,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
 
         // Visibility
         ImGui::TableSetColumnIndex(1);
-        DrawVisibilityButton(prim);
+        DrawVisibilityButton(prim, selectedPaths);
 
         // Type
         ImGui::TableSetColumnIndex(2);

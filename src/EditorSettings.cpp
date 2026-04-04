@@ -79,6 +79,8 @@ void EditorSettings::ParseLine(const char *line) {
         _showValidator = static_cast<bool>(value);
     } else if (sscanf(line, "ShowConnectionEditor=%i", &value) == 1) {
         _showUsdConnectionEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowSearch=%i", &value) == 1) {
+        _showSearch = static_cast<bool>(value);
     } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
         _lastFileBrowserDirectory = strBuffer;
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
@@ -132,6 +134,7 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowHydraNoticeLogger=%d\n", _showHydraNoticeLogger);
     buf->appendf("ShowValidator=%d\n", _showValidator);
     buf->appendf("ShowConnectionEditor=%d\n", _showUsdConnectionEditor);
+    buf->appendf("ShowSearch=%d\n", _showSearch);
     if (!_lastFileBrowserDirectory.empty()) {
         buf->appendf("LastFileBrowserDirectory=%s\n", _lastFileBrowserDirectory.c_str());
     }
