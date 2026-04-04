@@ -389,6 +389,14 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
         return false;
     auto variantSets = prim.GetVariantSets();
 
+    const auto &editTarget = prim.GetStage()->GetEditTarget();
+    const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
+    const bool editingInVariant = targetPath.ContainsPrimVariantSelection();
+
+    if (editingInVariant) {
+        ImGui::BeginDisabled(true);
+    }
+
     if (ImGui::BeginTable("##DrawVariantSetsCombos", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         // make it relative to font size
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
@@ -433,6 +441,11 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
             ImGui::PopItemWidth();
         }
         ImGui::EndTable();
+    }
+    if (editingInVariant) {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Variant selection is fixed by the current edit target");
     }
     return true;
 }
