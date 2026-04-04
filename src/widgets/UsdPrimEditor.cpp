@@ -392,7 +392,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
         // make it relative to font size
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("VariantSet");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
 
@@ -445,12 +445,13 @@ bool DrawAssetInfo(UsdPrim &prim) {
         //TODO  make it relative
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Asset info");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
-
+        int rowId = 0;
         TF_FOR_ALL(keyValue, assetInfo) {
             ImGui::TableNextRow();
+            ImGui::PushID(rowId++);
             ImGui::TableSetColumnIndex(0);
             DrawPropertyMiniButton("(x)");
             ImGui::TableSetColumnIndex(1);
@@ -462,6 +463,7 @@ bool DrawAssetInfo(UsdPrim &prim) {
                 ExecuteAfterDraw(&UsdPrim::SetAssetInfoByKey, prim, TfToken(keyValue->first), modified);
             }
             ImGui::PopItemWidth();
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }
@@ -559,7 +561,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Material Bindings");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         UsdShadeMaterial material;
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
@@ -769,7 +771,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
             ImGui::TableSetupColumn("Property name");
-            ImGui::TableSetupColumn("Value");
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
 
             int miniButtonId = 0;
