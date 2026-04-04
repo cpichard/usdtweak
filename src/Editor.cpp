@@ -1,6 +1,8 @@
 #include "Editor.h"
 #include "3rdparty/imgui/imgui.h"
 #include "Blueprints.h"
+#include "StringSearchIndex.h"
+#include "SearchWidget.h"
 #include "Commands.h"
 #include "ConnectionEditor.h"
 #include "ContentBrowser.h"
@@ -68,6 +70,7 @@ namespace clk = std::chrono;
 #define HydraBrowserWindowTitle "Hydra browser"
 #define ShaderRegistryInspectorWindowTitle "Shader registry inspector"
 #define HydraNoticeLoggerWindowTitle "Hydra notice logger"
+#define SearchWindowTitle "Search"
 #define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
 #define Viewport1WindowTitle "Viewport1"
@@ -445,6 +448,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
 void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
     if (!layer)
         return;
+    StringSearchIndex::GetInstance().IndexLayer(layer);
     if (!_layerHistory.empty()) {
         if (GetCurrentLayer() != layer) {
             if (_layerHistoryPointer < _layerHistory.size() - 1) {
@@ -504,6 +508,7 @@ void Editor::OpenStage(const std::string &path, bool openLoaded, bool enableHydr
         _settings._showContentBrowser = true;
         _settings._showViewport1 = true;
         _settings.UpdateRecentFiles(path);
+        StringSearchIndex::GetInstance().IndexStage(newStage);
     }
 }
 
@@ -706,10 +711,13 @@ void Editor::DrawMainMenuBar() {
                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
             }
             if (ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " Open Recent (as stage)")) {
+                int recentId = 0;
                 for (const auto &recentFile : _settings.GetRecentFiles()) {
+                    ImGui::PushID(recentId++);
                     if (ImGui::MenuItem(recentFile.c_str())) {
                         ExecuteAfterDraw<EditorOpenStage>(recentFile);
                     }
+                    ImGui::PopID();
                 }
                 ImGui::EndMenu();
             }
@@ -768,6 +776,8 @@ void Editor::DrawMainMenuBar() {
             }
             if (ImGui::MenuItem("Paste", "CTRL+V", false, false)) {
             }
+            ImGui::Separator();
+            ImGui::MenuItem(SearchWindowTitle, nullptr, &_settings._showSearch);
             ImGui::Separator();
             if (ImGui::MenuItem("Preferences")) {
                 DrawModalDialog<PreferencesModalDialog>(*this);
@@ -1066,6 +1076,15 @@ void Editor::Draw() {
         TRACE_SCOPE(SdfAttributeWindowTitle);
         ImGui::Begin(SdfAttributeWindowTitle, &_settings._showSdfAttributeEditor);
         DrawSdfAttributeEditor(GetCurrentLayer(), GetSelection());
+        ImGui::End();
+    }
+
+    if (_settings._showSearch) {
+        // Update the index only when the search window is visible ("pay for what you see").
+        StringSearchIndex::GetInstance().Update();
+        TRACE_SCOPE(SearchWindowTitle);
+        ImGui::Begin(SearchWindowTitle, &_settings._showSearch);
+        DrawSearchWidget();
         ImGui::End();
     }
 

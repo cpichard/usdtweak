@@ -226,6 +226,7 @@ void DrawShaderRegistryInspector() {
             if (!node)
                 continue;
             ImGui::TableNextRow();
+            ImGui::PushID(idx);
             ImGui::TableSetColumnIndex(0);
             const bool selected = (selectedNode == node);
             if (ImGui::Selectable(node->GetName().c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
@@ -268,6 +269,7 @@ void DrawShaderRegistryInspector() {
             ImGui::TextUnformatted(node->GetSourceType().GetText());
             ImGui::TableSetColumnIndex(3);
             ImGui::TextUnformatted(node->GetContext().GetText());
+            ImGui::PopID();
         }
         hoverDelayNormal = savedHoverDelay;
         ImGui::EndTable();

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 
 #include <vector>
@@ -78,7 +79,7 @@ class StageOutlinerDisplayOptions {
     bool _showPrototypes = true;
 };
 
-static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
+static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node, int &itemId) {
     if (!tree)
         return;
     auto obj = tree->GetLayer()->GetObjectAtPath(node.GetPath());
@@ -87,55 +88,98 @@ static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
         format += tree->GetLayer()->GetDisplayName();
         format += " ";
         format += obj->GetPath().GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(format.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(tree->GetLayer(), obj->GetPath());
         }
+        ImGui::PopID();
     }
     for (auto subTree : tree->GetChildTrees()) {
-        ExploreLayerTree(subTree, node);
+        ExploreLayerTree(subTree, node, itemId);
     }
 }
 
-static void ExploreComposition(PcpNodeRef root) {
+static void ExploreComposition(PcpNodeRef root, int &itemId) {
     auto tree = root.GetLayerStack()->GetLayerTree();
-    ExploreLayerTree(tree, root);
-    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode); }
+    ExploreLayerTree(tree, root, itemId);
+    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode, itemId); }
 }
 
-static void DrawUsdPrimEditMenuItems(const UsdPrim &prim) {
+static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selection) {
+    const UsdStageRefPtr stage = prim.GetStage();
+    std::vector<SdfPath> paths =
+        selection.IsSelected(stage, prim.GetPath())
+            ? selection.GetSelectedPaths(stage)
+            : std::vector<SdfPath>{prim.GetPath()};
     if (ImGui::MenuItem("Toggle active")) {
-        const bool active = !prim.IsActive();
-        ExecuteAfterDraw(&UsdPrim::SetActive, prim, active);
+        UsdStageWeakPtr stageWeak = stage;
+        ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+            for (const auto &path : paths) {
+                auto p = stageWeak->GetPrimAtPath(path);
+                if (p) p.SetActive(!p.IsActive());
+            }
+        }));
     }
     // TODO: Load and Unload are not in the undo redo :( ... make a command for them
-    if (prim.HasAuthoredPayloads() && prim.IsLoaded() && ImGui::MenuItem("Unload")) {
-        ExecuteAfterDraw(&UsdPrim::Unload, prim);
+    {
+        const bool anyLoaded = std::any_of(paths.begin(), paths.end(), [&](const SdfPath &p) {
+            auto pr = stage->GetPrimAtPath(p);
+            return pr && pr.HasAuthoredPayloads() && pr.IsLoaded();
+        });
+        if (anyLoaded && ImGui::MenuItem("Unload")) {
+            UsdStageWeakPtr stageWeak = stage;
+            ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                for (const auto &path : paths) {
+                    auto p = stageWeak->GetPrimAtPath(path);
+                    if (p && p.HasAuthoredPayloads() && p.IsLoaded())
+                        p.Unload();
+                }
+            }));
+        }
     }
-    if (prim.HasAuthoredPayloads() && !prim.IsLoaded() && ImGui::MenuItem("Load")) {
-        ExecuteAfterDraw(&UsdPrim::Load, prim, UsdLoadWithDescendants);
+    {
+        const bool anyUnloaded = std::any_of(paths.begin(), paths.end(), [&](const SdfPath &p) {
+            auto pr = stage->GetPrimAtPath(p);
+            return pr && pr.HasAuthoredPayloads() && !pr.IsLoaded();
+        });
+        if (anyUnloaded && ImGui::MenuItem("Load")) {
+            UsdStageWeakPtr stageWeak = stage;
+            ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                for (const auto &path : paths) {
+                    auto p = stageWeak->GetPrimAtPath(path);
+                    if (p && p.HasAuthoredPayloads() && !p.IsLoaded())
+                        p.Load(UsdLoadWithDescendants);
+                }
+            }));
+        }
     }
-    if (ImGui::MenuItem("Copy prim path")) {
-        ImGui::SetClipboardText(prim.GetPath().GetString().c_str());
+    if (ImGui::MenuItem(paths.size() > 1 ? "Copy prim paths" : "Copy prim path")) {
+        std::string text;
+        for (const auto &p : paths)
+            text += p.GetString() + "\n";
+        if (!text.empty()) text.pop_back();
+        ImGui::SetClipboardText(text.c_str());
     }
     if (ImGui::BeginMenu("Edit layer")) {
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
         if (pcpIndex.IsValid()) {
             auto rootNode = pcpIndex.GetRootNode();
-            ExploreComposition(rootNode);
+            int itemId = 0;
+            ExploreComposition(rootNode, itemId);
         }
         ImGui::EndMenu();
     }
 
     if (ImGui::MenuItem("Create connection editor sheet")) {
-        // TODO: a command ?? do we want undo redo in the node graph ??
-        //AddPrimsToSession({prim});
-        // TODO if the prim is a material or NodeGraph, add all its children
-        CreateSession(prim, {prim});
+        std::vector<UsdPrim> prims;
+        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+        CreateSession(prim, prims);
     }
-    
+
     if (ImGui::MenuItem("Add to connection editor")) {
-        // TODO if the prim is a material or NodeGraph, add all its children
-        AddPrimsToCurrentSession({prim});
+        std::vector<UsdPrim> prims;
+        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+        AddPrimsToCurrentSession(prims);
     }
 }
 
@@ -171,7 +215,12 @@ static inline const char *GetVisibilityIcon(const TfToken &visibility) {
     return ICON_FA_EYE;
 }
 
-static void DrawVisibilityButton(const UsdPrim &prim) {
+static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection) {
+    const UsdStageRefPtr stage = prim.GetStage();
+    std::vector<SdfPath> paths =
+        selection.IsSelected(stage, prim.GetPath())
+            ? selection.GetSelectedPaths(stage)
+            : std::vector<SdfPath>{prim.GetPath()};
     // TODO: this should work with animation
     UsdGeomImageable imageable(prim);
     if (imageable) {
@@ -190,16 +239,38 @@ static void DrawVisibilityButton(const UsdPrim &prim) {
             {
                 ScopedStyleColor menuTextColor(ImGuiCol_Text, ImVec4(1.0, 1.0, 1.0, 1.0));
                 if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-                    if (attr.HasAuthoredValue() && ImGui::MenuItem("clear visibiliy")) {
-                        ExecuteAfterDraw(&UsdPrim::RemoveProperty, prim, attr.GetName());
+                    if (attr.HasAuthoredValue() && ImGui::MenuItem("clear visibility")) {
+                        UsdStageWeakPtr stageWeak = stage;
+                        ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths]() {
+                            for (const auto &path : paths) {
+                                auto p = stageWeak->GetPrimAtPath(path);
+                                if (!p) continue;
+                                UsdGeomImageable im(p);
+                                if (im) p.RemoveProperty(im.GetVisibilityAttr().GetName());
+                            }
+                        }));
                     }
                     VtValue allowedTokens;
                     attr.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
                     if (allowedTokens.IsHolding<VtArray<TfToken>>()) {
+                        int tokenId = 0;
                         for (const auto &token : allowedTokens.Get<VtArray<TfToken>>()) {
+                            ImGui::PushID(tokenId++);
                             if (ImGui::MenuItem(token.GetText())) {
-                                ExecuteAfterDraw<AttributeSet>(attr, VtValue(token), UsdTimeCode::Default());
+                                UsdStageWeakPtr stageWeak = stage;
+                                ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths, token]() {
+                                    for (const auto &path : paths) {
+                                        auto p = stageWeak->GetPrimAtPath(path);
+                                        if (!p) continue;
+                                        UsdGeomImageable im(p);
+                                        if (!im) continue;
+                                        auto visAttr = im.GetVisibilityAttr();
+                                        if (!visAttr) visAttr = im.CreateVisibilityAttr();
+                                        visAttr.Set(token, UsdTimeCode::Default());
+                                    }
+                                }));
                             }
+                            ImGui::PopID();
                         }
                     }
                     ImGui::EndPopup();
@@ -257,7 +328,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
         {
             ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
             if (ImGui::BeginPopupContextItem()) {
-                DrawUsdPrimEditMenuItems(prim);
+                DrawUsdPrimEditMenuItems(prim, selectedPaths);
                 ImGui::EndPopup();
             }
         }
@@ -268,7 +339,7 @@ static void DrawPrimTreeRow(const UsdPrim &prim, Selection &selectedPaths, Stage
 
         // Visibility
         ImGui::TableSetColumnIndex(1);
-        DrawVisibilityButton(prim);
+        DrawVisibilityButton(prim, selectedPaths);
 
         // Type
         ImGui::TableSetColumnIndex(2);
@@ -372,8 +443,15 @@ static void FocusedOnFirstSelectedPath(const SdfPath &selectedPath, const std::v
     for (int i = 0; i < paths.size(); ++i) {
         if (paths[i] == selectedPath) {
             // scroll only if the item is not visible
-            if (i < clipper.DisplayStart || i > clipper.DisplayEnd) {
-                ImGui::SetScrollY(clipper.ItemsHeight * i + 1);
+            // Note: clipper.DisplayStart/DisplayEnd after the loop reflect the *last* step, which may
+            // be the forced anchor item (IncludeItemByIndex) rather than the visible range. Use the
+            // actual scroll position to determine visibility instead.
+            const float itemTop = clipper.ItemsHeight * i;
+            const float scrollY = ImGui::GetScrollY();
+            const float windowHeight = ImGui::GetWindowHeight();
+            const bool isVisible = itemTop >= scrollY && itemTop < scrollY + windowHeight;
+            if (!isVisible) {
+                ImGui::SetScrollY(itemTop + 1);
             }
             return;
         }
@@ -456,11 +534,26 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
             -1, primCount);
         ApplyMultiSelectRequests(msIO, selectedPaths, stage, primCount, [&](int i) { return paths[i]; });
 
+        ImGuiTable* table = GImGui->CurrentTable;
         ImGuiListClipper clipper;
         clipper.Begin(primCount);
         if (msIO->RangeSrcItem != -1)
             clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
         while (clipper.Step()) {
+            // Prevent off-screen steps (forced by IncludeItemByIndex for shift-click anchor)
+            // from affecting column auto-sizing and causing a one-frame horizontal resize glitch.
+            bool isOffScreenStep = false;
+            float savedContentMaxX[3] = {};
+            if (table && clipper.ItemsHeight > 0.0f) {
+                const float stepTop = clipper.ItemsHeight * clipper.DisplayStart;
+                const float stepBot = clipper.ItemsHeight * (clipper.DisplayEnd - 1);
+                const float scrollY = ImGui::GetScrollY();
+                const float windowH = ImGui::GetWindowHeight();
+                isOffScreenStep = (stepBot < scrollY) || (stepTop > scrollY + windowH);
+                if (isOffScreenStep)
+                    for (int c = 0; c < table->ColumnsCount; c++)
+                        savedContentMaxX[c] = table->Columns[c].ContentMaxXUnfrozen;
+            }
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
@@ -468,6 +561,9 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
                 DrawPrimTreeRow(prim, selectedPaths, displayOptions, row);
                 ImGui::PopID();
             }
+            if (isOffScreenStep && table)
+                for (int c = 0; c < table->ColumnsCount; c++)
+                    table->Columns[c].ContentMaxXUnfrozen = savedContentMaxX[c];
         }
         if (selectionHasChanged) {
             // This function can only be called in this context and after the clipper.Step()
