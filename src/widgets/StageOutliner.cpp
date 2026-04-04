@@ -79,7 +79,7 @@ class StageOutlinerDisplayOptions {
     bool _showPrototypes = true;
 };
 
-static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
+static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node, int &itemId) {
     if (!tree)
         return;
     auto obj = tree->GetLayer()->GetObjectAtPath(node.GetPath());
@@ -88,19 +88,21 @@ static void ExploreLayerTree(SdfLayerTreeHandle tree, PcpNodeRef node) {
         format += tree->GetLayer()->GetDisplayName();
         format += " ";
         format += obj->GetPath().GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(format.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(tree->GetLayer(), obj->GetPath());
         }
+        ImGui::PopID();
     }
     for (auto subTree : tree->GetChildTrees()) {
-        ExploreLayerTree(subTree, node);
+        ExploreLayerTree(subTree, node, itemId);
     }
 }
 
-static void ExploreComposition(PcpNodeRef root) {
+static void ExploreComposition(PcpNodeRef root, int &itemId) {
     auto tree = root.GetLayerStack()->GetLayerTree();
-    ExploreLayerTree(tree, root);
-    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode); }
+    ExploreLayerTree(tree, root, itemId);
+    TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode, itemId); }
 }
 
 static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selection) {
@@ -162,7 +164,8 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         auto pcpIndex = prim.ComputeExpandedPrimIndex();
         if (pcpIndex.IsValid()) {
             auto rootNode = pcpIndex.GetRootNode();
-            ExploreComposition(rootNode);
+            int itemId = 0;
+            ExploreComposition(rootNode, itemId);
         }
         ImGui::EndMenu();
     }
@@ -250,7 +253,9 @@ static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection
                     VtValue allowedTokens;
                     attr.GetMetadata(TfToken("allowedTokens"), &allowedTokens);
                     if (allowedTokens.IsHolding<VtArray<TfToken>>()) {
+                        int tokenId = 0;
                         for (const auto &token : allowedTokens.Get<VtArray<TfToken>>()) {
+                            ImGui::PushID(tokenId++);
                             if (ImGui::MenuItem(token.GetText())) {
                                 UsdStageWeakPtr stageWeak = stage;
                                 ExecuteAfterDraw<UsdFunctionCall>(stage, std::function<void()>([stageWeak, paths, token]() {
@@ -265,6 +270,7 @@ static void DrawVisibilityButton(const UsdPrim &prim, const Selection &selection
                                     }
                                 }));
                             }
+                            ImGui::PopID();
                         }
                     }
                     ImGui::EndPopup();

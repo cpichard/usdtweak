@@ -110,6 +110,7 @@ VtValue DrawDictionaryRows(const VtValue &dictValue, const std::string &dictName
         modifiedDictName = editedDictName.Get<std::string>();
     }
     if (unfolded) {
+        int rowId = 0;
         for (auto &item : dictSource) {
             // Is it a dictionary ?
             // TODO test with list/vect of vtvalue or dict
@@ -131,7 +132,7 @@ VtValue DrawDictionaryRows(const VtValue &dictValue, const std::string &dictName
                 // TODO: drawTableRow here ?
                 ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
                 ImGui::TableSetColumnIndex(0);
-
+                ImGui::PushID(rowId++);
                 ImGui::PushID(item.first.c_str()); // FOR THE BUTTON
                 ImGui::Button(ICON_FA_EDIT);
                 {
@@ -176,6 +177,7 @@ VtValue DrawDictionaryRows(const VtValue &dictValue, const std::string &dictName
                     modifiedDict.reset(new VtDictionary(dictSource));
                     (*modifiedDict)[item.first] = result;
                 }
+                ImGui::PopID(); // rowId
             }
         }
     }

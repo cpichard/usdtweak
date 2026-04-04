@@ -253,12 +253,15 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
 
 void DrawPropertyStack(const UsdProperty &property, UsdTimeCode currentTime) {
     SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
+    int itemId = 0;
     for (const auto &prop : properties) {
         const SdfPath& propPath = prop.GetSpec().GetPath();
         std::string site = prop.GetSpec().GetLayer()->GetDisplayName() + " " + propPath.GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(site.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(prop.GetSpec().GetLayer(), propPath);
         }
+        ImGui::PopID();
     }
 }
 
@@ -535,6 +538,7 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
                 subLayer = SdfLayer::FindOrOpen(subLayerPath);
             }
             const std::string layerName = std::string(indent, ' ') + (subLayer ? subLayer->GetDisplayName() : subLayerPath);
+            ImGui::PushID(layerId);
             if (subLayer) {
                 if (ImGui::MenuItem(layerName.c_str())) {
                     ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(subLayer));
@@ -542,8 +546,6 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
             } else {
                 ImGui::TextColored(ImVec4(1.0, 0.0, 0.0, 1.0), "%s", layerName.c_str());
             }
-
-            ImGui::PushID(layerName.c_str());
             DrawEditTargetSubLayersMenuItems(stage, subLayer, indent + 4);
             ImGui::PopID();
         }

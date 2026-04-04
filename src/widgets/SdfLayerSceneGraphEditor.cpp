@@ -400,14 +400,17 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 0.0));
         ImGui::PushItemWidth(-FLT_MIN); // removes the combo label.
         if (ImGui::BeginCombo("Sublayers", "Sublayers", ImGuiComboFlags_NoArrowButton)) {
+            int pathId = 0;
             for (const auto &pathIt : layer->GetSubLayerPaths()) {
                 const std::string &path = pathIt;
+                ImGui::PushID(pathId++);
                 if (ImGui::MenuItem(path.c_str())) {
                     auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, path);
                     if (subLayer) {
                         ExecuteAfterDraw<EditorFindOrOpenLayer>(subLayer->GetRealPath());
                     }
                 }
+                ImGui::PopID();
             }
             ImGui::EndCombo();
         }
