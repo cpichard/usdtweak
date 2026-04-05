@@ -7,14 +7,25 @@
 
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/sdf/attributeSpec.h>
+#include <pxr/usd/sdf/copyUtils.h>
+#include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerUtils.h>
 #include <pxr/usd/sdf/notice.h>
 #include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/propertySpec.h>
+#include <pxr/usd/sdf/relationshipSpec.h>
+#include <pxr/usd/sdf/schema.h>
+#include <pxr/usd/sdf/usdaFileFormat.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <functional>
+#include <sstream>
 #include <unordered_set>
 #include <vector>
 
@@ -24,8 +35,8 @@ PXR_NAMESPACE_USING_DIRECTIVE
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-static constexpr size_t kFoldThreshold = 500;
-static constexpr int    kUndoStackMax  = 64;
+static constexpr size_t kLargeElemThreshold = 50; // array elements — fold if larger
+static constexpr int    kUndoStackMax       = 64;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Token types and colors
@@ -97,58 +108,190 @@ struct Token { UsdaTokenType type; int start; int end; };
 
 struct LineMetadata {
     std::vector<Token> tokens;
-    bool               folded      = false;
-    bool               hasAttrPath = false;   // folded line with a resolved attribute path
+    bool               folded        = false;
+    bool               hasAttrPath   = false; // folded line with a resolved attribute path
     SdfPath            attrPath;              // used to select the attribute on click
-    std::string        fullLine;              // original content for serialization (may include hidden metadata lines)
+    // For folded lines: identifies the live spec so JoinLines() can regenerate via WriteToStream
+    SdfPath            foldedSpecPath;        // path of the folded attr spec (empty for normal lines)
+    int                foldedIndent  = 0;     // indentation level used when regenerating
 };
 
-// Extract the attribute name from a folded display line, e.g.:
-//   "    float2[] primvars:st = [<large array>]"  →  "primvars:st"
-static std::string ExtractAttrName(const std::string &line) {
-    auto eq = line.find(" = [");
-    if (eq == std::string::npos) return {};
-    size_t end = eq;
-    while (end > 0 && line[end - 1] == ' ') --end;
-    size_t start = end;
-    while (start > 0 && (std::isalnum((unsigned char)line[start-1])
-                      || line[start-1] == '_' || line[start-1] == ':')) --start;
-    if (start == end) return {};
-    return line.substr(start, end - start);
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-spec serialization helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Return the cached usda file format handle.
+static SdfFileFormatConstPtr GetUsdaFormat() {
+    static SdfFileFormatConstPtr fmt =
+        SdfFileFormat::FindById(SdfUsdaFileFormatTokens->Id);
+    return fmt;
 }
 
-// Extract prim name from a def/over/class line, e.g.:
-//   "    def Mesh \"myMesh\" {"  →  "myMesh"
-// Returns empty string if the line is not a prim-opening line.
-static std::string ParsePrimName(const char *ls, size_t len) {
-    const char *p = ls, *end = ls + len;
-    while (p < end && *p == ' ') ++p;
-    for (const char *kw : {"def ", "over ", "class "}) {
-        size_t kwlen = strlen(kw);
-        if ((size_t)(end - p) >= kwlen && memcmp(p, kw, kwlen) == 0) {
-            p += kwlen;
-            // Find first '"'
-            while (p < end && *p != '"') ++p;
-            if (p >= end) return {};
-            const char *q = ++p;
-            while (q < end && *q != '"') ++q;
-            return std::string(p, q);
+// Split a multi-line string on '\n', calling cb(line) for each line.
+// Strips any trailing '\n' from the final line.
+static void SplitLines(const std::string &text,
+                       const std::function<void(const std::string &)> &cb) {
+    const char *p = text.c_str(), *end = p + text.size();
+    while (p < end) {
+        const char *ls = p;
+        while (p < end && *p != '\n') ++p;
+        cb(std::string(ls, p));
+        if (p < end) ++p;
+    }
+}
+
+// Return true if attr has a default value or time sample that is a large array.
+// Does NOT serialize any data — reads in-memory VtValue size only.
+static bool IsLargeArrayAttr(SdfAttributeSpecHandle attr) {
+    VtValue val = attr->GetDefaultValue();
+    if (val.IsArrayValued() && val.GetArraySize() > kLargeElemThreshold)
+        return true;
+    auto samples = attr->ListTimeSamples();
+    if (!samples.empty()) {
+        VtValue sv;
+        if (attr->QueryTimeSample(*samples.begin(), &sv))
+            if (sv.IsArrayValued() && sv.GetArraySize() > kLargeElemThreshold)
+                return true;
+    }
+    return false;
+}
+
+// Build a display-only placeholder line for a large-array attribute.
+// No array serialization happens here.
+static std::string GeneratePlaceholderAttrLine(SdfAttributeSpecHandle attr,
+                                               int indent) {
+    std::string line(indent * 4, ' ');
+    if (attr->IsCustom())
+        line += "custom ";
+    if (attr->GetVariability() == SdfVariabilityUniform)
+        line += "uniform ";
+    line += attr->GetTypeName().GetAsToken().GetString() + " ";
+    line += attr->GetName();
+    // Pick default-value array size, or fall back to first time-sample size.
+    VtValue defVal = attr->GetDefaultValue();
+    size_t elemCount = 0;
+    bool useTimeSamples = false;
+    if (defVal.IsArrayValued() && defVal.GetArraySize() > kLargeElemThreshold) {
+        elemCount = defVal.GetArraySize();
+    } else {
+        // Only time samples are large.
+        auto samples = attr->ListTimeSamples();
+        elemCount = samples.size();
+        useTimeSamples = true;
+    }
+    if (useTimeSamples) {
+        line += ".timeSamples = {<" + std::to_string(elemCount) + " time samples>}";
+    } else {
+        line += " = [<" + std::to_string(elemCount) + " elements>]";
+    }
+    return line;
+}
+
+// Persistent temp layer used to serialize a prim header without its children
+// or properties.  Created lazily, reused across calls.
+static SdfLayerRefPtr s_primPreambleLayer;
+
+// Return the usda preamble lines for prim (e.g. "def Mesh \"foo\" (\n    ...\n)")
+// WITHOUT any properties or child prims.  The caller adds the opening '{' line.
+static std::vector<std::string> GetPrimPreambleLines(SdfPrimSpecHandle srcPrim,
+                                                     SdfLayerRefPtr srcLayer,
+                                                     int indent) {
+    if (!s_primPreambleLayer)
+        s_primPreambleLayer = SdfLayer::CreateAnonymous(
+            "__te_preamble__",
+            SdfFileFormat::FindById(SdfUsdaFileFormatTokens->Id));
+
+    // Use the source prim name so the serialized output shows the correct name.
+    SdfPath tempPath("/" + srcPrim->GetName());
+
+    // Clear any previous prim in the temp layer.
+    if (s_primPreambleLayer->HasSpec(tempPath)) {
+        SdfPrimSpecHandle old = s_primPreambleLayer->GetPrimAtPath(tempPath);
+        if (old) s_primPreambleLayer->RemoveRootPrim(old);
+    }
+
+    // Create a fresh empty prim.
+    SdfCreatePrimInLayer(s_primPreambleLayer, tempPath);
+    SdfPrimSpecHandle tempPrim = s_primPreambleLayer->GetPrimAtPath(tempPath);
+    if (!tempPrim) return {};
+
+    // Fields to skip — we don't want children or properties copied.
+    static const std::unordered_set<TfToken, TfToken::HashFunctor> kSkipFields = {
+        SdfChildrenKeys->PrimChildren,
+        SdfChildrenKeys->PropertyChildren,
+        SdfChildrenKeys->VariantSetChildren,
+        SdfChildrenKeys->VariantChildren,
+    };
+
+    for (const TfToken& field : srcPrim->ListFields()) {
+        if (kSkipFields.count(field)) continue;
+        VtValue val = srcLayer->GetField(srcPrim->GetPath(), field);
+        if (!val.IsEmpty())
+            s_primPreambleLayer->SetField(tempPath, field, val);
+    }
+
+    // Serialize — the temp prim has no arrays, so this is always fast.
+    std::ostringstream buf;
+    GetUsdaFormat()->WriteToStream(SdfSpecHandle(tempPrim), buf,
+                                   static_cast<size_t>(indent));
+    std::string text = buf.str();
+
+    // Split into lines, then strip the closing '}' (and any trailing empties)
+    // that WriteToStream emits for the empty prim body.
+    std::vector<std::string> result;
+    SplitLines(text, [&](const std::string &l) { result.push_back(l); });
+    while (!result.empty() &&
+           (result.back().empty() ||
+            result.back().find_first_not_of(" \t}") == std::string::npos))
+        result.pop_back();
+
+    return result;
+}
+
+// Build layer-level header lines ("#usda 1.0" + optional metadata block).
+static std::vector<std::string> GenerateLayerHeaderLines(SdfLayerRefPtr layer) {
+    std::vector<std::string> result;
+    result.push_back("#usda 1.0");
+
+    std::string meta;
+    SdfPath root = SdfPath::AbsoluteRootPath();
+
+    if (!layer->GetComment().empty())
+        meta += "    \"\"\"" + layer->GetComment() + "\"\"\"\n";
+    if (!layer->GetDocumentation().empty())
+        meta += "    doc = \"" + layer->GetDocumentation() + "\"\n";
+    if (!layer->GetDefaultPrim().IsEmpty())
+        meta += "    defaultPrim = \"" +
+                layer->GetDefaultPrim().GetString() + "\"\n";
+
+    auto addDouble = [&](const TfToken& key, const char* name) {
+        VtValue v;
+        if (layer->HasField(root, key, &v) && v.IsHolding<double>())
+            meta += std::string("    ") + name + " = " +
+                    std::to_string(v.UncheckedGet<double>()) + "\n";
+    };
+    addDouble(SdfFieldKeys->StartTimeCode,       "startTimeCode");
+    addDouble(SdfFieldKeys->EndTimeCode,         "endTimeCode");
+    addDouble(SdfFieldKeys->FramesPerSecond,     "framesPerSecond");
+    addDouble(SdfFieldKeys->TimeCodesPerSecond,  "timeCodesPerSecond");
+
+    SdfSubLayerProxy subLayers = layer->GetSubLayerPaths();
+    if (!subLayers.empty()) {
+        meta += "    subLayers = [\n";
+        for (size_t i = 0; i < subLayers.size(); ++i) {
+            std::string slPath = subLayers[i]; // _ItemProxy → std::string
+            meta += "        @" + slPath + "@" +
+                    (i + 1 < subLayers.size() ? "," : "") + "\n";
         }
+        meta += "    ]\n";
     }
-    return {};
-}
 
-// Count net brace change on a line (ignoring braces inside "..." strings).
-static int BraceDelta(const char *ls, size_t len) {
-    int delta = 0;
-    bool inStr = false;
-    for (size_t i = 0; i < len; ++i) {
-        if (ls[i] == '"') { inStr = !inStr; continue; }
-        if (inStr) continue;
-        if (ls[i] == '{') ++delta;
-        else if (ls[i] == '}') --delta;
+    if (!meta.empty()) {
+        result.push_back("(");
+        SplitLines(meta, [&](const std::string &l) { result.push_back(l); });
+        result.push_back(")");
     }
-    return delta;
+    return result;
 }
 
 static void TokenizeLine(const char *start, size_t len,
@@ -296,159 +439,143 @@ struct TextEditorState : public TfWeakBase {
     }
 
     void RebuildFromLayer() {
-        std::string raw;
-        layer->ExportToString(&raw);
         lines.clear(); lineData.clear(); maxLineLen = 0;
 
-        // Prim path stack: track current prim context for attribute path resolution.
-        // Each entry holds the path and the brace depth at which it was opened.
-        struct StackEntry { SdfPath path; int depth; };
-        std::vector<StackEntry> pathStack;
-        pathStack.push_back({SdfPath::AbsoluteRootPath(), 0});
-        int braceDepth = 0;
+        SdfFileFormatConstPtr fmt = GetUsdaFormat();
+        if (!fmt) { layerDirty = false; return; }
 
-        // Hidden metadata accumulation: when a folded array line ends with ' (',
-        // subsequent lines up to the matching ')' are hidden (absorbed into fullLine).
-        int  hiddenParenDepth = 0;
-        int  parentFoldedIdx  = -1; // index in lines[] of the accumulating folded line
+        // ── Helpers ───────────────────────────────────────────────────────────
 
-        const char *p = raw.c_str(), *end = p + raw.size();
-        while (p < end) {
-            const char *ls = p;
-            while (p < end && *p != '\n') ++p;
-            size_t len = static_cast<size_t>(p - ls);
-            if (p < end) ++p; // skip '\n'
-
-            // ── Hidden metadata lines: absorb into parent folded line ─────────
-            if (hiddenParenDepth > 0) {
-                lineData[parentFoldedIdx].fullLine += '\n';
-                lineData[parentFoldedIdx].fullLine.append(ls, len);
-                for (size_t k = 0; k < len; ++k) {
-                    if      (ls[k] == '(') ++hiddenParenDepth;
-                    else if (ls[k] == ')') { if (--hiddenParenDepth <= 0) { hiddenParenDepth = 0; parentFoldedIdx = -1; break; } }
-                }
-                continue; // don't add to lines[]
-            }
-
-            // ── Update prim path stack ────────────────────────────────────────
-            int delta = BraceDelta(ls, len);
-            if (delta > 0) {
-                std::string name = ParsePrimName(ls, len);
-                if (!name.empty()) {
-                    SdfPath parent = pathStack.back().path;
-                    SdfPath child  = parent.IsAbsoluteRootPath()
-                                   ? SdfPath("/" + name)
-                                   : parent.AppendChild(TfToken(name));
-                    pathStack.push_back({child, braceDepth + delta});
-                }
-            }
-            braceDepth += delta;
-            while (pathStack.size() > 1 && braceDepth < pathStack.back().depth)
-                pathStack.pop_back();
-
-            // ── Fold large arrays ─────────────────────────────────────────────
-            bool folded = false;
-            std::string lineStr;
-            bool hasMetadata = false;
-            if (len > kFoldThreshold) {
-                std::string_view sv(ls, len);
-                auto eq = sv.find("= [");
-                if (eq != std::string_view::npos) {
-                    auto lastBracket = sv.rfind(']');
-                    std::string suffix;
-                    if (lastBracket != std::string_view::npos && lastBracket > eq + 2)
-                        suffix = std::string(sv.substr(lastBracket + 1));
-                    // Detect and strip metadata block opener ' ('
-                    std::string_view sv2(suffix);
-                    size_t s2 = 0;
-                    while (s2 < sv2.size() && sv2[s2] == ' ') ++s2;
-                    if (sv2.substr(s2) == "(") {
-                        hasMetadata = true;
-                        suffix.clear(); // hide the ' (' from display
-                    }
-                    lineStr = std::string(ls, eq + 3) + "<large array>]" + suffix;
-                    folded  = true;
-                }
-            }
-            if (!folded) lineStr.assign(ls, len);
+        // Add a normal (non-folded) line with syntax highlight tokens.
+        auto addNormalLine = [&](const std::string &lineStr) {
+            lines.push_back(lineStr);
             maxLineLen = std::max(maxLineLen, (int)lineStr.size());
-            lines.push_back(std::move(lineStr));
-
-            // ── Build LineMetadata ────────────────────────────────────────────
             LineMetadata meta;
-            meta.folded   = folded;
-            if (!folded) {
-                bool lk = false;
-                TokenizeLine(lines.back().c_str(), lines.back().size(), meta.tokens, lk);
+            bool lk = false;
+            TokenizeLine(lineStr.c_str(), lineStr.size(), meta.tokens, lk);
+            lineData.push_back(std::move(meta));
+        };
+
+        // Split serialized text into normal lines.
+        auto splitAndAddNormal = [&](const std::string &text) {
+            SplitLines(text, addNormalLine);
+        };
+
+        // Add a folded placeholder line, storing the spec path for JoinLines().
+        auto addFoldedLine = [&](const std::string &lineStr,
+                                  const SdfPath &specPath, int indent) {
+            lines.push_back(lineStr);
+            maxLineLen = std::max(maxLineLen, (int)lineStr.size());
+            LineMetadata meta;
+            meta.folded         = true;
+            meta.foldedSpecPath = specPath;
+            meta.foldedIndent   = indent;
+            meta.hasAttrPath    = !specPath.IsEmpty();
+            meta.attrPath       = specPath;
+            // Tokenize prefix up to '[<', then mark the placeholder as Folded.
+            const std::string &display = lines.back();
+            auto ps = display.find("[<");
+            if (ps == std::string::npos) {
+                meta.tokens.push_back({UsdaTokenType::Folded, 0, (int)display.size()});
             } else {
-                meta.fullLine = std::string(ls, len); // original for serialization
-                // Resolve attribute path: try the text-based prim path first,
-                // then fall back to searching the full layer spec map.
-                std::string attrName = ExtractAttrName(lines.back());
-                if (!attrName.empty()) {
-                    TfToken attrToken(attrName);
-                    // First try: stack-derived prim path
-                    if (pathStack.size() > 1) {
-                        SdfPath candidate = pathStack.back().path.AppendProperty(attrToken);
-                        if (layer->HasSpec(candidate)) {
-                            meta.attrPath    = candidate;
-                            meta.hasAttrPath = true;
-                        }
-                    }
-                    // Fallback: scan all attribute specs in the layer
-                    if (!meta.hasAttrPath) {
-                        layer->Traverse(SdfPath::AbsoluteRootPath(),
-                            [&](const SdfPath &p) {
-                                if (meta.hasAttrPath) return;
-                                if (p.IsPropertyPath() && p.GetNameToken() == attrToken) {
-                                    if (layer->HasSpec(p)) {
-                                        meta.attrPath    = p;
-                                        meta.hasAttrPath = true;
-                                    }
-                                }
-                            });
-                    }
-                }
-                // Tokenize the prefix (type, name, " = [") with normal syntax highlighting,
-                // then add a Folded token only for the "<large array>]" placeholder.
-                {
-                    const std::string &display = lines.back();
-                    auto placeholderStart = display.find("<large array>");
-                    if (placeholderStart == std::string::npos) {
-                        // Shouldn't happen, but fall back to full-line folded token
-                        meta.tokens.push_back({UsdaTokenType::Folded, 0, (int)display.size()});
-                    } else {
-                        // Tokenize prefix normally
-                        bool lk = false;
-                        TokenizeLine(display.c_str(), placeholderStart, meta.tokens, lk);
-                        // Folded token: "<large array>]"  (up to end of display or suffix start)
-                        int foldedEnd = (int)display.size();
-                        // If there's a suffix after ']', stop the folded token at ']'+1
-                        auto closeBracket = display.find(']', placeholderStart);
-                        if (closeBracket != std::string::npos) foldedEnd = (int)closeBracket + 1;
-                        meta.tokens.push_back({UsdaTokenType::Folded, (int)placeholderStart, foldedEnd});
-                        // Tokenize any suffix (e.g. nothing, since ' (' is hidden)
-                        if (foldedEnd < (int)display.size()) {
-                            bool lk2 = false;
-                            TokenizeLine(display.c_str() + foldedEnd,
-                                         display.size() - foldedEnd, meta.tokens, lk2);
-                            // Fix up token offsets (TokenizeLine starts at 0)
-                            for (auto it = meta.tokens.end() - 1; ; --it) {
-                                if (it->type == UsdaTokenType::Folded) break;
-                                it->start += foldedEnd;
-                                it->end   += foldedEnd;
-                            }
-                        }
-                    }
-                }
-                // If the original line opened a metadata block, start consuming hidden lines
-                if (hasMetadata) {
-                    hiddenParenDepth = 1;
-                    parentFoldedIdx  = (int)lines.size() - 1;
-                }
+                bool lk = false;
+                TokenizeLine(display.c_str(), ps, meta.tokens, lk);
+                meta.tokens.push_back(
+                    {UsdaTokenType::Folded, (int)ps, (int)display.size()});
             }
             lineData.push_back(std::move(meta));
+        };
+
+        // Mutual recursion: writeSpecLines <-> writeVariantSetLines.
+        std::function<void(SdfPrimSpecHandle, int)>       writeSpecLines;
+        std::function<void(SdfVariantSetSpecHandle, int)> writeVariantSetLines;
+
+        // Writes properties + named children + variant sets for a prim spec.
+        // Shared by writeSpecLines (regular prims) and writeVariantSetLines
+        // (the implicit prim inside each variant). Never touches large arrays.
+        auto writePrimBody = [&](SdfPrimSpecHandle prim, int indent) {
+            // Properties
+            auto props = prim->GetProperties();
+            for (const SdfPropertySpecHandle &prop : props) {
+                if (prop->GetSpecType() == SdfSpecTypeAttribute) {
+                    SdfAttributeSpecHandle attr =
+                        TfStatic_cast<SdfAttributeSpecHandle>(prop);
+                    if (IsLargeArrayAttr(attr)) {
+                        addFoldedLine(
+                            GeneratePlaceholderAttrLine(attr, indent + 1),
+                            prop->GetPath(), indent + 1);
+                        continue;
+                    }
+                }
+                // WriteToStream on a single property spec never recurses into
+                // child prims.
+                std::ostringstream buf;
+                fmt->WriteToStream(SdfSpecHandle(prop), buf,
+                                   static_cast<size_t>(indent + 1));
+                splitAndAddNormal(buf.str());
+            }
+
+            // Blank separator between properties and children
+            auto children = prim->GetNameChildren();
+            if (!props.empty() && !children.empty())
+                addNormalLine("");
+
+            // Child prims
+            bool firstChild = true;
+            for (const SdfPrimSpecHandle &child : children) {
+                if (!firstChild) addNormalLine("");
+                firstChild = false;
+                writeSpecLines(child, indent + 1);
+            }
+
+            // Variant sets — recurse; never call WriteToStream on the whole set
+            for (const auto &vs : prim->GetVariantSets()) {
+                SdfVariantSetSpecHandle vsetHandle = vs.second;
+                if (!vsetHandle) continue;
+                writeVariantSetLines(vsetHandle, indent + 1);
+            }
+        };
+
+        writeSpecLines = [&](SdfPrimSpecHandle prim, int indent) {
+            // Prim preamble (def/over/class + metadata block) via temp layer.
+            // This never serializes properties or children.
+            for (const std::string &hdrLine :
+                    GetPrimPreambleLines(prim, layer, indent))
+                addNormalLine(hdrLine);
+            writePrimBody(prim, indent);
+            addNormalLine(std::string(indent * 4, ' ') + "}");
+        };
+
+        // Writes a variantSet block without ever calling WriteToStream on the
+        // whole set.  Each variant's contents are written via writePrimBody so
+        // large-array detection applies recursively.
+        writeVariantSetLines = [&](SdfVariantSetSpecHandle vset, int indent) {
+            addNormalLine(std::string(indent * 4, ' ') +
+                          "variantSet \"" + vset->GetName() + "\" = {");
+            for (const SdfVariantSpecHandle &variant : vset->GetVariantList()) {
+                if (!variant) continue;
+                addNormalLine(std::string((indent + 1) * 4, ' ') +
+                              "\"" + variant->GetName() + "\" {");
+                SdfPrimSpecHandle variantPrim = variant->GetPrimSpec();
+                if (variantPrim)
+                    writePrimBody(variantPrim, indent + 1);
+                addNormalLine(std::string((indent + 1) * 4, ' ') + "}");
+            }
+            addNormalLine(std::string(indent * 4, ' ') + "}");
+        };
+
+        // ── Layer header ──────────────────────────────────────────────────────
+        for (const std::string &l : GenerateLayerHeaderLines(layer))
+            addNormalLine(l);
+
+        // ── Root prims ────────────────────────────────────────────────────────
+        for (const SdfPrimSpecHandle &prim : layer->GetRootPrims()) {
+            addNormalLine("");
+            writeSpecLines(prim, 0);
         }
+
+        addNormalLine("");
+
         layerDirty   = false;
         editingDirty = false;
     }
@@ -456,8 +583,9 @@ struct TextEditorState : public TfWeakBase {
     void RetokenizeLine(int idx) {
         if (idx < 0 || idx >= (int)lines.size()) return;
         lineData[idx].tokens.clear();
-        lineData[idx].folded = false;
-        lineData[idx].fullLine.clear();
+        lineData[idx].folded        = false;
+        lineData[idx].foldedSpecPath = SdfPath();
+        lineData[idx].foldedIndent  = 0;
         bool lk = false;
         TokenizeLine(lines[idx].c_str(), lines[idx].size(), lineData[idx].tokens, lk);
         maxLineLen = std::max(maxLineLen, (int)lines[idx].size());
@@ -762,13 +890,28 @@ struct TextEditorState : public TfWeakBase {
     // ── Serialization ────────────────────────────────────────────────────────
 
     std::string JoinLines() const {
+        SdfFileFormatConstPtr fmt = GetUsdaFormat();
         std::string out;
         for (size_t i = 0; i < lines.size(); ++i) {
-            // Folded lines display a placeholder; serialize the original full content instead.
-            if (lineData[i].folded && !lineData[i].fullLine.empty())
-                out += lineData[i].fullLine;
-            else
+            if (lineData[i].folded && !lineData[i].foldedSpecPath.IsEmpty() && layer) {
+                // Regenerate the full attribute text from the live spec.
+                // WriteToStream is called at most once per folded line, only at
+                // Ctrl+Enter time — the cost is acceptable.
+                SdfSpecHandle spec =
+                    layer->GetObjectAtPath(lineData[i].foldedSpecPath);
+                if (spec && fmt) {
+                    std::ostringstream buf;
+                    fmt->WriteToStream(spec, buf,
+                                       static_cast<size_t>(lineData[i].foldedIndent));
+                    std::string s = buf.str();
+                    // Strip trailing newline(s) added by WriteToStream
+                    while (!s.empty() && s.back() == '\n') s.pop_back();
+                    out += s;
+                }
+                // If spec is gone (user deleted it in an earlier edit), skip.
+            } else {
                 out += lines[i];
+            }
             if (i + 1 < lines.size()) out += '\n';
         }
         return out;
