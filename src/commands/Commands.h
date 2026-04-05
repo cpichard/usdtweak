@@ -66,6 +66,7 @@ struct LayerRenameSubLayer;
 struct LayerMute;
 struct LayerUnmute;
 struct LayerTextEdit;
+struct LayerTextEditPreservingArrays;
 struct LayerCreateOversFromPath;
 struct LayerFixErrors;
 

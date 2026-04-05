@@ -1,4 +1,5 @@
 
+#include <pxr/usd/sdf/copyUtils.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/reference.h>
@@ -183,6 +184,72 @@ struct LayerTextEdit : public SdfLayerCommand {
     std::string    _newText; // kept for potential redo
 };
 template void ExecuteAfterDraw<LayerTextEdit>(SdfLayerRefPtr layer, std::string newText);
+
+// LayerTextEditPreservingArrays performs the same full-text replacement as
+// LayerTextEdit but avoids expensive serialization of large-array attributes
+// that the user did NOT touch. Those attributes are snapshotted before the
+// import and restored via SdfCopySpec afterwards, all inside the same
+// SdfCommandGroupRecorder so undo works identically.
+struct LayerTextEditPreservingArrays : public SdfLayerCommand {
+
+    LayerTextEditPreservingArrays(SdfLayerRefPtr layer,
+                                  std::string newText,
+                                  std::vector<SdfPath> attrPathsToRestore)
+        : _layer(std::move(layer))
+        , _newText(std::move(newText))
+        , _attrPathsToRestore(std::move(attrPathsToRestore)) {}
+
+    ~LayerTextEditPreservingArrays() override {}
+
+    bool DoIt() override {
+        if (!_layer) return false;
+        SdfCommandGroupRecorder recorder(_undoCommands, _layer);
+
+        // Step 1: Snapshot each unmodified large-array attr into an anonymous
+        //         layer. SdfCopySpec copies VtValue by COW reference — no
+        //         serialization of array bytes.
+        auto snapshot = SdfLayer::CreateAnonymous(".usda");
+        for (const SdfPath &attrPath : _attrPathsToRestore) {
+            if (!_layer->HasSpec(attrPath)) continue;
+            _EnsureParentStub(snapshot, attrPath.GetParentPath());
+            SdfCopySpec(_layer, attrPath, snapshot, attrPath);
+        }
+
+        // Step 2: Full import — fast because large arrays use "= None" dummies.
+        if (!_layer->ImportFromString(_newText)) return false;
+
+        // Step 3: Restore each large-array attr from the snapshot.
+        //         Skip prims that the user deleted (parent no longer exists).
+        for (const SdfPath &attrPath : _attrPathsToRestore) {
+            if (!snapshot->HasSpec(attrPath)) continue;
+            if (!_layer->HasSpec(attrPath.GetParentPath())) continue;
+            SdfCopySpec(snapshot, attrPath, _layer, attrPath);
+        }
+        return true;
+    }
+
+    bool UndoIt() override {
+        if (!_layer) return false;
+        _undoCommands.UndoIt();
+        return true;
+    }
+
+    SdfLayerRefPtr       _layer;
+    std::string          _newText;
+    std::vector<SdfPath> _attrPathsToRestore;
+
+private:
+    // Create empty "over" prim stubs in the snapshot layer so SdfCopySpec
+    // can place attribute specs at the correct path.
+    static void _EnsureParentStub(SdfLayerRefPtr &layer, const SdfPath &path) {
+        if (path.IsAbsoluteRootPath() || layer->HasSpec(path)) return;
+        _EnsureParentStub(layer, path.GetParentPath());
+        SdfPrimSpec::New(layer->GetPrimAtPath(path.GetParentPath()),
+                         path.GetName(), SdfSpecifierOver);
+    }
+};
+template void ExecuteAfterDraw<LayerTextEditPreservingArrays>(
+    SdfLayerRefPtr layer, std::string newText, std::vector<SdfPath> attrPathsToRestore);
 
 struct LayerCreateOversFromPath : public SdfLayerCommand {
 

@@ -114,6 +114,8 @@ struct LineMetadata {
     // For folded lines: identifies the live spec so JoinLines() can regenerate via WriteToStream
     SdfPath            foldedSpecPath;        // path of the folded attr spec (empty for normal lines)
     int                foldedIndent  = 0;     // indentation level used when regenerating
+    // Dirty tracking: the immediate prim spec this line belongs to (empty = header / inter-prim)
+    SdfPath            primSpecPath;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -399,6 +401,11 @@ struct TextEditorState : public TfWeakBase {
     int                       maxLineLen   = 0; // char length of longest line (drives h-scroll width)
     bool                      layerDirty   = true;
     bool                      editingDirty = false;
+    // Dirty tracking for the selective-import optimization.
+    // dirtySpecPaths: immediate prim specs with edited lines (empty primSpecPath lines excluded).
+    // allDirty: true when we can't tell which specs changed (undo/redo, multi-line paste).
+    std::unordered_set<SdfPath, SdfPath::Hash> dirtySpecPaths;
+    bool                      allDirty     = false;
     int                       cursorLine   = 0;
     int                       cursorCol    = 0;
     bool                      focused      = false;
@@ -419,6 +426,8 @@ struct TextEditorState : public TfWeakBase {
         layer        = newLayer;
         layerDirty   = true;
         editingDirty = false;
+        dirtySpecPaths.clear();
+        allDirty       = false;
         cursorLine = cursorCol = 0;
         selAnchorLine = selAnchorCol = 0;
         focused        = false;
@@ -431,6 +440,15 @@ struct TextEditorState : public TfWeakBase {
         if (layer)
             noticeKey = TfNotice::Register(TfCreateWeakPtr(this),
                                            &TextEditorState::OnLayersDidChange);
+    }
+
+    // Record that the line at lineIdx has been edited.
+    // Call BEFORE modifying lines[]/lineData[] so primSpecPath is still valid.
+    void MarkLineDirty(int lineIdx) {
+        editingDirty = true;
+        if (lineIdx >= 0 && lineIdx < (int)lineData.size() &&
+            !lineData[lineIdx].primSpecPath.IsEmpty())
+            dirtySpecPaths.insert(lineData[lineIdx].primSpecPath);
     }
 
     void OnLayersDidChange(const SdfNotice::LayersDidChange &notice) {
@@ -446,6 +464,10 @@ struct TextEditorState : public TfWeakBase {
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
+        // Tracks the immediate prim spec currently being serialized.
+        // Set at the start of writeSpecLines; cleared for header/inter-prim lines.
+        SdfPath currentSpecPath;
+
         // Add a normal (non-folded) line with syntax highlight tokens.
         auto addNormalLine = [&](const std::string &lineStr) {
             lines.push_back(lineStr);
@@ -453,6 +475,7 @@ struct TextEditorState : public TfWeakBase {
             LineMetadata meta;
             bool lk = false;
             TokenizeLine(lineStr.c_str(), lineStr.size(), meta.tokens, lk);
+            meta.primSpecPath = currentSpecPath;
             lineData.push_back(std::move(meta));
         };
 
@@ -472,6 +495,7 @@ struct TextEditorState : public TfWeakBase {
             meta.foldedIndent   = indent;
             meta.hasAttrPath    = !specPath.IsEmpty();
             meta.attrPath       = specPath;
+            meta.primSpecPath   = currentSpecPath;
             // Tokenize prefix up to '[<', then mark the placeholder as Folded.
             const std::string &display = lines.back();
             auto ps = display.find("[<");
@@ -537,6 +561,11 @@ struct TextEditorState : public TfWeakBase {
         };
 
         writeSpecLines = [&](SdfPrimSpecHandle prim, int indent) {
+            // Set currentSpecPath so every line emitted within this spec
+            // (header, properties, closing brace) carries this prim's path.
+            // Recursive child calls will override it with their own path.
+            SdfPath savedSpecPath = currentSpecPath;
+            currentSpecPath = prim->GetPath();
             // Prim preamble (def/over/class + metadata block) via temp layer.
             // This never serializes properties or children.
             for (const std::string &hdrLine :
@@ -544,6 +573,7 @@ struct TextEditorState : public TfWeakBase {
                 addNormalLine(hdrLine);
             writePrimBody(prim, indent);
             addNormalLine(std::string(indent * 4, ' ') + "}");
+            currentSpecPath = savedSpecPath;
         };
 
         // Writes a variantSet block without ever calling WriteToStream on the
@@ -557,8 +587,12 @@ struct TextEditorState : public TfWeakBase {
                 addNormalLine(std::string((indent + 1) * 4, ' ') +
                               "\"" + variant->GetName() + "\" {");
                 SdfPrimSpecHandle variantPrim = variant->GetPrimSpec();
-                if (variantPrim)
+                if (variantPrim) {
+                    SdfPath savedSpecPath = currentSpecPath;
+                    currentSpecPath = variantPrim->GetPath();
                     writePrimBody(variantPrim, indent + 1);
+                    currentSpecPath = savedSpecPath;
+                }
                 addNormalLine(std::string((indent + 1) * 4, ' ') + "}");
             }
             addNormalLine(std::string(indent * 4, ' ') + "}");
@@ -578,6 +612,8 @@ struct TextEditorState : public TfWeakBase {
 
         layerDirty   = false;
         editingDirty = false;
+        dirtySpecPaths.clear();
+        allDirty     = false;
     }
 
     void RetokenizeLine(int idx) {
@@ -611,6 +647,7 @@ struct TextEditorState : public TfWeakBase {
         lineData.resize(lines.size());
         for (int i = 0; i < (int)lines.size(); ++i) RetokenizeLine(i);
         editingDirty = true;
+        allDirty     = true; // restored buffer can differ anywhere
         ClampCursor();
     }
 
@@ -624,6 +661,7 @@ struct TextEditorState : public TfWeakBase {
         lineData.resize(lines.size());
         for (int i = 0; i < (int)lines.size(); ++i) RetokenizeLine(i);
         editingDirty = true;
+        allDirty     = true; // restored buffer can differ anywhere
         ClampCursor();
     }
 
@@ -632,7 +670,8 @@ struct TextEditorState : public TfWeakBase {
     void InsertChar(unsigned int c) {
         if (c < 32 || c == 127) return; // control chars handled separately
         PushUndo();
-        if (HasSelection()) _DeleteSelectionImpl();
+        if (HasSelection()) _DeleteSelectionImpl(); // marks selection range dirty
+        MarkLineDirty(cursorLine);
         char buf[5] = {};
         // Simple UTF-8 encode
         if (c < 0x80)       { buf[0] = (char)c; }
@@ -647,7 +686,12 @@ struct TextEditorState : public TfWeakBase {
 
     void InsertText(const std::string &text) {
         PushUndo();
-        if (HasSelection()) _DeleteSelectionImpl();
+        if (HasSelection()) _DeleteSelectionImpl(); // marks selection range dirty
+        if (text.find('\n') != std::string::npos) {
+            allDirty = true; // multi-line paste may span prim boundaries
+        } else {
+            MarkLineDirty(cursorLine);
+        }
         for (size_t i = 0; i < text.size(); ) {
             if (text[i] == '\n') {
                 std::string rest = lines[cursorLine].substr(cursorCol);
@@ -673,7 +717,8 @@ struct TextEditorState : public TfWeakBase {
 
     void InsertNewline() {
         PushUndo();
-        if (HasSelection()) _DeleteSelectionImpl();
+        if (HasSelection()) _DeleteSelectionImpl(); // marks selection range dirty
+        MarkLineDirty(cursorLine);
         // Auto-indent: match indent of current line
         const std::string &cur = lines[cursorLine];
         size_t indent = 0;
@@ -693,9 +738,10 @@ struct TextEditorState : public TfWeakBase {
     }
 
     void DeleteCharBefore() {
-        if (HasSelection()) { DeleteSelection(); return; }
+        if (HasSelection()) { DeleteSelection(); return; } // DeleteSelection marks lines dirty
         if (cursorCol > 0) {
             PushUndo();
+            MarkLineDirty(cursorLine);
             // Handle multi-byte UTF-8: step back
             int col = cursorCol;
             --col;
@@ -707,6 +753,9 @@ struct TextEditorState : public TfWeakBase {
             editingDirty = true;
         } else if (cursorLine > 0) {
             PushUndo();
+            // Merging cursorLine into cursorLine-1: mark both before modifying
+            MarkLineDirty(cursorLine - 1);
+            MarkLineDirty(cursorLine);
             int prevLen = (int)lines[cursorLine - 1].size();
             lines[cursorLine - 1] += lines[cursorLine];
             lines.erase(lines.begin() + cursorLine);
@@ -719,9 +768,10 @@ struct TextEditorState : public TfWeakBase {
     }
 
     void DeleteCharAfter() {
-        if (HasSelection()) { DeleteSelection(); return; }
+        if (HasSelection()) { DeleteSelection(); return; } // DeleteSelection marks lines dirty
         if (cursorCol < (int)lines[cursorLine].size()) {
             PushUndo();
+            MarkLineDirty(cursorLine);
             int col = cursorCol + 1;
             while (col < (int)lines[cursorLine].size() &&
                    (lines[cursorLine][col] & 0xC0) == 0x80) ++col;
@@ -731,6 +781,9 @@ struct TextEditorState : public TfWeakBase {
             editingDirty = true;
         } else if (cursorLine < (int)lines.size() - 1) {
             PushUndo();
+            // Merging cursorLine+1 into cursorLine: mark both before modifying
+            MarkLineDirty(cursorLine);
+            MarkLineDirty(cursorLine + 1);
             lines[cursorLine] += lines[cursorLine + 1];
             lines.erase(lines.begin() + cursorLine + 1);
             lineData.erase(lineData.begin() + cursorLine + 1);
@@ -742,6 +795,7 @@ struct TextEditorState : public TfWeakBase {
 
     void DeleteLine() {
         PushUndo();
+        MarkLineDirty(cursorLine); // mark before erasing
         if (lines.size() == 1) {
             lines[0].clear(); lineData[0].tokens.clear();
         } else {
@@ -790,6 +844,8 @@ struct TextEditorState : public TfWeakBase {
     // Delete selected text (no PushUndo — caller must push first).
     void _DeleteSelectionImpl() {
         auto [sl, sc, el, ec] = GetSelectionRange();
+        // Mark all lines in the selection dirty BEFORE erasing lineData entries.
+        for (int i = sl; i <= el; ++i) MarkLineDirty(i);
         if (sl == el) {
             lines[sl].erase(sc, ec - sc);
             RetokenizeLine(sl);
@@ -889,26 +945,51 @@ struct TextEditorState : public TfWeakBase {
 
     // ── Serialization ────────────────────────────────────────────────────────
 
-    std::string JoinLines() const {
+    // Build the full USDA text for ImportFromString.
+    // dirtySpecs: prim spec paths that were edited. Folded large-array attrs
+    // whose lineData[i].primSpecPath is NOT in dirtySpecs get a lightweight
+    // "= None" placeholder instead of a full WriteToStream expansion.
+    // Pass an empty set (or call JoinLines()) to expand everything (legacy path).
+    std::string JoinLines(const std::unordered_set<SdfPath, SdfPath::Hash> *dirtySpecs = nullptr) const {
         SdfFileFormatConstPtr fmt = GetUsdaFormat();
         std::string out;
         for (size_t i = 0; i < lines.size(); ++i) {
             if (lineData[i].folded && !lineData[i].foldedSpecPath.IsEmpty() && layer) {
-                // Regenerate the full attribute text from the live spec.
-                // WriteToStream is called at most once per folded line, only at
-                // Ctrl+Enter time — the cost is acceptable.
-                SdfSpecHandle spec =
-                    layer->GetObjectAtPath(lineData[i].foldedSpecPath);
-                if (spec && fmt) {
-                    std::ostringstream buf;
-                    fmt->WriteToStream(spec, buf,
-                                       static_cast<size_t>(lineData[i].foldedIndent));
-                    std::string s = buf.str();
-                    // Strip trailing newline(s) added by WriteToStream
-                    while (!s.empty() && s.back() == '\n') s.pop_back();
-                    out += s;
+                // Check whether the enclosing prim spec was edited.
+                bool enclosingIsDirty = !dirtySpecs ||
+                    dirtySpecs->count(lineData[i].primSpecPath) > 0;
+
+                if (enclosingIsDirty) {
+                    // Regenerate the full attribute text from the live spec.
+                    SdfSpecHandle spec =
+                        layer->GetObjectAtPath(lineData[i].foldedSpecPath);
+                    if (spec && fmt) {
+                        std::ostringstream buf;
+                        fmt->WriteToStream(spec, buf,
+                                           static_cast<size_t>(lineData[i].foldedIndent));
+                        std::string s = buf.str();
+                        while (!s.empty() && s.back() == '\n') s.pop_back();
+                        out += s;
+                    }
+                    // If spec is gone (user deleted it in an earlier edit), skip.
+                } else {
+                    // Unmodified prim — emit a cheap but valid USDA placeholder.
+                    // The actual value is restored after ImportFromString via SdfCopySpec.
+                    SdfAttributeSpecHandle attrSpec =
+                        TfDynamic_cast<SdfAttributeSpecHandle>(
+                            layer->GetObjectAtPath(lineData[i].foldedSpecPath));
+                    if (attrSpec) {
+                        std::string indent(lineData[i].foldedIndent * 4, ' ');
+                        if (attrSpec->IsCustom()) out += indent + "custom ";
+                        else                      out += indent;
+                        if (attrSpec->GetVariability() == SdfVariabilityUniform)
+                            out += "uniform ";
+                        out += attrSpec->GetTypeName().GetAsToken().GetString();
+                        out += " ";
+                        out += attrSpec->GetName();
+                        out += " = None";
+                    }
                 }
-                // If spec is gone (user deleted it in an earlier edit), skip.
             } else {
                 out += lines[i];
             }
@@ -983,10 +1064,34 @@ static void HandleInput(TextEditorState &state, SdfLayerRefPtr layer) {
 
     if (key(ImGuiKey_Enter) || key(ImGuiKey_KeypadEnter)) {
         if (ctrl) {
-            // Ctrl+Enter → apply to layer
-            ExecuteAfterDraw<LayerTextEdit>(layer, state.JoinLines());
+            // Ctrl+Enter → apply to layer.
+            // Collect unmodified large-array attrs that will use "= None" dummies
+            // in JoinLines so they don't require expensive WriteToStream calls.
+            std::vector<SdfPath> unmodifiedFoldedAttrs;
+            if (!state.allDirty) {
+                for (size_t li = 0; li < state.lineData.size(); ++li) {
+                    const LineMetadata &md = state.lineData[li];
+                    if (md.folded && !md.foldedSpecPath.IsEmpty() && state.layer) {
+                        // Use primSpecPath (not foldedSpecPath parent) to handle variants.
+                        if (state.dirtySpecPaths.count(md.primSpecPath) == 0)
+                            unmodifiedFoldedAttrs.push_back(md.foldedSpecPath);
+                    }
+                }
+            }
+
+            std::string editedText = state.JoinLines(
+                state.allDirty ? nullptr : &state.dirtySpecPaths);
+
+            if (!unmodifiedFoldedAttrs.empty()) {
+                ExecuteAfterDraw<LayerTextEditPreservingArrays>(
+                    layer, std::move(editedText), std::move(unmodifiedFoldedAttrs));
+            } else {
+                ExecuteAfterDraw<LayerTextEdit>(layer, std::move(editedText));
+            }
             state.editingDirty = false;
-            state.layerDirty   = true; // force rebuild from actual layer state (catches parse failures)
+            state.dirtySpecPaths.clear();
+            state.allDirty   = false;
+            state.layerDirty = true; // force rebuild from actual layer state
         } else {
             state.InsertNewline(); state.cursorMoved = true;
         }
