@@ -106,8 +106,11 @@ static void DrawDataSourceRecursively(const std::string &dataSourceName, HdDataS
 
             unfolded = ImGui::TreeNodeEx(dataSourceName.c_str(), rowFlags);
             if (unfolded) {
+                int childIndex = 0;
                 for (const TfToken &childName : container->GetNames()) {
+                    ImGui::PushID(childIndex++);
                     DrawDataSourceRecursively(childName.GetString(), container->Get(childName));
+                    ImGui::PopID();
                 }
             }
         } else {
@@ -129,7 +132,9 @@ static void DrawDataSourceRecursively(const std::string &dataSourceName, HdDataS
                     unfolded = ImGui::TreeNodeEx(dataSourceName.c_str(), rowFlags);
                     if (unfolded) {
                         for (size_t i = 0; i < vectorSource->GetNumElements(); ++i) {
+                            ImGui::PushID(static_cast<int>(i));
                             DrawDataSourceRecursively(std::to_string(i), vectorSource->GetElement(i));
+                            ImGui::PopID();
                         }
                     }
                 } else {

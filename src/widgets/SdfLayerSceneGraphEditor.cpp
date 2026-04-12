@@ -429,14 +429,17 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 0.0));
         ImGui::PushItemWidth(-FLT_MIN); // removes the combo label.
         if (ImGui::BeginCombo("Sublayers", "Sublayers", ImGuiComboFlags_NoArrowButton)) {
+            int pathId = 0;
             for (const auto &pathIt : layer->GetSubLayerPaths()) {
                 const std::string &path = pathIt;
+                ImGui::PushID(pathId++);
                 if (ImGui::MenuItem(path.c_str())) {
                     auto subLayer = SdfLayer::FindOrOpenRelativeToLayer(layer, path);
                     if (subLayer) {
                         ExecuteAfterDraw<EditorFindOrOpenLayer>(subLayer->GetRealPath());
                     }
                 }
+                ImGui::PopID();
             }
             ImGui::EndCombo();
         }
@@ -573,11 +576,26 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
             -1, primCount);
         ApplyMultiSelectRequests(msIO, selection, layer, primCount, [&](int i) { return paths[i]; });
 
+        ImGuiTable* table = g.CurrentTable;
         ImGuiListClipper clipper;
         clipper.Begin(primCount);
         if (msIO->RangeSrcItem != -1)
             clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
         while (clipper.Step()) {
+            // Prevent off-screen steps (forced by IncludeItemByIndex for shift-click anchor)
+            // from affecting column auto-sizing and causing a one-frame horizontal resize glitch.
+            bool isOffScreenStep = false;
+            float savedContentMaxX[4] = {};
+            if (table && clipper.ItemsHeight > 0.0f) {
+                const float stepTop = clipper.ItemsHeight * clipper.DisplayStart;
+                const float stepBot = clipper.ItemsHeight * (clipper.DisplayEnd - 1);
+                const float scrollY = ImGui::GetScrollY();
+                const float windowH = ImGui::GetWindowHeight();
+                isOffScreenStep = (stepBot < scrollY) || (stepTop > scrollY + windowH);
+                if (isOffScreenStep)
+                    for (int c = 0; c < table->ColumnsCount; c++)
+                        savedContentMaxX[c] = table->Columns[c].ContentMaxXUnfrozen;
+            }
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 ImGui::PushID(row);
                 const SdfPath &path = paths[row];
@@ -588,6 +606,9 @@ void DrawLayerPrimHierarchy(SdfLayerRefPtr layer, Selection &selection) {
                 }
                 ImGui::PopID();
             }
+            if (isOffScreenStep && table)
+                for (int c = 0; c < table->ColumnsCount; c++)
+                    table->Columns[c].ContentMaxXUnfrozen = savedContentMaxX[c];
         }
         // We might want to have a command for the changes of selection if it appears that 
         // the UI behaves inconsistently

@@ -254,12 +254,15 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
 
 void DrawPropertyStack(const UsdProperty &property, UsdTimeCode currentTime) {
     SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
+    int itemId = 0;
     for (const auto &prop : properties) {
         const SdfPath& propPath = prop.GetSpec().GetPath();
         std::string site = prop.GetSpec().GetLayer()->GetDisplayName() + " " + propPath.GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(site.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(prop.GetSpec().GetLayer(), propPath);
         }
+        ImGui::PopID();
     }
 }
 
@@ -401,7 +404,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
         // make it relative to font size
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("VariantSet");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
 
@@ -459,12 +462,13 @@ bool DrawAssetInfo(UsdPrim &prim) {
         //TODO  make it relative
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Asset info");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
-
+        int rowId = 0;
         TF_FOR_ALL(keyValue, assetInfo) {
             ImGui::TableNextRow();
+            ImGui::PushID(rowId++);
             ImGui::TableSetColumnIndex(0);
             DrawPropertyMiniButton("(x)");
             ImGui::TableSetColumnIndex(1);
@@ -476,6 +480,7 @@ bool DrawAssetInfo(UsdPrim &prim) {
                 ExecuteAfterDraw(&UsdPrim::SetAssetInfoByKey, prim, TfToken(keyValue->first), modified);
             }
             ImGui::PopItemWidth();
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }
@@ -547,6 +552,7 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
                 subLayer = SdfLayer::FindOrOpen(subLayerPath);
             }
             const std::string layerName = std::string(indent, ' ') + (subLayer ? subLayer->GetDisplayName() : subLayerPath);
+            ImGui::PushID(layerId);
             if (subLayer) {
                 if (ImGui::MenuItem(layerName.c_str())) {
                     ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(subLayer));
@@ -554,8 +560,6 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
             } else {
                 ImGui::TextColored(ImVec4(1.0, 0.0, 0.0, 1.0), "%s", layerName.c_str());
             }
-
-            ImGui::PushID(layerName.c_str());
             DrawEditTargetSubLayersMenuItems(stage, subLayer, indent + 4);
             ImGui::PopID();
         }
@@ -573,7 +577,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Material Bindings");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         UsdShadeMaterial material;
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
@@ -845,7 +849,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
             ImGui::TableSetupColumn("Property name");
-            ImGui::TableSetupColumn("Value");
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
 
             int miniButtonId = 0;
