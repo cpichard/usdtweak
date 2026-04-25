@@ -33,6 +33,14 @@
 #include "UsdPrimEditor.h"
 #include <array>
 #include <iostream>
+#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#define GHC_WITH_EXCEPTIONS 0
+#include <ghc/filesystem.hpp>
+namespace fs = ghc::filesystem;
+#endif
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/base/trace/trace.h>
 #include <pxr/imaging/garch/glApi.h>
@@ -323,6 +331,23 @@ struct CreateUsdFileModalDialog : public ModalDialog {
     const char *DialogId() const override { return "Create usd file"; }
     Editor &editor;
     bool createStage = true;
+};
+
+/// Modal dialog to set the process working directory
+struct SetWorkingDirectoryDialog : public ModalDialog {
+    SetWorkingDirectoryDialog(Editor &editor) : editor(editor) {}
+    ~SetWorkingDirectoryDialog() override {}
+    void Draw() override {
+        DrawFileBrowser(RemainingHeight(2));
+        auto dir = GetFileBrowserDirectory();
+        ImGui::Text("Set to: %s", dir.c_str());
+        DrawModalButtonsOkCancel([&]() {
+            std::error_code ec;
+            fs::current_path(dir, ec);
+        });
+    }
+    const char *DialogId() const override { return "Set working directory"; }
+    Editor &editor;
 };
 
 /// Modal dialog to open a layer
@@ -834,6 +859,9 @@ void Editor::DrawMainMenuBar() {
                     ImGui::PopID();
                 }
                 ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem(ICON_FA_FOLDER " Set Working Directory...")) {
+                DrawModalDialog<SetWorkingDirectoryDialog>(*this);
             }
             ImGui::Separator();
             const bool hasLayer = GetCurrentLayer() != SdfLayerRefPtr();
