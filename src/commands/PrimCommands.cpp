@@ -483,9 +483,12 @@ struct PrimPaste : public CopyPasteCommand {
             auto defaultPrim = _copyPasteLayer->GetPrimAtPath(CopiedPrimRoot);
             if (defaultPrim) {
                 for (const auto &child : defaultPrim->GetNameChildren()) {
-                    // TODO: it might be better to do it in batch
-                    if (!SdfCopySpec(_copyPasteLayer, child->GetPath(), _layer,
-                                     _primPath.AppendChild(child->GetNameToken()))) {
+                    std::string newName = child->GetNameToken().GetString();
+                    while (_layer->GetPrimAtPath(_primPath.AppendChild(TfToken(newName)))) {
+                        newName = FindNextAvailableTokenString(newName);
+                    }
+                    SdfPath destPath = _primPath.AppendChild(TfToken(newName));
+                    if (!SdfCopySpec(_copyPasteLayer, child->GetPath(), _layer, destPath)) {
                         return false;
                     }
                 }

@@ -400,7 +400,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
     }
 
     if (ImGui::BeginPopupContextItem()) {
-        DrawMiniToolbar(layer, SdfPrimSpec(), selection);
+        DrawMiniToolbar(layer, layer->GetPrimAtPath(SdfPath::AbsoluteRootPath()), selection);
         ImGui::Separator();
         if (ImGui::MenuItem("Add sublayer")) {
             DrawSublayerPathEditDialog(layer, "");
