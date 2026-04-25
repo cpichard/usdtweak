@@ -2,10 +2,10 @@
 
 #include "Gui.h"
 // We need to fix all the api changes to get it working for older versions
+#include <pxr/pxr.h>
 #if PXR_VERSION >= 2511
 #include <algorithm>
 #include <cctype>
-#include <pxr/pxr.h>
 #include <pxr/usd/sdr/registry.h>
 #include <pxr/usd/sdr/shaderNode.h>
 #include <pxr/usd/sdr/shaderProperty.h>
