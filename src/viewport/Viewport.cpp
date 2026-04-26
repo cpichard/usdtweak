@@ -374,8 +374,12 @@ double Viewport::ComputeScaleFactor(const GfVec3d &objectPos, const double multi
         scale = 0.01 * verticalAperture;
 
     } else {
-        const float focalLength = GetCurrentCamera().GetFocalLength();
-        scale /= focalLength == 0 ? 1.f : focalLength;
+        // Divide by the FOV factor normalized to the default aperture so the gizmo
+        // projects to a constant screen-space size regardless of focalLength/aperture values.
+        // frustum.GetWindow() is at the unit plane, so GetSize()[0] == 2*tan(halfHorizFOV).
+        // Normalizing by DEFAULT_HORIZONTAL_APERTURE preserves the legacy size for the
+        // default free camera while fixing cameras with an unusual focalLength (e.g. 0.44).
+        scale = scale * frustum.GetWindow().GetSize()[0] / GfCamera::DEFAULT_HORIZONTAL_APERTURE;
     }
     scale /= multiplier;
     scale *= 2;
