@@ -221,10 +221,16 @@ void DrawHydraNoticeLogger() {
     if (selectedFilter) {
     }
     if (logger._isLogging) {
-        ImGui::Text("%s", selectedSceneIndexName.c_str());
-        ImGui::Text("Logging %s", selectedFilter->GetDisplayName().c_str());
-        if (ImGui::Button("Stop logging")) {
-            logger.StopLogging(selectedFilter);
+        if (!selectedFilter) {
+            // Here we assume that the Observer was removed since the selected filter
+            // has been freed
+            logger._isLogging = false;
+        } else {
+            ImGui::Text("%s", selectedSceneIndexName.c_str());
+            ImGui::Text("Logging %s", selectedFilter->GetDisplayName().c_str());
+            if (ImGui::Button("Stop logging")) {
+                logger.StopLogging(selectedFilter);
+            }
         }
     } else {
         DrawSceneIndexSelector(selectedSceneIndexName, selectedInputName);
