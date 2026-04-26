@@ -827,7 +827,7 @@ void Editor::SetPreviousPrim() {
 }
 
 void Editor::SetNextPrim() {
-    if (_primHistoryPointer < _primHistory.size() - 1) {
+    if (_primHistoryPointer + 1 < _primHistory.size()) {
         ++_primHistoryPointer;
         const auto &[stage, path] = _primHistory[_primHistoryPointer];
         _lastShownPrimEntry = {stage, path};
