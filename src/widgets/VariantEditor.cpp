@@ -23,7 +23,7 @@ static void DrawVariantSelectionMiniButton(const SdfPrimSpecHandle &primSpec, co
 static void DrawVariantSelectionCombo(const SdfPrimSpecHandle &primSpec, SdfVariantSelectionProxy::const_reference & variantSelection, int &buttonId) {
     ImGui::PushID(buttonId++);
     if (ImGui::BeginCombo("Variant selection", variantSelection.second.c_str())) {
-        if (ImGui::Selectable("")) { // Empty variant selection
+        if (ImGui::Selectable("<No selection>")) { // Empty variant selection
             ExecuteAfterDraw(&SdfPrimSpec::SetVariantSelection, primSpec, variantSelection.first, "");
         }
         for (const auto &variantName : primSpec->GetVariantNames(variantSelection.first)) {

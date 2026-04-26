@@ -26,12 +26,21 @@
 #include "StageLayerEditor.h"
 #include "StageOutliner.h"
 #include "Stamp.h"
+#include "SplashScreen.h"
 #include "TextEditor.h"
 #include "Timeline.h"
 #include "UsdHelpers.h"
 #include "UsdPrimEditor.h"
 #include <array>
 #include <iostream>
+#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#define GHC_WITH_EXCEPTIONS 0
+#include <ghc/filesystem.hpp>
+namespace fs = ghc::filesystem;
+#endif
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/base/trace/trace.h>
 #include <pxr/imaging/garch/glApi.h>
@@ -105,32 +114,142 @@ inline void BringWindowToTabFront(const char *windowName) {
     }
 }
 
-struct AboutModalDialog : public ModalDialog {
-    AboutModalDialog(Editor &editor) : editor(editor) {}
+struct SplashScreenModalDialog : public ModalDialog {
+    float elapsed = 0.f;
+
+    const char *DialogId() const override { return "##SplashScreen"; }
+
+    ImGuiWindowFlags WindowFlags() const override {
+        return ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    }
+
+    int PushStyles() override {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        return 1;
+    }
+
+    void PrepareModal() override {
+        const ImGuiIO &io = ImGui::GetIO();
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id == 0)
+            return;
+        const float scale =
+            std::min({io.DisplaySize.x * 0.5f / static_cast<float>(tex.width),
+                      io.DisplaySize.y * 0.5f / static_cast<float>(tex.height), 1.0f});
+        const ImVec2 size(tex.width * scale, tex.height * scale);
+        ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - size.x) * 0.5f,
+                                       (io.DisplaySize.y - size.y) * 0.5f),
+                                ImGuiCond_Always);
+    }
+
     void Draw() override {
-        ImGui::Text("usdtweak pre-alpha version %s", GetBuildDate());
-        ImGui::Text("  revision %s", GetGitHash());
-        ImGui::NewLine();
-        ImGui::Text("This is a pre-alpha version for testing purpose.");
-        ImGui::Text("Please send your feedbacks as github issues:");
-        ImGui::Text("https://github.com/cpichard/usdtweak/issues");
-        ImGui::Text("or by mail: cpichard.github@gmail.com");
-        ImGui::NewLine();
-        ImGui::Text("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
-        ImGui::NewLine();
-        ImGui::Text("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
-        ImGui::Text("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
-        ImGui::NewLine();
-        ImGui::Text("IMGUI - https://github.com/ocornut/imgui");
-        ImGui::Text("   Copyright (c) 2014-2024 Omar Cornut - The MIT License (MIT)");
-        ImGui::NewLine();
-        ImGui::Text("GLFW - https://www.glfw.org/");
-        ImGui::Text("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
-        ImGui::Text("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
-        ImGui::NewLine();
-        if (ImGui::Button("  Close  ")) {
+        const ImGuiIO &io = ImGui::GetIO();
+        elapsed += io.DeltaTime;
+
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id != 0) {
+            const float scale =
+                std::min({io.DisplaySize.x * 0.5f / static_cast<float>(tex.width),
+                          io.DisplaySize.y * 0.5f / static_cast<float>(tex.height), 1.0f});
+            const ImVec2 imageSize(tex.width * scale, tex.height * scale);
+            ImGui::Image(static_cast<ImTextureID>(static_cast<uintptr_t>(tex.id)), imageSize);
+
+            // Version strings bottom-right, rendered via draw list on top of the image
+            char line1[64], line2[32];
+            snprintf(line1, sizeof(line1), "usdtweak %s", GetBuildDate());
+            snprintf(line2, sizeof(line2), "USD " USD_VERSION);
+
+            const ImVec2 sz1 = ImGui::CalcTextSize(line1);
+            const ImVec2 sz2 = ImGui::CalcTextSize(line2);
+            const float margin = 6.f;
+            const ImVec2 winPos = ImGui::GetWindowPos();
+            const float x1 = winPos.x + imageSize.x - sz1.x - margin;
+            const float x2 = winPos.x + imageSize.x - sz2.x - margin;
+            const float y2 = winPos.y + imageSize.y - sz2.y - margin;
+            const float y1 = y2 - sz1.y - 2.f;
+
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            const ImVec2 shadow(1.f, 1.f);
+            dl->AddText(ImVec2(x1 + shadow.x, y1 + shadow.y), IM_COL32(0, 0, 0, 180), line1);
+            dl->AddText(ImVec2(x1, y1),                        IM_COL32(255, 255, 255, 230), line1);
+            dl->AddText(ImVec2(x2 + shadow.x, y2 + shadow.y), IM_COL32(0, 0, 0, 180), line2);
+            dl->AddText(ImVec2(x2, y2),                        IM_COL32(255, 255, 255, 230), line2);
+        }
+
+        if (elapsed >= 2.f || io.MouseClicked[0] || io.MouseClicked[1] ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter)) {
             CloseModal();
         }
+    }
+};
+
+struct AboutModalDialog : public ModalDialog {
+    AboutModalDialog(Editor &editor) : editor(editor) {}
+
+    void PrepareModal() override {
+        const ImGuiIO &io = ImGui::GetIO();
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id == 0)
+            return;
+        const ImGuiStyle &style = ImGui::GetStyle();
+        const float contentW = std::min(io.DisplaySize.x * 0.6f, static_cast<float>(tex.width));
+        const float imageH = tex.height * (contentW / static_cast<float>(tex.width));
+        const float outerW = contentW + style.WindowPadding.x * 2.f;
+        const float outerH = ImGui::GetFrameHeight()              // title bar
+                             + imageH                              // image
+                             + ImGui::GetFrameHeightWithSpacing()  // close button row
+                             + style.WindowPadding.y * 2.f;
+        ImGui::SetNextWindowSize(ImVec2(outerW, outerH), ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - outerW) * 0.5f,
+                                       (io.DisplaySize.y - outerH) * 0.5f),
+                                ImGuiCond_Appearing);
+    }
+
+    void Draw() override {
+        // Renders text with a 1px white shadow for legibility over the image background
+        auto textShadowed = [](const char *text) {
+            const ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImGui::GetWindowDrawList()->AddText(ImVec2(pos.x + 1, pos.y + 1),
+                                                IM_COL32(255, 255, 255, 180), text);
+            ImGui::TextUnformatted(text);
+        };
+
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+        const float imageBottomY = DrawAboutHeader();
+
+        char buf[256];
+        snprintf(buf, sizeof(buf), "usdtweak pre-alpha version %s", GetBuildDate());
+        textShadowed(buf);
+        snprintf(buf, sizeof(buf), "  revision %s", GetGitHash());
+        textShadowed(buf);
+        ImGui::NewLine();
+        textShadowed("This is a pre-alpha version for testing purpose.");
+        textShadowed("Please send your feedbacks as github issues:");
+        textShadowed("https://github.com/cpichard/usdtweak/issues");
+        textShadowed("or by mail: cpichard.github@gmail.com");
+        ImGui::NewLine();
+        textShadowed("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
+        textShadowed("Splash screen artwork - Copyright (c) 2025 Nastasia Bois");
+        ImGui::NewLine();
+        textShadowed("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
+        textShadowed("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
+        ImGui::NewLine();
+        textShadowed("IMGUI - https://github.com/ocornut/imgui");
+        textShadowed("   Copyright (c) 2014-2024 Omar Cornut - The MIT License (MIT)");
+        textShadowed("stb_image - https://github.com/nothings/stb");
+        textShadowed("   Copyright (c) 2017 Sean Barrett - MIT License / Public Domain");
+        ImGui::NewLine();
+        textShadowed("GLFW - https://www.glfw.org/");
+        textShadowed("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
+        textShadowed("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
+        ImGui::PopStyleColor();
+
+        // Move cursor below the image before drawing the Close button
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, imageBottomY));
+        DrawModalButtonClose();
     }
     const char *DialogId() const override { return "About Usdtweak"; }
     Editor &editor;
@@ -212,6 +331,23 @@ struct CreateUsdFileModalDialog : public ModalDialog {
     const char *DialogId() const override { return "Create usd file"; }
     Editor &editor;
     bool createStage = true;
+};
+
+/// Modal dialog to set the process working directory
+struct SetWorkingDirectoryDialog : public ModalDialog {
+    SetWorkingDirectoryDialog(Editor &editor) : editor(editor) {}
+    ~SetWorkingDirectoryDialog() override {}
+    void Draw() override {
+        DrawFileBrowser(RemainingHeight(2));
+        auto dir = GetFileBrowserDirectory();
+        ImGui::Text("Set to: %s", dir.c_str());
+        DrawModalButtonsOkCancel([&]() {
+            std::error_code ec;
+            fs::current_path(dir, ec);
+        });
+    }
+    const char *DialogId() const override { return "Set working directory"; }
+    Editor &editor;
 };
 
 /// Modal dialog to open a layer
@@ -410,6 +546,9 @@ Editor::Editor()
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
     Blueprints::GetInstance().SetBlueprintsLocations(_settings._blueprintLocations);
+    if (_settings._showSplashScreen) {
+        DrawModalDialog<SplashScreenModalDialog>();
+    }
 }
 
 Editor::~Editor() {
@@ -721,6 +860,9 @@ void Editor::DrawMainMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem(ICON_FA_FOLDER " Set Working Directory...")) {
+                DrawModalDialog<SetWorkingDirectoryDialog>(*this);
+            }
             ImGui::Separator();
             const bool hasLayer = GetCurrentLayer() != SdfLayerRefPtr();
             if (ImGui::MenuItem(ICON_FA_SAVE " Save layer", "CTRL+S", false, hasLayer)) {
@@ -798,9 +940,8 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
-#if ENABLE_CONNECTION_EDITOR
-            ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
-#endif
+            if (_enableConnectionEditor)
+                ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
@@ -808,9 +949,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
             ImGui::MenuItem(ShaderRegistryInspectorWindowTitle, nullptr, &_settings._showShaderInspector);
-#if ENABLE_HYDRA_NOTICE_LOGGER
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
-#endif
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
 #endif
@@ -839,23 +978,21 @@ void Editor::DrawMainMenuBar() {
 void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
-#if ENABLE_MOUSE_CAPTURE
+
+bool Editor::_enableConnectionEditor = false;
+bool Editor::_enableMouseCapture = false;
+
 static bool gMouseCaptured = false;
 
 // workaround for GLFW bug that reports wrong mouse delta after mouse capture
 static int gSkipCapturedMouseDelta = 0;
-#endif // ENABLE_MOUSE_CAPTURE
 
 bool Editor::GetMouseCaptured() {
-#if ENABLE_MOUSE_CAPTURE
     return gMouseCaptured;
-#else
-    return false;
-#endif // ENABLE_MOUSE_CAPTURE
 }
 
 void Editor::SetMouseCaptured(bool captured) {
-#if ENABLE_MOUSE_CAPTURE
+    if (!_enableMouseCapture) return;
     if (gMouseCaptured != captured) {
         gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
@@ -871,17 +1008,14 @@ void Editor::SetMouseCaptured(bool captured) {
             }
         }
     }
-#endif // ENABLE_MOUSE_CAPTURE
 }
 
 void Editor::Draw() {
-#if ENABLE_MOUSE_CAPTURE
     if (gSkipCapturedMouseDelta > 0) {
         ImGuiIO &io = ImGui::GetIO();
         gSkipCapturedMouseDelta--;
         io.MouseDelta = {0, 0};
     }
-#endif // ENABLE_MOUSE_CAPTURE
     ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();
@@ -1052,8 +1186,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-#if ENABLE_CONNECTION_EDITOR // experimental - connection editor is disabled
-    if (_settings._showUsdConnectionEditor) {
+    if (_enableConnectionEditor && _settings._showUsdConnectionEditor) {
         ImGui::Begin(UsdConnectionEditorWindowTitle, &_settings._showUsdConnectionEditor);
         TRACE_SCOPE(UsdConnectionEditorWindowTitle);
         if (GetCurrentStage()) {
@@ -1063,7 +1196,6 @@ void Editor::Draw() {
         }
         ImGui::End();
     }
-#endif
 
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
@@ -1101,15 +1233,14 @@ void Editor::Draw() {
         DrawShaderRegistryInspector();
         ImGui::End();
     }
-#if ENABLE_HYDRA_NOTICE_LOGGER
+
     if (_settings._showHydraNoticeLogger) {
         TRACE_SCOPE(HydraNoticeLoggerWindowTitle);
         ImGui::Begin(HydraNoticeLoggerWindowTitle, &_settings._showHydraNoticeLogger);
         DrawHydraNoticeLogger();
         ImGui::End();
     }
-#endif
-    
+
 #ifdef HAVE_USDVALIDATION
     if (_settings._showValidator) {
         TRACE_SCOPE(ValidatorWindowTitle);

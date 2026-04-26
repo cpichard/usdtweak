@@ -62,8 +62,16 @@ void DrawTreeNodePopup(SdfPrimSpecHandle &primSpec, const SdfLayerHandle &layer,
     }
     auto parent = primSpec->GetNameParent();
     if (parent) {
-        if (ImGui::MenuItem("Add sibling")) {
-            ExecuteAfterDraw<PrimNew>(primSpec->GetLayer(), parent->GetPath(), primSpec->GetName());
+        const bool primIsVariant = primSpec->GetPath().IsPrimVariantSelectionPath();
+        if (primIsVariant) {
+            if (ImGui::MenuItem("Add sibling variant")) {
+                ExecuteAfterDraw<VariantNew>(primSpec->GetLayer(), primSpec->GetPath(),
+                    FindNextAvailableTokenString(primSpec->GetPath().GetVariantSelection().second));
+            }
+        } else {
+            if (ImGui::MenuItem("Add sibling")) {
+                ExecuteAfterDraw<PrimNew>(primSpec->GetLayer(), parent->GetPath(), primSpec->GetName());
+            }
         }
     }
     if (ImGui::BeginMenu("Add blueprint")) {
@@ -134,14 +142,19 @@ void DrawMiniToolbar(SdfLayerRefPtr layer, const SdfPrimSpecHandle &prim, const 
     DrawTooltip("New child prim");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_PLUS_SQUARE) && prim) {
-        auto parent = prim->GetNameParent();
-        if (parent) {
-            ExecuteAfterDraw<PrimNew>(prim->GetLayer(), parent->GetPath(), FindNextAvailableTokenString(prim->GetName()));
+        if (prim->GetPath().IsPrimVariantSelectionPath()) {
+            ExecuteAfterDraw<VariantNew>(prim->GetLayer(), prim->GetPath(),
+                FindNextAvailableTokenString(prim->GetPath().GetVariantSelection().second));
         } else {
-            ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(prim->GetName()));
+            auto parent = prim->GetNameParent();
+            if (parent) {
+                ExecuteAfterDraw<PrimNew>(prim->GetLayer(), parent->GetPath(), FindNextAvailableTokenString(prim->GetName()));
+            } else {
+                ExecuteAfterDraw<PrimNew>(layer, FindNextAvailableTokenString(prim->GetName()));
+            }
         }
     }
-    DrawTooltip("New sibbling prim");
+    DrawTooltip("New sibling");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_CLONE) && prim) {
         ExecuteAfterDraw<PrimDuplicate>(SdfLayerHandle(layer), selection.GetSelectedPaths(SdfLayerHandle(layer)));
@@ -224,6 +237,18 @@ static void HandleDragAndDrop(SdfLayerHandle layer, const Selection &selection) 
     }
 }
 
+static void DrawVariantName(const SdfPrimSpecHandle &primSpec) {
+    auto variantSelection = primSpec->GetPath().GetVariantSelection();
+    std::string nameBuffer = variantSelection.second;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##VariantName", &nameBuffer);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (!nameBuffer.empty() && nameBuffer != variantSelection.second) {
+            ExecuteAfterDraw<VariantRename>(primSpec->GetLayer(), primSpec->GetPath(), nameBuffer);
+        }
+    }
+}
+
 // Returns unfolded
 static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &primSpec, const Selection &selection, bool hasChildren, int selectionIndex) {
     // Format text differently when the prim is a variant
@@ -254,7 +279,7 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
         if (editNamePrim != SdfPrimSpecHandle() && editNamePrim != primSpec) {
             editNamePrim = SdfPrimSpecHandle();
         }
-        if (!primIsVariant && ImGui::IsMouseDoubleClicked(0)) {
+        if (ImGui::IsMouseDoubleClicked(0)) {
             editNamePrim = primSpec;
             ImGui::ClearActiveID(); // see https://github.com/ocornut/imgui/issues/6690
         }
@@ -262,7 +287,11 @@ static bool DrawTreeNodePrimName(const bool &primIsVariant, SdfPrimSpecHandle &p
     if (primSpec == editNamePrim) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0, 0.0, 0.0, 1.0));
         ImGui::SetCursorPos(cursor);
-        DrawPrimName(primSpec); // Draw the prim name editor
+        if (primIsVariant) {
+            DrawVariantName(primSpec);
+        } else {
+            DrawPrimName(primSpec);
+        }
         if (ImGui::IsItemDeactivatedAfterEdit() || !ImGui::IsItemFocused()) {
             editNamePrim = SdfPrimSpecHandle();
         }
@@ -371,7 +400,7 @@ static void DrawTopNodeLayerRow(const SdfLayerRefPtr &layer, const Selection &se
     }
 
     if (ImGui::BeginPopupContextItem()) {
-        DrawMiniToolbar(layer, SdfPrimSpec(), selection);
+        DrawMiniToolbar(layer, layer->GetPrimAtPath(SdfPath::AbsoluteRootPath()), selection);
         ImGui::Separator();
         if (ImGui::MenuItem("Add sublayer")) {
             DrawSublayerPathEditDialog(layer, "");

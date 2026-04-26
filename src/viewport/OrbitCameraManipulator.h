@@ -27,5 +27,5 @@ class OrbitCameraManipulator : public CameraRig, public Manipulator {
     UsdGeomCamera _stageCamera;
     GfVec2d _yawPitch;
     float _dist = 100;
-    MovementType _movementType;
+    MovementType _movementType = MovementType::None;
 };

@@ -9,6 +9,7 @@
 
 #include "Commands.h"
 #include "Constants.h"
+#include "Editor.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
 #include "UsdPrimEditor.h" // for DrawUsdPrimEditTarget
@@ -170,16 +171,18 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         ImGui::EndMenu();
     }
 
-    if (ImGui::MenuItem("Create connection editor sheet")) {
-        std::vector<UsdPrim> prims;
-        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
-        CreateSession(prim, prims);
-    }
+    if (Editor::IsConnectionEditorEnabled()) {
+        if (ImGui::MenuItem("Create connection editor sheet")) {
+            std::vector<UsdPrim> prims;
+            for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+            CreateSession(prim, prims);
+        }
 
-    if (ImGui::MenuItem("Add to connection editor")) {
-        std::vector<UsdPrim> prims;
-        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
-        AddPrimsToCurrentSession(prims);
+        if (ImGui::MenuItem("Add to connection editor")) {
+            std::vector<UsdPrim> prims;
+            for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
+            AddPrimsToCurrentSession(prims);
+        }
     }
 }
 

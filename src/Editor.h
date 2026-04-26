@@ -20,8 +20,6 @@ class Editor {
     Editor();
     ~Editor();
 
-    static Editor &GetInstance();
-
     /// Removing the copy constructors as we want to make sure there are no unwanted copies of the
     /// editor. There should be only one editor for now but we want to control the construction
     /// and destruction of the editor to delete properly the contexts, so it's not a singleton
@@ -116,8 +114,17 @@ class Editor {
         }
     }
 
+    // Those 3 functions are used to pass data to the preference UI. We should find another way
     void SetUIScale(float scaleValue);
     float GetUIScale() const;
+    bool &GetShowSplashScreen() { return _settings._showSplashScreen; }
+    bool &GetEnableConnectionEditor() { return _enableConnectionEditor; }
+    bool &GetEnableMouseCapture() { return _enableMouseCapture; }
+    static bool IsConnectionEditorEnabled() { return _enableConnectionEditor; }
+    static bool IsMouseCaptureEnabled() { return _enableMouseCapture; }
+
+    static bool _enableConnectionEditor;
+    static bool _enableMouseCapture;
 
     static void SetMouseCaptured(bool captured);
     static bool GetMouseCaptured();

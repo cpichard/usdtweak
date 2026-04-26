@@ -32,6 +32,8 @@ struct PrimAddBlueprint;
 struct PrimCopy;
 struct PrimPaste;
 struct PrimCreateAttributeConnection;
+struct VariantRename;
+struct VariantNew;
 
 struct PropertyCopy;
 struct PropertyPaste;

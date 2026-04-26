@@ -34,6 +34,7 @@ struct EditorSettings {
     bool _showHydraNoticeLogger = false;
     bool _showShaderInspector = false;
     bool _showSearch = false;
+    bool _showSplashScreen = true;
     int _mainWindowWidth;
     int _mainWindowHeight;
     float _uiScale = 1.f;
