@@ -432,6 +432,17 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         }
     }
     
+    static ImU32 GetNodeHeaderColor(const UsdPrim &prim) {
+        static const TfToken materialToken("Material");
+        static const TfToken shaderToken("Shader");
+        static const TfToken nodeGraphToken("NodeGraph");
+        const TfToken t = prim.GetTypeName();
+        if (t == materialToken)  return IM_COL32(110, 45, 110, 255);
+        if (t == shaderToken)    return IM_COL32(45,  85, 135, 255);
+        if (t == nodeGraphToken) return IM_COL32(45, 110,  75, 255);
+        return                          IM_COL32(65,  65,  85, 255);
+    }
+
     void DrawNode(UsdPrimNode &node) {
         ImGuiContext& g = *GImGui;
         ImGuiIO& io = ImGui::GetIO();
@@ -466,6 +477,9 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         nodeBoundingBox.ClipWith(widgetBoundingBox);
         
         drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), 0xFF090920, 4.0f);
+        const ImVec2 headerMax = ImVec2(nodeMax.x, nodeMin.y + headerHeight);
+        drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(headerMax),
+                                GetNodeHeaderColor(node.prim), 4.0f, ImDrawFlags_RoundCornersTop);
         drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), node.selected ? IM_COL32(0, 255, 0, 255) : IM_COL32(255, 255, 255, 255), 4.0f);
         
         // TODO: add padding, truncate name if too long, add tooltip
