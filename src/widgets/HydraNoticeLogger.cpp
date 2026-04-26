@@ -140,31 +140,33 @@ class HydraNoticeLogger {
         }
 
         void DrawLogEntries() {
-            int idx = 0;
             constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY;
             if (ImGui::BeginTable("##HydraNoticeLogger", 1, tableFlags)) {
                 ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableHeadersRow();
-                ImGui::TableSetColumnIndex(0);
-                // TODO use a Clipper and colums
-                // We want to see the latest event on top to avoid scrolling
-                for (auto entryIt = logs.rbegin(); entryIt != logs.rend(); ++entryIt) {
-                    const auto &entry = *entryIt;
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    if (entry.IsDirtied()) {
-                        ImGui::Text("%05d Dirtied %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
-                                    LogEntry::locatorsMap[entry.locatorsID].c_str());
-                    } else if (entry.IsAdded()) {
-                        ImGui::Text("%05d Added %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
-                                    entry.primType.GetString().c_str());
-                    } else if (entry.IsRemoved()) {
-                        ImGui::Text("%05d Removed %s", entry.repetitions, entry.primPath.GetString().c_str());
-                    } else if (entry.IsRenamed()) {
-                        ImGui::Text("%05d Renamed %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
-                                    entry.newPrimPath.GetString().c_str());
+                const int count = static_cast<int>(logs.size());
+                ImGuiListClipper clipper;
+                clipper.Begin(count);
+                while (clipper.Step()) {
+                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+                        const auto &entry = logs[count - 1 - i];
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        if (entry.IsDirtied()) {
+                            ImGui::Text("%05d Dirtied %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
+                                        LogEntry::locatorsMap[entry.locatorsID].c_str());
+                        } else if (entry.IsAdded()) {
+                            ImGui::Text("%05d Added %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
+                                        entry.primType.GetString().c_str());
+                        } else if (entry.IsRemoved()) {
+                            ImGui::Text("%05d Removed %s", entry.repetitions, entry.primPath.GetString().c_str());
+                        } else if (entry.IsRenamed()) {
+                            ImGui::Text("%05d Renamed %s %s", entry.repetitions, entry.primPath.GetString().c_str(),
+                                        entry.newPrimPath.GetString().c_str());
+                        }
                     }
                 }
+                clipper.End();
                 ImGui::EndTable();
             }
         }
