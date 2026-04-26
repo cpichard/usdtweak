@@ -950,9 +950,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
             ImGui::MenuItem(ShaderRegistryInspectorWindowTitle, nullptr, &_settings._showShaderInspector);
-#if ENABLE_HYDRA_NOTICE_LOGGER
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
-#endif
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
 #endif
@@ -1243,15 +1241,14 @@ void Editor::Draw() {
         DrawShaderRegistryInspector();
         ImGui::End();
     }
-#if ENABLE_HYDRA_NOTICE_LOGGER
+
     if (_settings._showHydraNoticeLogger) {
         TRACE_SCOPE(HydraNoticeLoggerWindowTitle);
         ImGui::Begin(HydraNoticeLoggerWindowTitle, &_settings._showHydraNoticeLogger);
         DrawHydraNoticeLogger();
         ImGui::End();
     }
-#endif
-    
+
 #ifdef HAVE_USDVALIDATION
     if (_settings._showValidator) {
         TRACE_SCOPE(ValidatorWindowTitle);
