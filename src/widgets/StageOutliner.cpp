@@ -170,6 +170,7 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         ImGui::EndMenu();
     }
 
+#if ENABLE_CONNECTION_EDITOR
     if (ImGui::MenuItem("Create connection editor sheet")) {
         std::vector<UsdPrim> prims;
         for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
@@ -181,6 +182,7 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
         AddPrimsToCurrentSession(prims);
     }
+#endif
 }
 
 static ImVec4 GetPrimColor(const UsdPrim &prim) {
