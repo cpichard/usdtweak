@@ -10,7 +10,7 @@
 PreferencesModalDialog::PreferencesModalDialog(Editor &editor) : editor(editor) {};
 
 void PreferencesModalDialog::Draw() {
-    static const char *const panels[] = {"General", "Viewport", "Style", "Fonts"};
+    static const char *const panels[] = {"General", "Viewport", "Style", "Fonts", "Experimental"};
     static int current_item = 0;
     const ImGuiContext &g = *GImGui;
 
@@ -18,7 +18,7 @@ void PreferencesModalDialog::Draw() {
     ImVec2 prefContentSize(0, heightWithoutCloseButton);
     ImVec2 prefTabSize(g.FontSize * 5, heightWithoutCloseButton);
     if (ImGui::BeginListBox("##PreferencePanels", prefTabSize)) {
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 5; ++i) {
             if (ImGui::Selectable(panels[i], i == current_item)) {
                 current_item = i;
             }
@@ -115,6 +115,12 @@ void PreferencesModalDialog::Draw() {
                 }
                 ExecuteAfterDraw<EditorReloadFonts>();
             }
+            ImGui::EndChild();
+        }
+    } else if (current_item == 4) {
+        if (ImGui::BeginChild("##Experimental", prefContentSize)) {
+            ImGui::Checkbox("Connection Editor", &editor.GetEnableConnectionEditor());
+            ImGui::Checkbox("Mouse Capture in Viewport", &editor.GetEnableMouseCapture());
             ImGui::EndChild();
         }
     }

@@ -940,9 +940,8 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
-#if ENABLE_CONNECTION_EDITOR
-            ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
-#endif
+            if (_enableConnectionEditor)
+                ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
@@ -979,23 +978,21 @@ void Editor::DrawMainMenuBar() {
 void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
-#if ENABLE_MOUSE_CAPTURE
+
+bool Editor::_enableConnectionEditor = false;
+bool Editor::_enableMouseCapture = false;
+
 static bool gMouseCaptured = false;
 
 // workaround for GLFW bug that reports wrong mouse delta after mouse capture
 static int gSkipCapturedMouseDelta = 0;
-#endif // ENABLE_MOUSE_CAPTURE
 
 bool Editor::GetMouseCaptured() {
-#if ENABLE_MOUSE_CAPTURE
     return gMouseCaptured;
-#else
-    return false;
-#endif // ENABLE_MOUSE_CAPTURE
 }
 
 void Editor::SetMouseCaptured(bool captured) {
-#if ENABLE_MOUSE_CAPTURE
+    if (!_enableMouseCapture) return;
     if (gMouseCaptured != captured) {
         gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
@@ -1011,17 +1008,14 @@ void Editor::SetMouseCaptured(bool captured) {
             }
         }
     }
-#endif // ENABLE_MOUSE_CAPTURE
 }
 
 void Editor::Draw() {
-#if ENABLE_MOUSE_CAPTURE
     if (gSkipCapturedMouseDelta > 0) {
         ImGuiIO &io = ImGui::GetIO();
         gSkipCapturedMouseDelta--;
         io.MouseDelta = {0, 0};
     }
-#endif // ENABLE_MOUSE_CAPTURE
     ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();
@@ -1192,8 +1186,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-#if ENABLE_CONNECTION_EDITOR // experimental - connection editor is disabled
-    if (_settings._showUsdConnectionEditor) {
+    if (_enableConnectionEditor && _settings._showUsdConnectionEditor) {
         ImGui::Begin(UsdConnectionEditorWindowTitle, &_settings._showUsdConnectionEditor);
         TRACE_SCOPE(UsdConnectionEditorWindowTitle);
         if (GetCurrentStage()) {
@@ -1203,7 +1196,6 @@ void Editor::Draw() {
         }
         ImGui::End();
     }
-#endif
 
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
