@@ -39,7 +39,6 @@ void SelectionManipulator::OnBeginEdition(Viewport &viewport) {
     _startPos = viewport.GetMousePosition();
     _shiftHeld = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
     _isDragging = false;
-    Editor::SetMouseCaptured(true);
 }
 
 void SelectionManipulator::OnEndEdition(Viewport &) {
@@ -80,9 +79,12 @@ Manipulator *SelectionManipulator::OnUpdate(Viewport &viewport) {
         }
         return viewport.GetManipulator<MouseHoverManipulator>();
     }
+    const bool wasDragging = _isDragging;
     _isDragging = ImGui::GetMouseDragDelta(0).x * ImGui::GetMouseDragDelta(0).x +
                   ImGui::GetMouseDragDelta(0).y * ImGui::GetMouseDragDelta(0).y >=
                   ImGui::GetIO().MouseDragThreshold * ImGui::GetIO().MouseDragThreshold;
+    if (!wasDragging && _isDragging)
+        Editor::SetMouseCaptured(true);
     return this;
 }
 
