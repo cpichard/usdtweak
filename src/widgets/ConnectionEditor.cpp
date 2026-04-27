@@ -66,6 +66,7 @@ struct NodeConnection {
 struct ConnectionsSheet {
     
     // Should we keep the root prim ?? the root path under which we would create new prims
+    // TODO we can have a default sheet without a stage
     ConnectionsSheet() {}
     ConnectionsSheet(const UsdPrim &prim) : rootPrim(prim) {}
     
@@ -254,7 +255,8 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         CANVAS_CLICKED_ZOOMING,
         NODE_CLICKED,
         CONNECTOR_CLICKED,
-        CLICK_RELEASED
+        CLICK_RELEASED,
+        SELECT_PRIM_CLICKED,
     };
     
     // ???
@@ -493,7 +495,24 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 nodeClicked = &node;
             }
         }
-        
+
+        // "Select prim" button — top-right corner of the header, same size as connectors.
+        // Overrides NODE_CLICKED when the button is the actual click target.
+        {
+            const ImVec2 btnMin(nodeMax.x - connectorSize - 2.f, nodeMin.y + 2.f);
+            const ImVec2 btnMax(nodeMax.x - 2.f, nodeMin.y + connectorSize + 2.f);
+            ImRect btnBB(CanvasToScreen(btnMin), CanvasToScreen(btnMax));
+            btnBB.ClipWith(widgetBoundingBox);
+            const bool btnHovered = btnBB.Contains(ImGui::GetMousePos());
+            const ImU32 btnColor = btnHovered ? IM_COL32(255, 200, 60, 255) : IM_COL32(180, 140, 40, 160);
+            drawList->AddRectFilled(CanvasToScreen(btnMin), CanvasToScreen(btnMax), btnColor, 2.f);
+            drawList->AddText(g.Font, g.FontSize * zooming * 0.85f, CanvasToScreen(btnMin), IM_COL32(255, 255, 255, 255), "S");
+            if (ImGui::IsMouseClicked(0) && btnBB.Contains(ImGui::GetMousePos())) {
+                event = Events::SELECT_PRIM_CLICKED;
+                nodeClicked = &node;
+            }
+        }
+
         // Draw properties
         const ImVec2 inputStartPos = nodeMin + ImVec2(10.f, headerHeight);
         for (int i=0; i<properties.size(); i++) {
@@ -699,7 +718,11 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     void UpdateState() {
         ImGuiIO& io = ImGui::GetIO();
         if (state ==States::HOVERING_CANVAS) {
-            if (event == NODE_CLICKED) {
+            if (event == SELECT_PRIM_CLICKED) {
+                if (nodeClicked) {
+                    ExecuteAfterDraw<EditorSetSelection>(nodeClicked->prim.GetStage(), nodeClicked->primPath);
+                }
+            } else if (event == NODE_CLICKED) {
                 state = SELECTING_NODE; // Single node selection,
             } else if (event == CANVAS_CLICKED) {
                 state = SELECTING_REGION; // Region selection
