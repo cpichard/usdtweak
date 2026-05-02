@@ -278,40 +278,44 @@ struct ValidationState final {
 
             ImGui::TableHeader(column_name);
 
-            int errorIndex = 0;
-            for (const UsdValidationError &error : errorList) {
-                ImGui::TableNextRow();
-                ImGui::PushID(errorIndex);
-                ImVec2 textSize = ImGui::CalcTextSize(error.GetMessage().c_str(), nullptr, false, ImGui::GetColumnWidth(2));
-                ImGui::TableSetColumnIndex(0);
-                ImGuiSelectableFlags selectable_flags =
-                    ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
-                if (ImGui::Selectable("##Nothing", false, selectable_flags, ImVec2(0, textSize.y))) {
-                    SelectError(error);
-                }
-                ImGui::SameLine();
-                bool &selectedError = selectedErrors[errorIndex++];
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-                // TODO check if the error is fixable or not
+            ImGuiListClipper clipper;
+            clipper.Begin((int)errorList.size());
+            while (clipper.Step()) {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+                    const UsdValidationError &error = errorList[i];
+                    ImGui::TableNextRow();
+                    ImGui::PushID(i);
+                    ImVec2 textSize = ImGui::CalcTextSize(error.GetMessage().c_str(), nullptr, false, ImGui::GetColumnWidth(2));
+                    ImGui::TableSetColumnIndex(0);
+                    ImGuiSelectableFlags selectable_flags =
+                        ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap;
+                    if (ImGui::Selectable("##Nothing", false, selectable_flags, ImVec2(0, textSize.y))) {
+                        SelectError(error);
+                    }
+                    ImGui::SameLine();
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+                    // TODO check if the error is fixable or not
 #ifdef ENABLE_VALIDATION_FIXERS
-                if(error.GetFixers().empty()){
-                    ImGui::BeginDisabled();
-                    ImGui::Text(ICON_FA_STOP);
-                    ImGui::EndDisabled();
-                } else {
-                    ImGui::Checkbox("##SelectedText", &selectedError);
-                }
+                    if (error.GetFixers().empty()) {
+                        ImGui::BeginDisabled();
+                        ImGui::Text(ICON_FA_STOP);
+                        ImGui::EndDisabled();
+                    } else {
+                        ImGui::Checkbox("##SelectedText", &selectedErrors[i]);
+                    }
 #endif
-                ImGui::PopStyleVar();
+                    ImGui::PopStyleVar();
 
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%s", GetErrorTypeName(error.GetType()));
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%s", GetErrorTypeName(error.GetType()));
 
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextWrapped("%s", error.GetMessage().c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TextWrapped("%s", error.GetMessage().c_str());
 
-                ImGui::PopID();
+                    ImGui::PopID();
+                }
             }
+            clipper.End();
             ImGui::EndTable();
         }
     }
