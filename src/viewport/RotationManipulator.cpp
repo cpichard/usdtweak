@@ -101,23 +101,21 @@ void RotationManipulator::OnSelectionChange(Viewport &viewport) {
 GfMatrix4d RotationManipulator::ComputeManipulatorToWorldTransform(const Viewport &viewport) {
     if (_xformable) {
         const auto currentTime = GetViewportTimeCode(viewport);
-        GfVec3d translation;
-        GfVec3f rotation, scale, pivot;
-
-        UsdGeomXformCommonAPI::RotationOrder rotOrder;
-        _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
-        GfMatrix4d rotMat =
-            UsdGeomXformOp::GetOpTransform(UsdGeomXformCommonAPI::ConvertRotationOrderToOpType(rotOrder), VtValue(rotation));
-
-        const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
-        const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
-        // const auto xformable = UsdGeomXformable(_xformAPI.GetPrim());
-        const auto parentToWorldMat = _xformable.ComputeParentToWorldTransform(currentTime);
-
-        // We are just interested in the pivot position and the orientation
-        const GfMatrix4d toManipulator = rotMat * pivotMat * transMat * parentToWorldMat;
-
-        return toManipulator.GetOrthonormalized();
+        if (_xformAPI) {
+            GfVec3d translation;
+            GfVec3f rotation, scale, pivot;
+            UsdGeomXformCommonAPI::RotationOrder rotOrder;
+            _xformAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder, currentTime);
+            GfMatrix4d rotMat =
+                UsdGeomXformOp::GetOpTransform(UsdGeomXformCommonAPI::ConvertRotationOrderToOpType(rotOrder), VtValue(rotation));
+            const auto transMat = GfMatrix4d(1.0).SetTranslate(translation);
+            const auto pivotMat = GfMatrix4d(1.0).SetTranslate(pivot);
+            const auto parentToWorldMat = _xformable.ComputeParentToWorldTransform(currentTime);
+            return (rotMat * pivotMat * transMat * parentToWorldMat).GetOrthonormalized();
+        } else {
+            // Non-CommonAPI prims (e.g. single xformOp:transform): use the full local-to-world transform.
+            return _xformable.ComputeLocalToWorldTransform(currentTime).GetOrthonormalized();
+        }
     }
     return GfMatrix4d(1.0);
 }
@@ -325,17 +323,15 @@ Manipulator *RotationManipulator::OnUpdate(Viewport &viewport) {
                 bool reset = false;
                 auto ops = xf.GetOrderedXformOps(&reset);
                 if (ops.size() == 1 && ops[0].GetOpType() == UsdGeomXformOp::Type::TypeTransform) {
-                    GfVec3d translation;
-                    GfVec3f rotation, scale, pivot;
-                    UsdGeomXformCommonAPI::RotationOrder rotOrder;
-                    // Try to get scale/translation from a CommonAPI view; fall back to identity values
-                    UsdGeomXformCommonAPI fallbackAPI(xf.GetPrim());
-                    if (fallbackAPI) {
-                        fallbackAPI.GetXformVectorsByAccumulation(&translation, &rotation, &scale, &pivot, &rotOrder,
-                                                                  GetViewportTimeCode(viewport));
-                    }
-                    GfMatrix4d current = GfMatrix4d().SetScale(scale) * _rotateMatricesOnBegin[i] *
-                                         GfMatrix4d(1.0).SetRotate(deltaRotation) * GfMatrix4d().SetTranslate(translation);
+                    // _rotateMatricesOnBegin[i] holds the full initial transform matrix.
+                    // Preserve translation; apply delta rotation to the rotation+scale part.
+                    const GfVec3d translation = _rotateMatricesOnBegin[i].ExtractTranslation();
+                    GfMatrix4d rotAndScale = _rotateMatricesOnBegin[i];
+                    rotAndScale[3][0] = rotAndScale[3][1] = rotAndScale[3][2] = 0.0;
+                    GfMatrix4d current = rotAndScale * GfMatrix4d(1.0).SetRotate(deltaRotation);
+                    current[3][0] = translation[0];
+                    current[3][1] = translation[1];
+                    current[3][2] = translation[2];
                     ops[0].Set(current, GetEditionTimeCode(viewport, xf));
                 }
             }
