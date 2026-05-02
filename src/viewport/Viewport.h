@@ -6,6 +6,7 @@
 ///
 #include "FlyCameraManipulator.h"
 #include "Grid.h"
+#include "SceneObjectDrawer.h"
 #include "Manipulator.h"
 #include "MouseHoverManipulator.h"
 #include "OrbitCameraManipulator.h"
@@ -117,6 +118,8 @@ class Viewport final {
     UsdStageRefPtr GetCurrentStage() { return _stage; }
     const UsdStageRefPtr &GetCurrentStage() const { return _stage; };
 
+    const ImagingSettings &GetImagingSettings() const { return _imagingSettings; }
+
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
 
     /// Enable or disable Hydra rendering for a given stage. Shared across all viewports.
@@ -174,6 +177,7 @@ class Viewport final {
     /// Stages for which Hydra rendering is disabled. Static: shared across all Viewport instances.
     static std::set<UsdStageRefPtr> _hydraDisabledStages;
     ImagingSettings _imagingSettings;
+    SceneObjectDrawer _sceneObjectDrawer;
     GlfDrawTargetRefPtr _drawTarget;
 };
 

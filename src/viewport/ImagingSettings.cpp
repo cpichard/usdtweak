@@ -41,6 +41,8 @@ ImagingSettings::ImagingSettings() {
     enableCameraLight = true;
 
     showGrid = true;
+    showCameras = false; // Still experimental and not optimized, do false by default
+    showLights = false; // Still experimental and not optimized, do false by default
     showGizmos = true;
     showUI = true;
     showViewportMenu = false;
@@ -144,6 +146,8 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
+    ImGui::Checkbox("Show cameras", &renderparams.showCameras);
+    ImGui::Checkbox("Show lights", &renderparams.showLights);
     ImGui::Checkbox("Show gizmos", &renderparams.showGizmos);
     ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
 }
