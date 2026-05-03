@@ -50,6 +50,8 @@ struct EditorSetCurrentStage;
 struct EditorSetEditTarget;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
+struct EditorSetPreviousPrim;
+struct EditorSetNextPrim;
 struct EditorSetSelection;
 struct EditorSelectAttributePath;
 struct EditorShutdown;

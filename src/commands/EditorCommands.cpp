@@ -245,6 +245,26 @@ struct EditorSetNextLayer : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorSetNextLayer>();
 
+struct EditorSetPreviousPrim : public EditorCommand {
+    EditorSetPreviousPrim() {}
+    ~EditorSetPreviousPrim() override {}
+    bool DoIt() override {
+        if (_editor) _editor->SetPreviousPrim();
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorSetPreviousPrim>();
+
+struct EditorSetNextPrim : public EditorCommand {
+    EditorSetNextPrim() {}
+    ~EditorSetNextPrim() override {}
+    bool DoIt() override {
+        if (_editor) _editor->SetNextPrim();
+        return false;
+    }
+};
+template void ExecuteAfterDraw<EditorSetNextPrim>();
+
 struct EditorStartPlayback : public EditorCommand {
     EditorStartPlayback() {}
     ~EditorStartPlayback() override {}
@@ -364,6 +384,7 @@ struct EditorFindPrim : public EditorCommand {
             }
             if (found != SdfPath()) {
                 selection.SetSelected(stage, found);
+                _editor->SetCurrentUsdPrim(stage, found);
             }
         }
         return false;

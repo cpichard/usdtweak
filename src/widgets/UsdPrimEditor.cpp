@@ -494,6 +494,14 @@ bool IsTransformShown(int options) { return false; }
 void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
     if (ImGui::BeginMenuBar()) {
+        if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+            ExecuteAfterDraw<EditorSetPreviousPrim>();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+            ExecuteAfterDraw<EditorSetNextPrim>();
+        }
+        ImGui::SameLine();
         if (prim && ImGui::BeginMenu("Create")) {
             // TODO: list all the attribute missing or incomplete
             if (ImGui::MenuItem("Attribute", nullptr)) {
@@ -762,25 +770,25 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
         
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-        ImGui::TableSetColumnIndex(0);
-        if(DrawPropertyMiniButton(ICON_FA_COPY)) {
-            ImGui::SetClipboardText(prim.GetPrimPath().GetString().c_str());
-        }
+        //ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        // ImGui::TableSetColumnIndex(0);
+        // if(DrawPropertyMiniButton(ICON_FA_COPY)) {
+        //     ImGui::SetClipboardText(prim.GetPrimPath().GetString().c_str());
+        // }
 
-        ImGui::TableSetColumnIndex(1);
-        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
-        ImGui::TableSetColumnIndex(2);
-        {
-            ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
-            ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
-        }
+        // ImGui::TableSetColumnIndex(1);
+        // ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+        // ImGui::TableSetColumnIndex(2);
+        // {
+        //     ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+        //     ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
+        // }
         
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-        ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Stage");
-        ImGui::TableSetColumnIndex(2);
-        ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+        // ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        // ImGui::TableSetColumnIndex(1);
+        // ImGui::Text("Stage");
+        // ImGui::TableSetColumnIndex(2);
+        // ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
         
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::TableSetColumnIndex(0);
@@ -807,7 +815,8 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
             editSchemas = !editSchemas;
         }
         ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Schemas");
+        //ImGui::Text("Schemas");
+        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
         ImGui::TableSetColumnIndex(2);
         ImGui::PushItemWidth(-FLT_MIN);
         DrawPrimSchemas(prim, editSchemas);
@@ -816,13 +825,45 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
     }
 }
 
+void DrawNavigator(UsdPrim &prim) {
+    // Navigation
+    if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+        ExecuteAfterDraw<EditorSetPreviousPrim>();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+        ExecuteAfterDraw<EditorSetNextPrim>();
+    }
+    if (prim) {
+        const SdfPath primPath = prim.GetPrimPath();
+        const std::vector<SdfPath> prefixes = primPath.GetPrefixes();
+        ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+        ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+
+        ImGui::SameLine();
+        ImGui::Text("/");
+        for (int i = 0; i < static_cast<int>(prefixes.size()); ++i) {
+            ImGui::SameLine(0, 0);
+            ImGui::PushID(i);
+            if (ImGui::SmallButton(prefixes[i].GetName().c_str())) {
+                ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prefixes[i]);
+            }
+            if (i < static_cast<int>(prefixes.size()) - 1) {
+                ImGui::SameLine(0, 0);
+                ImGui::Text("/");
+            }
+            ImGui::PopID();
+        }
+    }
+}
+
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     DrawPropertyEditorMenuBar(prim, 0);
-
+    DrawNavigator(prim);
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = ImGui::GetFrameHeight() * 4; // 4 rows (4 + no header)
+        headerSize.y = ImGui::GetFrameHeight() * 2; // 2 rows (2 + no header)
         headerSize.x = -FLT_MIN; // expand as much as possible
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);

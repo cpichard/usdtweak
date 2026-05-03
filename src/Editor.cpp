@@ -792,9 +792,48 @@ void Editor::AddStagePathSelection(const SdfPath &primPath) {
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
 }
 
+void Editor::SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath) {
+    if (!stage || primPath.IsEmpty()) return;
+    const auto entry = std::make_pair(stage, primPath);
+    if (entry == _lastShownPrimEntry) return;
+    if (!_primHistory.empty()) {
+        if (_primHistory[_primHistoryPointer] != entry) {
+            if (_primHistoryPointer < _primHistory.size() - 1)
+                _primHistory.resize(_primHistoryPointer + 1);
+            _primHistory.push_back(entry);
+            _primHistoryPointer = _primHistory.size() - 1;
+        }
+    } else {
+        _primHistory.push_back(entry);
+        _primHistoryPointer = 0;
+    }
+    _lastShownPrimEntry = entry;
+}
+
 void Editor::SetStagePathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentStage(), primPath);
+    SetCurrentUsdPrim(GetCurrentStage(), primPath);
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
+}
+
+void Editor::SetPreviousPrim() {
+    if (_primHistoryPointer > 0) {
+        --_primHistoryPointer;
+        const auto &[stage, path] = _primHistory[_primHistoryPointer];
+        _lastShownPrimEntry = {stage, path};
+        SetCurrentStage(stage);
+        _selection.SetSelected(stage, path);
+    }
+}
+
+void Editor::SetNextPrim() {
+    if (_primHistoryPointer < _primHistory.size() - 1) {
+        ++_primHistoryPointer;
+        const auto &[stage, path] = _primHistory[_primHistoryPointer];
+        _lastShownPrimEntry = {stage, path};
+        SetCurrentStage(stage);
+        _selection.SetSelected(stage, path);
+    }
 }
 
 // TODO : this is a duplicate, factorize the following function
@@ -1105,7 +1144,9 @@ void Editor::Draw() {
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
+            const SdfPath anchorPath = _selection.GetAnchorPrimPath(GetCurrentStage());
+            SetCurrentUsdPrim(GetCurrentStage(), anchorPath);
+            auto prim = GetCurrentStage()->GetPrimAtPath(_lastShownPrimEntry.second);
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();

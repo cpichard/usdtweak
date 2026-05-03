@@ -41,6 +41,9 @@ class Editor {
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();     // go forward in the layer history
 
+    void SetPreviousPrim(); // go backward in the prim history
+    void SetNextPrim();     // go forward in the prim history
+
     /// List of stages
     /// Using a stage cache to store the stages, seems to work well
     UsdStageRefPtr GetCurrentStage() { return _currentStage; }
@@ -55,6 +58,7 @@ class Editor {
     Selection &GetSelection() { return _selection; }
     void SetLayerPathSelection(const SdfPath &primPath);
     void AddLayerPathSelection(const SdfPath &primPath);
+    void SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath);
     void SetStagePathSelection(const SdfPath &primPath);
     void AddStagePathSelection(const SdfPath &primPath);
 
@@ -149,6 +153,11 @@ class Editor {
     /// List of layers.
     SdfLayerRefPtrVector _layerHistory;
     size_t _layerHistoryPointer;
+
+    /// Prim browsing history — each entry pairs a stage with a prim path.
+    std::vector<std::pair<UsdStageRefPtr, SdfPath>> _primHistory;
+    size_t _primHistoryPointer = 0;
+    std::pair<UsdStageRefPtr, SdfPath> _lastShownPrimEntry;
 
     /// Setting _isShutdown to true will stop the main loop
     bool _isShutdown = false;
