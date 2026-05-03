@@ -1,4 +1,5 @@
 
+set(GENERATED_DIR "${CMAKE_SOURCE_DIR}/src/generated")
 
 target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ResourcesLoader.cpp
@@ -37,7 +38,8 @@ function(embed_glsl cpp_file glsl_file)
 endfunction()
 
 foreach (glsl_file ${GLSL_SOURCES})
-    string(REGEX REPLACE "\\.glsl" ".cpp" cpp_file ${glsl_file})
+    get_filename_component(glsl_name ${glsl_file} NAME_WE)
+    set(cpp_file "${GENERATED_DIR}/glsl/${glsl_name}.cpp")
     # Create a custom command to embed the glsl in the cpp
     embed_glsl(${cpp_file} ${glsl_file})
     # Save the variable name in a list
@@ -49,13 +51,13 @@ endforeach()
 
 # Write a header file
 # TODO: add custom command/dependency etc.
-file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/GlslCode.h" "#pragma once\n
+file(WRITE "${GENERATED_DIR}/GlslCode.h" "#pragma once\n
 ${glsl_header}"
 )
 
 # Default ini file is also embedded
 set(default_ini_file ${CMAKE_CURRENT_SOURCE_DIR}/ini/imgui.ini)
-set(default_ini_header ${CMAKE_CURRENT_SOURCE_DIR}/DefaultImGuiIni.h)
+set(default_ini_header ${GENERATED_DIR}/DefaultImGuiIni.h)
 add_custom_command(
     OUTPUT "${default_ini_header}"
     DEPENDS "${default_ini_file}"
@@ -71,6 +73,6 @@ target_sources(resources PRIVATE ${default_ini_header})
 
 # Organise the source files in folders in xcode and visual studio
 get_target_property(RESOURCES_SOURCES resources SOURCES)
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}"
+source_group(TREE "${CMAKE_SOURCE_DIR}/src"
     PREFIX "src"
     FILES ${RESOURCES_SOURCES})
