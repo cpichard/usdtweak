@@ -43,6 +43,11 @@ struct UsdPrimNode {
 //        std::cout << "USDPRIM " << sizeof(UsdPrim) << std::endl;
 //        std::cout << "NodalPrim " << sizeof(UsdPrimNode) << std::endl;
 //        std::cout << "SdfPath " << sizeof(SdfPath) << std::endl;
+        UsdUINodeGraphNodeAPI api(prim_);
+        GfVec2f usdPos;
+        if (api.GetPosAttr().Get(&usdPos)) {
+            position = ImVec2(usdPos[0], usdPos[1]);
+        }
     }
     
     ImVec2 position; // 8 bytes
@@ -1190,6 +1195,23 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
         if (ImGui::Button(ICON_FA_PROJECT_DIAGRAM " Auto Layout")) {
             AutoLayout(sheet);
             pendingFitView = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_SAVE " Bake Positions")) {
+            std::vector<std::pair<SdfPath, ImVec2>> posData;
+            posData.reserve(sheet.nodes.size());
+            for (const auto &node : sheet.nodes)
+                posData.emplace_back(node.primPath, node.position);
+            ExecuteAfterDraw([posData](UsdStageRefPtr stage) {
+                for (const auto &[path, pos] : posData) {
+                    UsdPrim prim = stage->GetPrimAtPath(path);
+                    if (prim) {
+                        UsdUINodeGraphNodeAPI::Apply(prim)
+                            .CreatePosAttr(VtValue(), false)
+                            .Set(GfVec2f(pos.x, pos.y));
+                    }
+                }
+            }, stage);
         }
 
         ImDrawList* drawList = ImGui::GetWindowDrawList();
