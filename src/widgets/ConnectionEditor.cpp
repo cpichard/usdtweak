@@ -1,5 +1,6 @@
 
 #include "ConnectionEditor.h"
+#include "Editor.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
 #include "Commands.h"
@@ -7,8 +8,14 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdUI/nodeGraphNodeAPI.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/notice.h>
 #include <iostream>
 #include <stack>
+#include <queue>
+#include <algorithm>
+#include <unordered_set>
+#include <map>
+#include <numeric>
 
 /*
  Notes on the connection editor.
@@ -37,6 +44,11 @@ struct UsdPrimNode {
 //        std::cout << "USDPRIM " << sizeof(UsdPrim) << std::endl;
 //        std::cout << "NodalPrim " << sizeof(UsdPrimNode) << std::endl;
 //        std::cout << "SdfPath " << sizeof(SdfPath) << std::endl;
+        UsdUINodeGraphNodeAPI api(prim_);
+        GfVec2f usdPos;
+        if (api.GetPosAttr().Get(&usdPos)) {
+            position = ImVec2(usdPos[0], usdPos[1]);
+        }
     }
     
     ImVec2 position; // 8 bytes
@@ -61,6 +73,7 @@ struct NodeConnection {
 struct ConnectionsSheet {
     
     // Should we keep the root prim ?? the root path under which we would create new prims
+    // TODO we can have a default sheet without a stage
     ConnectionsSheet() {}
     ConnectionsSheet(const UsdPrim &prim) : rootPrim(prim) {}
     
@@ -210,21 +223,54 @@ struct StageSheets {
 
 
 // This might end up as an exposed class, but for now we keep it hidden in the translation unit
-struct NodeConnectionEditorData {
-    
-    NodeConnectionEditorData() {}
+struct NodeConnectionEditorData : public TfWeakBase {
+
+    ~NodeConnectionEditorData() {
+        for (auto &key : _noticeKeys) TfNotice::Revoke(key);
+    }
+
     // Storing the unique identifier as a key won't keep the data if we unload and reload the stage
     // with undo/redo
     std::unordered_map<void const *, StageSheets> stageSheets;
-    
+    std::vector<TfNotice::Key> _noticeKeys;
+
     StageSheets * GetSheets(UsdStageWeakPtr stage) {
         if (stage) {
-            if (stageSheets.find(stage->GetUniqueIdentifier()) == stageSheets.end()) {
-                stageSheets.insert({stage->GetUniqueIdentifier(), StageSheets(stage)});
+            auto id = stage->GetUniqueIdentifier();
+            if (stageSheets.find(id) == stageSheets.end()) {
+                stageSheets.insert({id, StageSheets(stage)});
+                _noticeKeys.push_back(
+                    TfNotice::Register(TfCreateWeakPtr(this),
+                                       &NodeConnectionEditorData::_OnObjectsChanged,
+                                       stage));
             }
-            return & stageSheets.at(stage->GetUniqueIdentifier());
+            return &stageSheets.at(id);
         }
         return nullptr;
+    }
+
+    void _OnObjectsChanged(const UsdNotice::ObjectsChanged &notice,
+                           const UsdStageWeakPtr &stage) {
+        auto it = stageSheets.find(stage->GetUniqueIdentifier());
+        if (it == stageSheets.end()) return;
+
+        const auto &resyncedPaths = notice.GetResyncedPaths();
+        if (resyncedPaths.empty()) return;
+
+        for (auto &[sheetId, sheet] : it->second.sheets) {
+            auto newEnd = std::remove_if(sheet.nodes.begin(), sheet.nodes.end(),
+                [&](UsdPrimNode &node) {
+                    for (const SdfPath &resynced : resyncedPaths) {
+                        if (node.primPath == resynced || node.primPath.HasPrefix(resynced)) {
+                            UsdPrim fresh = stage->GetPrimAtPath(node.primPath);
+                            if (!fresh.IsValid()) return true;
+                            node.prim = fresh;
+                        }
+                    }
+                    return false;
+                });
+            sheet.nodes.erase(newEnd, sheet.nodes.end());
+        }
     }
 };
 
@@ -249,7 +295,9 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         CANVAS_CLICKED_ZOOMING,
         NODE_CLICKED,
         CONNECTOR_CLICKED,
-        CLICK_RELEASED
+        CLICK_RELEASED,
+        SELECT_PRIM_CLICKED,
+        CONNECTION_CLICKED,
     };
     
     // ???
@@ -286,7 +334,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         //if (ImGui::InvisibleButton("canvas", widgetBoundingBox.GetSize())) {
         //    std::cout << "Canvas clicked" << std::endl;
         //}
-        if (widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+        if (widgetBoundingBox.Contains(ImGui::GetMousePos()) || _isCapturing) {
             // Click on the canvas TODO test bounding box
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
@@ -312,6 +360,44 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         drawList->ChannelsMerge();
         drawList->PopClipRect();
     };
+
+    // Adjust zoom and scroll so all nodes are visible in the current widget.
+    // Must be called after Begin() so widgetSize is up to date.
+    void FitView(const ConnectionsSheet &sheet, bool selectedOnly = false) {
+        if (sheet.nodes.empty() || widgetSize.x <= 0.f || widgetSize.y <= 0.f) return;
+
+        constexpr float fitPadding  = 40.f; // screen-space margin around the graph
+        constexpr float headerHeight = 50.f;
+        constexpr float lineHeight   = 15.f;
+
+        ImVec2 bboxMin( FLT_MAX,  FLT_MAX);
+        ImVec2 bboxMax(-FLT_MAX, -FLT_MAX);
+        for (const auto &node : sheet.nodes) {
+            if (selectedOnly && !node.selected) continue;
+            float h = static_cast<float>(node.properties.size() + 2) * lineHeight + headerHeight;
+            ImVec2 nodeMin = node.position + ImVec2(-80.f, -h / 2.f);
+            ImVec2 nodeMax = node.position + ImVec2( 80.f,  h / 2.f);
+            bboxMin.x = std::min(bboxMin.x, nodeMin.x);
+            bboxMin.y = std::min(bboxMin.y, nodeMin.y);
+            bboxMax.x = std::max(bboxMax.x, nodeMax.x);
+            bboxMax.y = std::max(bboxMax.y, nodeMax.y);
+        }
+
+        const float bboxW = bboxMax.x - bboxMin.x;
+        const float bboxH = bboxMax.y - bboxMin.y;
+        if (bboxW <= 0.f || bboxH <= 0.f) return;
+
+        // Compute zoom to fit, then clamp to a reasonable range.
+        const float fitZoomX = (widgetSize.x - 2.f * fitPadding) / bboxW;
+        const float fitZoomY = (widgetSize.y - 2.f * fitPadding) / bboxH;
+        zooming = std::max(0.05f, std::min(std::min(fitZoomX, fitZoomY), 5.f));
+
+        // Set scroll so the bbox center maps to the widget center.
+        // CanvasToWindow(pos) = pos*zoom + scroll + originOffset
+        // We want CanvasToWindow(center) = originOffset  →  scroll = -center*zoom
+        const ImVec2 bboxCenter = (bboxMin + bboxMax) * 0.5f;
+        scrolling = bboxCenter * (-zooming);
+    }
 
     // What we call canvas is the infinite normalized region
     inline ImVec2 CanvasToWindow(const ImVec2 &posInCanvas) {
@@ -390,7 +476,19 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         }
     }
     
+    static ImU32 GetNodeHeaderColor(const UsdPrim &prim) {
+        static const TfToken materialToken("Material");
+        static const TfToken shaderToken("Shader");
+        static const TfToken nodeGraphToken("NodeGraph");
+        const TfToken t = prim.GetTypeName();
+        if (t == materialToken)  return IM_COL32(110, 45, 110, 255);
+        if (t == shaderToken)    return IM_COL32(45,  85, 135, 255);
+        if (t == nodeGraphToken) return IM_COL32(45, 110,  75, 255);
+        return                          IM_COL32(65,  65,  85, 255);
+    }
+
     void DrawNode(UsdPrimNode &node) {
+        if (!node.prim.IsValid()) return;
         ImGuiContext& g = *GImGui;
         ImGuiIO& io = ImGui::GetIO();
         drawList->ChannelsSetCurrent(1); // Foreground
@@ -422,12 +520,36 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // The invisible button will trigger the sliders if it's not clipped
         ImRect nodeBoundingBox(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax));
         nodeBoundingBox.ClipWith(widgetBoundingBox);
-        
+        if (nodeBoundingBox.Contains(ImGui::GetMousePos()))
+            mouseOverAnyNode = true;
+
         drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), 0xFF090920, 4.0f);
+        const ImVec2 headerMax = ImVec2(nodeMax.x, nodeMin.y + headerHeight);
+        drawList->AddRectFilled(CanvasToScreen(nodeMin), CanvasToScreen(headerMax),
+                                GetNodeHeaderColor(node.prim), 4.0f, ImDrawFlags_RoundCornersTop);
         drawList->AddRect(CanvasToScreen(nodeMin), CanvasToScreen(nodeMax), node.selected ? IM_COL32(0, 255, 0, 255) : IM_COL32(255, 255, 255, 255), 4.0f);
-        
+
         // TODO: add padding, truncate name if too long, add tooltip
-        drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(nodeMin), IM_COL32(255, 255, 255, 255), node.prim.GetName().GetText());
+        const float scaledFontSize = g.FontSize * zooming;
+        if (scaledFontSize >= 1.f) {
+            const ImVec2 namePos = CanvasToScreen(nodeMin) + ImVec2(4.f, 0.f);
+            drawList->AddText(g.Font, scaledFontSize, namePos, IM_COL32(255, 255, 255, 255), node.prim.GetName().GetText());
+            {
+                static const TfToken shaderToken("Shader");
+                static const TfToken infoIdToken("info:id");
+                if (node.prim.GetTypeName() == shaderToken) {
+                    UsdAttribute infoIdAttr = node.prim.GetAttribute(infoIdToken);
+                    if (infoIdAttr) {
+                        TfToken shaderType;
+                        if (infoIdAttr.Get(&shaderType) && !shaderType.IsEmpty()) {
+                            const ImVec2 subtitlePos = CanvasToScreen(nodeMin) + ImVec2(4.f, scaledFontSize);
+                            drawList->AddText(g.Font, scaledFontSize * 0.85f, subtitlePos,
+                                              IM_COL32(200, 200, 200, 200), shaderType.GetText());
+                        }
+                    }
+                }
+            }
+        }
         
         // Check if the user clicked on the node and update the event.
         // The event might be again updated later on, on the connectors as well, that's how choosing the event is implemented
@@ -437,7 +559,22 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 nodeClicked = &node;
             }
         }
-        
+        // "Select prim" button — top-right corner of the header, same size as connectors.
+        // Overrides NODE_CLICKED when the button is the actual click target.
+        {
+            const ImVec2 btnMin(nodeMax.x - 2*connectorSize - 2.f, nodeMin.y + 2.f);
+            const ImVec2 btnMax(nodeMax.x - 2.f, nodeMin.y + 2*connectorSize + 2.f);
+            ImRect btnBB(CanvasToScreen(btnMin), CanvasToScreen(btnMax));
+            btnBB.ClipWith(widgetBoundingBox);
+            const bool btnHovered = btnBB.Contains(ImGui::GetMousePos());
+            const ImU32 btnColor = btnHovered ? IM_COL32(255, 200, 60, 255) : IM_COL32(180, 140, 40, 160);
+            drawList->AddRectFilled(CanvasToScreen(btnMin), CanvasToScreen(btnMax), btnColor, 2.f);
+            //drawList->AddText(g.Font, g.FontSize * zooming * 0.85f, CanvasToScreen(btnMin), IM_COL32(255, 255, 255, 255), "S");
+            if (ImGui::IsMouseClicked(0) && btnBB.Contains(ImGui::GetMousePos())) {
+                event = Events::SELECT_PRIM_CLICKED;
+                nodeClicked = &node;
+            }
+        }
         // Draw properties
         const ImVec2 inputStartPos = nodeMin + ImVec2(10.f, headerHeight);
         for (int i=0; i<properties.size(); i++) {
@@ -474,8 +611,8 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
             }
             
             const auto textPos = inputStartPos + ImVec2(0, linePos); // TODO: padding and text size
-            //propertie[i].
-            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), properties[i].GetNameToken().GetText());
+            if (scaledFontSize >= 1.f)
+                drawList->AddText(g.Font, scaledFontSize, CanvasToScreen(textPos), IM_COL32(255, 255, 255, 255), properties[i].GetNameToken().GetText());
             
             // Update positions of the connectors
             connectorPositions[properties[i]] = ImVec4(nodeMin.x, inputStartPos.y + 9.f + linePos, nodeMax.x, inputStartPos.y + 9.f + linePos);
@@ -596,26 +733,85 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         //ImGuiWindow* window = g.CurrentWindow;
         // Give the node a position in canvas coordinates
         drawList->ChannelsSetCurrent(1); // Foreground
-        //static ImVec2 nodePos(0.f, 0.f); // Position in the canvas
+        mouseOverAnyNode = false;
         for (auto &node : sheet.nodes) {
             DrawNode(node);
         }
         drawList->ChannelsSetCurrent(0); // Background
-        for (const auto &con:sheet.connections) {
+
+        // Reset hovered edge each frame
+        hoveredConnectionHead = SdfPath::EmptyPath();
+        hoveredConnectionTail = SdfPath::EmptyPath();
+
+        auto isEdgeSelected = [&](const NodeConnection& c) {
+            return std::any_of(selectedConnections.begin(), selectedConnections.end(),
+                [&](const NodeConnection& s) { return s.begin == c.begin && s.end == c.end; });
+        };
+
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const float tessellationTol = ImGui::GetStyle().CurveTessellationTol;
+        const float hitRadiusSq = 8.f * 8.f;
+
+        for (const auto &con : sheet.connections) {
             const auto arrowHead = connectorPositions.find(con.begin);
-            if (arrowHead != connectorPositions.end()) {
-                const auto arrowTail = connectorPositions.find(con.end);
-                if (arrowTail != connectorPositions.end()) {
-                    ImVec2 p2a(arrowHead->second.x, arrowHead->second.y);
-                    ImVec2 p1a(arrowTail->second.z, arrowTail->second.w);
-                    ImVec2 p2b(arrowHead->second.x-150, arrowHead->second.y);
-                    ImVec2 p1b(arrowTail->second.z+150, arrowTail->second.w);
-                    ImVec2 mouse = ImGui::GetMousePos();
-                    auto color = IM_COL32(255, 255, 255, 255);
-                    //ImVec2 closest = ImBezierCubicClosestPointCasteljau(CanvasToScreen(p1a), CanvasToScreen(p1b), CanvasToScreen(p2b), CanvasToScreen(p2a), mouse, O.2);
-                    drawList->AddBezierCubic(CanvasToScreen(p1a), CanvasToScreen(p1b), CanvasToScreen(p2b), CanvasToScreen(p2a), color, 2);
+            if (arrowHead == connectorPositions.end()) continue;
+            const auto arrowTail = connectorPositions.find(con.end);
+            if (arrowTail == connectorPositions.end()) continue;
+
+            const float dx = arrowHead->second.x - arrowTail->second.z;
+            const float dy = arrowHead->second.y - arrowTail->second.w;
+            float tangent;
+            ImU32 normalColor;
+            if (dx >= 0.f) {
+                tangent = std::min(150.f, dx * 0.5f);
+                normalColor = IM_COL32(255, 255, 255, 255);
+            } else {
+                tangent = std::max(100.f, (std::abs(dx) + std::abs(dy)) * 0.35f);
+                normalColor = IM_COL32(190, 190, 190, 180);
+            }
+
+            ImVec2 p1a(arrowTail->second.z, arrowTail->second.w);
+            ImVec2 p1b(arrowTail->second.z + tangent, arrowTail->second.w);
+            ImVec2 p2b(arrowHead->second.x - tangent, arrowHead->second.y);
+            ImVec2 p2a(arrowHead->second.x, arrowHead->second.y);
+
+            // Hit-test against the Bezier curve in screen space
+            ImVec2 sp1a = CanvasToScreen(p1a);
+            ImVec2 sp1b = CanvasToScreen(p1b);
+            ImVec2 sp2b = CanvasToScreen(p2b);
+            ImVec2 sp2a = CanvasToScreen(p2a);
+
+            const ImVec2 closest = ImBezierCubicClosestPointCasteljau(sp1a, sp1b, sp2b, sp2a, mouse, tessellationTol);
+            const float cdx = closest.x - mouse.x;
+            const float cdy = closest.y - mouse.y;
+            const bool hovered = !mouseOverAnyNode && (cdx * cdx + cdy * cdy) < hitRadiusSq;
+
+            if (hovered) {
+                hoveredConnectionHead = con.begin;
+                hoveredConnectionTail = con.end;
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsKeyDown(ImGuiKey_LeftAlt) && event != Events::CONNECTOR_CLICKED) {
+                    if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                        // Toggle this edge in/out of selection
+                        auto it = std::find_if(selectedConnections.begin(), selectedConnections.end(),
+                            [&](const NodeConnection& s) { return s.begin == con.begin && s.end == con.end; });
+                        if (it != selectedConnections.end())
+                            selectedConnections.erase(it);
+                        else
+                            selectedConnections.push_back(con);
+                    } else {
+                        selectedConnections.clear();
+                        selectedConnections.push_back(con);
+                    }
+                    event = Events::CONNECTION_CLICKED;
                 }
             }
+
+            const bool selected = isEdgeSelected(con);
+            ImU32 color = selected ? IM_COL32(255, 165,   0, 255)
+                        : hovered  ? IM_COL32(255, 220, 100, 255)
+                        :            normalColor;
+            float thickness = selected ? 3.f : 2.f;
+            drawList->AddBezierCubic(sp1a, sp1b, sp2b, sp2a, color, thickness);
         }
         
         // Show connecting node
@@ -643,15 +839,27 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     void UpdateState() {
         ImGuiIO& io = ImGui::GetIO();
         if (state ==States::HOVERING_CANVAS) {
-            if (event == NODE_CLICKED) {
+            if (event == CONNECTION_CLICKED) {
+                // Selection already set in DrawSheet; just stay in HOVERING_CANVAS
+            } else if (event == SELECT_PRIM_CLICKED) {
+                if (nodeClicked) {
+                    ExecuteAfterDraw<EditorSetSelection>(nodeClicked->prim.GetStage(), nodeClicked->primPath);
+                }
+            } else if (event == NODE_CLICKED) {
+                selectedConnections.clear();
                 state = SELECTING_NODE; // Single node selection,
             } else if (event == CANVAS_CLICKED) {
+                selectedConnections.clear();
                 state = SELECTING_REGION; // Region selection
                 selectionOrigin = ImGui::GetMousePos();
             } else if (event == CANVAS_CLICKED_PANNING) {
                 state = CANVAS_PANING;
+                _isCapturing = Editor::IsMouseCaptureEnabled();
+                Editor::SetMouseCaptured(true);
             } else if (event == CANVAS_CLICKED_ZOOMING) {
                 state = CANVAS_ZOOMING;
+                _isCapturing = Editor::IsMouseCaptureEnabled();
+                Editor::SetMouseCaptured(true);
             } else if (event == CLICK_RELEASED) {
                 state = HOVERING_CANVAS;
             } else if (event == CONNECTOR_CLICKED) {
@@ -675,6 +883,8 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_PANING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
+                _isCapturing = false;
+                Editor::SetMouseCaptured(false);
             }
             // Update scrolling
             else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
@@ -683,6 +893,8 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_ZOOMING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
+                _isCapturing = false;
+                Editor::SetMouseCaptured(false);
             }
             else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.f)) {
                 ZoomFromPosition(zoomClick, io.MouseDelta);
@@ -705,8 +917,10 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         }
         // Debug
         ImGuiContext& g = *GImGui;
-        std::string stateDebug = "State " + std::to_string(state);
-        drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(ImVec2(0.2, 0.2)), IM_COL32(255, 255, 255, 255), stateDebug.c_str());
+        if (g.FontSize * zooming >= 4.f) {
+            std::string stateDebug = "State " + std::to_string(state);
+            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(ImVec2(0.2, 0.2)), IM_COL32(255, 255, 255, 255), stateDebug.c_str());
+        }
     }
     
     void ProcessAction() {
@@ -731,6 +945,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     float zooming = 1.f; // TODO: make sure zooming is never 0
     ImVec2 zoomClick = ImVec2(0.0f, 0.0f); // Zoom origin
     ImVec2 selectionOrigin; // TODO this could be union with zoom click (origin)
+    bool _isCapturing = false;
     ImVec2 widgetOrigin = ImVec2(0.0f, 0.0f);  // canvasOrigin, canvasSize in screen coordinates
     ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
     ImRect widgetBoundingBox;
@@ -739,17 +954,244 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     SdfPath connectorTailClicked;
     SdfPath connectorHeadClicked;
 
+    // Connection (edge) multi-selection — stored as SdfPath pairs, stable across Update() rebuilds
+    std::vector<NodeConnection> selectedConnections;
+    SdfPath hoveredConnectionHead;
+    SdfPath hoveredConnectionTail;
+
     // Connectors positions
     std::unordered_map<SdfPath, ImVec4, SdfPath::Hash> connectorPositions; // 2 in 2 out
     // std::unordered_map<SdfPath, ImVec2, SdfPath::Hash> outputsPositions;
 
     bool hasSelectedNodes = false; // computed at each frame
+    bool mouseOverAnyNode = false; // reset each frame; true when mouse is inside any node bounding box
     
     ImDrawList* drawList = nullptr;
     
     UsdStageWeakPtr currentStage;
 };
 
+
+// Sugiyama layered graph auto-layout with connected-component splitting and
+// per-type subgraph layout within each component.
+//
+//  1. Find connected components (Union-Find, undirected).
+//  2. Within each component: group nodes by USD prim type name.
+//     Run Sugiyama on each type group using only intra-group edges
+//     (avoids cross-type cycles, e.g. Material ↔ Shader).
+//     Stack type groups vertically, centred on the component origin.
+//  3. Arrange connected components horizontally, centred on canvas (0,0).
+static void AutoLayout(ConnectionsSheet &sheet) {
+    const int n = static_cast<int>(sheet.nodes.size());
+    if (n == 0) return;
+
+    constexpr float nodeWidth    = 160.f; // node spans position.x ± 80
+    constexpr float hGap         = 80.f;  // horizontal gap between layer columns
+    constexpr float vGap         = 30.f;  // vertical gap between nodes in a column
+    constexpr float typeGroupGap = 80.f;  // vertical gap between type groups in a component
+    constexpr float compGap      = 120.f; // horizontal gap between connected components
+    constexpr float headerHeight = 50.f;
+    constexpr float lineHeight   = 15.f;  // ~ImGui fontSize + 2px padding
+
+    auto getNodeHeight = [&](int idx) -> float {
+        return static_cast<float>(sheet.nodes[idx].properties.size() + 2) * lineHeight + headerHeight;
+    };
+
+    // --- Build attribute-path and prim-path lookup maps ---
+    std::unordered_map<SdfPath, int, SdfPath::Hash> attrToIdx, primToIdx;
+    primToIdx.reserve(n);
+    attrToIdx.reserve(n * 8);
+    for (int i = 0; i < n; i++) {
+        primToIdx[sheet.nodes[i].primPath] = i;
+        for (const auto &prop : sheet.nodes[i].properties)
+            attrToIdx[prop] = i;
+    }
+
+    auto findNode = [&](const SdfPath &p) -> int {
+        auto it = attrToIdx.find(p);
+        if (it != attrToIdx.end()) return it->second;
+        auto it2 = primToIdx.find(p.GetPrimPath());
+        return it2 != primToIdx.end() ? it2->second : -1;
+    };
+
+    // --- 1. Find connected components via Union-Find (path-halving) ---
+    std::vector<int> parent(n);
+    std::iota(parent.begin(), parent.end(), 0);
+
+    auto findComp = [&](int x) -> int {   // iterative path halving
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    };
+    auto unite = [&](int x, int y) {
+        x = findComp(x); y = findComp(y);
+        if (x != y) parent[x] = y;
+    };
+
+    for (const auto &con : sheet.connections) {
+        int src = findNode(con.end), dst = findNode(con.begin);
+        if (src >= 0 && dst >= 0 && src != dst)
+            unite(src, dst);
+    }
+
+    // Group global node indices by component root (std::map → deterministic order).
+    std::map<int, std::vector<int>> components;
+    for (int i = 0; i < n; i++)
+        components[findComp(i)].push_back(i);
+
+    // --- Sugiyama layout for one type group ---
+    // Writes node positions centred at (0, 0); returns {totalWidth, maxColHeight}.
+    auto layoutGroup = [&](const std::vector<int> &grp) -> std::pair<float, float> {
+        const int g = static_cast<int>(grp.size());
+        if (g == 0) return {0.f, 0.f};
+
+        std::unordered_map<int, int> globalToLocal;
+        globalToLocal.reserve(g);
+        for (int li = 0; li < g; li++) globalToLocal[grp[li]] = li;
+
+        std::vector<std::unordered_set<int>> dn(g), up(g);
+        for (const auto &con : sheet.connections) {
+            int src = findNode(con.end), dst = findNode(con.begin);
+            if (src < 0 || dst < 0 || src == dst) continue;
+            auto si = globalToLocal.find(src), di = globalToLocal.find(dst);
+            if (si == globalToLocal.end() || di == globalToLocal.end()) continue;
+            dn[si->second].insert(di->second);
+            up[di->second].insert(si->second);
+        }
+
+        // Layer assignment (Kahn / longest-path variant).
+        std::vector<int> layer(g, 0);
+        std::vector<int> inDeg(g);
+        for (int i = 0; i < g; i++) inDeg[i] = static_cast<int>(up[i].size());
+        std::queue<int> q;
+        for (int i = 0; i < g; i++) if (inDeg[i] == 0) q.push(i);
+        while (!q.empty()) {
+            int u = q.front(); q.pop();
+            for (int v : dn[u]) {
+                layer[v] = std::max(layer[v], layer[u] + 1);
+                if (--inDeg[v] == 0) q.push(v);
+            }
+        }
+
+        const int maxLayer = *std::max_element(layer.begin(), layer.end());
+        std::vector<std::vector<int>> layers(maxLayer + 1);
+        for (int i = 0; i < g; i++) layers[layer[i]].push_back(i);
+
+        // Barycenter crossing minimisation — 3 alternating passes.
+        auto buildPos = [&]() {
+            std::vector<int> pos(g, 0);
+            for (int l = 0; l <= maxLayer; l++)
+                for (int p = 0; p < static_cast<int>(layers[l].size()); p++)
+                    pos[layers[l][p]] = p;
+            return pos;
+        };
+        for (int pass = 0; pass < 3; pass++) {
+            {
+                auto pos = buildPos();
+                for (int l = 1; l <= maxLayer; l++) {
+                    std::vector<std::pair<float, int>> order;
+                    order.reserve(layers[l].size());
+                    for (int li : layers[l]) {
+                        float bc = 0.f; int cnt = 0;
+                        for (int u : up[li]) { bc += static_cast<float>(pos[u]); cnt++; }
+                        order.push_back({cnt > 0 ? bc / static_cast<float>(cnt) : 0.f, li});
+                    }
+                    std::stable_sort(order.begin(), order.end());
+                    layers[l].clear();
+                    for (auto &[b, li] : order) layers[l].push_back(li);
+                }
+            }
+            {
+                auto pos = buildPos();
+                for (int l = maxLayer - 1; l >= 0; l--) {
+                    std::vector<std::pair<float, int>> order;
+                    order.reserve(layers[l].size());
+                    for (int li : layers[l]) {
+                        float bc = 0.f; int cnt = 0;
+                        for (int d : dn[li]) { bc += static_cast<float>(pos[d]); cnt++; }
+                        order.push_back({cnt > 0 ? bc / static_cast<float>(cnt) : 0.f, li});
+                    }
+                    std::stable_sort(order.begin(), order.end());
+                    layers[l].clear();
+                    for (auto &[b, li] : order) layers[l].push_back(li);
+                }
+            }
+        }
+
+        // Coordinate assignment — centred at (0, 0).
+        const float totalWidth = static_cast<float>(maxLayer) * (nodeWidth + hGap) + nodeWidth;
+        const float startX     = -totalWidth / 2.f;
+
+        float maxColHeight = 0.f;
+        for (int l = 0; l <= maxLayer; l++) {
+            float colH = vGap * static_cast<float>(std::max(0, static_cast<int>(layers[l].size()) - 1));
+            for (int li : layers[l]) colH += getNodeHeight(grp[li]);
+            maxColHeight = std::max(maxColHeight, colH);
+        }
+        for (int l = 0; l <= maxLayer; l++) {
+            const float cx = startX + static_cast<float>(l) * (nodeWidth + hGap) + nodeWidth / 2.f;
+            float colH = vGap * static_cast<float>(std::max(0, static_cast<int>(layers[l].size()) - 1));
+            for (int li : layers[l]) colH += getNodeHeight(grp[li]);
+            float y = -colH / 2.f;
+            for (int li : layers[l]) {
+                const float h = getNodeHeight(grp[li]);
+                sheet.nodes[grp[li]].position = ImVec2(cx, y + h / 2.f);
+                y += h + vGap;
+            }
+        }
+        return {totalWidth, maxColHeight};
+    };
+
+    // --- 2. Layout each connected component ---
+    // For each component: group by type, run Sugiyama per type group,
+    // stack type groups vertically. Returns component {width, height}.
+    struct CompInfo { float width = 0.f; float height = 0.f; };
+    std::vector<CompInfo>          compInfos;
+    std::vector<std::vector<int>>  compNodes; // global node indices per component
+
+    for (auto &[root, nodeIndices] : components) {
+        // Group by prim type within this component.
+        std::map<std::string, std::vector<int>> typeGroups;
+        for (int idx : nodeIndices)
+            typeGroups[sheet.nodes[idx].prim.GetTypeName().GetString()].push_back(idx);
+
+        // Layout each type group; nodes are initially centred at (0, 0).
+        std::vector<std::pair<float, float>> groupSizes;
+        std::vector<const std::vector<int>*> groupPtrs;
+        float compWidth = 0.f;
+        for (auto &[typeName, grp] : typeGroups) {
+            groupSizes.push_back(layoutGroup(grp));
+            groupPtrs.push_back(&grp);
+            compWidth = std::max(compWidth, groupSizes.back().first);
+        }
+
+        // Stack type groups vertically, centred on y = 0.
+        float totalH = typeGroupGap * static_cast<float>(std::max(0, static_cast<int>(groupSizes.size()) - 1));
+        for (auto &[w, h] : groupSizes) totalH += h;
+
+        float yTop = -totalH / 2.f;
+        for (int gi = 0; gi < static_cast<int>(groupPtrs.size()); gi++) {
+            const float yShift = yTop + groupSizes[gi].second / 2.f;
+            for (int idx : *groupPtrs[gi])
+                sheet.nodes[idx].position.y += yShift;
+            yTop += groupSizes[gi].second + typeGroupGap;
+        }
+
+        compInfos.push_back({compWidth, totalH});
+        compNodes.push_back(nodeIndices);
+    }
+
+    // --- 3. Arrange connected components horizontally, centred on x = 0 ---
+    float totalWidth = compGap * static_cast<float>(std::max(0, static_cast<int>(compInfos.size()) - 1));
+    for (auto &ci : compInfos) totalWidth += ci.width;
+
+    float xLeft = -totalWidth / 2.f;
+    for (int ci = 0; ci < static_cast<int>(compInfos.size()); ci++) {
+        const float xShift = xLeft + compInfos[ci].width / 2.f;
+        for (int idx : compNodes[ci])
+            sheet.nodes[idx].position.x += xShift;
+        xLeft += compInfos[ci].width + compGap;
+    }
+}
 
 void DrawConnectionEditor(const UsdStageRefPtr &stage) {
     // We are maintaining a list of graph edit session per stage
@@ -777,13 +1219,43 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
         // fmodf floating point remainder of the division operation
         // -> so the first line is aligned in the range 0 ___ 1
         ConnectionsSheet &sheet = sheets->GetSelectedSheet();
-        
+
         // Update the node positions, inputs, outputs`
         // update the connections as well
         sheet.Update();
-        
+
+        ImGui::SameLine();
+        static bool pendingFitView = false;
+        static bool pendingFitViewSelected = false;
+        if (ImGui::Button(ICON_FA_PROJECT_DIAGRAM " Auto Layout")) {
+            AutoLayout(sheet);
+            pendingFitView = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_SAVE " Bake Positions")) {
+            std::vector<std::pair<SdfPath, ImVec2>> posData;
+            posData.reserve(sheet.nodes.size());
+            for (const auto &node : sheet.nodes)
+                posData.emplace_back(node.primPath, node.position);
+            ExecuteAfterDraw([posData](UsdStageRefPtr stage) {
+                for (const auto &[path, pos] : posData) {
+                    UsdPrim prim = stage->GetPrimAtPath(path);
+                    if (prim) {
+                        UsdUINodeGraphNodeAPI::Apply(prim)
+                            .CreatePosAttr(VtValue(), false)
+                            .Set(GfVec2f(pos.x, pos.y));
+                    }
+                }
+            }, stage);
+        }
+
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         canvas.Begin(drawList);
+        if (pendingFitView) {
+            canvas.FitView(sheet, pendingFitViewSelected);
+            pendingFitView = false;
+            pendingFitViewSelected = false;
+        }
         canvas.DrawGrid();
         canvas.DrawSheet(sheet);
         //canvas.DrawBoundaries(); // for debugging
@@ -791,6 +1263,24 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
         canvas.DrawRegionSelection();
         canvas.UpdateState(); // Might move in End ???
         // canvas.ProcessActions() // TODO ??
+
+        if (ImGui::IsKeyPressed(ImGuiKey_F)
+            && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+            pendingFitView = true;
+            pendingFitViewSelected = canvas.hasSelectedNodes;
+        }
+
+        if (!canvas.selectedConnections.empty()
+            && ImGui::IsKeyPressed(ImGuiKey_Backspace)
+            && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+            std::vector<std::pair<SdfPath, SdfPath>> toDelete;
+            toDelete.reserve(canvas.selectedConnections.size());
+            for (const auto &c : canvas.selectedConnections)
+                toDelete.emplace_back(c.begin, c.end);
+            ExecuteAfterDraw<AttributeDisconnectBatch>(canvas.currentStage, std::move(toDelete));
+            canvas.selectedConnections.clear();
+        }
+
         canvas.End();
     }
 }
