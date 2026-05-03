@@ -98,6 +98,31 @@ struct AttributeConnect : public SdfLayerCommand {
 template void ExecuteAfterDraw<AttributeConnect>(UsdStageWeakPtr stage, SdfPath tail, SdfPath head);
 
 
+struct AttributeDisconnectBatch : public SdfLayerCommand {
+    AttributeDisconnectBatch(UsdStageWeakPtr stage, std::vector<std::pair<SdfPath, SdfPath>> connections)
+        : _stage(stage), _connections(std::move(connections)) {}
+
+    bool DoIt() override {
+        if (_stage) {
+            auto layer = _stage->GetEditTarget().GetLayer();
+            if (layer) {
+                SdfCommandGroupRecorder recorder(_undoCommands, layer);
+                for (auto& [head, tail] : _connections) {
+                    UsdAttribute attr = _stage->GetAttributeAtPath(head);
+                    if (attr) attr.RemoveConnection(tail);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    UsdStageWeakPtr _stage;
+    std::vector<std::pair<SdfPath, SdfPath>> _connections;
+};
+template void ExecuteAfterDraw<AttributeDisconnectBatch>(UsdStageWeakPtr, std::vector<std::pair<SdfPath, SdfPath>>);
+
+
 struct RelationshipReplace : public SdfLayerCommand {
     RelationshipReplace(UsdRelationship rel, SdfPath before, SdfPath after) :
     _rel(rel), _before(before), _after(after){}
