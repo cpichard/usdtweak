@@ -8,6 +8,7 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdUI/nodeGraphNodeAPI.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/notice.h>
 #include <iostream>
 #include <stack>
 #include <queue>
@@ -222,21 +223,54 @@ struct StageSheets {
 
 
 // This might end up as an exposed class, but for now we keep it hidden in the translation unit
-struct NodeConnectionEditorData {
-    
-    NodeConnectionEditorData() {}
+struct NodeConnectionEditorData : public TfWeakBase {
+
+    ~NodeConnectionEditorData() {
+        for (auto &key : _noticeKeys) TfNotice::Revoke(key);
+    }
+
     // Storing the unique identifier as a key won't keep the data if we unload and reload the stage
     // with undo/redo
     std::unordered_map<void const *, StageSheets> stageSheets;
-    
+    std::vector<TfNotice::Key> _noticeKeys;
+
     StageSheets * GetSheets(UsdStageWeakPtr stage) {
         if (stage) {
-            if (stageSheets.find(stage->GetUniqueIdentifier()) == stageSheets.end()) {
-                stageSheets.insert({stage->GetUniqueIdentifier(), StageSheets(stage)});
+            auto id = stage->GetUniqueIdentifier();
+            if (stageSheets.find(id) == stageSheets.end()) {
+                stageSheets.insert({id, StageSheets(stage)});
+                _noticeKeys.push_back(
+                    TfNotice::Register(TfCreateWeakPtr(this),
+                                       &NodeConnectionEditorData::_OnObjectsChanged,
+                                       stage));
             }
-            return & stageSheets.at(stage->GetUniqueIdentifier());
+            return &stageSheets.at(id);
         }
         return nullptr;
+    }
+
+    void _OnObjectsChanged(const UsdNotice::ObjectsChanged &notice,
+                           const UsdStageWeakPtr &stage) {
+        auto it = stageSheets.find(stage->GetUniqueIdentifier());
+        if (it == stageSheets.end()) return;
+
+        const auto &resyncedPaths = notice.GetResyncedPaths();
+        if (resyncedPaths.empty()) return;
+
+        for (auto &[sheetId, sheet] : it->second.sheets) {
+            auto newEnd = std::remove_if(sheet.nodes.begin(), sheet.nodes.end(),
+                [&](UsdPrimNode &node) {
+                    for (const SdfPath &resynced : resyncedPaths) {
+                        if (node.primPath == resynced || node.primPath.HasPrefix(resynced)) {
+                            UsdPrim fresh = stage->GetPrimAtPath(node.primPath);
+                            if (!fresh.IsValid()) return true;
+                            node.prim = fresh;
+                        }
+                    }
+                    return false;
+                });
+            sheet.nodes.erase(newEnd, sheet.nodes.end());
+        }
     }
 };
 
@@ -454,6 +488,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     }
 
     void DrawNode(UsdPrimNode &node) {
+        if (!node.prim.IsValid()) return;
         ImGuiContext& g = *GImGui;
         ImGuiIO& io = ImGui::GetIO();
         drawList->ChannelsSetCurrent(1); // Foreground
