@@ -85,6 +85,7 @@ struct ClearUndoRedoCommand;
 struct AttributeSet;
 struct AttributeCreateDefaultValue;
 struct AttributeConnect;
+struct AttributeDisconnectBatch;
 
 struct RelationshipReplace;
 

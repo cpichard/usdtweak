@@ -604,6 +604,9 @@ void Viewport::Render() {
     if (_imagingSettings.showGrid) {
         _grid.Render(*this);
     }
+    if (_imagingSettings.showCameras || _imagingSettings.showLights) {
+        _sceneObjectDrawer.Render(*this);
+    }
     if (_imagingSettings.showGizmos) {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

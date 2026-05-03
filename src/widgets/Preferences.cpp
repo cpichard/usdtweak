@@ -120,7 +120,7 @@ void PreferencesModalDialog::Draw() {
     } else if (current_item == 4) {
         if (ImGui::BeginChild("##Experimental", prefContentSize)) {
             ImGui::Checkbox("Connection Editor", &editor.GetEnableConnectionEditor());
-            ImGui::Checkbox("Mouse Capture in Viewport", &editor.GetEnableMouseCapture());
+            ImGui::Checkbox("Mouse Capture in Viewport and Connection Editor", &editor.GetEnableMouseCapture());
             ImGui::EndChild();
         }
     }

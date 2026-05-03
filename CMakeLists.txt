@@ -39,10 +39,10 @@ endif (DEFINED glfw3_DIR)
 
 # Get the stamp informations, git hash, time stamp, stuff like that
 add_custom_target(stamp
-  BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Stamp.h ${CMAKE_CURRENT_SOURCE_DIR}/src/Stamp.cpp
+  BYPRODUCTS ${CMAKE_SOURCE_DIR}/src/generated/Stamp.h ${CMAKE_SOURCE_DIR}/src/generated/Stamp.cpp
   COMMAND  ${CMAKE_COMMAND}
       -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-      -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src"
+      -DDST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/generated"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stamp.cmake"
 )
 
@@ -65,6 +65,7 @@ else()
     add_executable(usdtweak)
 endif()
 add_dependencies(usdtweak stamp)
+target_include_directories(usdtweak PRIVATE ${CMAKE_SOURCE_DIR}/src/generated)
 
 add_subdirectory(src)
 

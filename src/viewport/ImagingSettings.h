@@ -21,6 +21,8 @@ struct ImagingSettings : UsdImagingGLRenderParams {
 
     // Viewport
     bool showGrid;
+    bool showCameras;
+    bool showLights;
     bool showGizmos;
     bool showUI;
     bool showViewportMenu;

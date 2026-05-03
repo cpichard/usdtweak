@@ -3,8 +3,12 @@
 #include "Commands.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
+#include "UsdHelpers.h"
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/stagePopulationMask.h>
 #include <pxr/usd/usdGeom/camera.h>
+#include <pxr/usd/sdf/copyUtils.h>
+#include <pxr/usd/sdf/primSpec.h>
 #include <pxr/base/gf/rotation.h>
 
 const std::array<std::string, 7> ViewportCameras:: ViewportCameras::_cameraNames = {
@@ -68,9 +72,35 @@ static void DrawUsdGeomCameraEditor(const UsdGeomCamera &usdGeomCamera, UsdTimeC
         ExecuteAfterDraw<AttributeSet>(attr, value, keyframeTimeCode);
     }
     if (ImGui::Button("Duplicate camera")) {
-        // TODO: We probably want to duplicate this camera prim using the same parent
-        // as the movement of the camera can be set on the parents
-        // so basically copy the whole prim as a sibling, find the next available name
+        auto prim = usdGeomCamera.GetPrim();
+        auto stage = prim.GetStage();
+        auto primPath = prim.GetPath();
+        auto editTargetLayer = stage->GetEditTarget().GetLayer();
+        std::function<void()> duplicateFn = [stage, primPath, editTargetLayer]() {
+            UsdStagePopulationMask mask({primPath});
+            auto maskedStage = UsdStage::OpenMasked(stage->GetRootLayer(), mask);
+            if (!maskedStage) return;
+            auto flatLayer = maskedStage->Flatten();
+            if (!flatLayer || !flatLayer->GetPrimAtPath(primPath)) return;
+            std::string newName = FindNextAvailableTokenString(std::string(primPath.GetName()));
+            SdfPath parentPath = primPath.GetParentPath();
+            while (stage->GetPrimAtPath(parentPath.AppendChild(TfToken(newName)))) {
+                newName = FindNextAvailableTokenString(newName);
+            }
+            SdfPath newPath = parentPath.AppendChild(TfToken(newName));
+            for (const SdfPath &ancestor : parentPath.GetPrefixes()) {
+                if (ancestor == SdfPath::AbsoluteRootPath()) continue;
+                if (editTargetLayer->GetPrimAtPath(ancestor)) continue;
+                SdfPath ancestorParent = ancestor.GetParentPath();
+                if (ancestorParent == SdfPath::AbsoluteRootPath()) {
+                    SdfPrimSpec::New(editTargetLayer, ancestor.GetName(), SdfSpecifierOver);
+                } else if (auto parentSpec = editTargetLayer->GetPrimAtPath(ancestorParent)) {
+                    SdfPrimSpec::New(parentSpec, ancestor.GetName(), SdfSpecifierOver);
+                }
+            }
+            SdfCopySpec(flatLayer, primPath, editTargetLayer, newPath);
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(editTargetLayer, duplicateFn);
     }
 }
 
