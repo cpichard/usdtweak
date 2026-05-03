@@ -827,33 +827,44 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
 
 void DrawNavigator(UsdPrim &prim) {
     // Navigation
-    if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
-        ExecuteAfterDraw<EditorSetPreviousPrim>();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
-        ExecuteAfterDraw<EditorSetNextPrim>();
-    }
-    if (prim) {
-        const SdfPath primPath = prim.GetPrimPath();
-        const std::vector<SdfPath> prefixes = primPath.GetPrefixes();
-        ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
-        ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
-
-        ImGui::SameLine();
-        ImGui::Text("/");
-        for (int i = 0; i < static_cast<int>(prefixes.size()); ++i) {
-            ImGui::SameLine(0, 0);
-            ImGui::PushID(i);
-            if (ImGui::SmallButton(prefixes[i].GetName().c_str())) {
-                ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prefixes[i]);
-            }
-            if (i < static_cast<int>(prefixes.size()) - 1) {
-                ImGui::SameLine(0, 0);
-                ImGui::Text("/");
-            }
-            ImGui::PopID();
+    if (ImGui::BeginTable("##DrawNavigator", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::TableSetColumnIndex(0);
+        if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+            ExecuteAfterDraw<EditorSetPreviousPrim>();
         }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+            ExecuteAfterDraw<EditorSetNextPrim>();
+        }
+
+        if (prim) {
+            ImGui::TableSetColumnIndex(1);
+            const SdfPath primPath = prim.GetPrimPath();
+            const std::vector<SdfPath> prefixes = primPath.GetPrefixes();
+
+            ImGui::SameLine();
+            ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+            ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+            ImGui::BeginChild("##Navigation", ImVec2(-FLT_MIN, ImGui::GetFrameHeight()));
+            ImGui::Text("/");
+            for (int i = 0; i < static_cast<int>(prefixes.size()); ++i) {
+                ImGui::SameLine(0, 0);
+                ImGui::PushID(i);
+                if (ImGui::SmallButton(prefixes[i].GetName().c_str())) {
+                    ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prefixes[i]);
+                }
+                if (i < static_cast<int>(prefixes.size()) - 1) {
+                    ImGui::SameLine(0, 0);
+                    ImGui::Text("/");
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+        }
+        ImGui::EndTable();
     }
 }
 
