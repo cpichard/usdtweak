@@ -39,7 +39,10 @@ jobs:
 
       - name: Install Python Jinja2
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        run: brew install python-jinja
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install jinja2
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
 
       - name: Checkout OpenUSD ${{ env.USD_VERSION }}
         if: steps.cache-usd.outputs.cache-hit != 'true'
