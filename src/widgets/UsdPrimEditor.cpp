@@ -578,7 +578,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
 #if (PXR_VERSION < 2208)
     return false;
 #else
-    if (!prim)
+    if (!prim || prim.IsA<UsdShadeMaterial>() || prim.IsA<UsdShadeShader>())
         return false;
 
     UsdShadeMaterialBindingAPI materialBindingAPI(prim);
@@ -591,11 +591,20 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
             const std::string &purposeName = purpose.GetString();
             ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-           
+
+            UsdShadeMaterialBindingAPI::DirectBinding directBinding = materialBindingAPI.GetDirectBinding(purpose);
+            bool hasDirectBinding = directBinding.GetMaterial().GetPrim().IsValid();
+
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(purposeName.c_str());
-            if (ImGui::Button(ICON_FA_COG)) {
-                ImGui::OpenPopup("MaterialList");
+            {
+                UsdRelationship bindingRel = directBinding.GetBindingRel();
+                bool isAuthoredAtEditTarget = bindingRel && bindingRel.IsAuthoredAt(prim.GetStage()->GetEditTarget());
+                ImVec4 cogColor = isAuthoredAtEditTarget ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorAttributeAuthored);
+                ScopedStyleColor cogStyle(ImGuiCol_Text, cogColor, ImGuiCol_Button, ImVec4(ColorTransparent));
+                if (ImGui::Button(ICON_FA_COG)) {
+                    ImGui::OpenPopup("MaterialList");
+                }
             }
             // TODO: we would like to copy/paste material path
             static MaterialList materialList; // We expect only one thread running this code
@@ -609,15 +618,16 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             } else {
                 materialList.ResetCache();
             }
-            
+
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%s", purposeName == "" ? "All purposes" : purposeName.c_str());
-            
+
             ImGui::TableSetColumnIndex(2);
             material = materialBindingAPI.ComputeBoundMaterial(purpose);
             if (material) {
                 // TODO: we would also like to copy/paste material path
-                ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+                ImVec4 textColor = hasDirectBinding ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored);
+                ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_Text, textColor);
                 if (ImGui::Button(material.GetPrim().GetPath().GetText())) {
                     ExecuteAfterDraw<EditorSetSelection>(material.GetPrim().GetStage(), material.GetPrim().GetPath());
                 };
