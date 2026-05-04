@@ -379,7 +379,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
             DrawPropertyStack(property, currentTime);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Set edit target")) {
+        if (ImGui::MenuItem("Edit strongest opinion")) {
             SetEditTargetOnPropertyStrongestOpinion(property, currentTime);
         }
         ImGui::EndPopup();
