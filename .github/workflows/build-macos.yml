@@ -57,7 +57,7 @@ jobs:
         if: steps.cache-usd.outputs.cache-hit != 'true'
         run: |
           python3 OpenUSD/build_scripts/build_usd.py \
-            --embree --alembic \
+            --embree \
             --no-python --no-usdview \
             --no-examples --no-tutorials --no-docs \
             --build-variant release \
