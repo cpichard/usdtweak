@@ -9,251 +9,113 @@ on:
   workflow_dispatch:
 
 env:
-  USD_VERSION: "25.08"
-  USD_URL: "https://developer.nvidia.com/downloads/usd/usd_binaries/25.08/usd.py312.windows-x86_64.usdview.release-v25.08.71e038c1.zip"
-  BUILD_CONFIG: RelWithDebInfo
+  USD_VERSION: "26.03"
+  USD_INSTALL_DIR: usd-install
+  BUILD_TYPE: RelWithDebInfo
 
 jobs:
-  build:
+  build-usd:
     runs-on: windows-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+    steps:
+      - name: Compute cache key
+        id: cache-key
+        shell: pwsh
+        run: |
+          $vsVer = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationVersion
+          echo "value=usd-windows-${{ env.USD_VERSION }}-vs${vsVer}" >> $env:GITHUB_OUTPUT
 
+      - name: Cache USD
+        id: cache-usd
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.USD_INSTALL_DIR }}
+          key: ${{ steps.cache-key.outputs.value }}
+
+      - name: Install Python Jinja2
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        run: pip install jinja2
+
+      - name: Checkout OpenUSD ${{ env.USD_VERSION }}
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: PixarAnimationStudios/OpenUSD
+          ref: v${{ env.USD_VERSION }}
+          path: OpenUSD
+          fetch-depth: 1
+
+      - name: Build USD
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          python OpenUSD/build_scripts/build_usd.py `
+            --embree --alembic --no-hdf5 `
+            --no-python --no-usdview `
+            --no-examples --no-tutorials --no-docs `
+            --build-variant release `
+            ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+
+  build-usdtweak:
+    runs-on: windows-latest
+    needs: build-usd
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache USD ${{ env.USD_VERSION }}
-        id: cache-usd
+      - name: Restore USD cache
         uses: actions/cache@v4
         with:
-          path: build/usd
-          key: usd-windows-${{ env.USD_VERSION }}
-
-      - name: Download USD ${{ env.USD_VERSION }}
-        if: steps.cache-usd.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/usd | Out-Null
-          Write-Host "Downloading USD ${{ env.USD_VERSION }} from NVIDIA..."
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "${{ env.USD_URL }}" -OutFile build/usd.zip
-          $ProgressPreference = 'Continue'
-
-          # Verify download
-          $size = (Get-Item build/usd.zip).Length
-          if ($size -lt 100000000) {
-              Write-Error "Download appears truncated ($size bytes)"
-              exit 1
-          }
-          Write-Host "Downloaded $([math]::Round($size / 1MB)) MB"
-
-          Write-Host "Extracting..."
-          Expand-Archive -Path build/usd.zip -DestinationPath build/usd -Force
-          Remove-Item build/usd.zip -Force
-
-          if (-not (Test-Path build/usd/pxrConfig.cmake)) {
-              Write-Error "Extraction failed - pxrConfig.cmake not found"
-              exit 1
-          }
-          Write-Host "USD ${{ env.USD_VERSION }} ready"
-
-      - name: Generate CMake configs for USD dependencies
-        if: steps.cache-usd.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          # The NVIDIA USD package ships TBB, OpenSubdiv, and Imath libraries
-          # but omits their CMake config files. pxrConfig.cmake needs them.
-
-          $usdDir = "build/usd"
-
-          # --- TBB ---
-          $dir = "$usdDir/lib/cmake/TBB"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          @'
-          get_filename_component(_TBB_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
-          if(NOT TARGET TBB::tbb)
-              add_library(TBB::tbb SHARED IMPORTED)
-              set_target_properties(TBB::tbb PROPERTIES
-                  IMPORTED_IMPLIB "${_TBB_ROOT}/lib/tbb.lib"
-                  IMPORTED_LOCATION "${_TBB_ROOT}/bin/tbb.dll"
-                  INTERFACE_INCLUDE_DIRECTORIES "${_TBB_ROOT}/include"
-              )
-          endif()
-          set(TBB_FOUND TRUE)
-          set(TBB_VERSION "2020.3")
-          '@ | Set-Content "$dir/TBBConfig.cmake" -Encoding UTF8
-          @'
-          set(PACKAGE_VERSION "2020.3")
-          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
-              set(PACKAGE_VERSION_COMPATIBLE FALSE)
-          else()
-              set(PACKAGE_VERSION_COMPATIBLE TRUE)
-              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
-                  set(PACKAGE_VERSION_EXACT TRUE)
-              endif()
-          endif()
-          '@ | Set-Content "$dir/TBBConfigVersion.cmake" -Encoding UTF8
-
-          # --- OpenSubdiv ---
-          $dir = "$usdDir/lib/cmake/OpenSubdiv"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          @'
-          get_filename_component(_OSD_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
-          if(NOT TARGET opensubdiv::opensubdiv)
-              add_library(opensubdiv::opensubdiv INTERFACE IMPORTED)
-              add_library(opensubdiv::osdCPU STATIC IMPORTED)
-              set_target_properties(opensubdiv::osdCPU PROPERTIES
-                  IMPORTED_LOCATION "${_OSD_ROOT}/lib/osdCPU.lib"
-              )
-              add_library(opensubdiv::osdGPU STATIC IMPORTED)
-              set_target_properties(opensubdiv::osdGPU PROPERTIES
-                  IMPORTED_LOCATION "${_OSD_ROOT}/lib/osdGPU.lib"
-              )
-              set_target_properties(opensubdiv::opensubdiv PROPERTIES
-                  INTERFACE_LINK_LIBRARIES "opensubdiv::osdCPU;opensubdiv::osdGPU"
-                  INTERFACE_INCLUDE_DIRECTORIES "${_OSD_ROOT}/include"
-              )
-          endif()
-          set(OpenSubdiv_FOUND TRUE)
-          set(OpenSubdiv_VERSION "3.6.0")
-          '@ | Set-Content "$dir/OpenSubdivConfig.cmake" -Encoding UTF8
-          @'
-          set(PACKAGE_VERSION "3.6.0")
-          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
-              set(PACKAGE_VERSION_COMPATIBLE FALSE)
-          else()
-              set(PACKAGE_VERSION_COMPATIBLE TRUE)
-              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
-                  set(PACKAGE_VERSION_EXACT TRUE)
-              endif()
-          endif()
-          '@ | Set-Content "$dir/OpenSubdivConfigVersion.cmake" -Encoding UTF8
-
-          # --- Imath ---
-          $dir = "$usdDir/lib/cmake/Imath"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          @'
-          get_filename_component(_IMATH_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
-          if(NOT TARGET Imath::Imath)
-              add_library(Imath::Imath SHARED IMPORTED)
-              set_target_properties(Imath::Imath PROPERTIES
-                  IMPORTED_IMPLIB "${_IMATH_ROOT}/lib/Imath-3_1.lib"
-                  IMPORTED_LOCATION "${_IMATH_ROOT}/bin/Imath-3_1.dll"
-                  INTERFACE_INCLUDE_DIRECTORIES "${_IMATH_ROOT}/include;${_IMATH_ROOT}/include/Imath"
-              )
-          endif()
-          if(NOT TARGET Imath::ImathConfig)
-              add_library(Imath::ImathConfig INTERFACE IMPORTED)
-              set_target_properties(Imath::ImathConfig PROPERTIES
-                  INTERFACE_INCLUDE_DIRECTORIES "${_IMATH_ROOT}/include;${_IMATH_ROOT}/include/Imath"
-              )
-          endif()
-          set(Imath_FOUND TRUE)
-          set(Imath_VERSION "3.1.12")
-          '@ | Set-Content "$dir/ImathConfig.cmake" -Encoding UTF8
-          @'
-          set(PACKAGE_VERSION "3.1.12")
-          if("${PACKAGE_FIND_VERSION}" VERSION_GREATER "${PACKAGE_VERSION}")
-              set(PACKAGE_VERSION_COMPATIBLE FALSE)
-          else()
-              set(PACKAGE_VERSION_COMPATIBLE TRUE)
-              if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL "${PACKAGE_VERSION}")
-                  set(PACKAGE_VERSION_EXACT TRUE)
-              endif()
-          endif()
-          '@ | Set-Content "$dir/ImathConfigVersion.cmake" -Encoding UTF8
-
-          Write-Host "CMake configs generated for TBB, OpenSubdiv, and Imath"
+          path: ${{ env.USD_INSTALL_DIR }}
+          key: ${{ needs.build-usd.outputs.cache-key }}
 
       - name: Configure
         shell: pwsh
         run: |
-          $usdDir = "${{ github.workspace }}/build/usd"
           cmake `
-              -G "Visual Studio 17 2022" `
-              -A x64 `
-              -B build/cmake `
-              "-DCMAKE_PREFIX_PATH=$usdDir/lib/cmake" `
-              "-Dpxr_DIR=$usdDir" `
-              "-DMaterialX_DIR=$usdDir/lib/cmake/MaterialX" `
-              "-DImath_DIR=$usdDir/lib/cmake/Imath" `
-              "-DPython3_EXECUTABLE=$usdDir/python/python.exe" `
-              "-DPython3_LIBRARY=$usdDir/python/libs/python312.lib" `
-              "-DPython3_INCLUDE_DIR=$usdDir/python/include" `
-              "-DPython3_VERSION=3.12"
+            -G "Visual Studio 17 2022" -A x64 `
+            "-Dpxr_DIR=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}" `
+            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}" `
+            -B build
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build/cmake --config ${{ env.BUILD_CONFIG }} --parallel
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Verify executable
+      - name: Install NSIS
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: choco install nsis --yes
+
+      - name: Package (CPack NSIS)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        working-directory: build
         shell: pwsh
         run: |
-          $exe = "build/cmake/${{ env.BUILD_CONFIG }}/usdtweak.exe"
-          if (-not (Test-Path $exe)) {
-              Write-Error "usdtweak.exe not found at $exe"
-              exit 1
-          }
-          Write-Host "Build successful: $exe"
-          Write-Host "Size: $([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB"
-
-      - name: Package portable bundle
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: |
-          $usdDir = "${{ github.workspace }}/build/usd"
-
-          # Use cmake --install to create a self-contained portable bundle
-          cmake --install build/cmake --prefix build/install --config ${{ env.BUILD_CONFIG }}
+          cpack -G NSIS -C ${{ env.BUILD_TYPE }}
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          # Verify the installed exe works
-          if (-not (Test-Path build/install/bin/usdtweak.exe)) {
-              Write-Error "Portable bundle missing usdtweak.exe"
-              exit 1
-          }
+      - name: Upload installer artifact
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: usdtweak-windows-installer
+          path: build/usdtweak-*.exe
 
-          # Copy USD plugin/resource directories needed at runtime
-          # (cmake --install already handles DLLs, plugins, and python libs)
+  release:
+    runs-on: ubuntu-latest
+    needs: build-usdtweak
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usdtweak-windows-installer
 
-          # Add a launch script to the bundle
-          @'
-          @echo off
-          set USDROOT=%~dp0
-          set PATH=%USDROOT%bin;%PATH%
-          set PYTHONPATH=%USDROOT%bin\python;%PYTHONPATH%
-          start "" "%USDROOT%bin\usdtweak.exe" %*
-          '@ | Set-Content "build/install/usdtweak.bat" -Encoding ASCII
-
-          # Add the LICENSE
-          Copy-Item LICENSE build/install/LICENSE.txt
-
-          # Create the zip
-          $tag = "${{ github.ref_name }}"
-          $zipName = "usdtweak-${tag}-windows-x64-usd${{ env.USD_VERSION }}.zip"
-          Compress-Archive -Path build/install/* -DestinationPath "build/$zipName"
-          Write-Host "Package created: $zipName"
-          Write-Host "Size: $([math]::Round((Get-Item "build/$zipName").Length / 1MB, 1)) MB"
-
-          # Export for the release step
-          echo "PACKAGE_NAME=$zipName" >> $env:GITHUB_ENV
-          echo "PACKAGE_PATH=build/$zipName" >> $env:GITHUB_ENV
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.PACKAGE_PATH }}
-          generate_release_notes: true
-          body: |
-            ## Windows portable build
-
-            **${{ env.PACKAGE_NAME }}** — self-contained bundle, no installation needed.
-
-            Extract the zip, run `usdtweak.bat`, or run `bin\usdtweak.exe` directly.
-
-            Built with:
-            - USD ${{ env.USD_VERSION }} (NVIDIA pre-built, Python 3.12)
-            - Visual Studio 2022 (${{ env.BUILD_CONFIG }})
+          files: "*.exe"
