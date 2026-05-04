@@ -39,7 +39,7 @@ jobs:
 
       - name: Install Python Jinja2
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        run: pip3 install jinja2
+        run: brew install python-jinja
 
       - name: Checkout OpenUSD ${{ env.USD_VERSION }}
         if: steps.cache-usd.outputs.cache-hit != 'true'
@@ -54,7 +54,7 @@ jobs:
         if: steps.cache-usd.outputs.cache-hit != 'true'
         run: |
           python3 OpenUSD/build_scripts/build_usd.py \
-            --embree --alembic --no-hdf5 \
+            --embree --alembic \
             --no-python --no-usdview \
             --no-examples --no-tutorials --no-docs \
             --build-variant release \

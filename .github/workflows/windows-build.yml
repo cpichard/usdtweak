@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           python OpenUSD/build_scripts/build_usd.py `
-            --embree --alembic --no-hdf5 `
+            --embree --alembic `
             --no-python --no-usdview `
             --no-examples --no-tutorials --no-docs `
             --build-variant release `
