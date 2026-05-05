@@ -65,7 +65,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore USD cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ needs.build-usd.outputs.cache-key }}
