@@ -61,6 +61,7 @@ jobs:
             --no-python --no-usdview \
             --no-examples --no-tutorials --no-docs \
             --build-variant release \
+            --build-dir ${{ github.workspace }}/usd-build \
             ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
 
   build-usdtweak:
