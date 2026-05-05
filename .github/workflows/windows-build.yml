@@ -55,8 +55,12 @@ jobs:
             --no-python --no-usdview `
             --no-examples --no-tutorials --no-docs `
             --build-variant release `
-            --build-dir ${{ github.workspace }}/usd-build `
             ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+
+      - name: Remove USD build artifacts from install dir
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force "${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}/build"
 
   build-usdtweak:
     runs-on: windows-latest
