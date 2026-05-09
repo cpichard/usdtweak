@@ -284,6 +284,21 @@ void SetEditTargetOnPropertyStrongestOpinion(const UsdProperty& property, UsdTim
     }
 }
 
+inline void SetEditTargetOnVariantSetStrongestOpinion(const UsdPrim& prim, const std::string& variantSetName) {
+    auto pcpIndex = prim.GetPrimIndex();
+    if (!pcpIndex.IsValid()) return;
+    for (const auto& spec : prim.GetPrimStack()) {
+        if (!spec) continue;
+        if (spec->GetVariantSelections().count(variantSetName)) {
+            PcpNodeRef node = pcpIndex.GetNodeProvidingSpec(spec->GetLayer(), spec->GetPath().GetPrimPath());
+            if (node) {
+                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(spec->GetLayer(), node));
+                return;
+            }
+        }
+    }
+}
+
 /// Specialization for DrawPropertyMiniButton, between UsdAttribute and UsdRelashionship
 template <typename UsdPropertyT> const char *SmallButtonLabel();
 template <> const char *SmallButtonLabel<UsdAttribute>() { return "(a)"; };
@@ -408,20 +423,25 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
 
         ImGui::TableHeadersRow();
 
+        auto editTargetPrimSpec = editTarget.GetLayer()->GetPrimAtPath(targetPath);
+
         for (auto variantSetName : variantSets.GetNames()) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
 
             // Variant set mini button --- TODO move code from this function
             auto variantSet = variantSets.GetVariantSet(variantSetName);
-            // TODO: how do we figure out if the variant set has been edited in this edit target ?
-            // Otherwise after a "Clear variant selection" the button remains green and it visually looks like it did nothing
+            bool isAuthoredAtEditTarget = editTargetPrimSpec &&
+                editTargetPrimSpec->GetVariantSelections().count(variantSetName) > 0;
             ImVec4 variantColor =
-                variantSet.HasAuthoredVariantSelection() ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
+                isAuthoredAtEditTarget ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
             ImGui::PushID(buttonID++);
             DrawPropertyMiniButton("(v)", variantColor);
             ImGui::PopID();
             if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+                if (ImGui::MenuItem("Edit strongest opinion")) {
+                    SetEditTargetOnVariantSetStrongestOpinion(prim, variantSetName);
+                }
                 if (ImGui::MenuItem("Clear variant selection")) {
                     ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
                 }
