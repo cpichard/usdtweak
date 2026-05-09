@@ -23,7 +23,9 @@ file(GLOB USD_DLLS ${PXR_CMAKE_DIR}/lib/*.dll ${PXR_CMAKE_DIR}/bin/*.dll ${PYTHO
 install(FILES ${USD_DLLS} DESTINATION bin CONFIGURATIONS RelWithDebInfo)
 # Copy the plugin, lib/python and lib/usd as they seem necessary for usd to run properly
 install(DIRECTORY ${PXR_CMAKE_DIR}/plugin DESTINATION . PATTERN "*.pdb" EXCLUDE)
-install(DIRECTORY ${PXR_CMAKE_DIR}/lib/python DESTINATION bin PATTERN "*.pyc" EXCLUDE)
+if(EXISTS ${PXR_CMAKE_DIR}/lib/python)
+    install(DIRECTORY ${PXR_CMAKE_DIR}/lib/python DESTINATION bin PATTERN "*.pyc" EXCLUDE)
+endif()
 install(DIRECTORY ${PXR_CMAKE_DIR}/lib/usd DESTINATION bin)
 install(TARGETS usdtweak)
 
