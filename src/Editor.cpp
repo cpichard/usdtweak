@@ -794,6 +794,8 @@ void Editor::AddStagePathSelection(const SdfPath &primPath) {
 
 void Editor::SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath) {
     if (!stage || primPath.IsEmpty()) return;
+    UsdPrim newPrim = stage->GetPrimAtPath(primPath);
+    if (!newPrim) return;
     const auto entry = std::make_pair(stage, primPath);
     if (entry == _lastShownPrimEntry) return;
     if (!_primHistory.empty()) {
