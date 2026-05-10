@@ -79,7 +79,7 @@ namespace clk = std::chrono;
 #define HydraBrowserWindowTitle "Hydra browser"
 #define ShaderRegistryInspectorWindowTitle "Shader registry inspector"
 #define HydraNoticeLoggerWindowTitle "Hydra notice logger"
-#define SearchWindowTitle "Search"
+#define FindWindowTitle "Find"
 #define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
 #define Viewport1WindowTitle "Viewport1"
@@ -960,7 +960,7 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Paste", "CTRL+V", false, false)) {
             }
             ImGui::Separator();
-            ImGui::MenuItem(SearchWindowTitle, nullptr, &_settings._showSearch);
+            ImGui::MenuItem(FindWindowTitle, nullptr, &_settings._showSearch);
             ImGui::Separator();
             if (ImGui::MenuItem("Preferences")) {
                 DrawModalDialog<PreferencesModalDialog>(*this);
@@ -1257,8 +1257,8 @@ void Editor::Draw() {
     if (_settings._showSearch) {
         // Update the index only when the search window is visible ("pay for what you see").
         StringSearchIndex::GetInstance().Update();
-        TRACE_SCOPE(SearchWindowTitle);
-        ImGui::Begin(SearchWindowTitle, &_settings._showSearch);
+        TRACE_SCOPE(FindWindowTitle);
+        ImGui::Begin(FindWindowTitle, &_settings._showSearch);
         DrawSearchWidget();
         ImGui::End();
     }

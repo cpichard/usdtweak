@@ -116,7 +116,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
         ImGui::SetKeyboardFocusHere();
         focus_filtered_idx = -1;
     }
-    ImGui::InputTextWithHint("##ComboWithFilter_inputText", "Search", pattern_buffer, 256);
+    ImGui::InputTextWithHint("##ComboWithFilter_inputText", "Find", pattern_buffer, 256);
 
     int move_delta = 0;
     if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
