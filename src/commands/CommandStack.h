@@ -55,3 +55,9 @@ template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(Arg
         commandStack.SetNextCommand(new CommandClass(arguments...));
     }
 }
+
+/// Convenience non-template wrappers to queue undo/redo without forcing the
+/// caller's translation unit to instantiate `ExecuteAfterDraw<UndoCommand>`
+/// (UndoCommand/RedoCommand are only defined in CommandStack.cpp).
+void QueueUndo();
+void QueueRedo();

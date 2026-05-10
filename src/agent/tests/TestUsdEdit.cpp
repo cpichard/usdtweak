@@ -1,0 +1,245 @@
+// Step 7: edit-tool dispatcher round-trip with undo. No HTTP, no LLM.
+//
+// Each edit tool queues a command via ExecuteAfterDraw. In production
+// usdtweak drains the queue once per frame; here the test pumps the queue
+// explicitly via CommandStack::ExecuteCommands() between dispatches, then
+// reads back to confirm. UndoCommand reverts; RedoCommand reapplies.
+
+#include "CommandStack.h"
+#include "Commands.h"
+#include "JsHelpers.h"
+#include "UsdToolDispatcher.h"
+
+#include <pxr/base/tf/token.h>
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/attribute.h>
+#include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/imageable.h>
+
+#include <cstdio>
+#include <string>
+
+PXR_NAMESPACE_USING_DIRECTIVE
+using namespace UsdAgent;
+
+namespace {
+
+int g_failures = 0;
+
+#define CHECK(cond) do {                                                       \
+    if (!(cond)) {                                                             \
+        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);   \
+        ++g_failures;                                                          \
+    }                                                                          \
+} while (0)
+
+#define CHECK_CONTAINS(haystack, needle) do {                                  \
+    if ((haystack).find(needle) == std::string::npos) {                        \
+        std::fprintf(stderr, "FAIL %s:%d: expected '%s' in:\n%s\n",            \
+                     __FILE__, __LINE__, needle, (haystack).c_str());          \
+        ++g_failures;                                                          \
+    }                                                                          \
+} while (0)
+
+const char* kAssetLayer = R"(#usda 1.0
+(
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def Xform "Hero"
+    {
+        token visibility = "inherited"
+    }
+
+    def Camera "Camera"
+    {
+        float focalLength = 35.0
+    }
+}
+)";
+
+UsdStageRefPtr BuildFixture(SdfLayerRefPtr* outLayer) {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("test.usda");
+    layer->ImportFromString(kAssetLayer);
+    *outLayer = layer;
+    return UsdStage::Open(layer);
+}
+
+JsObject Args(std::initializer_list<std::pair<std::string, JsValue>> kvs) {
+    JsObject o;
+    for (const auto& kv : kvs) o[kv.first] = kv.second;
+    return o;
+}
+
+void Pump() {
+    CommandStack::GetInstance().ExecuteCommands();
+}
+
+void Section(const char* title) {
+    std::fprintf(stdout, "\n=== %s ===\n", title);
+}
+
+// Read helpers tuned to the fixture.
+std::string ReadVisibility(const UsdStageRefPtr& stage) {
+    UsdGeomImageable img(stage->GetPrimAtPath(SdfPath("/World/Hero")));
+    TfToken v;
+    img.GetVisibilityAttr().Get(&v);
+    return v.GetString();
+}
+
+bool ReadActive(const UsdStageRefPtr& stage, const std::string& path) {
+    return stage->GetPrimAtPath(SdfPath(path)).IsActive();
+}
+
+float ReadFocalLength(const UsdStageRefPtr& stage) {
+    UsdAttribute a = stage->GetPrimAtPath(SdfPath("/World/Camera"))
+                          .GetAttribute(TfToken("focalLength"));
+    float f = 0.0f;
+    a.Get(&f);
+    return f;
+}
+
+// -------------------------------------------------------------------------
+
+void TestSetVisibilityAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
+    Section("set_visibility /World/Hero -> invisible, then undo");
+
+    CHECK(ReadVisibility(stage) == "inherited");
+
+    std::string r = d.Dispatch("set_visibility",
+        Args({{"path",       JsValue(std::string("/World/Hero"))},
+              {"visibility", JsValue(std::string("invisible"))}}));
+    std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "Queued:");
+
+    // Pre-pump: still the original.
+    CHECK(ReadVisibility(stage) == "inherited");
+
+    Pump();
+
+    // Post-pump: changed.
+    std::string after = ReadVisibility(stage);
+    std::fprintf(stdout, "  after pump:  visibility = %s\n", after.c_str());
+    CHECK(after == "invisible");
+
+    // Undo.
+    QueueUndo();
+    Pump();
+    std::string undone = ReadVisibility(stage);
+    std::fprintf(stdout, "  after undo:  visibility = %s\n", undone.c_str());
+    CHECK(undone == "inherited");
+
+    // Redo.
+    QueueRedo();
+    Pump();
+    std::string redone = ReadVisibility(stage);
+    std::fprintf(stdout, "  after redo:  visibility = %s\n", redone.c_str());
+    CHECK(redone == "invisible");
+
+    // Restore original state for subsequent tests.
+    QueueUndo();
+    Pump();
+    CHECK(ReadVisibility(stage) == "inherited");
+}
+
+void TestSetActiveAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
+    Section("set_active /World/Hero=false, then undo");
+
+    CHECK(ReadActive(stage, "/World/Hero") == true);
+
+    std::string r = d.Dispatch("set_active",
+        Args({{"path",   JsValue(std::string("/World/Hero"))},
+              {"active", JsValue(false)}}));
+    std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "Queued:");
+    CHECK_CONTAINS(r, "false");
+
+    Pump();
+    CHECK(ReadActive(stage, "/World/Hero") == false);
+    std::fprintf(stdout, "  after pump:  active = false\n");
+
+    QueueUndo();
+    Pump();
+    CHECK(ReadActive(stage, "/World/Hero") == true);
+    std::fprintf(stdout, "  after undo:  active = true\n");
+}
+
+void TestSetAttributeFloat(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
+    Section("set_attribute /World/Camera.focalLength=50.0, then undo");
+
+    CHECK(ReadFocalLength(stage) == 35.0f);
+
+    std::string r = d.Dispatch("set_attribute",
+        Args({{"path",      JsValue(std::string("/World/Camera"))},
+              {"attribute", JsValue(std::string("focalLength"))},
+              {"value",     JsValue(std::string("50.0"))}}));
+    std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "Queued:");
+
+    Pump();
+    CHECK(ReadFocalLength(stage) == 50.0f);
+    std::fprintf(stdout, "  after pump:  focalLength = 50\n");
+
+    QueueUndo();
+    Pump();
+    CHECK(ReadFocalLength(stage) == 35.0f);
+    std::fprintf(stdout, "  after undo:  focalLength = 35\n");
+}
+
+void TestErrorPaths(UsdToolDispatcher& d) {
+    Section("set_visibility bad value");
+    std::string r = d.Dispatch("set_visibility",
+        Args({{"path",       JsValue(std::string("/World/Hero"))},
+              {"visibility", JsValue(std::string("opaque"))}}));
+    std::fprintf(stdout, "  %s\n", r.c_str());
+    CHECK_CONTAINS(r, "[error]");
+    CHECK_CONTAINS(r, "opaque");
+
+    Section("set_attribute on missing prim");
+    r = d.Dispatch("set_attribute",
+        Args({{"path",      JsValue(std::string("/Nope"))},
+              {"attribute", JsValue(std::string("x"))},
+              {"value",     JsValue(std::string("1"))}}));
+    std::fprintf(stdout, "  %s\n", r.c_str());
+    CHECK_CONTAINS(r, "[error]");
+
+    Section("set_attribute unsupported type (vec3)");
+    // No vec3 attribute in fixture, so simulate with focalLength + bogus value.
+    r = d.Dispatch("set_attribute",
+        Args({{"path",      JsValue(std::string("/World/Camera"))},
+              {"attribute", JsValue(std::string("focalLength"))},
+              {"value",     JsValue(std::string("not_a_number"))}}));
+    std::fprintf(stdout, "  %s\n", r.c_str());
+    CHECK_CONTAINS(r, "[error]");
+    CHECK_CONTAINS(r, "float");
+}
+
+} // namespace
+
+int main() {
+    SdfLayerRefPtr layer;
+    UsdStageRefPtr stage = BuildFixture(&layer);
+    if (!stage) {
+        std::fprintf(stderr, "test_usd_edit: failed to build fixture\n");
+        return 1;
+    }
+
+    UsdToolDispatcher dispatcher(
+        /*stageFn*/    [&]() { return stage; },
+        /*editLayerFn*/[&]() { return layer; });
+
+    TestSetVisibilityAndUndo(dispatcher, stage);
+    TestSetActiveAndUndo    (dispatcher, stage);
+    TestSetAttributeFloat   (dispatcher, stage);
+    TestErrorPaths          (dispatcher);
+
+    if (g_failures != 0) {
+        std::fprintf(stderr, "\ntest_usd_edit: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    std::fprintf(stdout, "\ntest_usd_edit: OK\n");
+    return 0;
+}

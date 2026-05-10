@@ -79,6 +79,8 @@ bool UndoCommand::DoIt() {
 }
 template void ExecuteAfterDraw<UndoCommand>();
 
+void QueueUndo() { ExecuteAfterDraw<UndoCommand>(); }
+
 /// Undo the last command in the stack
 /// Editor Redo command
 bool RedoCommand::DoIt() {
@@ -93,6 +95,8 @@ bool RedoCommand::DoIt() {
 }
 
 template void ExecuteAfterDraw<RedoCommand>();
+
+void QueueRedo() { ExecuteAfterDraw<RedoCommand>(); }
 
 /// Undo the last command in the stack
 bool ClearUndoRedoCommand::DoIt() {

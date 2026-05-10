@@ -4,12 +4,15 @@
 #include "Selection.h"
 #include "Viewport.h"
 #include <future>
+#include <memory>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usdUtils/stageCache.h>
 #include <set>
 
 struct GLFWwindow;
+
+namespace UsdAgent { class AgentChatPanel; }
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -183,6 +186,9 @@ class Editor {
 
     /// Storing the tasks created by launchers.
     std::vector<std::future<int>> _launcherTasks;
+
+    /// Lazily-created agent chat panel (LLM-driven scene assistant).
+    std::unique_ptr<UsdAgent::AgentChatPanel> _agentChatPanel;
 
     /// Playback controls
     bool _isPlaying = false;

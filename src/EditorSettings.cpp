@@ -83,6 +83,8 @@ void EditorSettings::ParseLine(const char *line) {
         _showSearch = static_cast<bool>(value);
     } else if (sscanf(line, "ShowSplashScreen=%i", &value) == 1) {
         _showSplashScreen = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowAgentChat=%i", &value) == 1) {
+        _showAgentChat = static_cast<bool>(value);
     } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
         _lastFileBrowserDirectory = strBuffer;
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "RecentFiles=")) {
@@ -138,6 +140,7 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowConnectionEditor=%d\n", _showUsdConnectionEditor);
     buf->appendf("ShowSearch=%d\n", _showSearch);
     buf->appendf("ShowSplashScreen=%d\n", _showSplashScreen);
+    buf->appendf("ShowAgentChat=%d\n", _showAgentChat);
     if (!_lastFileBrowserDirectory.empty()) {
         buf->appendf("LastFileBrowserDirectory=%s\n", _lastFileBrowserDirectory.c_str());
     }
