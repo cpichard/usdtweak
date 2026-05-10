@@ -45,8 +45,10 @@ const char* _RoleLabel(Message::Role r) {
 } // namespace
 
 AgentChatPanel::AgentChatPanel(UsdToolDispatcher::StageProvider     stageFn,
-                               UsdToolDispatcher::EditLayerProvider editLayerFn)
-    : _dispatcher(std::move(stageFn), std::move(editLayerFn)) {}
+                               UsdToolDispatcher::EditLayerProvider editLayerFn,
+                               UsdToolDispatcher::SelectionProvider selectionFn)
+    : _dispatcher(std::move(stageFn), std::move(editLayerFn),
+                  std::move(selectionFn)) {}
 
 AgentChatPanel::~AgentChatPanel() {
     // If a request is in flight, wait for it before tearing down the

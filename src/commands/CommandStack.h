@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -56,8 +57,7 @@ template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(Arg
     }
 }
 
-/// Convenience non-template wrappers to queue undo/redo without forcing the
-/// caller's translation unit to instantiate `ExecuteAfterDraw<UndoCommand>`
-/// (UndoCommand/RedoCommand are only defined in CommandStack.cpp).
-void QueueUndo();
-void QueueRedo();
+// Note: the QueueUndo / QueueRedo / QueueOnUIThread helpers are declared in
+// Commands.h so callers can use them without seeing the ExecuteAfterDraw
+// template body (which forces local instantiation of incomplete command
+// types). Definitions live in CommandStack.cpp.

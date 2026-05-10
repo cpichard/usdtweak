@@ -1282,7 +1282,8 @@ void Editor::Draw() {
                     return stage ? TfCreateRefPtrFromProtectedWeakPtr(
                                        stage->GetEditTarget().GetLayer())
                                  : SdfLayerRefPtr();
-                });
+                },
+                /*selectionFn*/[this]() { return &GetSelection(); });
         }
         _agentChatPanel->Draw(&_settings._showAgentChat);
     }

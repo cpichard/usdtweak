@@ -9,6 +9,8 @@
 #include <functional>
 #include <string>
 
+struct Selection;
+
 PXR_NAMESPACE_USING_DIRECTIVE
 
 namespace UsdAgent {
@@ -33,9 +35,11 @@ class UsdToolDispatcher {
 public:
     using StageProvider     = std::function<UsdStageRefPtr()>;
     using EditLayerProvider = std::function<SdfLayerRefPtr()>;
+    using SelectionProvider = std::function<Selection*()>;
 
     UsdToolDispatcher(StageProvider     stageFn,
-                      EditLayerProvider editLayerFn = {});
+                      EditLayerProvider editLayerFn = {},
+                      SelectionProvider selectionFn = {});
 
     std::string Dispatch(const std::string& toolName, const JsObject& args);
 
@@ -64,6 +68,12 @@ private:
     std::string SetActive           (const JsObject& args) const;
     std::string SetVariant          (const JsObject& args) const;
     std::string SetVisibility       (const JsObject& args) const;
+
+    // Selection tools.
+    std::string GetSelection        (const JsObject& args) const;
+    std::string SelectPrims         (const JsObject& args) const;
+
+    SelectionProvider _selectionFn;  // declared after the existing providers
 };
 
 } // namespace UsdAgent

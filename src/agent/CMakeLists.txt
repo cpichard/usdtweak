@@ -88,6 +88,9 @@ set(_command_sources_for_agent_tests
     ${CMAKE_SOURCE_DIR}/src/commands/SdfUndoRedoRecorder.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/UndoLayerStateDelegate.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/AttributeCommands.cpp
+    # Selection.cpp implements the Selection class used by the dispatcher's
+    # get_selection / select_prims tools.
+    ${CMAKE_SOURCE_DIR}/src/Selection.cpp
     # Intentionally NOT included: PrimCommands.cpp / UsdAPICommands.cpp /
     # LayerCommands.cpp / EditorCommands.cpp pull in editor-side helpers
     # (UsdHelpers, FindNextAvailableTokenString, …) that the standalone
@@ -176,5 +179,11 @@ if (USDTWEAK_BUILD_AGENT_TESTS)
     _agent_add_test(test_usd_edit TRUE
         ${_agent_sources}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestUsdEdit.cpp
+    )
+
+    # Selection tools — get_selection / select_prims round-trip.
+    _agent_add_test(test_usd_select TRUE
+        ${_agent_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestUsdSelect.cpp
     )
 endif()

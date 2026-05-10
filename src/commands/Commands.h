@@ -250,6 +250,18 @@ void ExecuteAfterDraw(FuncT &&func, const UsdGeomXformCommonAPI &api, ArgsT &&..
 /// Process the commands waiting in the queue. Only one command would be waiting at the moment
 void ExecuteCommands();
 
+/// Convenience non-template wrappers. Declared here (not in CommandStack.h)
+/// so callers can use them without seeing the ExecuteAfterDraw template body
+/// — including the body forces local instantiation against forward-declared
+/// command types and breaks compilation. Definitions live in CommandStack.cpp.
+void QueueUndo();
+void QueueRedo();
+
+/// Queue an arbitrary callback to run on the UI thread on the next frame.
+/// NOT undoable — use for editor-state changes that don't go through SDF
+/// (selection updates, panel toggles, etc.).
+void QueueOnUIThread(std::function<void()> fn);
+
 ///
 /// Allows to record one command spanning multiple frames.
 /// It is used in the manipulators, to record only one command for a translation/rotation etc.

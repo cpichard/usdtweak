@@ -29,6 +29,18 @@ JsArray _Strings(std::initializer_list<const char*> items) {
     return a;
 }
 
+// Build a JSON Schema "array of strings" parameter.
+JsObject _ArrayOfStringsParam(const std::string& description) {
+    JsObject items;
+    items["type"] = JsValue(std::string("string"));
+
+    JsObject p;
+    p["type"]        = JsValue(std::string("array"));
+    p["items"]       = JsValue(items);
+    p["description"] = JsValue(description);
+    return p;
+}
+
 } // namespace
 
 ToolDefs BuildReadOnlyToolDefinitions() {
@@ -129,6 +141,25 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             props, _Strings({"path"}))));
     }
 
+    // 7a. get_selection
+    {
+        JsObject props;
+        props["scope"] = MakeStringParam(
+            "optional filter — \"stage\" returns only USD prim selection on "
+            "the current stage; \"layer\" returns only SDF prim selection on "
+            "the current edit-target layer. Omit to get both.");
+        tools.push_back(JsValue(_Tool(
+            "get_selection",
+            "Returns what the user currently has selected in the editor. "
+            "usdtweak tracks two independent selections: a STAGE selection "
+            "(UsdPrims on the composed stage) and a LAYER selection "
+            "(SdfPrimSpecs in the current edit-target layer). Both are "
+            "shown unless `scope` filters one out. Use this whenever the "
+            "user says \"the selected prim(s)\", \"this prim\", or asks "
+            "about something without naming a path.",
+            props, JsArray{})));
+    }
+
     // 7. find_prims
     {
         JsObject props;
@@ -212,6 +243,29 @@ ToolDefs BuildEditToolDefinitions() {
             "set names and available variants. Re-read after to confirm. "
             "Undoable.",
             props, _Strings({"path", "variantSet", "variant"}))));
+    }
+
+    // 10a. select_prims
+    {
+        JsObject props;
+        props["paths"]  = _ArrayOfStringsParam(
+            "list of SdfPath strings to select, e.g. [\"/World/Hero\", "
+            "\"/World/Camera\"]. Pass [] to clear the selection.");
+        props["scope"]  = MakeStringParam(
+            "\"stage\" (default) sets the USD prim selection on the current "
+            "stage; \"layer\" sets the SDF prim selection on the current "
+            "edit-target layer. Use \"layer\" only when the user explicitly "
+            "asks about layer-level / SdfPrim selection.");
+        props["extend"] = MakeBoolParam(
+            "false (default) replaces the existing selection; true appends "
+            "the given paths to it.");
+        tools.push_back(JsValue(_Tool(
+            "select_prims",
+            "QUEUES a change to what the user has selected in the editor. "
+            "Re-read with get_selection on the next step to confirm. "
+            "Selection changes are NOT undoable in usdtweak's command "
+            "stack — Ctrl+Z will not revert them.",
+            props, _Strings({"paths"}))));
     }
 
     // 11. set_visibility

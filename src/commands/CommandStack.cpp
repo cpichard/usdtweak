@@ -98,6 +98,23 @@ template void ExecuteAfterDraw<RedoCommand>();
 
 void QueueRedo() { ExecuteAfterDraw<RedoCommand>(); }
 
+/// Generic command that runs an arbitrary callback once on the UI thread.
+/// Not stored in the undo stack.
+struct EditorRunCallback : public Command {
+    std::function<void()> _fn;
+    explicit EditorRunCallback(std::function<void()> fn) : _fn(std::move(fn)) {}
+    bool DoIt() override {
+        if (_fn) _fn();
+        return false;  // don't push onto the undo stack
+    }
+    bool UndoIt() override { return false; }
+};
+template void ExecuteAfterDraw<EditorRunCallback>(std::function<void()>);
+
+void QueueOnUIThread(std::function<void()> fn) {
+    ExecuteAfterDraw<EditorRunCallback>(std::move(fn));
+}
+
 /// Undo the last command in the stack
 bool ClearUndoRedoCommand::DoIt() {
     CommandStack &commandStack = CommandStack::GetInstance();

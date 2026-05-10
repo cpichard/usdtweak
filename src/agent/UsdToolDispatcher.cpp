@@ -2,6 +2,7 @@
 
 #include "Commands.h"
 #include "JsHelpers.h"
+#include "Selection.h"
 
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/base/tf/stringUtils.h>
@@ -88,9 +89,11 @@ std::string _LayerName(const SdfLayerHandle& l) {
 } // namespace
 
 UsdToolDispatcher::UsdToolDispatcher(StageProvider     stageFn,
-                                     EditLayerProvider editLayerFn)
+                                     EditLayerProvider editLayerFn,
+                                     SelectionProvider selectionFn)
     : _stageFn(std::move(stageFn))
-    , _editLayerFn(std::move(editLayerFn)) {}
+    , _editLayerFn(std::move(editLayerFn))
+    , _selectionFn(std::move(selectionFn)) {}
 
 std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
                                         const JsObject&    args) {
@@ -106,6 +109,8 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         if (toolName == "set_active")           return SetActive(args);
         if (toolName == "set_variant")          return SetVariant(args);
         if (toolName == "set_visibility")       return SetVisibility(args);
+        if (toolName == "get_selection")        return GetSelection(args);
+        if (toolName == "select_prims")         return SelectPrims(args);
         return "[error] unknown tool: " + toolName;
     } catch (const std::exception& e) {
         return std::string("[error] ") + e.what();
@@ -689,6 +694,136 @@ std::string UsdToolDispatcher::SetVisibility(const JsObject& args) const {
     oss << "Queued: set visibility on " << path.GetString() << " = '"
         << vis << "'. Re-read on next step to confirm.";
     return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// 12. get_selection
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::GetSelection(const JsObject& args) const {
+    if (!_selectionFn) return "[error] selection provider not configured";
+    Selection* sel = _selectionFn();
+    if (!sel) return "[error] no active selection";
+
+    const std::string scopeFilter = JsGetString(args, "scope");
+    const bool wantStage = scopeFilter.empty() || scopeFilter == "stage";
+    const bool wantLayer = scopeFilter.empty() || scopeFilter == "layer";
+
+    std::ostringstream oss;
+
+    if (wantStage) {
+        UsdStageRefPtr stage = _stageFn ? _stageFn() : UsdStageRefPtr();
+        if (stage) {
+            auto paths = sel->GetSelectedPaths(stage);
+            oss << "Stage selection (" << paths.size() << " prim";
+            if (paths.size() != 1) oss << "s";
+            oss << "):\n";
+            if (paths.empty()) {
+                oss << "  (none)\n";
+            } else {
+                for (const SdfPath& p : paths) {
+                    oss << "  " << p.GetString() << "\n";
+                }
+            }
+        } else {
+            oss << "Stage selection: <no active stage>\n";
+        }
+    }
+
+    if (wantLayer) {
+        SdfLayerRefPtr layer = _editLayerFn ? _editLayerFn() : SdfLayerRefPtr();
+        if (layer) {
+            // Selection::GetSelectedPaths is specialized on SdfLayerHandle.
+            SdfLayerHandle handle(layer);
+            auto paths = sel->GetSelectedPaths(handle);
+            oss << "Layer selection (edit layer: " << _LayerName(layer)
+                << ", " << paths.size() << " prim";
+            if (paths.size() != 1) oss << "s";
+            oss << "):\n";
+            if (paths.empty()) {
+                oss << "  (none)\n";
+            } else {
+                for (const SdfPath& p : paths) {
+                    oss << "  " << p.GetString() << "\n";
+                }
+            }
+        } else {
+            oss << "Layer selection: <no current edit layer>\n";
+        }
+    }
+
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// 13. select_prims  (queued on UI thread; not undoable)
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::SelectPrims(const JsObject& args) const {
+    if (!_selectionFn) return "[error] selection provider not configured";
+    Selection* sel = _selectionFn();
+    if (!sel) return "[error] no active selection";
+
+    const std::string scope  = JsGetString(args, "scope", "stage");
+    const bool        extend = JsGetBool(args, "extend", false);
+
+    if (scope != "stage" && scope != "layer") {
+        return "[error] 'scope' must be \"stage\" or \"layer\"; got \""
+               + scope + "\"";
+    }
+
+    // Parse the paths array.
+    if (!JsHasKey(args, "paths")) {
+        return "[error] missing 'paths' argument (array of SdfPath strings; "
+               "use [] to clear the selection)";
+    }
+    JsArray rawPaths = JsGetArray(args, "paths");
+    std::vector<SdfPath> paths;
+    paths.reserve(rawPaths.size());
+    for (const JsValue& v : rawPaths) {
+        if (!v.IsString()) {
+            return "[error] every entry in 'paths' must be an SdfPath string";
+        }
+        const std::string s = v.GetString();
+        if (!SdfPath::IsValidPathString(s)) {
+            return "[error] not a valid SdfPath: '" + s + "'";
+        }
+        paths.push_back(SdfPath(s));
+    }
+
+    std::ostringstream summary;
+    summary << "Queued: select scope=" << scope
+            << " extend=" << (extend ? "true" : "false")
+            << " (" << paths.size() << " path"
+            << (paths.size() == 1 ? "" : "s") << ")";
+    if (!paths.empty()) {
+        summary << ":";
+        for (size_t i = 0; i < paths.size() && i < 8; ++i) {
+            summary << " " << paths[i].GetString();
+        }
+        if (paths.size() > 8) summary << " ...";
+    }
+    summary << ". Re-read with get_selection on next step to confirm.";
+
+    if (scope == "stage") {
+        UsdStageRefPtr stage = _stageFn ? _stageFn() : UsdStageRefPtr();
+        if (!stage) return "[error] no active stage";
+        QueueOnUIThread([sel, stage, paths, extend]() {
+            if (!extend) sel->Clear(stage);
+            for (const SdfPath& p : paths) {
+                sel->AddSelected(stage, p);
+            }
+        });
+    } else {
+        SdfLayerRefPtr layer = _editLayerFn ? _editLayerFn() : SdfLayerRefPtr();
+        if (!layer) return "[error] no current edit layer";
+        QueueOnUIThread([sel, layer, paths, extend]() {
+            if (!extend) sel->Clear(layer);
+            for (const SdfPath& p : paths) {
+                sel->AddSelected(layer, p);
+            }
+        });
+    }
+
+    return summary.str();
 }
 
 } // namespace UsdAgent

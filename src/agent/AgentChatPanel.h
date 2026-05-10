@@ -27,7 +27,8 @@ public:
     // layer per-call — the dispatcher uses them on the background thread when
     // it executes inspection tools.
     AgentChatPanel(UsdToolDispatcher::StageProvider     stageFn,
-                   UsdToolDispatcher::EditLayerProvider editLayerFn);
+                   UsdToolDispatcher::EditLayerProvider editLayerFn,
+                   UsdToolDispatcher::SelectionProvider selectionFn = {});
     ~AgentChatPanel();
 
     // Render the panel. `isOpen` is the host's bool& used by ImGui::Begin's
