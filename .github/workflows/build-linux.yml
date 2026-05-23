@@ -74,6 +74,17 @@ jobs:
         if: steps.cache-usd.outputs.cache-hit != 'true'
         run: rm -rf ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}/build
 
+      - name: Verify USD install
+        run: |
+          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
+          echo "Listing $USD_DIR:"
+          ls -la "$USD_DIR"
+          if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
+            echo "ERROR: pxrConfig.cmake not found at $USD_DIR"
+            find "$USD_DIR" -name 'pxrConfig.cmake' -print
+            exit 1
+          fi
+
   build-usdtweak:
     runs-on: ubuntu-latest
     container:
@@ -100,13 +111,27 @@ jobs:
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ needs.build-usd.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Verify USD install
+        run: |
+          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
+          echo "Listing $USD_DIR:"
+          ls -la "$USD_DIR"
+          if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
+            echo "ERROR: pxrConfig.cmake not found at $USD_DIR"
+            find "$USD_DIR" -name 'pxrConfig.cmake' -print
+            exit 1
+          fi
 
       - name: Configure
         run: |
+          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
           cmake -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }} \
-            -Dpxr_DIR=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }} \
+            -DCMAKE_PREFIX_PATH=$USD_DIR \
+            -Dpxr_DIR=$USD_DIR \
+            -DOpenSubdiv_DIR=$USD_DIR/lib/cmake/OpenSubdiv \
             -B build
 
       - name: Build
