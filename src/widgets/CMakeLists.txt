@@ -11,14 +11,10 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FileBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraBrowser.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderRegistryInspector.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderRegistryInspector.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraNoticeLogger.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraNoticeLogger.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraWidgets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraWidgets.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/LauncherBar.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/LauncherBar.h
     ${CMAKE_CURRENT_SOURCE_DIR}/TableLayouts.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h
