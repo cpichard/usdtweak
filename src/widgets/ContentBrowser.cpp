@@ -3,6 +3,7 @@
 #include <memory>
 #include <regex>
 #include <iterator>
+#include <unordered_set>
 #include <pxr/usd/usd/stage.h>
 #include "Gui.h"
 #include "ImGuiHelpers.h"
@@ -152,12 +153,9 @@ static inline void DrawSelectStageButton(SdfLayerHandle layer, bool isStage, Sdf
 
 
 static inline void DrawLayerDescriptionRow(SdfLayerHandle layer, bool isStage, const std::string &layerName,
-                                           SdfLayerHandle *selectedLayer, SdfLayerHandle *selectedStage) {
-    ScopedStyleColor style(ImGuiCol_Text, isStage ? (selectedStage && *selectedStage == layer ? ImVec4(1.0, 1.0, 1.0, 1.0)
-                                                                                              : ImVec4(1.0, 1.0, 1.0, 1.0))
-                                                  : ImVec4(0.6, 0.6, 0.6, 1.0));
-    bool selected = selectedLayer && *selectedLayer == layer;
-    if (ImGui::Selectable(layerName.c_str(), selected)) {
+                                           bool isSelected, SdfLayerHandle *selectedLayer, SdfLayerHandle *selectedStage) {
+    ScopedStyleColor style(ImGuiCol_Text, isStage ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(0.6, 0.6, 0.6, 1.0));
+    if (ImGui::Selectable(layerName.c_str(), isSelected)) {
         if (selectedLayer) {
             *selectedLayer = layer;
         }
@@ -189,6 +187,7 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
     static TextFilter filter;
     static size_t pastTextFilterHash;
     static size_t pastOptionFilterHash;
+    static std::unordered_set<void const *> layerMultiSelection;
     filter.Draw();
 
     ImGui::PushItemWidth(-1);
@@ -215,16 +214,46 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
             pastTextFilterHash = currentTextFilterHash;
             pastOptionFilterHash = currentOptionFilterHash;
         }
+
         //
         // Actual drawing of the listed layers using a clipper, we only draw the visible lines
         //
+        const int layerCount = static_cast<int>(std::distance(sortedLayerList.begin(), endOfPartition));
+
+        auto applyMultiSelectRequests = [&](ImGuiMultiSelectIO *io) {
+            for (const ImGuiSelectionRequest &req : io->Requests) {
+                if (req.Type == ImGuiSelectionRequestType_SetAll) {
+                    layerMultiSelection.clear();
+                    if (req.Selected)
+                        for (int i = 0; i < layerCount; ++i)
+                            layerMultiSelection.insert(sortedLayerList[i]->GetUniqueIdentifier());
+                } else if (req.Type == ImGuiSelectionRequestType_SetRange) {
+                    int first = static_cast<int>(req.RangeFirstItem);
+                    int last  = static_cast<int>(req.RangeLastItem);
+                    if (first > last) std::swap(first, last);
+                    for (int i = first; i <= last; ++i) {
+                        if (req.Selected) layerMultiSelection.insert(sortedLayerList[i]->GetUniqueIdentifier());
+                        else              layerMultiSelection.erase(sortedLayerList[i]->GetUniqueIdentifier());
+                    }
+                }
+            }
+        };
+
+        ImGuiMultiSelectIO *msIO = ImGui::BeginMultiSelect(
+            ImGuiMultiSelectFlags_ClearOnEscape | ImGuiMultiSelectFlags_ClearOnClickVoid,
+            static_cast<int>(layerMultiSelection.size()), layerCount);
+        applyMultiSelectRequests(msIO);
+
         ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(std::distance(sortedLayerList.begin(), endOfPartition)));
+        clipper.Begin(layerCount);
+        if (msIO->RangeSrcItem != -1)
+            clipper.IncludeItemByIndex(static_cast<int>(msIO->RangeSrcItem));
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
                 const auto &layer = sortedLayerList[row];
                 const std::string &layerName = LayerNameFromOptions(layer, options);
                 const UsdStageRefPtr isStage = cache.FindOneMatching(layer);
+                const bool isSelected = layerMultiSelection.count(layer->GetUniqueIdentifier()) > 0;
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, ImGui::GetStyle().ItemSpacing.y));
                 ImGui::PushID(layer->GetUniqueIdentifier());
                 DrawSelectStageButton(layer, isStage, selectedStage);
@@ -232,7 +261,8 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
                 DrawSaveButton(layer);
                 ImGui::PopStyleVar();
                 ImGui::SameLine();
-                DrawLayerDescriptionRow(layer, isStage, layerName, selectedLayer, selectedStage);
+                ImGui::SetNextItemSelectionUserData(row);
+                DrawLayerDescriptionRow(layer, isStage, layerName, isSelected, selectedLayer, selectedStage);
 
                 if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 2) {
                     DrawLayerTooltip(layer);
@@ -263,6 +293,10 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
                 ImGui::PopID();
             }
         }
+
+        msIO = ImGui::EndMultiSelect();
+        applyMultiSelectRequests(msIO);
+
         ImGui::EndListBox();
     }
     ImGui::PopItemWidth();

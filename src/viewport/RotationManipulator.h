@@ -32,6 +32,7 @@ class RotationManipulator : public Manipulator {
 
   private:
     UsdTimeCode GetEditionTimeCode(const Viewport &);
+    UsdTimeCode GetEditionTimeCode(const Viewport &, const UsdGeomXformable &xf);
     UsdTimeCode GetViewportTimeCode(const Viewport &);
 
     GfVec3d ComputeClockHandVector(Viewport &viewport);
@@ -44,6 +45,9 @@ class RotationManipulator : public Manipulator {
 
     GfVec3d _rotateFrom;
     GfMatrix4d _rotateMatrixOnBegin;
+
+    std::vector<UsdGeomXformable> _selectedXformables;
+    std::vector<GfMatrix4d>       _rotateMatricesOnBegin;
 
     GfVec3d _planeOrigin3d; // Global
     GfVec3d _planeNormal3d; // TODO rename global

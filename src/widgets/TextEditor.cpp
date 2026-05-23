@@ -2,7 +2,7 @@
 #include "Commands.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
-
+#include "ResourcesLoader.h"
 // The following include contains the code which writes usd to text, but it's not
 // distributed with the api
 //#include <pxr/usd/sdf/fileIO_Common.h>
@@ -26,7 +26,8 @@ void DrawTextEditor(SdfLayerRefPtr layer) {
     ImGui::PushItemWidth(-FLT_MIN);
     ImGuiWindow *currentWindow = ImGui::GetCurrentWindow();
     ImVec2 sizeArg(0, -1);
-    ImGui::PushFont(io.Fonts->Fonts[1]);
+
+    ResourcesLoader::PushFontMono();
     {
         ScopedStyleColor color(ImGuiCol_FrameBg, ImVec4{0.0, 0.0, 0.0, 1.0});
         ImGui::InputTextMultiline("###TextEditor", &layerText, sizeArg,
@@ -35,6 +36,6 @@ void DrawTextEditor(SdfLayerRefPtr layer) {
             ExecuteAfterDraw<LayerTextEdit>(layer, layerText);
         }
     }
-    ImGui::PopFont();
+    ResourcesLoader::PopFontMono();
     ImGui::PopItemWidth();
 }

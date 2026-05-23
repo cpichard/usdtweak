@@ -200,7 +200,7 @@ struct CreateReferenceModalDialog : public CreateAssetPathModalDialog {
     const char *DialogId() const override { return "Create reference"; }
     void OnOkCallBack() override {
         SdfReference reference(_assetPath, SdfPath(_primPath), GetLayerOffset());
-        ExecuteAfterDraw<PrimCreateReference>(_primSpec, _operation, reference);
+        ExecuteAfterDraw<PrimCreateReference>(_primSpec->GetLayer(), _primSpec->GetPath(), _operation, reference);
     }
 };
 
@@ -209,20 +209,20 @@ struct CreatePayloadModalDialog : public CreateAssetPathModalDialog {
     const char *DialogId() const override { return "Create payload"; }
     void OnOkCallBack() override {
         SdfPayload payload(_assetPath, SdfPath(_primPath), GetLayerOffset());
-        ExecuteAfterDraw<PrimCreatePayload>(_primSpec, _operation, payload);
+        ExecuteAfterDraw<PrimCreatePayload>(_primSpec->GetLayer(), _primSpec->GetPath(), _operation, payload);
     }
 };
 
 struct CreateInheritModalDialog : public CreateSdfPathModalDialog {
     CreateInheritModalDialog(const SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create inherit"; }
-    void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateInherit>(_primSpec, _operation, SdfPath(_primPath)); }
+    void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateInherit>(_primSpec->GetLayer(), _primSpec->GetPath(), _operation, SdfPath(_primPath)); }
 };
 
 struct CreateSpecializeModalDialog : public CreateSdfPathModalDialog {
     CreateSpecializeModalDialog(const SdfPrimSpecHandle &primSpec) : CreateSdfPathModalDialog(primSpec) {}
     const char *DialogId() const override { return "Create specialize"; }
-    void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateSpecialize>(_primSpec, _operation, SdfPath(_primPath)); }
+    void OnOkCallBack() override { ExecuteAfterDraw<PrimCreateSpecialize>(_primSpec->GetLayer(), _primSpec->GetPath(), _operation, SdfPath(_primPath)); }
 };
 
 void DrawPrimCreateReference(const SdfPrimSpecHandle &primSpec) { DrawModalDialog<CreateReferenceModalDialog>(primSpec); }
@@ -246,12 +246,19 @@ template <> void DrawArcCreationDialog<SdfInherit>(const SdfPrimSpecHandle &prim
 template <> void DrawArcCreationDialog<SdfSpecialize>(const SdfPrimSpecHandle &primSpec, SdfListOpType opList) {
     DrawModalDialog<CreateSpecializeModalDialog>(primSpec);
 }
+
+template <typename ArcT>
+inline bool IsEmpty(const ArcT &arc) {
+    return arc.GetExplicitItems().empty() && arc.GetAddedItems().empty() && arc.GetPrependedItems().empty() &&
+           arc.GetAppendedItems().empty() && arc.GetDeletedItems().empty() && arc.GetOrderedItems().empty();
+}
+
 template<typename ArcT>
 inline void RemoveArc(const SdfPrimSpecHandle &primSpec, const ArcT &arc) {
     std::function<void()> removeItem = [=]() {
         GetCompositionArcList(primSpec, arc).RemoveItemEdits(arc);
         // Also clear the arc list if there are no more items
-        if (!GetCompositionArcList(primSpec, arc).HasKeys()) {
+        if (IsEmpty(GetCompositionArcList(primSpec, arc))) {
             ClearArcList(primSpec, arc);
         }
     };

@@ -73,6 +73,7 @@ VtValue DrawGfQuat(const std::string& label, const VtValue& value) {
 
 VtValue DrawTfToken(const std::string &label, const TfToken &token, const VtValue &allowedTokens) {
     VtValue newToken;
+    // Assuming allowedTokens contains no duplicate otherwise we'll have duplicated imgui ids
     if (!allowedTokens.IsEmpty() && allowedTokens.IsHolding<VtArray<TfToken>>()) {
         VtArray<TfToken> tokensArray = allowedTokens.Get<VtArray<TfToken>>();
         if (ImGui::BeginCombo(label.c_str(), token.GetString().c_str())) {

@@ -1,25 +1,35 @@
-#include <iostream>
-
 #include <pxr/imaging/garch/glApi.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/boundable.h>
 #include <pxr/usd/usdGeom/camera.h>
-#include <pxr/usd/usdGeom/metrics.h>
-#include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdUtils/stageCache.h>
 
-#include "Gui.h"
-#include "ImGuiHelpers.h"
-#include "Viewport.h"
 #include "Commands.h"
 #include "Constants.h"
+#include "Editor.h"
+#include "Gui.h"
+#include "ImGuiHelpers.h"
+#include "OrbitCameraManipulator.h"
+#include "ResourcesLoader.h"
 #include "Shortcuts.h"
 #include "UsdPrimEditor.h" // DrawUsdPrimEditTarget
-#include "ResourcesLoader.h"
+#include "Viewport.h"
 #include "ViewportSettings.h"
 
 namespace clk = std::chrono;
+
+std::set<UsdStageRefPtr> Viewport::_hydraDisabledStages;
+
+void Viewport::SetStageHydraEnabled(UsdStageRefPtr stage, bool enabled) {
+    if (enabled) {
+        _hydraDisabledStages.erase(stage);
+    } else {
+        _hydraDisabledStages.insert(stage);
+    }
+}
 
 // TODO: picking meshes: https://groups.google.com/g/usd-interest/c/P2CynIu7MYY/m/UNPIKzmMBwAJ
 
@@ -58,12 +68,14 @@ void Viewport::DrawMenuBar() {
 }
 
 Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
-    : _stage(stage), _cameraManipulator({InitialWindowWidth, InitialWindowHeight}),
-      _currentEditingState(new MouseHoverManipulator()), _activeManipulator(&_positionManipulator), _selection(selection),
-      _textureSize(1, 1), _viewportName("Viewport 1") {
+    : _stage(stage), _orbitCameraManipulator({InitialWindowWidth, InitialWindowHeight}),
+      _flyCameraManipulator({InitialWindowWidth, InitialWindowHeight}), _currentEditingState(new MouseHoverManipulator()),
+      _activeManipulator(&_positionManipulator),
+      _selection(selection), _textureSize(1, 1), _viewportName("Viewport 1") {
 
     // Viewport draw target
-    _cameraManipulator.ResetPosition(GetEditableCamera());
+    _orbitCameraManipulator.ResetPosition(GetEditableCamera());
+    _flyCameraManipulator.ResetPosition(GetEditableCamera());
 
     _drawTarget = GlfDrawTarget::New(_textureSize, false);
     _drawTarget->Bind();
@@ -72,11 +84,11 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     auto color = _drawTarget->GetAttachment("color");
     _textureId = color->GetGlTextureName();
     _drawTarget->Unbind();
-    
 
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
+    _imagingSettings.camFlySpeed = _defaultSettings._camFlySpeed;
 }
 
 Viewport::~Viewport() {
@@ -95,7 +107,6 @@ Viewport::~Viewport() {
     }
     _drawTarget->Unbind();
     _renderers.clear();
-
 }
 
 // TODO : this is a duplicate, factorize the following function
@@ -113,7 +124,6 @@ static void DrawOpenedStages() {
     }
 }
 
-
 /// Draw the viewport widget
 void Viewport::Draw() {
     if (_imagingSettings.showViewportMenu) {
@@ -122,15 +132,14 @@ void Viewport::Draw() {
     const ImVec2 wsize = ImGui::GetWindowSize();
     // Set the size of the texture here as we need the current window size
     const auto cursorPos = ImGui::GetCursorPos();
-    _textureSize = GfVec2i(std::max(1.f, wsize[0]),
-                           std::max(1.f, wsize[1] - cursorPos.y));
+    _textureSize = GfVec2i(std::max(1.f, wsize[0]), std::max(1.f, wsize[1] - cursorPos.y));
 
     if (_textureId) {
         // Get the size of the child (i.e. the whole draw size of the windows).
         ImGui::Image((ImTextureID)((uintptr_t)_textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
-        //if (ImGui::BeginPopupContextItem()) {
+        // if (ImGui::BeginPopupContextItem()) {
         //    ImGui::Button("ColorCorrection");
         //    ImGui::Button("Deactivate");
         //    ImGui::EndPopup();
@@ -146,14 +155,45 @@ void Viewport::Draw() {
 }
 
 void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
-    const ImVec2 buttonSize(25, 25); // Button size
+    if (!GetCurrentStage()) return;
     const ImVec4 defaultColor(0.1, 0.1, 0.1, 0.7);
+    const bool hydraDisabled = _hydraDisabledStages.count(GetCurrentStage());
+
+    const ImVec2 buttonSize(25, 25); // Button size
     const ImVec4 selectedColor(ColorButtonHighlight);
 
     ImGui::SetCursorPos(widgetPosition);
-    ImGui::PushStyleColor(ImGuiCol_Button, defaultColor);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, defaultColor);
+    ScopedStyleColor toolBarStyle(ImGuiCol_Button, defaultColor, ImGuiCol_FrameBg, defaultColor);
+    DrawHydraEnableButton(hydraDisabled);
+    ImGui::SameLine();
     ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
+    if (hydraDisabled) {
+        ImGui::Button(GetDefaultRendererDisplayName().c_str());
+        if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+            ImGui::SetTooltip("Default render delegate");
+        }
+        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+            DrawRendererSelectionList();
+            ImGui::EndPopup();
+        }
+    } else {
+        if (_renderer) {
+            ImGui::Button(_renderer->GetRendererDisplayName(_renderer->GetCurrentRendererId()).c_str());
+            //ImGui::Button(_renderer->GetCurrentRendererId().GetString().c_str());
+            if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+                ImGui::SetTooltip("Render delegate");
+            }
+            if (ImGui::BeginPopupContextItem(nullptr, flags)) {
+                DrawRendererSelectionList(*_renderer);
+                ImGui::EndPopup();
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    // Do not draw the rest if hydra is disabled.
+    if (hydraDisabled) return;
+
     DrawPickMode(_selectionManipulator);
     ImGui::SameLine();
     ImGui::Button(ICON_FA_USER_COG);
@@ -200,22 +240,12 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
         ImGui::SetTooltip("Scene materials on/off");
     }
     ImGui::PopStyleColor();
-    if (_renderer && _renderer->GetRendererPlugins().size() >= 2) {
-        ImGui::SameLine();
-        ImGui::Button(_renderer->GetRendererDisplayName(_renderer->GetCurrentRendererId()).c_str());
-        if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
-            ImGui::SetTooltip("Render delegate");
-        }
-        if (ImGui::BeginPopupContextItem(nullptr, flags)) {
-            DrawRendererSelectionList(*_renderer);
-            ImGui::EndPopup();
-        }
-    }
     ImGui::SameLine();
     std::string cameraName(ICON_FA_CAMERA);
     cameraName += "  " + _cameras.GetCurrentCameraName();
     ImGui::Button(cameraName.c_str());
-    if (_renderer && ImGui::BeginPopupContextItem(_viewportName.c_str(), flags)) { // should be name with the viewport name instead
+    if (_renderer &&
+        ImGui::BeginPopupContextItem(_viewportName.c_str(), flags)) { // should be name with the viewport name instead
         _cameras.DrawCameraList(GetCurrentStage());
         _cameras.DrawCameraEditor(GetCurrentStage(), GetCurrentTimeCode());
         ImGui::EndPopup();
@@ -223,9 +253,16 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
         ImGui::SetTooltip("Cameras");
     }
-    ImGui::PopStyleColor(2);
 }
 
+void Viewport::DrawHydraEnableButton(bool enabled) {
+    if (ImGui::Button(ICON_FA_FILM)) {
+        SetStageHydraEnabled(GetCurrentStage(), enabled);
+    }
+    if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
+        ImGui::SetTooltip("Enable/Disable Hydra rendering for this stage");
+    }
+}
 
 // Poor man manipulator toolbox
 void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
@@ -240,7 +277,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(widgetPosition.x);
-    
+
     if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
         ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
     }
@@ -260,12 +297,18 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
     }
     ImGui::PopStyleColor();
 
-     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
-     ImGui::SetCursorPosX(widgetPosition.x);
+    ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
+    ImGui::SetCursorPosX(widgetPosition.x);
     if (ImGui::Button(ICON_FA_COMPRESS, buttonSize)) {
         ExecuteAfterDraw<ViewportsSelectScaleManipulator>();
     }
-     ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+}
+
+void Viewport::FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox) {
+    for (CameraRig *c : _cameraManipulators) {
+        c->FrameBoundingBox(cam, bbox);
+    }
 }
 
 /// Frame the viewport using the bounding box of the selection
@@ -277,7 +320,7 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bbox);
+        FrameCameraManipulatorsOnBBox(GetEditableCamera(), bbox);
     }
 }
 
@@ -287,10 +330,10 @@ void Viewport::FrameCameraOnRootPrim() {
         UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         if (defaultPrim) {
-            _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
+            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
         } else {
             auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-            _cameraManipulator.FrameBoundingBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
+            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
         }
     }
 }
@@ -300,13 +343,13 @@ void Viewport::FrameAllCameras() {
         UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
         auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         if (defaultPrim) {
-            for (GfCamera *camera: _cameras.GetEditableCameras(GetCurrentStage())) {
-                _cameraManipulator.FrameBoundingBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
+            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
+                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
             }
         } else {
-            for (GfCamera *camera: _cameras.GetEditableCameras(GetCurrentStage())) {
+            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
                 auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-                _cameraManipulator.FrameBoundingBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
+                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
             }
         }
     }
@@ -331,23 +374,30 @@ double Viewport::ComputeScaleFactor(const GfVec3d &objectPos, const double multi
         scale = 0.01 * verticalAperture;
 
     } else {
-        const float focalLength = GetCurrentCamera().GetFocalLength();
-        scale /= focalLength == 0 ? 1.f : focalLength;
+        // Divide by the FOV factor normalized to the default aperture so the gizmo
+        // projects to a constant screen-space size regardless of focalLength/aperture values.
+        // frustum.GetWindow() is at the unit plane, so GetSize()[0] == 2*tan(halfHorizFOV).
+        // Normalizing by DEFAULT_HORIZONTAL_APERTURE preserves the legacy size for the
+        // default free camera while fixing cameras with an unusual focalLength (e.g. 0.44).
+        scale = scale * frustum.GetWindow().GetSize()[0] / GfCamera::DEFAULT_HORIZONTAL_APERTURE;
     }
     scale /= multiplier;
     scale *= 2;
     return scale;
 }
 
-inline bool IsModifierDown() {
-    return ImGui::GetIO().KeyMods != 0;
-}
+inline bool IsModifierDown() { return ImGui::GetIO().KeyMods != 0; }
 
 void Viewport::HandleKeyboardShortcut() {
+    if (_currentEditingState == GetManipulator<OrbitCameraManipulator>()) {
+        // ignore keyboard shortcuts while manipulating the camera
+        return;
+    }
+
     if (ImGui::IsItemHovered()) {
         ImGuiIO &io = ImGui::GetIO();
         static bool SelectionManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_Q) && ! IsModifierDown() ) {
+        if (ImGui::IsKeyDown(ImGuiKey_Q) && !IsModifierDown()) {
             if (SelectionManipulatorPressedOnce) {
                 ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
                 SelectionManipulatorPressedOnce = false;
@@ -357,7 +407,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool PositionManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_W) && ! IsModifierDown() ) {
+        if (ImGui::IsKeyDown(ImGuiKey_W) && !IsModifierDown()) {
             if (PositionManipulatorPressedOnce) {
                 ExecuteAfterDraw<ViewportsSelectPositionManipulator>();
                 PositionManipulatorPressedOnce = false;
@@ -367,7 +417,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool RotationManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_E) && ! IsModifierDown() ) {
+        if (ImGui::IsKeyDown(ImGuiKey_E) && !IsModifierDown()) {
             if (RotationManipulatorPressedOnce) {
                 ExecuteAfterDraw<ViewportsSelectRotationManipulator>();
                 RotationManipulatorPressedOnce = false;
@@ -377,7 +427,7 @@ void Viewport::HandleKeyboardShortcut() {
         }
 
         static bool ScaleManipulatorPressedOnce = true;
-        if (ImGui::IsKeyDown(ImGuiKey_R) && ! IsModifierDown() ) {
+        if (ImGui::IsKeyDown(ImGuiKey_R) && !IsModifierDown()) {
             if (ScaleManipulatorPressedOnce) {
                 ExecuteAfterDraw<ViewportsSelectScaleManipulator>();
                 ScaleManipulatorPressedOnce = false;
@@ -391,26 +441,26 @@ void Viewport::HandleKeyboardShortcut() {
     }
 }
 
-
 void Viewport::HandleManipulationEvents() {
 
     ImGuiContext *g = ImGui::GetCurrentContext();
     ImGuiIO &io = ImGui::GetIO();
 
     // Check the mouse is over this widget
-    if (ImGui::IsItemHovered()) {
+    if (ImGui::IsItemHovered() || Editor::GetMouseCaptured()) {
         const GfVec2i drawTargetSize = _drawTarget->GetSize();
-        if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0) return;
-        _mousePosition[0] = 2.0 * (static_cast<double>(io.MousePos.x - (g->LastItemData.Rect.Min.x)) /
-            static_cast<double>(drawTargetSize[0])) -
+        if (drawTargetSize[0] == 0 || drawTargetSize[1] == 0)
+            return;
+        _mousePosition[0] =
+            2.0 * (static_cast<double>(io.MousePos.x - (g->LastItemData.Rect.Min.x)) / static_cast<double>(drawTargetSize[0])) -
             1.0;
-        _mousePosition[1] = -2.0 * (static_cast<double>(io.MousePos.y - (g->LastItemData.Rect.Min.y)) /
-            static_cast<double>(drawTargetSize[1])) +
+        _mousePosition[1] =
+            -2.0 * (static_cast<double>(io.MousePos.y - (g->LastItemData.Rect.Min.y)) / static_cast<double>(drawTargetSize[1])) +
             1.0;
 
         /// This works like a Finite state machine
         /// where every manipulator/editor is a state
-        if (!_currentEditingState){
+        if (!_currentEditingState) {
             _currentEditingState = GetManipulator<MouseHoverManipulator>();
             _currentEditingState->OnBeginEdition(*this);
         }
@@ -429,10 +479,7 @@ void Viewport::HandleManipulationEvents() {
     }
 }
 
-
-GfVec2i Viewport::GetViewportSize() const {
-    return  _drawTarget->GetSize();
-}
+GfVec2i Viewport::GetViewportSize() const { return _drawTarget->GetSize(); }
 
 GfCamera &Viewport::GetEditableCamera() { return _cameras.GetEditableCamera(); }
 const GfCamera &Viewport::GetCurrentCamera() const { return _cameras.GetCurrentCamera(); }
@@ -498,6 +545,8 @@ void Viewport::Render() {
     if (_imagingSettings.showGizmos) {
         BeginHydraUI(width, height);
         GetActiveManipulator().OnDrawFrame(*this);
+        if (_currentEditingState && _currentEditingState != _activeManipulator)
+            _currentEditingState->OnDrawFrame(*this);
         // DrawHUD(this);
         EndHydraUI();
     }
@@ -514,20 +563,19 @@ void Viewport::Render() {
         // Set camera and lighting state
         _imagingSettings.SetLightPositionFromCamera(GetCurrentCamera());
         _renderer->SetLightingState(_imagingSettings.GetLights(), _imagingSettings._material, _imagingSettings._ambient);
-        
+
         // Clipping planes
         _imagingSettings.clipPlanes.clear();
         for (int i = 0; i < GetCurrentCamera().GetClippingPlanes().size(); ++i) {
             _imagingSettings.clipPlanes.emplace_back(GetCurrentCamera().GetClippingPlanes()[i]); // convert float to double
         }
-        
+
         GfVec4d viewport(0, 0, width, height);
         GfRect2i renderBufferRect(GfVec2i(0, 0), width, height);
-        GfRange2f displayWindow(GfVec2f(viewport[0], height-viewport[1]-viewport[3]),
-                                GfVec2f(viewport[0]+viewport[2],height-viewport[1]));
+        GfRange2f displayWindow(GfVec2f(viewport[0], height - viewport[1] - viewport[3]),
+                                GfVec2f(viewport[0] + viewport[2], height - viewport[1]));
         GfRect2i dataWindow = renderBufferRect.GetIntersection(
-                                                 GfRect2i(GfVec2i(viewport[0], height-viewport[1]-viewport[3]),
-                                                              viewport[2], viewport[3]             ));
+            GfRect2i(GfVec2i(viewport[0], height - viewport[1] - viewport[3]), viewport[2], viewport[3]));
         CameraUtilFraming framing(displayWindow, dataWindow);
         _renderer->SetRenderBufferSize(renderSize);
         _renderer->SetFraming(framing);
@@ -539,13 +587,13 @@ void Viewport::Render() {
         // As of today, camera used for SetCameraPath are similar to GetViewportCamera.
         // This might change in the future and that could cause an issue for the computation
         // of the manipulator positions.
- //       if (_cameras.IsUsingStageCamera()) {
-//            _renderer->SetCameraPath(_cameras.GetStageCameraPath());
-//        } else {
-            const GfCamera viewportCamera = GetViewportCamera(width, height);
-            _renderer->SetCameraState(viewportCamera.GetFrustum().ComputeViewMatrix(),
-                                      viewportCamera.GetFrustum().ComputeProjectionMatrix());
-  //      }
+        //       if (_cameras.IsUsingStageCamera()) {
+        //            _renderer->SetCameraPath(_cameras.GetStageCameraPath());
+        //        } else {
+        const GfCamera viewportCamera = GetViewportCamera(width, height);
+        _renderer->SetCameraState(viewportCamera.GetFrustum().ComputeViewMatrix(),
+                                  viewportCamera.GetFrustum().ComputeProjectionMatrix());
+        //      }
         _renderer->Render(GetCurrentStage()->GetPseudoRoot(), _imagingSettings);
     } else {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -556,6 +604,9 @@ void Viewport::Render() {
     if (_imagingSettings.showGrid) {
         _grid.Render(*this);
     }
+    if (_imagingSettings.showCameras || _imagingSettings.showLights) {
+        _sceneObjectDrawer.Render(*this);
+    }
     if (_imagingSettings.showGizmos) {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -563,9 +614,7 @@ void Viewport::Render() {
     _drawTarget->Unbind();
 }
 
-void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) {
-    _imagingSettings.frame = tc;
-}
+void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) { _imagingSettings.frame = tc; }
 
 /// Update anything that could have change after a frame render
 void Viewport::Update() {
@@ -574,36 +623,65 @@ void Viewport::Update() {
         auto whichRenderer = _renderers.find(GetCurrentStage()); /// We expect a very limited number of opened stages
         if (whichRenderer == _renderers.end()) {
             firstTimeStageLoaded = true;
-            SdfPathVector excludedPaths;
-            _renderer = new UsdImagingGLEngine(GetCurrentStage()->GetPseudoRoot().GetPath(), excludedPaths);
-            _renderers[GetCurrentStage()] = _renderer;
-            _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+            if (_hydraDisabledStages.count(GetCurrentStage()) == 0) {
+                //SdfPathVector excludedPaths;
+                UsdImagingGLEngine::Parameters parameters;
+                parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
+                parameters.rendererPluginId = GetDefaultRendererId();
+                _renderer = new UsdImagingGLEngine(parameters);
+                _renderers[GetCurrentStage()] = _renderer;
+                InitializeRendererAov(*_renderer);
+            } else {
+                _renderer = nullptr;
+                _renderers[GetCurrentStage()] = nullptr;
+            }
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
+        } else if (whichRenderer->second == nullptr && _hydraDisabledStages.count(GetCurrentStage()) == 0) {
+            // Hydra was re-enabled for this stage after being loaded without a renderer
+            //firstTimeStageLoaded = true;
+            //SdfPathVector excludedPaths;
+            UsdImagingGLEngine::Parameters parameters;
+            parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
+            parameters.rendererPluginId = GetDefaultRendererId();
+            _renderer = new UsdImagingGLEngine(parameters);
+            _renderers[GetCurrentStage()] = _renderer;
             InitializeRendererAov(*_renderer);
+            _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         } else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
-            _cameraManipulator.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: should reset the camera otherwise, depending on the position of the camera, the transform is incorrect
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
             //_selection =
+        } else if (whichRenderer->second != nullptr && _hydraDisabledStages.count(GetCurrentStage())) {
+            delete whichRenderer->second;
+            _renderer = nullptr;
+            _renderers[GetCurrentStage()] = nullptr;
+        }
+
+        for (CameraRig *c : _cameraManipulators) {
+            c->SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         }
 
         // Update cameras state, this will assign the user selected camera for the current stage at
         // a particular time
         _cameras.Update(GetCurrentStage(), GetCurrentTimeCode());
-        if (firstTimeStageLoaded) { //TODO C++20 [[unlikely]]
+        if (firstTimeStageLoaded) { // TODO C++20 [[unlikely]]
             // Find a camera in the stage and use it. We might want to make it optional as it slows
             // the first render
-            if(!_cameras.FindAndUseStageCamera(GetCurrentStage(), GetCurrentTimeCode())) {
+            if (!_cameras.FindAndUseStageCamera(GetCurrentStage(), GetCurrentTimeCode())) {
                 // TODO: framing should probably move in the update as we want to also frame when an
                 // internal ortho camera is selected
                 // With the multiple viewport we might want to frame all cameras, not just the current one
-                //
+
+                // reset initial camera angle now that scene coordinate system is known
+                for (CameraRig *c : _cameraManipulators) {
+                    c->SetYawPitch(GetEditableCamera(), GfVec2d(0, 0));
+                }
+
                 FrameCameraOnRootPrim(); // TODO rename to FrameCurrentCamera
                 FrameAllCameras();
             }
-
         }
     }
 
@@ -625,8 +703,8 @@ void Viewport::Update() {
     }
 }
 
-
-bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex) {
+bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath,
+                                int &outHitInstanceIndex) {
 
     GfVec2i renderSize = _drawTarget->GetSize();
     double width = static_cast<double>(renderSize[0]);
@@ -636,8 +714,8 @@ bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, S
     GfFrustum pixelFrustum = viewportCamera.GetFrustum().ComputeNarrowedFrustum(clickedPoint, GfVec2d(1.0 / width, 1.0 / height));
     GfVec3d outHitPoint;
     GfVec3d outHitNormal;
-    return (_renderer && GetCurrentStage() && _renderer->TestIntersection(viewportCamera.GetFrustum().ComputeViewMatrix(),
-            pixelFrustum.ComputeProjectionMatrix(),
-            GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint, &outHitNormal,
-            &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
+    return (_renderer && GetCurrentStage() &&
+            _renderer->TestIntersection(viewportCamera.GetFrustum().ComputeViewMatrix(), pixelFrustum.ComputeProjectionMatrix(),
+                                        GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint, &outHitNormal,
+                                        &outHitPrimPath, &outHitInstancerPath, &outHitInstanceIndex));
 }

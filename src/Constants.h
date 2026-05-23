@@ -79,6 +79,3 @@ constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 
 #define DefaultColorStyle  ImGuiCol_Text, ImVec4(ColorImGuiText), ImGuiCol_Button, ImVec4(ColorImGuiButton), ImGuiCol_FrameBg, ImVec4(ColorImGuiFrameBg)
 
-// Experimental features in progress but not exposed yet
-#define ENABLE_CONNECTION_EDITOR 0
-#define ENABLE_VALIDATION_WINDOW 0

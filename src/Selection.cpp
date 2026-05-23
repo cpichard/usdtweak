@@ -41,6 +41,8 @@ struct Selection::SelectionData {
     // Selection data for the layers
     // Instead of keeping selected path for the layers, we keep handles as the paths can change when the prims are renamed or
     // moved and it invalidates the selection. The handles on spec stays consistent with renaming and moving
+    // But ... when we delete a SdfPrim, the handle becomes invalid and access to it is incorrect.
+    // We allows to keep invalid handles in the container, but each access to their data must be protected.
     std::unordered_set<SdfSpecHandle> _sdfPrimSelectionDomain;
 
     std::unordered_set<SdfSpecHandle> _sdfPropSelectionDomain;
@@ -92,10 +94,50 @@ template <> void Selection::AddSelected(const SdfLayerRefPtr &layer, const SdfPa
 ImplementStageAddSelected(UsdStageRefPtr);
 ImplementStageAddSelected(UsdStageWeakPtr);
 
-// Not called at the moment
-template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const SdfPath &path) {
-    if (!_data || !stage)
+template <> void Selection::RemoveSelected(const SdfLayerRefPtr &layer, const SdfPath &path) {
+    if (!_data || !layer)
         return;
+    auto handle = layer->GetObjectAtPath(path);
+    if (path.IsPropertyPath()) {
+        _data->_sdfPropSelectionDomain.erase(handle);
+    } else {
+        _data->_sdfPrimSelectionDomain.erase(handle);
+    }
+}
+
+template <> void Selection::RemoveSelected(const SdfLayerHandle &layer, const SdfPath &path) {
+    if (!_data || !layer)
+        return;
+    auto handle = layer->GetObjectAtPath(path);
+    if (path.IsPropertyPath()) {
+        _data->_sdfPropSelectionDomain.erase(handle);
+    } else {
+        _data->_sdfPrimSelectionDomain.erase(handle);
+    }
+}
+
+template <> void Selection::RemoveSelected(const UsdStageRefPtr &stage, const SdfPath &path) {
+    if (!_data || !stage || !_data->_stageSelection)
+        return;
+    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
+    _data->_stageSelection.reset(new HdSelection());
+    for (const auto &p : paths) {
+        if (p != path)
+            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
+    }
+    _data->_stageSelection.mustRecomputeHash = true;
+}
+
+template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const SdfPath &path) {
+    if (!_data || !stage || !_data->_stageSelection)
+        return;
+    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
+    _data->_stageSelection.reset(new HdSelection());
+    for (const auto &p : paths) {
+        if (p != path)
+            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
+    }
+    _data->_stageSelection.mustRecomputeHash = true;
 }
 
 #define ImplementLayerSetSelected(LayerT)                                                                                        \
@@ -160,6 +202,17 @@ template <> bool Selection::IsSelected(const SdfAttributeSpecHandle &spec) const
 }
 
 template <> bool Selection::IsSelected(const UsdStageWeakPtr &stage, const SdfPath &selectedPath) const {
+    if (!_data || !stage)
+        return false;
+    if (_data->_stageSelection) {
+        if (_data->_stageSelection->GetPrimSelectionState(HdSelection::HighlightModeSelect, selectedPath)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+template <> bool Selection::IsSelected(const UsdStageRefPtr &stage, const SdfPath &selectedPath) const {
     if (!_data || !stage)
         return false;
     if (_data->_stageSelection) {
@@ -236,11 +289,27 @@ template <> std::vector<SdfPath> Selection::GetSelectedPaths(const SdfLayerHandl
     if (!_data || !layer)
         return {};
     std::vector<SdfPath> paths;
-    std::transform(_data->_sdfPrimSelectionDomain.begin(), _data->_sdfPrimSelectionDomain.end(), std::back_inserter(paths),
-                   [](const SdfSpecHandle &p) { return p->GetPath(); });
-    std::transform(_data->_sdfPropSelectionDomain.begin(), _data->_sdfPropSelectionDomain.end(), std::back_inserter(paths),
-                   [](const SdfSpecHandle &p) { return p->GetPath(); });
+    for (const auto &prim:_data->_sdfPrimSelectionDomain) {
+        if (prim) paths.emplace_back(prim->GetPath());
+    }
+    for (const auto &prim:_data->_sdfPropSelectionDomain) {
+        if (prim) paths.emplace_back(prim->GetPath());
+    }
     return paths;
+}
+
+template <> bool Selection::UpdateSelectionHash(const SdfLayerRefPtr &layer, SelectionHash &lastSelectionHash) {
+    if (!_data || !layer)
+        return false;
+    SelectionHash currentHash = 0;
+    for (const auto &spec : _data->_sdfPrimSelectionDomain) {
+        currentHash ^= std::hash<SdfSpecHandle>{}(spec) + 0x9e3779b9 + (currentHash << 6) + (currentHash >> 2);
+    }
+    if (currentHash != lastSelectionHash) {
+        lastSelectionHash = currentHash;
+        return true;
+    }
+    return false;
 }
 
 template <> std::vector<SdfPath> Selection::GetSelectedPaths(const UsdStageRefPtr &stage) const {

@@ -25,7 +25,6 @@
 
 // clang-format on
 
-
 PXR_NAMESPACE_USING_DIRECTIVE
 
 // https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
@@ -55,9 +54,7 @@ static bool InstallApplicationPluginPaths(const std::vector<std::string> &plugin
     return false;
 }
 
-static void glfw_error_callback(int error, const char* description) {
-    std::cerr << "Error: " << description << std::endl;
-}
+static void glfw_error_callback(int error, const char *description) { std::cerr << "Error: " << description << std::endl; }
 
 int main(int argc, char *const *argv) {
 
@@ -67,7 +64,7 @@ int main(int argc, char *const *argv) {
     ResourcesLoader loader;
 
     // Adding the plugin paths specified in the config file to the environment. It potentially means restarting the
-    // application with a new environment. Unfortunately USD is not able to dynamically load plugin 
+    // application with a new environment. Unfortunately USD is not able to dynamically load plugin
     // functionalities after startup time, the functions like RegisterPlugins or Load simply does not
     // do what one would expect, more there:
     // https://groups.google.com/g/usd-interest/c/fpLYyf6elmU/m/haZf9bZDAgAJ
@@ -179,7 +176,6 @@ int main(int argc, char *const *argv) {
 
         // Loop until the user closes the window
         while (!editor.IsShutdown()) {
-
             // Poll and process events
             glfwMakeContextCurrent(window);
             glfwPollEvents();
@@ -222,7 +218,7 @@ int main(int argc, char *const *argv) {
     ImGui::SetCurrentContext(hydraUIContext);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui::DestroyContext(hydraUIContext);
-    
+
     // Shutdown imgui
     ImGui::SetCurrentContext(mainUIContext);
     ImGui_ImplOpenGL3_Shutdown();

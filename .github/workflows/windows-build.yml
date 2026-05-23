@@ -1,0 +1,125 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["*-prealpha"]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+env:
+  USD_VERSION: "26.03"
+  USD_INSTALL_DIR: usd-install
+  BUILD_TYPE: RelWithDebInfo
+
+jobs:
+  build-usd:
+    runs-on: windows-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+    steps:
+      - name: Compute cache key
+        id: cache-key
+        shell: pwsh
+        run: |
+          $vsVer = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationVersion
+          echo "value=usd-windows-${{ env.USD_VERSION }}-vs${vsVer}" >> $env:GITHUB_OUTPUT
+
+      - name: Cache USD
+        id: cache-usd
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.USD_INSTALL_DIR }}
+          key: ${{ steps.cache-key.outputs.value }}
+
+      - name: Install Python Jinja2
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        run: pip install jinja2
+
+      - name: Checkout OpenUSD ${{ env.USD_VERSION }}
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: PixarAnimationStudios/OpenUSD
+          ref: v${{ env.USD_VERSION }}
+          path: OpenUSD
+          fetch-depth: 1
+
+      - name: Build USD
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          python OpenUSD/build_scripts/build_usd.py `
+            --embree --alembic `
+            --no-python --no-usdview `
+            --no-examples --no-tutorials --no-docs `
+            --build-variant release `
+            ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+
+      - name: Remove USD build artifacts from install dir
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force "${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}/build"
+
+  build-usdtweak:
+    runs-on: windows-latest
+    needs: build-usd
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore USD cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.USD_INSTALL_DIR }}
+          key: ${{ needs.build-usd.outputs.cache-key }}
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake `
+            -G "Visual Studio 17 2022" -A x64 `
+            "-Dpxr_DIR=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}" `
+            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}" `
+            -B build
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Install NSIS
+        run: choco install nsis --yes
+
+      - name: Package (CPack NSIS)
+        working-directory: build
+        shell: pwsh
+        run: |
+          cpack -G NSIS -C ${{ env.BUILD_TYPE }}
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: usdtweak-windows-installer
+          path: build/usdtweak-*.exe
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build-usdtweak
+    if: (startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-prealpha')) || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usdtweak-windows-installer
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.exe"
+          draft: true
+          prerelease: true

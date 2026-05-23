@@ -1,9 +1,9 @@
 #include "Style.h"
 #include "Gui.h"
 
-void ApplyDarkUTStyle() {
-    ImGuiStyle *style = &ImGui::GetStyle();
-    ImVec4 *colors = style->Colors;
+ImGuiStyle CreateUsdTweakStyle() {
+    ImGuiStyle style;
+    ImVec4 *colors = style.Colors;
     
     colors[ImGuiCol_Text] = ImVec4(1.000f, 1.000f, 1.000f, 1.000f);
     colors[ImGuiCol_TextDisabled] = ImVec4(0.500f, 0.500f, 0.500f, 1.000f);
@@ -29,7 +29,7 @@ void ApplyDarkUTStyle() {
     colors[ImGuiCol_Button] = ImVec4(1.f, 1.f, 1.f, 0.2f);
     colors[ImGuiCol_ButtonHovered] = ImVec4(1.000f, 1.000f, 1.000f, 0.156f);
     colors[ImGuiCol_ButtonActive] = ImVec4(1.000f, 1.000f, 1.000f, 0.391f);
-    colors[ImGuiCol_Header] = ImVec4(0.313f, 0.313f, 0.313f, 1.000f);
+    colors[ImGuiCol_Header] = ImVec4(0.5f, 0.5f, 0.5f, 1.000f);
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.469f, 0.469f, 0.469f, 1.000f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.469f, 0.469f, 0.469f, 1.000f);
     colors[ImGuiCol_Separator] = colors[ImGuiCol_BorderShadow];
@@ -63,16 +63,18 @@ void ApplyDarkUTStyle() {
     colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.000f, 0.000f, 0.000f, 0.586f);
     colors[ImGuiCol_Separator] = ImVec4(0.469f, 0.469f, 0.469f, 1.000f);
     
-    style->ChildRounding = 4.0f;
-    style->FrameBorderSize = 1.0f;
-    style->FrameRounding = 2.0f;
-    style->GrabMinSize = 7.0f;
-    style->PopupRounding = 2.0f;
-    style->ScrollbarRounding = 12.0f;
-    style->ScrollbarSize = 13.0f;
-    style->TabBorderSize = 1.0f;
-    style->TabRounding = 0.0f;
-    style->WindowRounding = 4.0f;
+    style.ChildRounding = 4.0f;
+    style.FrameBorderSize = 1.0f;
+    style.FrameRounding = 2.0f;
+    style.GrabMinSize = 7.0f;
+    style.PopupRounding = 2.0f;
+    style.ScrollbarRounding = 12.0f;
+    style.ScrollbarSize = 13.0f;
+    style.TabBorderSize = 1.0f;
+    style.TabRounding = 0.0f;
+    style.WindowRounding = 4.0f;
+    
+    return style;
 }
 // The following function are a copy paste of the style editor in imgui_demo.cpp, with the font edition removed for now.
 // This might go in its own CPP at some point, if there are more style related functions
@@ -81,7 +83,7 @@ bool ShowStyleSelector(const char *label) {
     if (ImGui::Combo(label, &style_idx, "UsdTweak\0Dark\0Light\0Classic\0")) {
         switch (style_idx) {
         case 0:
-            ApplyDarkUTStyle();
+            ImGui::GetStyle() = CreateUsdTweakStyle();
             break;
         case 1:
             ImGui::StyleColorsDark();

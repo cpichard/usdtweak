@@ -97,7 +97,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
     }
     popup_max_height_in_items = ImMin(popup_max_height_in_items, show_count);
 
-    if (!(g.NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSizeConstraint)) {
+    if (!(g.NextWindowData.HasFlags & ImGuiNextWindowDataFlags_HasSizeConstraint)) {
         int items = popup_max_height_in_items + search_bar_height;
         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, CalcMaxPopupHeightFromItemCount(items)));
     }
@@ -116,7 +116,7 @@ bool ComboWithFilter(const char *label, const char *preview_value, const std::ve
         ImGui::SetKeyboardFocusHere();
         focus_filtered_idx = -1;
     }
-    ImGui::InputTextWithHint("##ComboWithFilter_inputText", "Search", pattern_buffer, 256);
+    ImGui::InputTextWithHint("##ComboWithFilter_inputText", "Find", pattern_buffer, 256);
 
     int move_delta = 0;
     if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {

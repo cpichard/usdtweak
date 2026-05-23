@@ -1,13 +1,13 @@
 #pragma once
+#include "Constants.h"
 #include "EditorSettings.h"
 #include "Selection.h"
 #include "Viewport.h"
+#include <future>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usdUtils/stageCache.h>
-#include "Constants.h"
 #include <set>
-#include <future>
 
 struct GLFWwindow;
 
@@ -16,7 +16,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Editor contains the data shared between widgets, like selections, stages, etc etc
 class Editor {
 
-public:
+  public:
     Editor();
     ~Editor();
 
@@ -41,6 +41,9 @@ public:
     void SetPreviousLayer(); // go backward in the layer history
     void SetNextLayer();     // go forward in the layer history
 
+    void SetPreviousPrim(); // go backward in the prim history
+    void SetNextPrim();     // go forward in the prim history
+
     /// List of stages
     /// Using a stage cache to store the stages, seems to work well
     UsdStageRefPtr GetCurrentStage() { return _currentStage; }
@@ -55,14 +58,15 @@ public:
     Selection &GetSelection() { return _selection; }
     void SetLayerPathSelection(const SdfPath &primPath);
     void AddLayerPathSelection(const SdfPath &primPath);
+    void SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath);
     void SetStagePathSelection(const SdfPath &primPath);
     void AddStagePathSelection(const SdfPath &primPath);
-    
+
     /// Create a new layer in file path
     void CreateNewLayer(const std::string &path);
     void FindOrOpenLayer(const std::string &path);
     void CreateStage(const std::string &path);
-    void OpenStage(const std::string &path, bool openLoaded = true);
+    void OpenStage(const std::string &path, bool openLoaded = true, bool enableHydra = true);
     void SaveLayerAs(SdfLayerRefPtr layer, const std::string &path);
 
     /// Render the hydra viewport
@@ -114,8 +118,20 @@ public:
         }
     }
 
-    void ScaleUI(float scaleValue);
-    float GetScaleUI() const;
+    // Those 3 functions are used to pass data to the preference UI. We should find another way
+    void SetUIScale(float scaleValue);
+    float GetUIScale() const;
+    bool &GetShowSplashScreen() { return _settings._showSplashScreen; }
+    bool &GetEnableConnectionEditor() { return _enableConnectionEditor; }
+    bool &GetEnableMouseCapture() { return _enableMouseCapture; }
+    static bool IsConnectionEditorEnabled() { return _enableConnectionEditor; }
+    static bool IsMouseCaptureEnabled() { return _enableMouseCapture; }
+
+    static bool _enableConnectionEditor;
+    static bool _enableMouseCapture;
+
+    static void SetMouseCaptured(bool captured);
+    static bool GetMouseCaptured();
 
   private:
     /// Interface with the settings
@@ -138,6 +154,11 @@ public:
     SdfLayerRefPtrVector _layerHistory;
     size_t _layerHistoryPointer;
 
+    /// Prim browsing history — each entry pairs a stage with a prim path.
+    std::vector<std::pair<UsdStageRefPtr, SdfPath>> _primHistory;
+    size_t _primHistoryPointer = 0;
+    std::pair<UsdStageRefPtr, SdfPath> _lastShownPrimEntry;
+
     /// Setting _isShutdown to true will stop the main loop
     bool _isShutdown = false;
 
@@ -159,12 +180,11 @@ public:
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
-    
+
     /// Storing the tasks created by launchers.
     std::vector<std::future<int>> _launcherTasks;
 
     /// Playback controls
     bool _isPlaying = false;
     std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
-    
 };

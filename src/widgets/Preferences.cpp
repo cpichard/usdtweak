@@ -7,22 +7,18 @@
 #include <Style.h>
 #include <iostream>
 
-PreferencesModalDialog::PreferencesModalDialog(Editor &editor) : editor(editor){};
-
-bool PreferencesModalDialog::needRestart = false;
+PreferencesModalDialog::PreferencesModalDialog(Editor &editor) : editor(editor) {};
 
 void PreferencesModalDialog::Draw() {
-    static const char *const panels[] = {"General", "Viewport", "Style", "Fonts"};
+    static const char *const panels[] = {"General", "Viewport", "Style", "Fonts", "Experimental"};
     static int current_item = 0;
     const ImGuiContext &g = *GImGui;
-    if (needRestart) {
-        ImGui::TextColored(ImVec4(1.0, 0.2, 0.2, 1.0), "You must restart usdtweak to apply your changes");
-    }
-    const float heightWithoutCloseButton = RemainingHeight(1 + needRestart);
+
+    const float heightWithoutCloseButton = RemainingHeight(1);
     ImVec2 prefContentSize(0, heightWithoutCloseButton);
     ImVec2 prefTabSize(g.FontSize * 5, heightWithoutCloseButton);
     if (ImGui::BeginListBox("##PreferencePanels", prefTabSize)) {
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 5; ++i) {
             if (ImGui::Selectable(panels[i], i == current_item)) {
                 current_item = i;
             }
@@ -33,11 +29,15 @@ void PreferencesModalDialog::Draw() {
     ImGui::SameLine();
     if (current_item == 0) {
         if (ImGui::BeginChild("##General", prefContentSize)) {
-            float uiScale = editor.GetScaleUI();
-            if (ImGui::SliderFloat("UI scaling", &uiScale, 0.5f, 3.0f, "%.1f", ImGuiSliderFlags_NoRoundToFormat)) {
+            float uiScale = editor.GetUIScale();
+            if (ImGui::SliderFloat("UI scaling", &uiScale, 0.5f, 3.0f, "%.2f", ImGuiSliderFlags_NoRoundToFormat)) {
                 ExecuteAfterDraw<EditorScaleUI>(uiScale);
-                needRestart = true;
             }
+            if (ImGui::Button("Reset scaling")) {
+                ExecuteAfterDraw<EditorScaleUI>(1.f);
+            }
+            ImGui::Separator();
+            ImGui::Checkbox("Show splash screen at startup", &editor.GetShowSplashScreen());
             ImGui::EndChild();
         }
     } else if (current_item == 1) {
@@ -55,22 +55,26 @@ void PreferencesModalDialog::Draw() {
     } else if (current_item == 3) {
         if (ImGui::BeginChild("##Fonts", prefContentSize)) {
             ImGui::Text("Select font from your operating system:");
-            std::string &font = ResourcesLoader::GetFontRegularPath();
-            std::string &fontMono = ResourcesLoader::GetFontMonoPath();
+            std::string font = ResourcesLoader::GetFontRegularPath();
+            std::string fontMono = ResourcesLoader::GetFontMonoPath();
             ImGui::InputTextWithHint("Regular Font", "Select alternative font path", &font);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
-                needRestart = true;
+                ResourcesLoader::RequestNewFontRegular(font);
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
+
             ImGui::InputTextWithHint("Mono Font", "Select alternative font path", &fontMono);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
-                needRestart = true;
+                ResourcesLoader::RequesNewFontMono(fontMono);
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
-            std::string &selectedGlyph = ResourcesLoader::GetGlyphRangeName();
+
+            std::string selectedGlyph = ResourcesLoader::GetGlyphRangeName();
             if (ImGui::BeginCombo("Glyph range", selectedGlyph.c_str())) {
                 for (const std::string &glyphRangeName : ResourcesLoader::GetGlyphRangeNames()) {
                     if (ImGui::Selectable(glyphRangeName.c_str())) {
-                        selectedGlyph = glyphRangeName;
-                        needRestart = true;
+                        ResourcesLoader::SetGlyphRangeName(glyphRangeName);
+                        ExecuteAfterDraw<EditorReloadFonts>();
                     }
                 }
                 ImGui::EndCombo();
@@ -84,9 +88,9 @@ void PreferencesModalDialog::Draw() {
             ImGui::Text("On macOS, a potential font could be: ");
             ImGui::Text("/System/Library/Fonts/Supplemental/Arial Unicode.ttf");
             if (ImGui::Button("Try Unicode fonts")) {
-                font = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
-                fontMono = "/System/Library/Fonts/Supplemental/Courier New.ttf";
-                needRestart = true;
+                ResourcesLoader::RequestNewFontRegular("/System/Library/Fonts/Supplemental/Arial Unicode.ttf");
+                ResourcesLoader::RequesNewFontMono("/System/Library/Fonts/Supplemental/Courier New.ttf");
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
             ImGui::SameLine();
 #endif
@@ -94,25 +98,29 @@ void PreferencesModalDialog::Draw() {
             ImGui::Text("On windows, a potential font could be: ");
             ImGui::Text("C:\\Windows\\Fonts\\ARIALUNI.TTF");
             if (ImGui::Button("Try Unicode font")) {
-                font = "C:\\Windows\\Fonts\\ARIALUNI.TTF";
-                needRestart = true;
+                ResourcesLoader::RequestNewFontRegular("C:\\Windows\\Fonts\\ARIALUNI.TTF");
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
             ImGui::SameLine();
 #endif
             if (ImGui::Button("Reset to default fonts")) {
                 if (!font.empty()) {
-                    font = "";
-                    needRestart = true;
+                    ResourcesLoader::RequestNewFontRegular("");
                 }
                 if (!fontMono.empty()) {
-                    fontMono = "";
-                    needRestart = true;
+                    ResourcesLoader::RequesNewFontMono("");
                 }
                 if (selectedGlyph != "Default") {
-                    selectedGlyph = "Default";
-                    needRestart = true;
+                    ResourcesLoader::SetGlyphRangeName("");
                 }
+                ExecuteAfterDraw<EditorReloadFonts>();
             }
+            ImGui::EndChild();
+        }
+    } else if (current_item == 4) {
+        if (ImGui::BeginChild("##Experimental", prefContentSize)) {
+            ImGui::Checkbox("Connection Editor", &editor.GetEnableConnectionEditor());
+            ImGui::Checkbox("Mouse Capture in Viewport and Connection Editor", &editor.GetEnableMouseCapture());
             ImGui::EndChild();
         }
     }

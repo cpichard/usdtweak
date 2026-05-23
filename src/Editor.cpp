@@ -1,8 +1,49 @@
-#include <iostream>
+#include "Editor.h"
+#include "3rdparty/imgui/imgui.h"
+#include "Blueprints.h"
+#include "StringSearchIndex.h"
+#include "SearchWidget.h"
+#include "Commands.h"
+#include "ConnectionEditor.h"
+#include "ContentBrowser.h"
+#include "Debug.h"
+#include "FileBrowser.h"
+#include "Gui.h"
+#include "HydraBrowser.h"
+#include "ShaderRegistryInspector.h"
+#include "HydraNoticeLogger.h"
+#include "ImGuiHelpers.h"
+#include "LauncherBar.h"
+#include "ManipulatorToolbox.h"
+#include "Playblast.h"
+#include "Preferences.h"
+#include "ResourcesLoader.h"
+#include "SdfAttributeEditor.h"
+#include "SdfLayerEditor.h"
+#include "SdfLayerSceneGraphEditor.h"
+#include "SdfPrimEditor.h"
+#include "Shortcuts.h"
+#include "StageLayerEditor.h"
+#include "StageOutliner.h"
+#include "Stamp.h"
+#include "SplashScreen.h"
+#include "TextEditor.h"
+#include "Timeline.h"
+#include "UsdHelpers.h"
+#include "UsdPrimEditor.h"
 #include <array>
-#include <utility>
-#include <pxr/imaging/garch/glApi.h>
+#include <iostream>
+#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#define GHC_WITH_EXCEPTIONS 0
+#include <ghc/filesystem.hpp>
+namespace fs = ghc::filesystem;
+#endif
 #include <pxr/base/arch/fileSystem.h>
+#include <pxr/base/trace/trace.h>
+#include <pxr/imaging/garch/glApi.h>
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerUtils.h>
@@ -11,36 +52,9 @@
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usd/usdGeom/gprim.h>
-#include <pxr/base/trace/trace.h>
-#include "Gui.h"
-#include "Editor.h"
-#include "Debug.h"
-#include "SdfLayerEditor.h"
-#include "SdfLayerSceneGraphEditor.h"
-#include "FileBrowser.h"
-#include "UsdPrimEditor.h"
-#include "StageOutliner.h"
-#include "Timeline.h"
-#include "ContentBrowser.h"
-#include "SdfPrimEditor.h"
-#include "Commands.h"
-#include "ResourcesLoader.h"
-#include "SdfAttributeEditor.h"
-#include "TextEditor.h"
-#include "Shortcuts.h"
-#include "StageLayerEditor.h"
-#include "LauncherBar.h"
-#include "ConnectionEditor.h"
-#include "Playblast.h"
-#include "Blueprints.h"
-#include "UsdHelpers.h"
-#include "ImGuiHelpers.h"
-#include "Stamp.h"
-#include "ManipulatorToolbox.h"
-#include "HydraBrowser.h"
-#include "Preferences.h"
+#include <utility>
 #ifdef HAVE_USDVALIDATION
-    #include "ValidationWindow.h"
+#include "ValidationWindow.h"
 #endif
 
 namespace clk = std::chrono;
@@ -63,6 +77,9 @@ namespace clk = std::chrono;
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define HydraBrowserWindowTitle "Hydra browser"
+#define ShaderRegistryInspectorWindowTitle "Shader registry inspector"
+#define HydraNoticeLoggerWindowTitle "Hydra notice logger"
+#define FindWindowTitle "Find"
 #define ValidatorWindowTitle "Validation"
 #define TimelineWindowTitle "Timeline"
 #define Viewport1WindowTitle "Viewport1"
@@ -97,32 +114,142 @@ inline void BringWindowToTabFront(const char *windowName) {
     }
 }
 
-struct AboutModalDialog : public ModalDialog {
-    AboutModalDialog(Editor& editor) : editor(editor) {}
+struct SplashScreenModalDialog : public ModalDialog {
+    float elapsed = 0.f;
+
+    const char *DialogId() const override { return "##SplashScreen"; }
+
+    ImGuiWindowFlags WindowFlags() const override {
+        return ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    }
+
+    int PushStyles() override {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        return 1;
+    }
+
+    void PrepareModal() override {
+        const ImGuiIO &io = ImGui::GetIO();
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id == 0)
+            return;
+        const float scale =
+            std::min({io.DisplaySize.x * 0.5f / static_cast<float>(tex.width),
+                      io.DisplaySize.y * 0.5f / static_cast<float>(tex.height), 1.0f});
+        const ImVec2 size(tex.width * scale, tex.height * scale);
+        ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - size.x) * 0.5f,
+                                       (io.DisplaySize.y - size.y) * 0.5f),
+                                ImGuiCond_Always);
+    }
+
     void Draw() override {
-        ImGui::Text("usdtweak pre-alpha version %s", GetBuildDate());
-        ImGui::Text("  revision %s", GetGitHash());
-        ImGui::NewLine();
-        ImGui::Text("This is a pre-alpha version for testing purpose.");
-        ImGui::Text("Please send your feedbacks as github issues:");
-        ImGui::Text("https://github.com/cpichard/usdtweak/issues");
-        ImGui::Text("or by mail: cpichard.github@gmail.com");
-        ImGui::NewLine();
-        ImGui::Text("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
-        ImGui::NewLine();
-        ImGui::Text("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
-        ImGui::Text("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
-        ImGui::NewLine();
-        ImGui::Text("IMGUI - https://github.com/ocornut/imgui");
-        ImGui::Text("   Copyright (c) 2014-2024 Omar Cornut - The MIT License (MIT)");
-        ImGui::NewLine();
-        ImGui::Text("GLFW - https://www.glfw.org/");
-        ImGui::Text("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
-        ImGui::Text("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
-        ImGui::NewLine();
-        if (ImGui::Button("  Close  ")) {
+        const ImGuiIO &io = ImGui::GetIO();
+        elapsed += io.DeltaTime;
+
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id != 0) {
+            const float scale =
+                std::min({io.DisplaySize.x * 0.5f / static_cast<float>(tex.width),
+                          io.DisplaySize.y * 0.5f / static_cast<float>(tex.height), 1.0f});
+            const ImVec2 imageSize(tex.width * scale, tex.height * scale);
+            ImGui::Image(static_cast<ImTextureID>(static_cast<uintptr_t>(tex.id)), imageSize);
+
+            // Version strings bottom-right, rendered via draw list on top of the image
+            char line1[64], line2[32];
+            snprintf(line1, sizeof(line1), "usdtweak %s", GetBuildDate());
+            snprintf(line2, sizeof(line2), "USD " USD_VERSION);
+
+            const ImVec2 sz1 = ImGui::CalcTextSize(line1);
+            const ImVec2 sz2 = ImGui::CalcTextSize(line2);
+            const float margin = 6.f;
+            const ImVec2 winPos = ImGui::GetWindowPos();
+            const float x1 = winPos.x + imageSize.x - sz1.x - margin;
+            const float x2 = winPos.x + imageSize.x - sz2.x - margin;
+            const float y2 = winPos.y + imageSize.y - sz2.y - margin;
+            const float y1 = y2 - sz1.y - 2.f;
+
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            const ImVec2 shadow(1.f, 1.f);
+            dl->AddText(ImVec2(x1 + shadow.x, y1 + shadow.y), IM_COL32(0, 0, 0, 180), line1);
+            dl->AddText(ImVec2(x1, y1),                        IM_COL32(255, 255, 255, 230), line1);
+            dl->AddText(ImVec2(x2 + shadow.x, y2 + shadow.y), IM_COL32(0, 0, 0, 180), line2);
+            dl->AddText(ImVec2(x2, y2),                        IM_COL32(255, 255, 255, 230), line2);
+        }
+
+        if (elapsed >= 2.f || io.MouseClicked[0] || io.MouseClicked[1] ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter)) {
             CloseModal();
         }
+    }
+};
+
+struct AboutModalDialog : public ModalDialog {
+    AboutModalDialog(Editor &editor) : editor(editor) {}
+
+    void PrepareModal() override {
+        const ImGuiIO &io = ImGui::GetIO();
+        const SplashTexture &tex = GetSplashTexture();
+        if (tex.id == 0)
+            return;
+        const ImGuiStyle &style = ImGui::GetStyle();
+        const float contentW = std::min(io.DisplaySize.x * 0.6f, static_cast<float>(tex.width));
+        const float imageH = tex.height * (contentW / static_cast<float>(tex.width));
+        const float outerW = contentW + style.WindowPadding.x * 2.f;
+        const float outerH = ImGui::GetFrameHeight()              // title bar
+                             + imageH                              // image
+                             + ImGui::GetFrameHeightWithSpacing()  // close button row
+                             + style.WindowPadding.y * 2.f;
+        ImGui::SetNextWindowSize(ImVec2(outerW, outerH), ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - outerW) * 0.5f,
+                                       (io.DisplaySize.y - outerH) * 0.5f),
+                                ImGuiCond_Appearing);
+    }
+
+    void Draw() override {
+        // Renders text with a 1px white shadow for legibility over the image background
+        auto textShadowed = [](const char *text) {
+            const ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImGui::GetWindowDrawList()->AddText(ImVec2(pos.x + 1, pos.y + 1),
+                                                IM_COL32(255, 255, 255, 180), text);
+            ImGui::TextUnformatted(text);
+        };
+
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+        const float imageBottomY = DrawAboutHeader();
+
+        char buf[256];
+        snprintf(buf, sizeof(buf), "usdtweak pre-alpha version %s", GetBuildDate());
+        textShadowed(buf);
+        snprintf(buf, sizeof(buf), "  revision %s", GetGitHash());
+        textShadowed(buf);
+        ImGui::NewLine();
+        textShadowed("This is a pre-alpha version for testing purpose.");
+        textShadowed("Please send your feedbacks as github issues:");
+        textShadowed("https://github.com/cpichard/usdtweak/issues");
+        textShadowed("or by mail: cpichard.github@gmail.com");
+        ImGui::NewLine();
+        textShadowed("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
+        textShadowed("Splash screen artwork - Copyright (c) 2025 Nastasia Bois");
+        ImGui::NewLine();
+        textShadowed("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
+        textShadowed("   Copyright (c) 2016-2024 Pixar - Modified Apache 2.0 License");
+        ImGui::NewLine();
+        textShadowed("IMGUI - https://github.com/ocornut/imgui");
+        textShadowed("   Copyright (c) 2014-2024 Omar Cornut - The MIT License (MIT)");
+        textShadowed("stb_image - https://github.com/nothings/stb");
+        textShadowed("   Copyright (c) 2017 Sean Barrett - MIT License / Public Domain");
+        ImGui::NewLine();
+        textShadowed("GLFW - https://www.glfw.org/");
+        textShadowed("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
+        textShadowed("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
+        ImGui::PopStyleColor();
+
+        // Move cursor below the image before drawing the Close button
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, imageBottomY));
+        DrawModalButtonClose();
     }
     const char *DialogId() const override { return "About Usdtweak"; }
     Editor &editor;
@@ -148,7 +275,6 @@ struct CloseEditorModalDialog : public ModalDialog {
     std::string confirmReasons;
 };
 
-
 void Editor::RequestShutdown() {
     if (!_isShutdown) {
         ExecuteAfterDraw<EditorShutdown>();
@@ -170,7 +296,7 @@ void Editor::ConfirmShutdown(std::string why) {
 }
 
 /// Modal dialog used to create a new layer
- struct CreateUsdFileModalDialog : public ModalDialog {
+struct CreateUsdFileModalDialog : public ModalDialog {
 
     CreateUsdFileModalDialog(Editor &editor) : editor(editor), createStage(true) { ResetFileBrowserFilePath(); };
 
@@ -207,6 +333,23 @@ void Editor::ConfirmShutdown(std::string why) {
     bool createStage = true;
 };
 
+/// Modal dialog to set the process working directory
+struct SetWorkingDirectoryDialog : public ModalDialog {
+    SetWorkingDirectoryDialog(Editor &editor) : editor(editor) {}
+    ~SetWorkingDirectoryDialog() override {}
+    void Draw() override {
+        DrawFileBrowser(RemainingHeight(2));
+        auto dir = GetFileBrowserDirectory();
+        ImGui::Text("Set to: %s", dir.c_str());
+        DrawModalButtonsOkCancel([&]() {
+            std::error_code ec;
+            fs::current_path(dir, ec);
+        });
+    }
+    const char *DialogId() const override { return "Set working directory"; }
+    Editor &editor;
+};
+
 /// Modal dialog to open a layer
 struct OpenUsdFileModalDialog : public ModalDialog {
 
@@ -220,6 +363,8 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         if (openAsStage) {
             ImGui::SameLine();
             ImGui::Checkbox("Load payloads", &openLoaded);
+            ImGui::SameLine();
+            ImGui::Checkbox("Enable viewport rendering", &enableHydra);
         }
         if (!FilePathExists()) {
             ImGui::Text("Not found: ");
@@ -230,7 +375,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
         DrawModalButtonsOkCancel([&]() {
             if (!filePath.empty() && FilePathExists()) {
                 if (openAsStage) {
-                    editor.OpenStage(filePath, openLoaded);
+                    editor.OpenStage(filePath, openLoaded, enableHydra);
                 } else {
                     editor.FindOrOpenLayer(filePath);
                 }
@@ -242,6 +387,7 @@ struct OpenUsdFileModalDialog : public ModalDialog {
     Editor &editor;
     bool openAsStage = true;
     bool openLoaded = true;
+    bool enableHydra = true;
 };
 
 struct SaveLayerAsDialog : public ModalDialog {
@@ -271,34 +417,34 @@ struct SaveLayerAsDialog : public ModalDialog {
 };
 
 struct ExportStageDialog : public ModalDialog {
-    typedef enum {ExportUSDZ=0, ExportArKit, ExportFlatten} ExportType;
+    typedef enum { ExportUSDZ = 0, ExportArKit, ExportFlatten } ExportType;
     ExportStageDialog(Editor &editor, ExportType exportType) : editor(editor), _exportType(exportType) {
-        switch(_exportType){
-            case ExportUSDZ:
-                _exportTypeStr = "Export Compressed USD (usdz)";
-                _defaultExtension = "usdz";
-                break;
-            case ExportArKit:
-                _exportTypeStr = "Export ArKit (usdz)";
-                _defaultExtension = "usdz";
-                break;
-            case ExportFlatten:
-                _exportTypeStr = "Export Flattened USD (usd)";
-                _defaultExtension = "usd";
-                break;
+        switch (_exportType) {
+        case ExportUSDZ:
+            _exportTypeStr = "Export Compressed USD (usdz)";
+            _defaultExtension = "usdz";
+            break;
+        case ExportArKit:
+            _exportTypeStr = "Export ArKit (usdz)";
+            _defaultExtension = "usdz";
+            break;
+        case ExportFlatten:
+            _exportTypeStr = "Export Flattened USD (usd)";
+            _defaultExtension = "usd";
+            break;
         }
     };
     ~ExportStageDialog() override {}
     void Draw() override {
         DrawFileBrowser(RemainingHeight(2));
         switch (_exportType) {
-            case ExportUSDZ: // falls through
-            case ExportArKit:
-                EnsureFileBrowserExtension(_defaultExtension);
-                break;
-            case ExportFlatten:
-                EnsureFileBrowserDefaultExtension(_defaultExtension);
-                break;
+        case ExportUSDZ: // falls through
+        case ExportArKit:
+            EnsureFileBrowserExtension(_defaultExtension);
+            break;
+        case ExportFlatten:
+            EnsureFileBrowserDefaultExtension(_defaultExtension);
+            break;
         }
         if (FilePathExists()) {
             ImGui::TextColored(ImVec4(1.0f, 0.1f, 0.1f, 1.0f), "Overwrite: ");
@@ -309,21 +455,21 @@ struct ExportStageDialog : public ModalDialog {
         ImGui::Text("%s", filePath.c_str());
         DrawModalButtonsOkCancel([&]() { // On Ok ->
             if (!filePath.empty()) {
-                switch (_exportType){
-                    case ExportUSDZ:
-                        ExecuteAfterDraw<EditorExportUsdz>(filePath, false);
-                        break;
-                    case ExportArKit:
-                        ExecuteAfterDraw<EditorExportUsdz>(filePath, true);
-                        break;
-                    case ExportFlatten:
-                        ExecuteAfterDraw<EditorExportFlattenedStage>(filePath);
-                        break;
+                switch (_exportType) {
+                case ExportUSDZ:
+                    ExecuteAfterDraw<EditorExportUsdz>(filePath, false);
+                    break;
+                case ExportArKit:
+                    ExecuteAfterDraw<EditorExportUsdz>(filePath, true);
+                    break;
+                case ExportFlatten:
+                    ExecuteAfterDraw<EditorExportFlattenedStage>(filePath);
+                    break;
                 }
             }
         });
     }
-    
+
     const char *DialogId() const override { return _exportTypeStr.c_str(); }
     Editor &editor;
     ExportType _exportType;
@@ -336,7 +482,8 @@ static void BeginBackgoundDock() {
     static bool alwaysOpened = true;
     static ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_None;
     static ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoDocking;
-    windowFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    windowFlags |=
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
     windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
     ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -352,10 +499,7 @@ static void BeginBackgoundDock() {
     ImGui::DockSpace(dockspaceid, ImVec2(0.0f, 0.0f), dockFlags);
 }
 
-static void EndBackgroundDock() {
-    ImGui::End();
-}
-
+static void EndBackgroundDock() { ImGui::End(); }
 
 /// Call back for dropping a file in the ui
 /// TODO Drop callback should popup a modal dialog with the different options available
@@ -395,18 +539,19 @@ void Editor::WindowSizeCallback(GLFWwindow *window, int width, int height) {
     }
 }
 
-Editor::Editor() : _viewport1(UsdStageRefPtr(), _selection),
-_viewport2(UsdStageRefPtr(), _selection),
-_viewport3(UsdStageRefPtr(), _selection),
-_viewport4(UsdStageRefPtr(), _selection),
-_layerHistoryPointer(0) {
+Editor::Editor()
+    : _viewport1(UsdStageRefPtr(), _selection), _viewport2(UsdStageRefPtr(), _selection),
+      _viewport3(UsdStageRefPtr(), _selection), _viewport4(UsdStageRefPtr(), _selection), _layerHistoryPointer(0) {
     ExecuteAfterDraw<EditorSetDataPointer>(this); // This is specialized to execute here, not after the draw
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
     Blueprints::GetInstance().SetBlueprintsLocations(_settings._blueprintLocations);
+    if (_settings._showSplashScreen) {
+        DrawModalDialog<SplashScreenModalDialog>();
+    }
 }
 
-Editor::~Editor(){
+Editor::~Editor() {
     _settings._lastFileBrowserDirectory = GetFileBrowserDirectory();
     SaveSettings();
 }
@@ -421,10 +566,7 @@ void Editor::InstallCallbacks(GLFWwindow *window) {
 
 void Editor::RemoveCallbacks(GLFWwindow *window) { glfwSetWindowUserPointer(window, nullptr); }
 
-
-void Editor::SetCurrentStage(UsdStageCache::Id current) {
-    SetCurrentStage(GetStageCache().Find(current));
-}
+void Editor::SetCurrentStage(UsdStageCache::Id current) { SetCurrentStage(GetStageCache().Find(current)); }
 
 void Editor::SetCurrentStage(UsdStageRefPtr stage) {
     if (_currentStage != stage) {
@@ -445,6 +587,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
 void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
     if (!layer)
         return;
+    StringSearchIndex::GetInstance().IndexLayer(layer);
     if (!_layerHistory.empty()) {
         if (GetCurrentLayer() != layer) {
             if (_layerHistoryPointer < _layerHistory.size() - 1) {
@@ -478,9 +621,8 @@ void Editor::SetPreviousLayer() {
     }
 }
 
-
 void Editor::SetNextLayer() {
-    if (_layerHistoryPointer < _layerHistory.size()-1) {
+    if (_layerHistoryPointer < _layerHistory.size() - 1) {
         _layerHistoryPointer++;
     }
 }
@@ -496,19 +638,22 @@ void Editor::FindOrOpenLayer(const std::string &path) {
 }
 
 //
-void Editor::OpenStage(const std::string &path, bool openLoaded) {
+void Editor::OpenStage(const std::string &path, bool openLoaded, bool enableHydra) {
     auto newStage = UsdStage::Open(path, openLoaded ? UsdStage::LoadAll : UsdStage::LoadNone); // TODO: as an option
     if (newStage) {
+        Viewport::SetStageHydraEnabled(newStage, enableHydra);
         GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
         _settings._showContentBrowser = true;
         _settings._showViewport1 = true;
         _settings.UpdateRecentFiles(path);
+        StringSearchIndex::GetInstance().IndexStage(newStage);
     }
 }
 
 void Editor::SaveLayerAs(SdfLayerRefPtr layer, const std::string &path) {
-    if (!layer) return;
+    if (!layer)
+        return;
     auto newLayer = SdfLayer::CreateNew(path);
     if (!newLayer) {
         newLayer = SdfLayer::FindOrOpen(path);
@@ -534,9 +679,7 @@ void Editor::CreateStage(const std::string &path) {
     }
 }
 
-Viewport & Editor::GetViewport() {
-    return _viewport1;
-}
+Viewport &Editor::GetViewport() { return _viewport1; }
 
 void Editor::SelectMouseHoverManipulator() {
     _viewport1.ChooseManipulator<MouseHoverManipulator>();
@@ -596,8 +739,8 @@ void Editor::HydraRender() {
         const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
         const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
         // We use viewport 1 as the reference
-        double newFrame =
-            _viewport1.GetCurrentTimeCode().GetValue() + timesCodePerSec * timeDifference.count(); // for now just increment the frame
+        double newFrame = _viewport1.GetCurrentTimeCode().GetValue() +
+                          timesCodePerSec * timeDifference.count(); // for now just increment the frame
         if (newFrame > GetCurrentStage()->GetEndTimeCode()) {
             newFrame = GetCurrentStage()->GetStartTimeCode();
         } else if (newFrame < GetCurrentStage()->GetStartTimeCode()) {
@@ -611,10 +754,8 @@ void Editor::HydraRender() {
 
         _lastFrameTime = current;
     }
-    
-    
-    
-#if !( __APPLE__ && PXR_VERSION < 2208)
+
+#if !(__APPLE__ && PXR_VERSION < 2208)
     if (_settings._showViewport1) {
         _viewport1.Update();
         _viewport1.Render();
@@ -632,11 +773,9 @@ void Editor::HydraRender() {
         _viewport4.Render();
     }
 #endif
-
 }
 
 void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDialog<SaveLayerAsDialog>(*this, layerToSaveAs); }
-
 
 void Editor::AddLayerPathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentLayer(), primPath);
@@ -653,9 +792,50 @@ void Editor::AddStagePathSelection(const SdfPath &primPath) {
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
 }
 
+void Editor::SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath) {
+    if (!stage || primPath.IsEmpty()) return;
+    UsdPrim newPrim = stage->GetPrimAtPath(primPath);
+    if (!newPrim) return;
+    const auto entry = std::make_pair(stage, primPath);
+    if (entry == _lastShownPrimEntry) return;
+    if (!_primHistory.empty()) {
+        if (_primHistory[_primHistoryPointer] != entry) {
+            if (_primHistoryPointer < _primHistory.size() - 1)
+                _primHistory.resize(_primHistoryPointer + 1);
+            _primHistory.push_back(entry);
+            _primHistoryPointer = _primHistory.size() - 1;
+        }
+    } else {
+        _primHistory.push_back(entry);
+        _primHistoryPointer = 0;
+    }
+    _lastShownPrimEntry = entry;
+}
+
 void Editor::SetStagePathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentStage(), primPath);
+    SetCurrentUsdPrim(GetCurrentStage(), primPath);
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
+}
+
+void Editor::SetPreviousPrim() {
+    if (_primHistoryPointer > 0) {
+        --_primHistoryPointer;
+        const auto &[stage, path] = _primHistory[_primHistoryPointer];
+        _lastShownPrimEntry = {stage, path};
+        SetCurrentStage(stage);
+        _selection.SetSelected(stage, path);
+    }
+}
+
+void Editor::SetNextPrim() {
+    if (_primHistoryPointer + 1 < _primHistory.size()) {
+        ++_primHistoryPointer;
+        const auto &[stage, path] = _primHistory[_primHistoryPointer];
+        _lastShownPrimEntry = {stage, path};
+        SetCurrentStage(stage);
+        _selection.SetSelected(stage, path);
+    }
 }
 
 // TODO : this is a duplicate, factorize the following function
@@ -684,14 +864,13 @@ static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &sele
     const std::string stageName = stage ? stage->GetRootLayer()->GetDisplayName() : "";
 
     ImGui::Text("%s", stageName.c_str());
-    
+
     // Edit target selector
     ImGui::SameLine();
     ImGui::SmallButton(ICON_FA_PEN);
     if (stage && ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        const UsdPrim &selected = selection.IsSelectionEmpty(stage)
-                                      ? stage->GetPseudoRoot()
-                                      : stage->GetPrimAtPath(selection.GetAnchorPrimPath(stage));
+        const UsdPrim &selected =
+            selection.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selection.GetAnchorPrimPath(stage));
         DrawUsdPrimEditTarget(selected);
         ImGui::EndPopup();
     }
@@ -702,7 +881,7 @@ static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &sele
 
 void Editor::DrawMainMenuBar() {
 
-    //ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 8));
+    // ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 8));
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem(ICON_FA_FILE " New")) {
@@ -712,12 +891,18 @@ void Editor::DrawMainMenuBar() {
                 DrawModalDialog<OpenUsdFileModalDialog>(*this);
             }
             if (ImGui::BeginMenu(ICON_FA_FOLDER_OPEN " Open Recent (as stage)")) {
-                for (const auto& recentFile : _settings.GetRecentFiles()) {
+                int recentId = 0;
+                for (const auto &recentFile : _settings.GetRecentFiles()) {
+                    ImGui::PushID(recentId++);
                     if (ImGui::MenuItem(recentFile.c_str())) {
                         ExecuteAfterDraw<EditorOpenStage>(recentFile);
                     }
+                    ImGui::PopID();
                 }
                 ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem(ICON_FA_FOLDER " Set Working Directory...")) {
+                DrawModalDialog<SetWorkingDirectoryDialog>(*this);
             }
             ImGui::Separator();
             const bool hasLayer = GetCurrentLayer() != SdfLayerRefPtr();
@@ -775,6 +960,8 @@ void Editor::DrawMainMenuBar() {
             if (ImGui::MenuItem("Paste", "CTRL+V", false, false)) {
             }
             ImGui::Separator();
+            ImGui::MenuItem(FindWindowTitle, nullptr, &_settings._showSearch);
+            ImGui::Separator();
             if (ImGui::MenuItem("Preferences")) {
                 DrawModalDialog<PreferencesModalDialog>(*this);
             }
@@ -794,19 +981,18 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
-#if ENABLE_CONNECTION_EDITOR
-            ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
-#endif
+            if (_enableConnectionEditor)
+                ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
-#if ENABLE_VALIDATION_WINDOW
+            ImGui::MenuItem(ShaderRegistryInspectorWindowTitle, nullptr, &_settings._showShaderInspector);
+            ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
-#endif
 #endif
             ImGui::MenuItem(TimelineWindowTitle, nullptr, &_settings._showTimeline);
             ImGui::MenuItem(Viewport1WindowTitle, nullptr, &_settings._showViewport1);
@@ -825,32 +1011,66 @@ void Editor::DrawMainMenuBar() {
         }
         // Stage and edit layer selector&
         DrawStageSelector(GetCurrentStage(), GetSelection());
-    
+
         ImGui::EndMainMenuBar();
     }
 }
 
-void Editor::ScaleUI(float scaleValue) {
-    _settings._uiScale = scaleValue;
+void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
+
+float Editor::GetUIScale() const { return _settings._uiScale; }
+
+bool Editor::_enableConnectionEditor = false;
+bool Editor::_enableMouseCapture = false;
+
+static bool gMouseCaptured = false;
+
+// workaround for GLFW bug that reports wrong mouse delta after mouse capture
+static int gSkipCapturedMouseDelta = 0;
+
+bool Editor::GetMouseCaptured() {
+    return gMouseCaptured;
 }
 
-float Editor::GetScaleUI() const {
-    return  _settings._uiScale;
+void Editor::SetMouseCaptured(bool captured) {
+    if (!_enableMouseCapture) return;
+    if (gMouseCaptured != captured) {
+        gMouseCaptured = captured;
+        if (auto window = glfwGetCurrentContext()) {
+            ImGuiIO &io = ImGui::GetIO();
+            if (captured) {
+                gSkipCapturedMouseDelta = 2;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+                io.MouseDelta = {0, 0};
+            } else {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+            }
+        }
+    }
 }
 
 void Editor::Draw() {
-
+    if (gSkipCapturedMouseDelta > 0) {
+        ImGuiIO &io = ImGui::GetIO();
+        gSkipCapturedMouseDelta--;
+        io.MouseDelta = {0, 0};
+    }
+    ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();
 
     // Dock
     BeginBackgoundDock();
     const auto &rootLayer = GetCurrentLayer();
-    const ImGuiWindowFlags layerWindowFlag = (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
+    const ImGuiWindowFlags layerWindowFlag =
+        (rootLayer && rootLayer->IsDirty()) ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None;
 
     if (_settings._showViewport1) {
         //
-        const ImGuiWindowFlags viewportFlags = GetViewport().HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
+        const ImGuiWindowFlags viewportFlags =
+            GetViewport().HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
         TRACE_SCOPE(Viewport1WindowTitle);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin(Viewport1WindowTitle, &_settings._showViewport1, viewportFlags);
@@ -860,7 +1080,8 @@ void Editor::Draw() {
     }
 
     if (_settings._showViewport2) {
-        const ImGuiWindowFlags viewportFlags = _viewport2.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
+        const ImGuiWindowFlags viewportFlags =
+            _viewport2.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
         TRACE_SCOPE(Viewport2WindowTitle);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin(Viewport2WindowTitle, &_settings._showViewport2, viewportFlags);
@@ -869,7 +1090,8 @@ void Editor::Draw() {
         ImGui::End();
     }
     if (_settings._showViewport3) {
-        const ImGuiWindowFlags viewportFlags = _viewport3.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
+        const ImGuiWindowFlags viewportFlags =
+            _viewport3.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
         TRACE_SCOPE(Viewport3WindowTitle);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin(Viewport3WindowTitle, &_settings._showViewport3, viewportFlags);
@@ -878,7 +1100,8 @@ void Editor::Draw() {
         ImGui::End();
     }
     if (_settings._showViewport4) {
-        const ImGuiWindowFlags viewportFlags = _viewport4.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
+        const ImGuiWindowFlags viewportFlags =
+            _viewport4.HasMenuBar() ? ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar : ImGuiWindowFlags_None;
         TRACE_SCOPE(Viewport4WindowTitle);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin(Viewport4WindowTitle, &_settings._showViewport4, viewportFlags);
@@ -887,11 +1110,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_settings._showViewport1
-        || _settings._showViewport2
-        || _settings._showViewport3
-        || _settings._showViewport4
-        ) {
+    if (_settings._showViewport1 || _settings._showViewport2 || _settings._showViewport3 || _settings._showViewport4) {
         DrawManipulatorToolbox(this);
     }
 
@@ -920,14 +1139,16 @@ void Editor::Draw() {
         DrawLauncherBar(this);
         ImGui::End();
     }
-    
+
     if (_settings._showPropertyEditor) {
         TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
         // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
+            const SdfPath anchorPath = _selection.GetAnchorPrimPath(GetCurrentStage());
+            SetCurrentUsdPrim(GetCurrentStage(), anchorPath);
+            auto prim = GetCurrentStage()->GetPrimAtPath(_lastShownPrimEntry.second);
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());
         }
         ImGui::End();
@@ -966,7 +1187,7 @@ void Editor::Draw() {
         TRACE_SCOPE(SdfLayerStackWindowTitle);
         const std::string title(SdfLayerStackWindowTitle "###Layer stack");
         ImGui::Begin(title.c_str(), &_settings._showLayerStackEditor);
-        //DrawLayerSublayerStack(rootLayer);
+        // DrawLayerSublayerStack(rootLayer);
         DrawStageLayerEditor(GetCurrentStage());
         ImGui::End();
     }
@@ -979,7 +1200,6 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    
     if (_settings._showPrimSpecEditor) {
         const ImGuiWindowFlags windowFlagsWithMenu = ImGuiWindowFlags_None | ImGuiWindowFlags_MenuBar;
         TRACE_SCOPE(SdfPrimPropertiesWindowTitle);
@@ -993,7 +1213,7 @@ void Editor::Draw() {
         } else {
             auto headerSize = ImGui::GetWindowSize();
             DrawSdfLayerEditorMenuBar(GetCurrentLayer()); // TODO: write a menu for layer
-            headerSize.y = ImGui::GetFrameHeight() * 3; // 3 fields in the header
+            headerSize.y = ImGui::GetFrameHeight() * 3;   // 3 fields in the header
             headerSize.x = -FLT_MIN;
             ImGui::BeginChild("##LayerHeader", headerSize);
             DrawSdfLayerIdentity(GetCurrentLayer(), SdfPath::AbsoluteRootPath());
@@ -1009,23 +1229,21 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-#if ENABLE_CONNECTION_EDITOR // experimental - connection editor is disabled
-    if (_settings._showUsdConnectionEditor) {
+    if (_enableConnectionEditor && _settings._showUsdConnectionEditor) {
         ImGui::Begin(UsdConnectionEditorWindowTitle, &_settings._showUsdConnectionEditor);
         TRACE_SCOPE(UsdConnectionEditorWindowTitle);
         if (GetCurrentStage()) {
             DrawConnectionEditor(GetCurrentStage());
-            //auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
-            //DrawConnectionEditor(prim);
+            // auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
+            // DrawConnectionEditor(prim);
         }
         ImGui::End();
     }
-#endif
 
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
         ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
-            DrawTextEditor(GetCurrentLayer());
+        DrawTextEditor(GetCurrentLayer());
         ImGui::End();
     }
 
@@ -1036,21 +1254,43 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+    if (_settings._showSearch) {
+        // Update the index only when the search window is visible ("pay for what you see").
+        StringSearchIndex::GetInstance().Update();
+        TRACE_SCOPE(FindWindowTitle);
+        ImGui::Begin(FindWindowTitle, &_settings._showSearch);
+        DrawSearchWidget();
+        ImGui::End();
+    }
+
     if (_settings._showHydraBrowser) {
         TRACE_SCOPE(HydraBrowserWindowTitle);
         ImGui::Begin(HydraBrowserWindowTitle, &_settings._showHydraBrowser);
         DrawHydraBrowser();
         ImGui::End();
     }
-#if ENABLE_VALIDATION_WINDOW
-#ifdef HAVE_USDVALIDATION 
+
+    if (_settings._showShaderInspector) {
+        TRACE_SCOPE(ShaderRegistryInspectorWindowTitle);
+        ImGui::Begin(ShaderRegistryInspectorWindowTitle, &_settings._showShaderInspector);
+        DrawShaderRegistryInspector();
+        ImGui::End();
+    }
+
+    if (_settings._showHydraNoticeLogger) {
+        TRACE_SCOPE(HydraNoticeLoggerWindowTitle);
+        ImGui::Begin(HydraNoticeLoggerWindowTitle, &_settings._showHydraNoticeLogger);
+        DrawHydraNoticeLogger();
+        ImGui::End();
+    }
+
+#ifdef HAVE_USDVALIDATION
     if (_settings._showValidator) {
         TRACE_SCOPE(ValidatorWindowTitle);
         ImGui::Begin(ValidatorWindowTitle, &_settings._showValidator);
         DrawValidationWindow(GetCurrentStage());
         ImGui::End();
     }
-#endif
 #endif
     DrawCurrentModal();
 
@@ -1059,9 +1299,8 @@ void Editor::Draw() {
     AddShortcut<UndoCommand, ImGuiKey_LeftCtrl, ImGuiKey_Z>();
     AddShortcut<RedoCommand, ImGuiKey_LeftCtrl, ImGuiKey_R>();
     EndBackgroundDock();
-
+    ResourcesLoader::PopFontRegular();
 }
-
 
 void Editor::RunLauncher(const std::string &launcherName) {
     std::string commandLine = _settings.GetLauncherCommandLine(launcherName);
@@ -1092,12 +1331,6 @@ void Editor::RunLauncher(const std::string &launcherName) {
     _launcherTasks.emplace_back(std::async(std::launch::async, command));
 }
 
+void Editor::LoadSettings() { _settings = ResourcesLoader::GetEditorSettings(); }
 
-
-void Editor::LoadSettings() {
-    _settings = ResourcesLoader::GetEditorSettings();
-}
-
-void Editor::SaveSettings() const {
-    ResourcesLoader::GetEditorSettings() = _settings;
-}
+void Editor::SaveSettings() const { ResourcesLoader::GetEditorSettings() = _settings; }

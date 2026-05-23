@@ -21,7 +21,9 @@ install(FILES ${USD_DLL} DESTINATION usdtweak.app/Contents/lib)
 
 # Copy the plugin folder, lib/python and lib/usd as they are necessary for usd to run properly
 install(DIRECTORY ${PXR_CMAKE_DIR}/plugin DESTINATION usdtweak.app/Contents PATTERN "*.pdb" EXCLUDE)
-install(DIRECTORY ${PXR_CMAKE_DIR}/lib/python DESTINATION usdtweak.app/Contents/lib PATTERN "*.pyc" EXCLUDE)
+if(EXISTS ${PXR_CMAKE_DIR}/lib/python)
+    install(DIRECTORY ${PXR_CMAKE_DIR}/lib/python DESTINATION usdtweak.app/Contents/lib PATTERN "*.pyc" EXCLUDE)
+endif()
 install(DIRECTORY ${PXR_CMAKE_DIR}/lib/usd DESTINATION usdtweak.app/Contents/lib)
 set(CPACK_GENERATOR DragNDrop)
 set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)

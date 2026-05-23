@@ -2,9 +2,14 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/reference.h>
+#include <pxr/usd/sdf/variantSpec.h>
+#ifdef ENABLE_VALIDATION_FIXERS
+#include <pxr/usdValidation/usdValidation/context.h>
+#include <pxr/usdValidation/usdValidation/registry.h>
+#include <pxr/usdValidation/usdValidation/validator.h>
+#endif
 #include "CommandsImpl.h"
 #include "SdfUndoRedoRecorder.h"
-#include <pxr/usd/sdf/variantSpec.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -217,3 +222,38 @@ struct LayerCreateOversFromPath : public SdfLayerCommand {
     std::string _path;
 };
 template void ExecuteAfterDraw<LayerCreateOversFromPath>(SdfLayerRefPtr layer, std::string path);
+
+#ifdef ENABLE_VALIDATION_FIXERS
+struct LayerFixErrors : public SdfLayerCommand {
+    LayerFixErrors(UsdEditTarget editTarget, std::vector<UsdValidationError> errors) : _editTarget(editTarget), _errors(errors) {}
+    ~LayerFixErrors() {}
+
+    bool DoIt() override {
+        if (!_editTarget.GetLayer())
+            return false;
+
+        SdfCommandGroupRecorder recorder(_undoCommands, _editTarget.GetLayer());
+
+        for (int i = 0; i < _errors.size(); ++i) {
+            const UsdValidationError &error = _errors[i];
+            const std::vector<const UsdValidationFixer *> fixers = error.GetFixers();
+            if (fixers.size()) {
+                // Do we need to apply all the fixer returned here or are they just fixing the same thing ??
+                // We might want to add a UI to let the user choose the fixes to apply
+                // For now let's use the first fixer
+                fixers[0]->ApplyFix(error, _editTarget);
+                // TODO: the fixers are saving the fixed layers which is not what we want.
+                // Is there a way to avoid this behaviour ?
+            }
+        }
+
+        return true;
+    }
+
+    UsdEditTarget _editTarget;
+    std::vector<UsdValidationError> _errors;
+
+};
+template void ExecuteAfterDraw<LayerFixErrors>(UsdEditTarget editTarget, std::vector<UsdValidationError> errors);
+
+#endif // ENABLE_VALIDATION_FIXERS

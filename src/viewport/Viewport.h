@@ -4,18 +4,20 @@
 /// This will eventually be split in 2 different files as the code
 /// has grown too much and doing too many thing
 ///
-#include <map>
-#include <chrono>
+#include "FlyCameraManipulator.h"
+#include "Grid.h"
+#include "SceneObjectDrawer.h"
 #include "Manipulator.h"
-#include "CameraManipulator.h"
-#include "PositionManipulator.h"
 #include "MouseHoverManipulator.h"
-#include "SelectionManipulator.h"
+#include "OrbitCameraManipulator.h"
+#include "PositionManipulator.h"
 #include "RotationManipulator.h"
 #include "ScaleManipulator.h"
 #include "Selection.h"
-#include "Grid.h"
+#include "SelectionManipulator.h"
 #include "ViewportCameras.h"
+#include <map>
+#include <set>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -52,7 +54,6 @@ class Viewport final {
     /// Viewport size
     GfVec2i GetViewportSize() const;
 
-
     /// Return the camera structure used to render the viewport which can be modified for reframing, movement, etc
     /// The modification is then applied to the actual camera data, prim or internal at the followin
     /// Update() call.
@@ -60,18 +61,18 @@ class Viewport final {
 
     /// Return the camera selected by the user.
     const GfCamera &GetCurrentCamera() const;
-    
+
     /// Return the camera used to render the viewport. TODO make it const &
     GfCamera GetViewportCamera() const;
-    
+
     /// Returns the path of the selected stage camera or SdfPath() if the camera is internal
-    inline const SdfPath &GetSelectedStageCameraPath () { return _cameras.GetStageCameraPath(); }
-    
+    inline const SdfPath &GetSelectedStageCameraPath() { return _cameras.GetStageCameraPath(); }
 
     inline bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
     inline bool IsEditingInternalOrthoCamera() const { return _cameras.IsUsingInternalOrthoCamera(); }
-    
-    inline CameraManipulator &GetCameraManipulator() { return _cameraManipulator; }
+
+    inline OrbitCameraManipulator &GetOrbitCameraManipulator() { return _orbitCameraManipulator; }
+    inline FlyCameraManipulator &GetFlyCameraManipulator() { return _flyCameraManipulator; }
 
     // Picking
     bool TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath, int &outHitInstanceIndex);
@@ -95,23 +96,34 @@ class Viewport final {
 
     /// Draw manipulator toolbox, to select translate, rotate, scale
     void DrawManipulatorToolbox(const ImVec2 widgetPosition);
-    
+
     /// Draw toolbar: camera selection, renderer options, viewport options ...
     void DrawToolBar(const ImVec2 widgetPosition);
 
+    /// Draw a button to enable/disable Hydra rendering
+    void DrawHydraEnableButton(bool enabled);
+
     /// Draw a menu bar on top of the viewport
     void DrawMenuBar();
-    bool HasMenuBar() const {return _imagingSettings.showViewportMenu;};
-    
+    bool HasMenuBar() const { return _imagingSettings.showViewportMenu; };
+
     // Position of the mouse in the viewport in normalized unit
     // This is computed in HandleEvents
 
     GfVec2d GetMousePosition() const { return _mousePosition; }
 
+    double GetCamFlySpeed() const { return _imagingSettings.camFlySpeed; };
+    void SetCamFlySpeed(double set) { _imagingSettings.camFlySpeed = set; };
+
     UsdStageRefPtr GetCurrentStage() { return _stage; }
-    const UsdStageRefPtr & GetCurrentStage() const { return _stage; };
+    const UsdStageRefPtr &GetCurrentStage() const { return _stage; };
+
+    const ImagingSettings &GetImagingSettings() const { return _imagingSettings; }
 
     void SetCurrentStage(UsdStageRefPtr stage) { _stage = stage; }
+
+    /// Enable or disable Hydra rendering for a given stage. Shared across all viewports.
+    static void SetStageHydraEnabled(UsdStageRefPtr stage, bool enabled);
 
     Selection &GetSelection() { return _selection; }
 
@@ -120,23 +132,25 @@ class Viewport final {
     void HandleManipulationEvents();
     void HandleKeyboardShortcut();
 
-
   private:
-    
+    void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
+
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
-    
+    bool _mouseCaptured = false;
     // Viewport ID
     std::string _viewportName;
-    
+
     // Cameras
     ViewportCameras _cameras;
 
     // Manipulators
-    //ManipulatorStateHandler _manipulators; // TODO one per stage or pass the stage
+    // ManipulatorStateHandler _manipulators; // TODO one per stage or pass the stage
     Manipulator *_currentEditingState; // Manipulator currently used by the FSM
     Manipulator *_activeManipulator;   // Manipulator chosen by the user
-    CameraManipulator _cameraManipulator;
+    OrbitCameraManipulator _orbitCameraManipulator;
+    FlyCameraManipulator _flyCameraManipulator;
+    CameraRig *_cameraManipulators[2] = {&_orbitCameraManipulator, &_flyCameraManipulator};
     PositionManipulator _positionManipulator;
     RotationManipulator _rotationManipulator;
     MouseHoverManipulator _mouseHover;
@@ -159,14 +173,18 @@ class Viewport final {
     GLuint _textureId = 0;
     std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
     UsdImagingGLEngine *_renderer = nullptr;
-    ImagingSettings _imagingSettings;
-    GlfDrawTargetRefPtr _drawTarget;
 
+    /// Stages for which Hydra rendering is disabled. Static: shared across all Viewport instances.
+    static std::set<UsdStageRefPtr> _hydraDisabledStages;
+    ImagingSettings _imagingSettings;
+    SceneObjectDrawer _sceneObjectDrawer;
+    GlfDrawTargetRefPtr _drawTarget;
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<RotationManipulator>() { return &_rotationManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<MouseHoverManipulator>() { return &_mouseHover; }
-template <> inline Manipulator *Viewport::GetManipulator<CameraManipulator>() { return &_cameraManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<OrbitCameraManipulator>() { return &_orbitCameraManipulator; }
+template <> inline Manipulator *Viewport::GetManipulator<FlyCameraManipulator>() { return &_flyCameraManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<SelectionManipulator>() { return &_selectionManipulator; }
 template <> inline Manipulator *Viewport::GetManipulator<ScaleManipulator>() { return &_scaleManipulator; }

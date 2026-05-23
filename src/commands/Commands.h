@@ -15,6 +15,7 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Declarations of Command classes only.
 /// The implementation should depend on the application
 ///
+/// Prim here actually means SdfPrim, we should rename the commands soon
 struct PrimNew;
 struct PrimRemove;
 struct PrimCreateCompositionArc; // TODO REMOVE
@@ -31,6 +32,8 @@ struct PrimAddBlueprint;
 struct PrimCopy;
 struct PrimPaste;
 struct PrimCreateAttributeConnection;
+struct VariantRename;
+struct VariantNew;
 
 struct PropertyCopy;
 struct PropertyPaste;
@@ -47,6 +50,8 @@ struct EditorSetCurrentStage;
 struct EditorSetEditTarget;
 struct EditorSetPreviousLayer;
 struct EditorSetNextLayer;
+struct EditorSetPreviousPrim;
+struct EditorSetNextPrim;
 struct EditorSetSelection;
 struct EditorSelectAttributePath;
 struct EditorShutdown;
@@ -57,6 +62,7 @@ struct EditorFindPrim;
 struct EditorExportUsdz;
 struct EditorExportFlattenedStage;
 struct EditorScaleUI;
+struct EditorReloadFonts;
 
 struct LayerRemoveSubLayer;
 struct LayerMoveSubLayer;
@@ -65,6 +71,7 @@ struct LayerMute;
 struct LayerUnmute;
 struct LayerTextEdit;
 struct LayerCreateOversFromPath;
+struct LayerFixErrors;
 
 struct ViewportsSelectMouseHoverManipulator;
 struct ViewportsSelectPositionManipulator;
@@ -78,6 +85,7 @@ struct ClearUndoRedoCommand;
 struct AttributeSet;
 struct AttributeCreateDefaultValue;
 struct AttributeConnect;
+struct AttributeDisconnectBatch;
 
 struct RelationshipReplace;
 
@@ -85,7 +93,7 @@ struct UsdFunctionCall; // This should be name a SdfLayerFunctionCall to be prec
 
 // Commands using the usd APIs
 struct UsdAPIMaterialBind;
-
+struct PrimApplySchemas; // UsdPrimApplySchemas
 
 
 /// Post a command to be executed after the editor frame is rendered.

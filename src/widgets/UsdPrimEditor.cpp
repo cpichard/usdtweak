@@ -7,6 +7,7 @@
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 #include <pxr/usd/pcp/node.h>
 #include <pxr/usd/pcp/layerStack.h>
+#include <pxr/usd/pcp/primIndex.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include "Gui.h"
 #include "UsdPrimEditor.h"
@@ -253,12 +254,15 @@ void DrawUsdRelationshipList(const UsdRelationship &relationship) {
 
 void DrawPropertyStack(const UsdProperty &property, UsdTimeCode currentTime) {
     SdfPropertySpecHandleVector properties = property.GetPropertyStack(currentTime);
+    int itemId = 0;
     for (const auto &prop : properties) {
         const SdfPath& propPath = prop.GetSpec().GetPath();
         std::string site = prop.GetSpec().GetLayer()->GetDisplayName() + " " + propPath.GetString();
+        ImGui::PushID(itemId++);
         if (ImGui::MenuItem(site.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(prop.GetSpec().GetLayer(), propPath);
         }
+        ImGui::PopID();
     }
 }
 
@@ -275,6 +279,21 @@ void SetEditTargetOnPropertyStrongestOpinion(const UsdProperty& property, UsdTim
                     UsdEditTarget editTarget(prop->GetLayer(), node);
                     ExecuteAfterDraw<EditorSetEditTarget>(property.GetStage(), editTarget);
                 }
+            }
+        }
+    }
+}
+
+inline void SetEditTargetOnVariantSetStrongestOpinion(const UsdPrim& prim, const std::string& variantSetName) {
+    auto pcpIndex = prim.GetPrimIndex();
+    if (!pcpIndex.IsValid()) return;
+    for (const auto& spec : prim.GetPrimStack()) {
+        if (!spec) continue;
+        if (spec->GetVariantSelections().count(variantSetName)) {
+            PcpNodeRef node = pcpIndex.GetNodeProvidingSpec(spec->GetLayer(), spec->GetPath().GetPrimPath());
+            if (node) {
+                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(spec->GetLayer(), node));
+                return;
             }
         }
     }
@@ -326,9 +345,9 @@ template <> void DrawMenuSetKey(UsdAttribute &attribute, UsdTimeCode currentTime
 }
 
 // TODO Share the code,
-static void DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(ColorMiniButtonUnauthored)) {
+static bool DrawPropertyMiniButton(const char *btnStr, const ImVec4 &btnColor = ImVec4(ColorMiniButtonUnauthored)) {
     ScopedStyleColor miniButtonStyle(ImGuiCol_Text, btnColor, ImGuiCol_Button, ImVec4(ColorTransparent) );
-    ImGui::SmallButton(btnStr);
+    return ImGui::SmallButton(btnStr);
 }
 
 template <typename UsdPropertyT> void DrawMenuEditConnection(UsdPropertyT &property) {}
@@ -375,7 +394,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
             DrawPropertyStack(property, currentTime);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Set edit target")) {
+        if (ImGui::MenuItem("Edit strongest opinion")) {
             SetEditTargetOnPropertyStrongestOpinion(property, currentTime);
         }
         ImGui::EndPopup();
@@ -388,13 +407,23 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
         return false;
     auto variantSets = prim.GetVariantSets();
 
+    const auto &editTarget = prim.GetStage()->GetEditTarget();
+    const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
+    const bool editingInVariant = targetPath.ContainsPrimVariantSelection();
+
+    if (editingInVariant) {
+        ImGui::BeginDisabled(true);
+    }
+
     if (ImGui::BeginTable("##DrawVariantSetsCombos", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         // make it relative to font size
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("VariantSet");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
+
+        auto editTargetPrimSpec = editTarget.GetLayer()->GetPrimAtPath(targetPath);
 
         for (auto variantSetName : variantSets.GetNames()) {
             ImGui::TableNextRow();
@@ -402,14 +431,17 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
 
             // Variant set mini button --- TODO move code from this function
             auto variantSet = variantSets.GetVariantSet(variantSetName);
-            // TODO: how do we figure out if the variant set has been edited in this edit target ?
-            // Otherwise after a "Clear variant selection" the button remains green and it visually looks like it did nothing
+            bool isAuthoredAtEditTarget = editTargetPrimSpec &&
+                editTargetPrimSpec->GetVariantSelections().count(variantSetName) > 0;
             ImVec4 variantColor =
-                variantSet.HasAuthoredVariantSelection() ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
+                isAuthoredAtEditTarget ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
             ImGui::PushID(buttonID++);
             DrawPropertyMiniButton("(v)", variantColor);
             ImGui::PopID();
             if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+                if (ImGui::MenuItem("Edit strongest opinion")) {
+                    SetEditTargetOnVariantSetStrongestOpinion(prim, variantSetName);
+                }
                 if (ImGui::MenuItem("Clear variant selection")) {
                     ExecuteAfterDraw(&UsdVariantSet::ClearVariantSelection, variantSet);
                 }
@@ -433,6 +465,11 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
         }
         ImGui::EndTable();
     }
+    if (editingInVariant) {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Variant selection is fixed by the current edit target");
+    }
     return true;
 }
 
@@ -445,12 +482,13 @@ bool DrawAssetInfo(UsdPrim &prim) {
         //TODO  make it relative
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Asset info");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
 
         ImGui::TableHeadersRow();
-
+        int rowId = 0;
         TF_FOR_ALL(keyValue, assetInfo) {
             ImGui::TableNextRow();
+            ImGui::PushID(rowId++);
             ImGui::TableSetColumnIndex(0);
             DrawPropertyMiniButton("(x)");
             ImGui::TableSetColumnIndex(1);
@@ -462,6 +500,7 @@ bool DrawAssetInfo(UsdPrim &prim) {
                 ExecuteAfterDraw(&UsdPrim::SetAssetInfoByKey, prim, TfToken(keyValue->first), modified);
             }
             ImGui::PopItemWidth();
+            ImGui::PopID();
         }
         ImGui::EndTable();
     }
@@ -475,6 +514,14 @@ bool IsTransformShown(int options) { return false; }
 void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
 
     if (ImGui::BeginMenuBar()) {
+        if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+            ExecuteAfterDraw<EditorSetPreviousPrim>();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+            ExecuteAfterDraw<EditorSetNextPrim>();
+        }
+        ImGui::SameLine();
         if (prim && ImGui::BeginMenu("Create")) {
             // TODO: list all the attribute missing or incomplete
             if (ImGui::MenuItem("Attribute", nullptr)) {
@@ -502,6 +549,26 @@ void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
     }
 }
 
+static bool DrawPrimSchemas(UsdPrim &prim, bool &edit) {
+    // Create the text from the schemas
+    static std::string schemaString; // static to avoid reallocating
+    schemaString.clear();
+    for (const auto &schema:prim.GetAppliedSchemas()) {
+        schemaString += schema.GetString() + " ";
+    }
+    if (edit) {
+        ImGui::InputText("##AppliedSchemas", &schemaString);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            std::vector<std::string> editedSchemas = TfStringTokenize(schemaString);
+            ExecuteAfterDraw<PrimApplySchemas>(prim, editedSchemas);
+            edit = false;
+        }
+    } else {
+        ImGui::Text("%s", schemaString.c_str());
+    }
+    return true;
+}
+
 /// Draws a menu list of all the sublayers, indented to reveal the parenting
 static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHandle layer, int indent = 0) {
     if (layer) {
@@ -513,6 +580,7 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
                 subLayer = SdfLayer::FindOrOpen(subLayerPath);
             }
             const std::string layerName = std::string(indent, ' ') + (subLayer ? subLayer->GetDisplayName() : subLayerPath);
+            ImGui::PushID(layerId);
             if (subLayer) {
                 if (ImGui::MenuItem(layerName.c_str())) {
                     ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(subLayer));
@@ -520,8 +588,6 @@ static void DrawEditTargetSubLayersMenuItems(UsdStageWeakPtr stage, SdfLayerHand
             } else {
                 ImGui::TextColored(ImVec4(1.0, 0.0, 0.0, 1.0), "%s", layerName.c_str());
             }
-
-            ImGui::PushID(layerName.c_str());
             DrawEditTargetSubLayersMenuItems(stage, subLayer, indent + 4);
             ImGui::PopID();
         }
@@ -532,24 +598,33 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
 #if (PXR_VERSION < 2208)
     return false;
 #else
-    if (!prim)
+    if (!prim || prim.IsA<UsdShadeMaterial>() || prim.IsA<UsdShadeShader>())
         return false;
 
     UsdShadeMaterialBindingAPI materialBindingAPI(prim);
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
         ImGui::TableSetupColumn("Material Bindings");
-        ImGui::TableSetupColumn("");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         UsdShadeMaterial material;
         for (const auto &purpose : materialBindingAPI.GetMaterialPurposes()) {
             const std::string &purposeName = purpose.GetString();
             ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-           
+
+            UsdShadeMaterialBindingAPI::DirectBinding directBinding = materialBindingAPI.GetDirectBinding(purpose);
+            bool hasDirectBinding = directBinding.GetMaterial().GetPrim().IsValid();
+
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(purposeName.c_str());
-            if (ImGui::Button(ICON_FA_COG)) {
-                ImGui::OpenPopup("MaterialList");
+            {
+                UsdRelationship bindingRel = directBinding.GetBindingRel();
+                bool isAuthoredAtEditTarget = bindingRel && bindingRel.IsAuthoredAt(prim.GetStage()->GetEditTarget());
+                ImVec4 cogColor = isAuthoredAtEditTarget ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorAttributeAuthored);
+                ScopedStyleColor cogStyle(ImGuiCol_Text, cogColor, ImGuiCol_Button, ImVec4(ColorTransparent));
+                if (ImGui::Button(ICON_FA_COG)) {
+                    ImGui::OpenPopup("MaterialList");
+                }
             }
             // TODO: we would like to copy/paste material path
             static MaterialList materialList; // We expect only one thread running this code
@@ -563,15 +638,16 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
             } else {
                 materialList.ResetCache();
             }
-            
+
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%s", purposeName == "" ? "All purposes" : purposeName.c_str());
-            
+
             ImGui::TableSetColumnIndex(2);
             material = materialBindingAPI.ComputeBoundMaterial(purpose);
             if (material) {
                 // TODO: we would also like to copy/paste material path
-                ScopedStyleColor transparentStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+                ImVec4 textColor = hasDirectBinding ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored);
+                ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_Text, textColor);
                 if (ImGui::Button(material.GetPrim().GetPath().GetText())) {
                     ExecuteAfterDraw<EditorSetSelection>(material.GetPrim().GetStage(), material.GetPrim().GetPath());
                 };
@@ -595,11 +671,73 @@ void DrawUsdPrimEditTarget(const UsdPrim &prim) {
     if (!prim)
         return;
     ScopedStyleColor defaultStyle(DefaultColorStyle);
-    if (ImGui::MenuItem("Session layer")) {
-        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
-    }
-    if (ImGui::MenuItem("Root layer")) {
-        ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+
+    // Collect variant options by traversing the PCP node graph.
+    // For each node, map its path to the root namespace via GetMapToRoot().
+    // A path that ContainsPrimVariantSelection() means the node lives inside
+    // a variant context; we collect all variant-selecting prefixes of that path
+    // so nested variants (variants inside variants) are each offered as a
+    // separate menu entry with the full stacked variant spec path.
+    struct VariantOption {
+        SdfPath     varSpecPath; // e.g. /Root{lod=high} or /Root{lod=high}{mat=metal}
+        std::string label;
+    };
+    std::vector<VariantOption> variantOptions;
+
+    std::function<void(PcpNodeRef)> collectVariants = [&](PcpNodeRef node) {
+        const auto mapToRoot = node.GetMapToRoot();
+        const auto finc = mapToRoot.Evaluate();
+        const SdfPath rootPath = finc.MapSourceToTarget(node.GetPath());
+        if (rootPath.ContainsPrimVariantSelection()) {
+            for (const SdfPath &prefix : rootPath.GetPrefixes()) {
+                if (!prefix.IsPrimVariantSelectionPath())
+                    continue;
+                // deduplicate across nodes
+                bool seen = false;
+                for (const auto &opt : variantOptions)
+                    if (opt.varSpecPath == prefix) { seen = true; break; }
+                if (!seen)
+                    variantOptions.push_back({prefix, prefix.GetString()});
+            }
+        }
+        TF_FOR_ALL(childNode, node.GetChildrenRange()) { collectVariants(*childNode); }
+    };
+    collectVariants(prim.GetPrimIndex().GetRootNode());
+
+    // When variants are available, "Session layer" and "Root layer" become
+    // submenus with a direct entry plus one entry per variant context.
+    // When there are no variants they remain flat menu items.
+    auto drawLayerItems = [&](const SdfLayerHandle &layer) {
+        if (ImGui::MenuItem("No variant")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(layer));
+        }
+        int id = 0;
+        for (const auto &opt : variantOptions) {
+            ImGui::PushID(id++);
+            if (ImGui::MenuItem(opt.label.c_str())) {
+                ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(),
+                                                      UsdEditTarget::ForLocalDirectVariant(layer, opt.varSpecPath));
+            }
+            ImGui::PopID();
+        }
+    };
+
+    if (variantOptions.empty()) {
+        if (ImGui::MenuItem("Session layer")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetSessionLayer()));
+        }
+        if (ImGui::MenuItem("Root layer")) {
+            ExecuteAfterDraw<EditorSetEditTarget>(prim.GetStage(), UsdEditTarget(prim.GetStage()->GetRootLayer()));
+        }
+    } else {
+        if (ImGui::BeginMenu("Session layer")) {
+            drawLayerItems(prim.GetStage()->GetSessionLayer());
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Root layer")) {
+            drawLayerItems(prim.GetStage()->GetRootLayer());
+            ImGui::EndMenu();
+        }
     }
 
     if (ImGui::BeginMenu("Sublayers")) {
@@ -656,26 +794,32 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
 void DrawUsdPrimHeader(UsdPrim &prim) {
     auto editTarget = prim.GetStage()->GetEditTarget();
     const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
-
+    static bool editSchemas = false;
     if (ImGui::BeginTable("##DrawPropertyEditorHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
-        ImGui::TableSetupColumn("Identity");
-        ImGui::TableSetupColumn("Value");
-        ImGui::TableHeadersRow();
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-        ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Stage");
-        ImGui::TableSetColumnIndex(2);
-        ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+        ImGui::TableSetupColumn("button", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        
+        //ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        // ImGui::TableSetColumnIndex(0);
+        // if(DrawPropertyMiniButton(ICON_FA_COPY)) {
+        //     ImGui::SetClipboardText(prim.GetPrimPath().GetString().c_str());
+        // }
 
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
-        ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Path");
-        ImGui::TableSetColumnIndex(2);
-        {
-            ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
-            ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
-        }
+        // ImGui::TableSetColumnIndex(1);
+        // ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+        // ImGui::TableSetColumnIndex(2);
+        // {
+        //     ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+        //     ImGui::Text("%s", prim.GetPrimPath().GetString().c_str());
+        // }
+        
+        // ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        // ImGui::TableSetColumnIndex(1);
+        // ImGui::Text("Stage");
+        // ImGui::TableSetColumnIndex(2);
+        // ImGui::Text("%s", prim.GetStage()->GetRootLayer()->GetIdentifier().c_str());
+        
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::TableSetColumnIndex(0);
         DrawPropertyMiniButton(ICON_FA_PEN);
@@ -693,13 +837,63 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
                                    targetPath == SdfPath() ? ImVec4(1.0, 0.0, 0.0, 1.0) : ImVec4(1.0, 1.0, 1.0, 1.0));
             ImGui::Text("%s %s", editTarget.GetLayer()->GetDisplayName().c_str(), targetPath.GetString().c_str());
         }
-
+        
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::PushID("Schemas");
+        ImGui::TableSetColumnIndex(0);
+        if (DrawPropertyMiniButton(ICON_FA_PEN)) {
+            editSchemas = !editSchemas;
+        }
         ImGui::TableSetColumnIndex(1);
-        ImGui::Text("Type");
-        ImGui::TableSetColumnIndex(2);
+        //ImGui::Text("Schemas");
         ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+        ImGui::TableSetColumnIndex(2);
+        ImGui::PushItemWidth(-FLT_MIN);
+        DrawPrimSchemas(prim, editSchemas);
+        ImGui::PopID(); // "Schemas"
+        ImGui::EndTable();
+    }
+}
 
+void DrawNavigator(UsdPrim &prim) {
+    // Navigation
+    if (ImGui::BeginTable("##DrawNavigator", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::TableSetColumnIndex(0);
+        if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+            ExecuteAfterDraw<EditorSetPreviousPrim>();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
+            ExecuteAfterDraw<EditorSetNextPrim>();
+        }
+
+        if (prim) {
+            ImGui::TableSetColumnIndex(1);
+            const SdfPath primPath = prim.GetPrimPath();
+            const std::vector<SdfPath> prefixes = primPath.GetPrefixes();
+
+            ImGui::SameLine();
+            ScopedStyleColor buttonStyle(ImGuiCol_Button, ImVec4(ColorTransparent));
+            ScopedStyleColor pathColor(ImGuiCol_Text, GetPrimColor(prim));
+            ImGui::BeginChild("##Navigation", ImVec2(-FLT_MIN, ImGui::GetFrameHeight()));
+            ImGui::Text("/");
+            for (int i = 0; i < static_cast<int>(prefixes.size()); ++i) {
+                ImGui::SameLine(0, 0);
+                ImGui::PushID(i);
+                if (ImGui::SmallButton(prefixes[i].GetName().c_str())) {
+                    ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), prefixes[i]);
+                }
+                if (i < static_cast<int>(prefixes.size()) - 1) {
+                    ImGui::SameLine(0, 0);
+                    ImGui::Text("/");
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+        }
         ImGui::EndTable();
     }
 }
@@ -707,10 +901,10 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     DrawPropertyEditorMenuBar(prim, 0);
-
+    DrawNavigator(prim);
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = ImGui::GetFrameHeight()*5; // 5 rows (4 + header)
+        headerSize.y = ImGui::GetFrameHeight() * 2; // 2 rows (2 + no header)
         headerSize.x = -FLT_MIN; // expand as much as possible
         ImGui::BeginChild("##Header", headerSize);
         DrawUsdPrimHeader(prim);
@@ -720,7 +914,6 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
-        
         if (DrawMaterialBindings(prim)) {
             ImGui::Separator();
         }
@@ -738,7 +931,7 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
             ImGui::TableSetupColumn("Property name");
-            ImGui::TableSetupColumn("Value");
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
 
             int miniButtonId = 0;

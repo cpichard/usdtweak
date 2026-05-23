@@ -73,7 +73,7 @@ TextFilter::TextFilter(const char *default_filter) {
 bool TextFilter::Draw(const char *label, float width) {
     if (width != 0.0f)
         ImGui::SetNextItemWidth(width);
-    bool value_changed = ImGui::InputTextWithHint(label, "Search", InputBuf, IM_ARRAYSIZE(InputBuf));
+    bool value_changed = ImGui::InputTextWithHint(label, "Find", InputBuf, IM_ARRAYSIZE(InputBuf));
     ImGui::SameLine();
     if (ImGui::Checkbox("Use wildcard", &UseWildcards) || value_changed)
         Build();

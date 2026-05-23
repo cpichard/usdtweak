@@ -1,7 +1,9 @@
 
 target_sources(usdtweak PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/CameraManipulator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/CameraManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/FlyCameraManipulator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/FlyCameraManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/OrbitCameraManipulator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OrbitCameraManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CameraRig.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CameraRig.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Grid.cpp
@@ -24,6 +26,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ScaleManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SelectionManipulator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SelectionManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/SceneObjectDrawer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/SceneObjectDrawer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportSettings.cpp

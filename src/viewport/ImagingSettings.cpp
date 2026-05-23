@@ -1,10 +1,12 @@
-#include <iostream>
-#include <map>
 #include "ImagingSettings.h"
-#include "VtValueEditor.h"
+#include "Constants.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
-#include "Constants.h"
+#include "VtValueEditor.h"
+#include <iostream>
+#include <map>
+#include <pxr/imaging/hf/pluginDesc.h>
+#include <pxr/imaging/hd/rendererPluginRegistry.h>
 
 template <typename HasPositionT> inline void CopyCameraPosition(const GfCamera &camera, HasPositionT &object) {
     GfVec3d camPos = camera.GetFrustum().GetPosition();
@@ -39,6 +41,8 @@ ImagingSettings::ImagingSettings() {
     enableCameraLight = true;
 
     showGrid = true;
+    showCameras = false; // Still experimental and not optimized, do false by default
+    showLights = false; // Still experimental and not optimized, do false by default
     showGizmos = true;
     showUI = true;
     showViewportMenu = false;
@@ -68,7 +72,6 @@ const GlfSimpleLightVector &ImagingSettings::GetLights() {
     return _lights;
 }
 
-
 // We keep the currently selected AOV per engine here as there is it not really store in UsdImagingGLEngine.
 // When setting a color aov, the engine adds multiple other aov to render, in short there is no easy way to know
 // which aov is rendered.
@@ -87,9 +90,7 @@ static TfToken GetAovSelection(UsdImagingGLEngine &renderer) {
     }
 }
 
-void InitializeRendererAov(UsdImagingGLEngine &renderer) {
-    renderer.SetRendererAov(GetAovSelection(renderer));
-}
+void InitializeRendererAov(UsdImagingGLEngine &renderer) { renderer.SetRendererAov(GetAovSelection(renderer)); }
 
 void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
@@ -139,11 +140,16 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
     ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
+#if PXR_VERSION < 2505
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
+#endif
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
     ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
+    ImGui::Checkbox("Show cameras", &renderparams.showCameras);
+    ImGui::Checkbox("Show lights", &renderparams.showLights);
     ImGui::Checkbox("Show gizmos", &renderparams.showGizmos);
+    ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
 }
 
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
@@ -156,13 +162,48 @@ void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
     }
 }
 
+// Extracted from UsdImagingGLEngine::GetRendererDisplayName
+static std::string GetRendererDisplayName(TfToken const &id) {
+    HfPluginDesc pluginDescriptor;
+    bool foundPlugin = HdRendererPluginRegistry::GetInstance().GetPluginDesc(id, &pluginDescriptor);
+
+    if (!foundPlugin) {
+        return std::string();
+    }
+
+    // Storm's display name is GL, but that's just confusing since it
+    // also has Metal and Vulkan implementations. Change it here for now,
+    // eventually it will have to be properly renamed.
+    static const TfToken _stormRendererPluginName("HdStormRendererPlugin");
+    if (pluginDescriptor.id == _stormRendererPluginName) {
+        return "Storm";
+    }
+
+    return pluginDescriptor.displayName;
+}
+
+// Draw the list of available renderer, an save the selection as the default renderer
+void DrawRendererSelectionList() {
+    HfPluginDescVector pluginDescriptors;
+    HdRendererPluginRegistry::GetInstance().GetPluginDescs(&pluginDescriptors);
+    TfTokenVector plugins;
+    for (size_t i = 0; i < pluginDescriptors.size(); ++i) {
+        bool is_selected = (GetDefaultRendererId() == pluginDescriptors[i].id);
+        if (ImGui::Selectable(GetRendererDisplayName(pluginDescriptors[i].id).c_str(), is_selected)) {
+            SetDefaultRendererId(pluginDescriptors[i].id);
+        }
+        if (is_selected)
+            ImGui::SetItemDefaultFocus();
+    }
+}
+
 void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
     auto plugins = renderer.GetRendererPlugins();
     for (int n = 0; n < plugins.size(); n++) {
         bool is_selected = (currentPlugin == plugins[n]);
-        std::string pluginName = renderer.GetRendererDisplayName(plugins[n]);
+        std::string pluginName = GetRendererDisplayName(plugins[n]);
         if (ImGui::Selectable(pluginName.c_str(), is_selected)) {
             // TODO: changing the plugin while metal is still processing will error and crash the app.
             // We could create an ExecuteAferDraw command to defer the change of the plugin
@@ -171,12 +212,12 @@ void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
                 std::cerr << "unable to set default renderer plugin" << std::endl;
             } else {
                 renderer.SetRendererAov(GetAovSelection(renderer));
+                SetDefaultRendererId(plugins[n]);
             }
         }
         if (is_selected)
             ImGui::SetItemDefaultFocus();
     }
-
 }
 
 void DrawRendererControls(UsdImagingGLEngine &renderer) {
@@ -216,7 +257,6 @@ void DrawRendererCommands(UsdImagingGLEngine &renderer) {
         ImGui::EndMenu();
     }
 }
-
 
 void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
@@ -271,3 +311,25 @@ void DrawAovSettings(UsdImagingGLEngine &renderer) {
         SetAovSelection(renderer, newSelection);
     }
 }
+
+static TfToken preferredRendererId = TfToken("HdStormRendererPlugin");
+void SetDefaultRendererId(const TfToken &renderDelegateId) {
+    if (renderDelegateId != TfToken())
+        preferredRendererId = renderDelegateId;
+}
+
+const TfToken &GetDefaultRendererId() {
+    // First time look at all the plugins and pick the first one as the default.
+    // If no plugins are available, Storm stays the default.
+    // The defaut renderer token should never be the empty string
+    static std::once_flag called_once;
+    std::call_once(called_once, [&]() {
+        HfPluginDescVector pluginDescriptors;
+        HdRendererPluginRegistry::GetInstance().GetPluginDescs(&pluginDescriptors);
+        if (pluginDescriptors.size() > 0) {
+            preferredRendererId = pluginDescriptors[0].id;
+        }
+    });
+    return preferredRendererId;
+}
+const std::string GetDefaultRendererDisplayName() { return GetRendererDisplayName(GetDefaultRendererId()); }
