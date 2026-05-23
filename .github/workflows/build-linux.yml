@@ -40,9 +40,9 @@ jobs:
           GCC_VER=$(gcc -dumpversion)
           echo "value=usd-rocky9-${{ env.USD_VERSION }}-gcc${GCC_VER}-nopython" >> $GITHUB_OUTPUT
 
-      - name: Cache USD
+      - name: Restore USD cache
         id: cache-usd
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ steps.cache-key.outputs.value }}
@@ -84,6 +84,13 @@ jobs:
             find "$USD_DIR" -name 'pxrConfig.cmake' -print
             exit 1
           fi
+
+      - name: Save USD cache
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.USD_INSTALL_DIR }}
+          key: ${{ steps.cache-key.outputs.value }}
 
   build-usdtweak:
     runs-on: ubuntu-latest
