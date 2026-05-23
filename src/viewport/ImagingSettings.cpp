@@ -2,6 +2,8 @@
 #include "Constants.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
+#include "ResourcesLoader.h"
+#include "ViewportSettings.h"
 #include "VtValueEditor.h"
 #include <iostream>
 #include <map>
@@ -137,19 +139,40 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     ImGui::Checkbox("Highlight selection", &renderparams.highlight);
 
     ImGui::Separator();
-    ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);
-    ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
 #if PXR_VERSION < 2505
     ImGui::Checkbox("Enable ID render", &renderparams.enableIdRender);
 #endif
     ImGui::Checkbox("Enable USD draw modes", &renderparams.enableUsdDrawModes);
-    ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
     ImGui::Checkbox("Show grid", &renderparams.showGrid);
-    ImGui::Checkbox("Show cameras", &renderparams.showCameras);
-    ImGui::Checkbox("Show lights", &renderparams.showLights);
     ImGui::Checkbox("Show gizmos", &renderparams.showGizmos);
-    ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
+    ImGui::Checkbox("Show lights", &renderparams.showLights);
+    ImGui::Checkbox("Show cameras", &renderparams.showCameras);
+
+    ImGui::Separator();
+    if (ImGui::BeginMenu("Lighting")) {
+        ImGui::Checkbox("Enable lighting", &renderparams.enableLighting);
+        ImGui::Checkbox("Enable scene lights", &renderparams.enableSceneLights);
+        ImGui::Checkbox("Enable camera light", &renderparams.enableCameraLight);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Camera")) {
+        ImGui::InputDouble("Camera fly speed", &renderparams.camFlySpeed);
+
+        // Camera framing overlay. These settings are persisted in ViewportSettings and only have a
+        // visible effect when a USD stage camera is the active viewport camera.
+        ViewportSettings &viewportSettings = ResourcesLoader::GetViewportSettings();
+        ImGui::Checkbox("Show camera mask", &viewportSettings._showCameraMask);
+        ImGui::BeginDisabled(!viewportSettings._showCameraMask);
+        ImGui::ColorEdit4("Camera mask color", viewportSettings._cameraMaskColor);
+        ImGui::EndDisabled();
+        ImGui::Checkbox("Show camera frame outline", &viewportSettings._showCameraFrameOutline);
+        ImGui::BeginDisabled(!viewportSettings._showCameraFrameOutline);
+        ImGui::ColorEdit4("Camera frame color", viewportSettings._cameraOutlineColor);
+        ImGui::EndDisabled();
+        ImGui::EndMenu();
+    }
 }
 
 void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {

@@ -18,6 +18,7 @@
 #include "ViewportCameras.h"
 #include <map>
 #include <set>
+#include <pxr/base/gf/range2f.h>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
@@ -70,6 +71,10 @@ class Viewport final {
 
     inline bool IsEditingStageCamera() const { return _cameras.IsUsingStageCamera(); }
     inline bool IsEditingInternalOrthoCamera() const { return _cameras.IsUsingInternalOrthoCamera(); }
+
+    /// True when the camera framing overlay (mask/outline) should be drawn: a USD stage camera
+    /// is active and at least one of the overlay options is enabled in the viewport settings.
+    bool IsCameraFrameVisible() const;
 
     inline OrbitCameraManipulator &GetOrbitCameraManipulator() { return _orbitCameraManipulator; }
     inline FlyCameraManipulator &GetFlyCameraManipulator() { return _flyCameraManipulator; }
@@ -137,6 +142,11 @@ class Viewport final {
 
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
+
+    /// Camera framing overlay. ComputeCameraFrameRect returns, in viewport pixels, the centered
+    /// rectangle matching the stage camera's aperture aspect ratio (empty if not applicable).
+    GfRange2f ComputeCameraFrameRect(double width, double height) const;
+    void DrawCameraFrameOverlay();
     bool _mouseCaptured = false;
     // Viewport ID
     std::string _viewportName;
