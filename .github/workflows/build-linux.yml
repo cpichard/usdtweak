@@ -108,7 +108,8 @@ jobs:
             mesa-libGL-devel mesa-libGLU-devel \
             libX11-devel libXrandr-devel libXinerama-devel \
             libXcursor-devel libXi-devel libXfixes-devel \
-            libXt-devel
+            libXt-devel \
+            wayland-devel wayland-protocols-devel libxkbcommon-devel
 
       - name: Checkout
         uses: actions/checkout@v4
