@@ -68,15 +68,15 @@ jobs:
             --no-python --no-usdview \
             --no-examples --no-tutorials --no-docs \
             --build-variant release \
-            ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+            "$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
 
       - name: Remove USD build artifacts from install dir
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        run: rm -rf ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}/build
+        run: rm -rf "$GITHUB_WORKSPACE/$USD_INSTALL_DIR/build"
 
       - name: Verify USD install
         run: |
-          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
           echo "Listing $USD_DIR:"
           ls -la "$USD_DIR"
           if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
@@ -122,7 +122,7 @@ jobs:
 
       - name: Verify USD install
         run: |
-          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
           echo "Listing $USD_DIR:"
           ls -la "$USD_DIR"
           if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
@@ -133,7 +133,7 @@ jobs:
 
       - name: Configure
         run: |
-          USD_DIR="${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}"
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
           cmake -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_PREFIX_PATH=$USD_DIR \
