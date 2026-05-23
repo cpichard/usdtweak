@@ -93,7 +93,17 @@ void TestAnthropicRequest() {
     // Top-level fields.
     CHECK_EQ(JsGetString(req, "model"), std::string("claude-sonnet-4-6"));
     CHECK(JsGetInt(req, "max_tokens", 0) > 0);
-    CHECK_EQ(JsGetString(req, "system"), std::string("You are a USD assistant."));
+
+    // System is now an array of content blocks (to support cache_control).
+    JsArray sys = JsGetArray(req, "system");
+    CHECK_EQ(sys.size(), size_t(1));
+    {
+        const JsObject& block = sys[0].GetJsObject();
+        CHECK_EQ(JsGetString(block, "type"), std::string("text"));
+        CHECK_EQ(JsGetString(block, "text"), std::string("You are a USD assistant."));
+        JsObject cc = JsGetObject(block, "cache_control");
+        CHECK_EQ(JsGetString(cc, "type"), std::string("ephemeral"));
+    }
 
     // Messages array — system was extracted, so 4 entries.
     JsArray messages = JsGetArray(req, "messages");
@@ -147,7 +157,7 @@ void TestAnthropicRequest() {
                  std::string("And what's its visibility?"));
     }
 
-    // Tools — converted shape.
+    // Tools — converted shape. Last tool carries cache_control (prefix cache).
     JsArray reqTools = JsGetArray(req, "tools");
     CHECK_EQ(reqTools.size(), size_t(1));
     const JsObject& t = reqTools[0].GetJsObject();
@@ -156,6 +166,35 @@ void TestAnthropicRequest() {
     JsObject schema = JsGetObject(t, "input_schema");
     CHECK_EQ(JsGetString(schema, "type"), std::string("object"));
     CHECK(t.find("parameters") == t.end());
+    JsObject toolCc = JsGetObject(t, "cache_control");
+    CHECK_EQ(JsGetString(toolCc, "type"), std::string("ephemeral"));
+}
+
+// With multiple tools, only the LAST one should carry cache_control — that
+// single breakpoint covers the entire tools array.
+void TestAnthropicToolCacheBreakpointPlacement() {
+    Conversation conv;
+    conv.push_back(Message::User("hi"));
+
+    ToolDefs tools;
+    tools.push_back(JsValue(MakeToolDef()));
+    JsObject t2 = MakeToolDef();
+    t2["name"] = JsValue(std::string("get_attribute_value"));
+    tools.push_back(JsValue(t2));
+    JsObject t3 = MakeToolDef();
+    t3["name"] = JsValue(std::string("set_attribute"));
+    tools.push_back(JsValue(t3));
+
+    JsObject req = AnthropicBackend::BuildRequest(conv, tools, "claude-sonnet-4-6");
+    JsArray reqTools = JsGetArray(req, "tools");
+    CHECK_EQ(reqTools.size(), size_t(3));
+
+    // First two: no cache_control.
+    CHECK(reqTools[0].GetJsObject().find("cache_control") == reqTools[0].GetJsObject().end());
+    CHECK(reqTools[1].GetJsObject().find("cache_control") == reqTools[1].GetJsObject().end());
+    // Last: has cache_control of type ephemeral.
+    JsObject cc = JsGetObject(reqTools[2].GetJsObject(), "cache_control");
+    CHECK_EQ(JsGetString(cc, "type"), std::string("ephemeral"));
 }
 
 void TestAnthropicParseToolCall() {
@@ -327,6 +366,7 @@ void DumpRequests() {
 
 int main(int argc, char** argv) {
     TestAnthropicRequest();
+    TestAnthropicToolCacheBreakpointPlacement();
     TestAnthropicParseToolCall();
     TestAnthropicParseFinalAnswer();
     TestOpenAIRequest();

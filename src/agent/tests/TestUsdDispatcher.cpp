@@ -6,7 +6,9 @@
 #include "UsdToolDispatcher.h"
 
 #include <pxr/base/js/json.h>
+#include <pxr/base/tf/token.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/stage.h>
 
 #include <cstdio>
@@ -218,6 +220,48 @@ void TestFindPrims(UsdToolDispatcher& d) {
     CHECK_CONTAINS(out, "/World/Lights");
 }
 
+// Build a wide flat stage with long prim names so list_children pushes a
+// single result string well past the 8 KB cap. Returns the stage so the
+// caller can drive the dispatcher against it.
+UsdStageRefPtr BuildWideFixture() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("wide.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    // 200 children with 80-character names → ~30 KB unfiltered, well over
+    // the 8 KB dispatcher cap.
+    const std::string longName(80, 'X');
+    for (int i = 0; i < 200; ++i) {
+        std::string name = longName + std::to_string(i);
+        stage->DefinePrim(SdfPath("/World/" + name), TfToken("Xform"));
+    }
+    return stage;
+}
+
+void TestResultTruncation() {
+    Section("list_children on wide /World — should truncate");
+    UsdStageRefPtr stage = BuildWideFixture();
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    std::string out = d.Dispatch("list_children",
+        Args({{"path", JsValue(std::string("/World"))}}));
+
+    // Capped at kMaxResultBytes plus the marker line (which itself is
+    // bounded; a small overrun is fine).
+    const size_t cap = UsdToolDispatcher::kMaxResultBytes;
+    CHECK(out.size() >  cap);              // marker pushes a bit over
+    CHECK(out.size() <  cap + 512);        // but only a bit
+    CHECK_CONTAINS(out, "[... truncated");
+    CHECK_CONTAINS(out, "Refine your call");
+    std::fprintf(stdout, "truncated result is %zu bytes (cap %zu)\n",
+                 out.size(), cap);
+
+    Section("errors bypass the truncation cap");
+    // Errors are tiny but verify the marker isn't appended to them.
+    std::string err = d.Dispatch("totally_made_up", Args());
+    CHECK_CONTAINS(err, "[error]");
+    CHECK(err.find("[... truncated") == std::string::npos);
+}
+
 void TestErrorPaths(UsdToolDispatcher& d) {
     Section("unknown tool");
     std::string out = d.Dispatch("totally_made_up", Args());
@@ -254,6 +298,7 @@ int main() {
     TestListChildren      (dispatcher);
     TestFindPrims         (dispatcher);
     TestErrorPaths        (dispatcher);
+    TestResultTruncation  ();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "\ntest_usd_dispatcher: %d failure(s)\n", g_failures);

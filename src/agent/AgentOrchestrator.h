@@ -30,6 +30,14 @@ public:
     // and for the UI to show progress; pass an empty function to silence.
     using TraceFn = std::function<void(const std::string&)>;
 
+    // Result of one Run(): the assistant's final answer plus the LLMUsage
+    // aggregated across every backend Send in the turn (the ReAct loop fires
+    // 1–N Sends; this is the total spend for the turn).
+    struct RunResult {
+        std::string answer;
+        LLMUsage    usage;
+    };
+
     AgentOrchestrator(std::unique_ptr<LLMBackend> backend,
                       UsdToolDispatcher&          dispatcher,
                       ToolDefs                    tools);
@@ -37,12 +45,12 @@ public:
     // Run one user turn against the agent. systemPrompt is included as the
     // System message at the front of every send (rebuild it per-call so it
     // can carry live scene context). Returns the model's final text answer
-    // (or an [error]/[exhausted] string).
-    std::string Run(const std::string&  systemPrompt,
-                    const std::string&  userMessage,
-                    const Conversation& history     = {},
-                    TraceFn             trace       = {},
-                    int                 maxSteps    = kDefaultMaxToolSteps);
+    // (or an [error]/[exhausted] string) plus accumulated usage.
+    RunResult Run(const std::string&  systemPrompt,
+                  const std::string&  userMessage,
+                  const Conversation& history     = {},
+                  TraceFn             trace       = {},
+                  int                 maxSteps    = kDefaultMaxToolSteps);
 
 private:
     std::unique_ptr<LLMBackend> _backend;

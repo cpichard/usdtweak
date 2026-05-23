@@ -95,28 +95,56 @@ UsdToolDispatcher::UsdToolDispatcher(StageProvider     stageFn,
     , _editLayerFn(std::move(editLayerFn))
     , _selectionFn(std::move(selectionFn)) {}
 
+namespace {
+
+// Final backstop on tool result size. Per-tool caps (kFindPrimsLimit,
+// kListChildrenMaxDepth) already bound counts, but a wide stage with long
+// prim paths can still push a single result well past what's worth feeding
+// the LLM. Truncate at the byte cap and append a marker that tells the
+// model exactly what happened so it can refine its next call. Error
+// strings ("[error] ...") bypass the cap — they are tiny and would just
+// be made less useful by truncation.
+std::string _CapResult(std::string result) {
+    if (result.size() <= UsdToolDispatcher::kMaxResultBytes) return result;
+    if (result.compare(0, 7, "[error]") == 0) return result;
+
+    const size_t original = result.size();
+    result.resize(UsdToolDispatcher::kMaxResultBytes);
+    result += "\n[... truncated to "
+           +  std::to_string(UsdToolDispatcher::kMaxResultBytes)
+           +  " of " + std::to_string(original)
+           +  " bytes. Refine your call (narrower type/kind/purpose filter, "
+              "smaller recursive depth, or a more specific path) to get a "
+              "complete result.]";
+    return result;
+}
+
+} // namespace
+
 std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
                                         const JsObject&    args) {
+    std::string result;
     try {
-        if (toolName == "get_prim_info")        return GetPrimInfo(args);
-        if (toolName == "get_attribute_value")  return GetAttributeValue(args);
-        if (toolName == "get_value_resolution") return GetValueResolution(args);
-        if (toolName == "get_composition_arcs") return GetCompositionArcs(args);
-        if (toolName == "get_layer_stack")      return GetLayerStack(args);
-        if (toolName == "list_children")        return ListChildren(args);
-        if (toolName == "find_prims")           return FindPrims(args);
-        if (toolName == "set_attribute")        return SetAttribute(args);
-        if (toolName == "set_active")           return SetActive(args);
-        if (toolName == "set_variant")          return SetVariant(args);
-        if (toolName == "set_visibility")       return SetVisibility(args);
-        if (toolName == "get_selection")        return GetSelection(args);
-        if (toolName == "select_prims")         return SelectPrims(args);
-        return "[error] unknown tool: " + toolName;
+        if      (toolName == "get_prim_info")        result = GetPrimInfo(args);
+        else if (toolName == "get_attribute_value")  result = GetAttributeValue(args);
+        else if (toolName == "get_value_resolution") result = GetValueResolution(args);
+        else if (toolName == "get_composition_arcs") result = GetCompositionArcs(args);
+        else if (toolName == "get_layer_stack")      result = GetLayerStack(args);
+        else if (toolName == "list_children")        result = ListChildren(args);
+        else if (toolName == "find_prims")           result = FindPrims(args);
+        else if (toolName == "set_attribute")        result = SetAttribute(args);
+        else if (toolName == "set_active")           result = SetActive(args);
+        else if (toolName == "set_variant")          result = SetVariant(args);
+        else if (toolName == "set_visibility")       result = SetVisibility(args);
+        else if (toolName == "get_selection")        result = GetSelection(args);
+        else if (toolName == "select_prims")         result = SelectPrims(args);
+        else                                         result = "[error] unknown tool: " + toolName;
     } catch (const std::exception& e) {
-        return std::string("[error] ") + e.what();
+        result = std::string("[error] ") + e.what();
     } catch (...) {
-        return "[error] unknown exception in tool " + toolName;
+        result = "[error] unknown exception in tool " + toolName;
     }
+    return _CapResult(std::move(result));
 }
 
 // --------------------------------------------------------------------------

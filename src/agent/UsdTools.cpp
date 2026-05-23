@@ -135,9 +135,13 @@ ToolDefs BuildReadOnlyToolDefinitions() {
         tools.push_back(JsValue(_Tool(
             "list_children",
             "Lists the immediate children of a prim, or all descendants when "
-            "recursive=true (depth-capped to keep results bounded). Each entry "
-            "shows the prim path and its type. Use when the user asks what is "
-            "inside a prim or wants to enumerate the scene hierarchy.",
+            "recursive=true (depth-capped at 5 levels). Each entry shows the "
+            "prim path and its type. Use when the user asks what is inside a "
+            "prim or wants to enumerate the scene hierarchy. Prefer the "
+            "non-recursive form and drill down stepwise: recursive=true on a "
+            "wide stage frequently overflows the global 8 KB result cap and "
+            "the result will end with a '[... truncated]' marker. If you see "
+            "that marker, call find_prims or descend by path instead.",
             props, _Strings({"path"}))));
     }
 
@@ -176,8 +180,11 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "find_prims",
             "Searches the entire stage for prims matching the given filters "
             "(all filters optional, combined with AND). Result is capped at "
-            "50 prims; the count is reported. Use when the user asks for all "
-            "prims of a kind, all cameras, all render-purpose prims, etc.",
+            "50 prims; the count is reported. Long results are additionally "
+            "subject to the global 8 KB cap and may end with a "
+            "'[... truncated]' marker — narrow the filters if that appears. "
+            "Use when the user asks for all prims of a kind, all cameras, "
+            "all render-purpose prims, etc.",
             props, JsArray{})));
     }
 

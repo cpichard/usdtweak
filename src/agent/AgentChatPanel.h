@@ -51,13 +51,20 @@ private:
     std::string _input;
 
     // In-flight call. Valid() while a turn is being processed.
-    std::future<std::string> _pending;
+    std::future<AgentOrchestrator::RunResult> _pending;
 
     // Last error to display in the UI (network failure, missing API key, …).
     std::string _lastError;
 
     // Optional trace lines from the most recent run.
     std::vector<std::string> _trace;
+
+    // Token-usage display state. _lastUsage is the most recent turn's spend;
+    // _sessionUsage accumulates across all turns since the panel was opened
+    // (or Clear was pressed).
+    LLMUsage _lastUsage;
+    LLMUsage _sessionUsage;
+    bool     _hasLastUsage = false;
 
     UsdToolDispatcher                _dispatcher;
     std::unique_ptr<AgentOrchestrator> _orchestrator;  // lazy

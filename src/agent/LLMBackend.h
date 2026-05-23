@@ -66,6 +66,15 @@ using Conversation = std::vector<Message>;
 // Backends translate this neutral form to their wire format.
 using ToolDefs = JsArray;
 
+// Token-accounting from one backend response. All fields default to 0 when
+// the backend doesn't report them. cache_* are Anthropic-specific.
+struct LLMUsage {
+    int input_tokens                = 0;  // uncached input tokens billed at full rate
+    int output_tokens               = 0;
+    int cache_creation_input_tokens = 0;  // wrote into the prompt cache this turn
+    int cache_read_input_tokens     = 0;  // served from the prompt cache (~10× cheaper)
+};
+
 // Result of one round-trip with an LLM backend.
 struct LLMResponse {
     enum class Type { FinalAnswer, ToolCall };
@@ -76,6 +85,7 @@ struct LLMResponse {
     std::string toolName;       // ToolCall
     std::string toolCallId;     // ToolCall
     JsObject    toolArguments;  // ToolCall (already parsed)
+    LLMUsage    usage;
 };
 
 class LLMBackend {

@@ -34,12 +34,34 @@ struct TraceSink {
 const char* _RoleLabel(Message::Role r) {
     switch (r) {
         case Message::Role::User:               return "You";
-        case Message::Role::Assistant:          return "Agent";
-        case Message::Role::AssistantToolCall:  return "Agent → tool";
+        case Message::Role::Assistant:          return "Twiki";
+        case Message::Role::AssistantToolCall:  return "Twiki → tool";
         case Message::Role::ToolResult:         return "tool result";
         case Message::Role::System:             return "system";
     }
     return "?";
+}
+
+void _AccumulateUsage(LLMUsage& total, const LLMUsage& step) {
+    total.input_tokens                += step.input_tokens;
+    total.output_tokens               += step.output_tokens;
+    total.cache_creation_input_tokens += step.cache_creation_input_tokens;
+    total.cache_read_input_tokens     += step.cache_read_input_tokens;
+}
+
+// Total input tokens billed includes uncached input + cache writes + cache
+// reads. Cache reads are billed at ~10% of base rate; cache writes at 125%.
+// We surface the raw counts and a derived "cache hit %" (reads / total input).
+int _TotalInputTokens(const LLMUsage& u) {
+    return u.input_tokens
+         + u.cache_creation_input_tokens
+         + u.cache_read_input_tokens;
+}
+
+int _CacheHitPercent(const LLMUsage& u) {
+    const int total = _TotalInputTokens(u);
+    if (total <= 0) return 0;
+    return (u.cache_read_input_tokens * 100) / total;
 }
 
 } // namespace
@@ -84,9 +106,9 @@ std::string AgentChatPanel::_BuildSystemPrompt() const {
     // runs. The system prompt only carries instructions and meta — keeping
     // it static avoids races on Editor singleton state.
     return
-        "You are a USD scene assistant integrated into usdtweak, a USD "
-        "file editor. The user is USD-literate; use USD vocabulary freely "
-        "(prim, layer, variant, composition arc, LIVRPS, edit target).\n"
+        "You are Twiki, the USD scene assistant integrated into usdtweak, "
+        "a USD file editor. The user is USD-literate; use USD vocabulary "
+        "freely (prim, layer, variant, composition arc, LIVRPS, edit target).\n"
         "RULES:\n"
         "- Always call a tool to gather facts before answering factual "
         "questions about the scene. Do not guess or invent values.\n"
@@ -104,7 +126,7 @@ void AgentChatPanel::Draw(bool* isOpen) {
     if (!isOpen || !*isOpen) return;
 
     ImGui::SetNextWindowSize(ImVec2(560, 640), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Agent Chat", isOpen)) {
+    if (!ImGui::Begin("Twiki", isOpen)) {
         ImGui::End();
         return;
     }
@@ -112,8 +134,11 @@ void AgentChatPanel::Draw(bool* isOpen) {
     // ----- poll background turn ------------------------------------------
     if (_pending.valid() &&
         _pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        std::string answer = _pending.get();
-        _history.push_back(Message::Assistant(std::move(answer)));
+        AgentOrchestrator::RunResult result = _pending.get();
+        _history.push_back(Message::Assistant(std::move(result.answer)));
+        _lastUsage = result.usage;
+        _hasLastUsage = true;
+        _AccumulateUsage(_sessionUsage, result.usage);
         _scrollToBottom = true;
     }
 
@@ -159,6 +184,34 @@ void AgentChatPanel::Draw(bool* isOpen) {
         }
     }
 
+    // ----- token-usage status line ---------------------------------------
+    if (_hasLastUsage) {
+        const int  total = _TotalInputTokens(_lastUsage);
+        const int  hit   = _CacheHitPercent(_lastUsage);
+        const int  sess  = _TotalInputTokens(_sessionUsage)
+                         + _sessionUsage.output_tokens;
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.55f, 1.0f));
+        ImGui::Text("last turn: in=%d (cache hit %d%%) out=%d  ·  session: %d tok",
+                    total, hit, _lastUsage.output_tokens, sess);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("Last turn (sum of every LLM call this turn):");
+            ImGui::Text("  uncached input:   %d", _lastUsage.input_tokens);
+            ImGui::Text("  cache writes:     %d", _lastUsage.cache_creation_input_tokens);
+            ImGui::Text("  cache reads:      %d  (billed ~10x cheaper)",
+                        _lastUsage.cache_read_input_tokens);
+            ImGui::Text("  output:           %d", _lastUsage.output_tokens);
+            ImGui::Separator();
+            ImGui::Text("Session totals (since panel opened / Clear pressed):");
+            ImGui::Text("  uncached input:   %d", _sessionUsage.input_tokens);
+            ImGui::Text("  cache writes:     %d", _sessionUsage.cache_creation_input_tokens);
+            ImGui::Text("  cache reads:      %d", _sessionUsage.cache_read_input_tokens);
+            ImGui::Text("  output:           %d", _sessionUsage.output_tokens);
+            ImGui::EndTooltip();
+        }
+        ImGui::PopStyleColor();
+    }
+
     // ----- input + send --------------------------------------------------
     ImGui::Separator();
     if (busy) {
@@ -180,6 +233,9 @@ void AgentChatPanel::Draw(bool* isOpen) {
         _history.clear();
         _trace.clear();
         _lastError.clear();
+        _lastUsage = LLMUsage{};
+        _sessionUsage = LLMUsage{};
+        _hasLastUsage = false;
     }
     ImGui::EndDisabled();
 

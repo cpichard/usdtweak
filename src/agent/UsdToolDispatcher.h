@@ -47,6 +47,15 @@ public:
     static constexpr size_t kFindPrimsLimit       = 50;
     static constexpr int    kListChildrenMaxDepth = 5;
 
+    // Global byte cap applied to every tool result string before it is
+    // handed back to the LLM. Per-tool caps already keep counts bounded,
+    // but a single huge prim path or expensive value resolution can still
+    // produce multi-KB strings; this is the final backstop. Error strings
+    // (those starting with "[error]") bypass the cap — they are tiny and
+    // pre-truncation would only confuse the model. 8 KB ~= 2k tokens with
+    // English-y text, generous headroom for any single tool result.
+    static constexpr size_t kMaxResultBytes       = 8 * 1024;
+
 private:
     StageProvider     _stageFn;
     EditLayerProvider _editLayerFn;

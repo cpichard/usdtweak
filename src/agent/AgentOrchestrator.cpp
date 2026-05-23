@@ -21,12 +21,28 @@ AgentOrchestrator::AgentOrchestrator(std::unique_ptr<LLMBackend> backend,
     , _dispatcher(dispatcher)
     , _tools(std::move(tools)) {}
 
-std::string AgentOrchestrator::Run(const std::string&  systemPrompt,
-                                   const std::string&  userMessage,
-                                   const Conversation& history,
-                                   TraceFn             trace,
-                                   int                 maxSteps) {
-    if (!_backend) return "[error] no LLM backend configured";
+namespace {
+
+void _AccumulateUsage(LLMUsage& total, const LLMUsage& step) {
+    total.input_tokens                += step.input_tokens;
+    total.output_tokens               += step.output_tokens;
+    total.cache_creation_input_tokens += step.cache_creation_input_tokens;
+    total.cache_read_input_tokens     += step.cache_read_input_tokens;
+}
+
+} // namespace
+
+AgentOrchestrator::RunResult
+AgentOrchestrator::Run(const std::string&  systemPrompt,
+                       const std::string&  userMessage,
+                       const Conversation& history,
+                       TraceFn             trace,
+                       int                 maxSteps) {
+    RunResult result;
+    if (!_backend) {
+        result.answer = "[error] no LLM backend configured";
+        return result;
+    }
 
     Conversation conv;
     if (!systemPrompt.empty()) {
@@ -38,10 +54,12 @@ std::string AgentOrchestrator::Run(const std::string&  systemPrompt,
     for (int step = 1; step <= maxSteps; ++step) {
         _Trace(trace, "[send step " + std::to_string(step) + "]");
         LLMResponse r = _backend->Send(conv, _tools);
+        _AccumulateUsage(result.usage, r.usage);
 
         if (r.type == LLMResponse::Type::FinalAnswer) {
             _Trace(trace, "[final answer]");
-            return r.content;
+            result.answer = r.content;
+            return result;
         }
 
         // Tool call.
@@ -51,11 +69,11 @@ std::string AgentOrchestrator::Run(const std::string&  systemPrompt,
         conv.push_back(Message::AssistantToolCall(
             r.toolCallId, r.toolName, r.toolArguments, r.content));
 
-        std::string result = _dispatcher.Dispatch(r.toolName, r.toolArguments);
-        _Trace(trace, "[tool_result " + std::to_string(result.size())
+        std::string toolResult = _dispatcher.Dispatch(r.toolName, r.toolArguments);
+        _Trace(trace, "[tool_result " + std::to_string(toolResult.size())
                       + " bytes]");
 
-        conv.push_back(Message::ToolResult(r.toolCallId, r.toolName, result));
+        conv.push_back(Message::ToolResult(r.toolCallId, r.toolName, toolResult));
     }
 
     // Cap reached. Ask for a wrap-up using whatever the model has gathered.
@@ -65,11 +83,14 @@ std::string AgentOrchestrator::Run(const std::string&  systemPrompt,
         "Summarize what you have found so far without making any more tool "
         "calls."));
     LLMResponse r = _backend->Send(conv, _tools);
+    _AccumulateUsage(result.usage, r.usage);
     if (r.type == LLMResponse::Type::FinalAnswer) {
-        return r.content;
+        result.answer = r.content;
+    } else {
+        result.answer = "[exhausted] reached " + std::to_string(maxSteps)
+                      + " tool steps without a final answer";
     }
-    return "[exhausted] reached " + std::to_string(maxSteps)
-         + " tool steps without a final answer";
+    return result;
 }
 
 } // namespace UsdAgent

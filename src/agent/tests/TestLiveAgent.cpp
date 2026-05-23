@@ -107,10 +107,15 @@ void RunQuery(AgentOrchestrator& agent,
         std::fprintf(stdout, "  %s\n", line.c_str());
     };
 
-    std::string answer = agent.Run(SystemPrompt(), question, /*history*/{}, trace);
+    auto result = agent.Run(SystemPrompt(), question, /*history*/{}, trace);
 
     std::fprintf(stdout, "----------------------------------------\nA: %s\n",
-                 answer.c_str());
+                 result.answer.c_str());
+    std::fprintf(stdout,
+        "  usage: input=%d output=%d cache_create=%d cache_read=%d\n",
+        result.usage.input_tokens, result.usage.output_tokens,
+        result.usage.cache_creation_input_tokens,
+        result.usage.cache_read_input_tokens);
 }
 
 } // namespace

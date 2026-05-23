@@ -1002,7 +1002,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(Viewport4WindowTitle, nullptr, &_settings._showViewport4);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
             ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
-            ImGui::MenuItem("Agent Chat", nullptr, &_settings._showAgentChat);
+            ImGui::MenuItem("Twiki", nullptr, &_settings._showAgentChat);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Help")) {
@@ -1273,7 +1273,7 @@ void Editor::Draw() {
     }
 
     if (_settings._showAgentChat) {
-        TRACE_SCOPE("Agent Chat");
+        TRACE_SCOPE("Twiki");
         if (!_agentChatPanel) {
             _agentChatPanel = std::make_unique<UsdAgent::AgentChatPanel>(
                 /*stageFn*/    [this]() { return GetCurrentStage(); },

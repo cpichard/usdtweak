@@ -21,6 +21,17 @@ JsObject _ToAnthropicTool(const JsObject& neutral) {
     return t;
 }
 
+// Anthropic prompt caching: attaching cache_control to a block marks the end
+// of a cacheable prefix. We attach it to the last tool def (so the entire
+// tools array is cached) and to the last system block (so tools + system are
+// cached together). The tools array and the system prompt are static across
+// every turn of a chat session, so cache hits read at ~10× cheaper.
+JsObject _EphemeralCacheControl() {
+    JsObject c;
+    c["type"] = JsValue(std::string("ephemeral"));
+    return c;
+}
+
 JsValue _TextBlock(const std::string& text) {
     JsObject b;
     b["type"] = JsValue(std::string("text"));
@@ -102,9 +113,19 @@ JsObject AnthropicBackend::BuildRequest(const Conversation& conv,
     req["max_tokens"] = JsValue(int64_t(maxTokens));
 
     // 1. Pull the system message out (top-level field; only the first wins).
+    //    Emit it as a one-element content-block array so we can attach
+    //    cache_control. Anthropic accepts both a plain string and an array
+    //    of {type:"text", text:...} blocks; only the array form supports
+    //    cache_control.
     for (const Message& m : conv) {
         if (m.role == Message::Role::System) {
-            req["system"] = JsValue(m.content);
+            JsObject block;
+            block["type"]          = JsValue(std::string("text"));
+            block["text"]          = JsValue(m.content);
+            block["cache_control"] = JsValue(_EphemeralCacheControl());
+            JsArray sys;
+            sys.push_back(JsValue(block));
+            req["system"] = JsValue(sys);
             break;
         }
     }
@@ -167,13 +188,21 @@ JsObject AnthropicBackend::BuildRequest(const Conversation& conv,
 
     req["messages"] = JsValue(messages);
 
-    // 3. Tool definitions.
+    // 3. Tool definitions. Tag the LAST converted tool with cache_control so
+    //    the entire tools array becomes a cacheable prefix. This is the
+    //    single highest-ROI cost reduction: tool defs are static, ~13 entries,
+    //    and were re-sent in full on every turn.
     if (!tools.empty()) {
         JsArray converted;
         converted.reserve(tools.size());
         for (const JsValue& t : tools) {
             if (!t.IsObject()) continue;
             converted.push_back(JsValue(_ToAnthropicTool(t.GetJsObject())));
+        }
+        if (!converted.empty()) {
+            JsObject last = converted.back().GetJsObject();
+            last["cache_control"] = JsValue(_EphemeralCacheControl());
+            converted.back() = JsValue(last);
         }
         req["tools"] = JsValue(converted);
     }
@@ -193,6 +222,13 @@ LLMResponse AnthropicBackend::ParseResponse(const JsValue& response) {
     const JsObject& obj   = response.GetJsObject();
     const std::string stop = JsGetString(obj, "stop_reason");
     const JsArray content  = JsGetArray(obj, "content");
+
+    // Token usage (best-effort; missing fields default to 0).
+    JsObject usage = JsGetObject(obj, "usage");
+    out.usage.input_tokens                = JsGetInt(usage, "input_tokens",                0);
+    out.usage.output_tokens               = JsGetInt(usage, "output_tokens",               0);
+    out.usage.cache_creation_input_tokens = JsGetInt(usage, "cache_creation_input_tokens", 0);
+    out.usage.cache_read_input_tokens     = JsGetInt(usage, "cache_read_input_tokens",     0);
 
     if (stop == "tool_use") {
         out.type = LLMResponse::Type::ToolCall;
