@@ -44,7 +44,7 @@ jobs:
         id: cache-usd
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.USD_INSTALL_DIR }}
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
           key: ${{ steps.cache-key.outputs.value }}
 
       - name: Install Python Jinja2
@@ -89,7 +89,7 @@ jobs:
         if: steps.cache-usd.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.USD_INSTALL_DIR }}
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
           key: ${{ steps.cache-key.outputs.value }}
 
   build-usdtweak:
@@ -116,7 +116,7 @@ jobs:
       - name: Restore USD cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.USD_INSTALL_DIR }}
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
           key: ${{ needs.build-usd.outputs.cache-key }}
           fail-on-cache-miss: true
 
