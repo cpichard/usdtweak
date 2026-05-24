@@ -12,8 +12,6 @@
 
 struct GLFWwindow;
 
-namespace UsdAgent { class AgentChatPanel; }
-
 PXR_NAMESPACE_USING_DIRECTIVE
 
 /// Editor contains the data shared between widgets, like selections, stages, etc etc
@@ -179,9 +177,6 @@ class Editor {
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
-
-    /// Lazily-created agent chat panel (LLM-driven scene assistant).
-    std::unique_ptr<UsdAgent::AgentChatPanel> _agentChatPanel;
 
     /// Playback controls
     bool _isPlaying = false;

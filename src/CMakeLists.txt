@@ -36,7 +36,6 @@ add_subdirectory(resources)
 add_subdirectory(search)
 add_subdirectory(widgets)
 add_subdirectory(viewport)
-add_subdirectory(agent)
 add_subdirectory(addons)
 
 # Tag for USD's TfRegistryManager. usdtweak is a single executable, so a

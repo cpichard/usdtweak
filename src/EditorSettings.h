@@ -34,7 +34,6 @@ struct EditorSettings {
     bool _showHydraNoticeLogger = false;
     bool _showSearch = false;
     bool _showSplashScreen = true;
-    bool _showAgentChat = false;
     int _mainWindowWidth;
     int _mainWindowHeight;
     float _uiScale = 1.f;

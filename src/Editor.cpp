@@ -1,6 +1,5 @@
 #include "Editor.h"
 #include "3rdparty/imgui/imgui.h"
-#include "agent/AgentChatPanel.h"
 #include "Blueprints.h"
 #include "StringSearchIndex.h"
 #include "SearchWidget.h"
@@ -1018,7 +1017,6 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(Viewport3WindowTitle, nullptr, &_settings._showViewport3);
             ImGui::MenuItem(Viewport4WindowTitle, nullptr, &_settings._showViewport4);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
-            ImGui::MenuItem("Twiki", nullptr, &_settings._showAgentChat);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Help")) {
@@ -1281,22 +1279,6 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-
-    if (_settings._showAgentChat) {
-        TRACE_SCOPE("Twiki");
-        if (!_agentChatPanel) {
-            _agentChatPanel = std::make_unique<UsdAgent::AgentChatPanel>(
-                /*stageFn*/    [this]() { return GetCurrentStage(); },
-                /*editLayerFn*/[this]() {
-                    auto stage = GetCurrentStage();
-                    return stage ? TfCreateRefPtrFromProtectedWeakPtr(
-                                       stage->GetEditTarget().GetLayer())
-                                 : SdfLayerRefPtr();
-                },
-                /*selectionFn*/[this]() { return &GetSelection(); });
-        }
-        _agentChatPanel->Draw(&_settings._showAgentChat);
-    }
 
     // Draw every registered addon that is a window-kind addon and currently open.
     for (const auto &addon : UsdTweakAddonRegistry::GetInstance().GetAll()) {

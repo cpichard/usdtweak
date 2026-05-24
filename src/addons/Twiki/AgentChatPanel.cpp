@@ -122,14 +122,9 @@ std::string AgentChatPanel::_BuildSystemPrompt() const {
         "introduced the relevant opinion when explaining a value.\n";
 }
 
-void AgentChatPanel::Draw(bool* isOpen) {
-    if (!isOpen || !*isOpen) return;
-
-    ImGui::SetNextWindowSize(ImVec2(560, 640), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Twiki", isOpen)) {
-        ImGui::End();
-        return;
-    }
+void AgentChatPanel::Draw() {
+    // The host (addon registry) wraps this in ImGui::Begin/End, so we only
+    // emit the contents.
 
     // ----- poll background turn ------------------------------------------
     if (_pending.valid() &&
@@ -271,8 +266,6 @@ void AgentChatPanel::Draw(bool* isOpen) {
             _scrollToBottom = true;
         }
     }
-
-    ImGui::End();
 }
 
 } // namespace UsdAgent

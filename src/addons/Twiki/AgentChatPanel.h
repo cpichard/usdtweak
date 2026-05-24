@@ -23,17 +23,17 @@ namespace UsdAgent {
 // never blocks on the LLM.
 class AgentChatPanel {
 public:
-    // The host (Editor) supplies callbacks to resolve current stage and edit
-    // layer per-call — the dispatcher uses them on the background thread when
-    // it executes inspection tools.
+    // The host (Twiki addon registration) supplies callbacks to resolve the
+    // current stage, edit-target layer, and selection per-call. The dispatcher
+    // uses them on the background thread when it executes tools.
     AgentChatPanel(UsdToolDispatcher::StageProvider     stageFn,
                    UsdToolDispatcher::EditLayerProvider editLayerFn,
                    UsdToolDispatcher::SelectionProvider selectionFn = {});
     ~AgentChatPanel();
 
-    // Render the panel. `isOpen` is the host's bool& used by ImGui::Begin's
-    // close button.
-    void Draw(bool* isOpen);
+    // Render the panel contents. The host wraps this in ImGui::Begin/End,
+    // so this method only emits the inner widgets.
+    void Draw();
 
 private:
     // Backend + orchestrator are constructed lazily on first send so the
