@@ -24,7 +24,7 @@ struct UsdTweakAddon {
     enum class Kind { Window, Action };
 
     std::string id;                       // unique, stable; used for settings key
-    std::string menuLabel;                // shown under the Addons menu
+    std::string menuLabel;                // shown under the Tools menu
     Kind kind = Kind::Window;
 
     std::function<void()> draw;           // Kind::Window: drawn inside ImGui::Begin/End

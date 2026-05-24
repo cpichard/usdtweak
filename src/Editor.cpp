@@ -978,7 +978,7 @@ void Editor::DrawMainMenuBar() {
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Addons")) {
+        if (ImGui::BeginMenu("Tools")) {
             for (const auto &addon : UsdTweakAddonRegistry::GetInstance().GetAll()) {
                 const bool enabled = !addon.isAvailable || addon.isAvailable();
                 if (addon.kind == UsdTweakAddon::Kind::Window) {
