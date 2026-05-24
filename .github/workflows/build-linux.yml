@@ -1,0 +1,172 @@
+name: Linux Build (Rocky 9)
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["*-prealpha"]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+env:
+  USD_VERSION: "26.03"
+  USD_INSTALL_DIR: usd-install
+  BUILD_TYPE: Release
+
+jobs:
+  build-usd:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.value }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled crb
+          dnf install -y \
+            gcc gcc-c++ make cmake ninja-build git tar gzip which \
+            python3 python3-pip \
+            tbb-devel glew-devel \
+            mesa-libGL-devel mesa-libGLU-devel \
+            libX11-devel libXrandr-devel libXinerama-devel \
+            libXcursor-devel libXi-devel libXfixes-devel \
+            libXt-devel
+
+      - name: Compute cache key
+        id: cache-key
+        run: |
+          GCC_VER=$(gcc -dumpversion)
+          echo "value=usd-rocky9-${{ env.USD_VERSION }}-gcc${GCC_VER}-nopython" >> $GITHUB_OUTPUT
+
+      - name: Restore USD cache
+        id: cache-usd
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+          key: ${{ steps.cache-key.outputs.value }}
+
+      - name: Install Python Jinja2
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        run: pip3 install jinja2
+
+      - name: Checkout OpenUSD ${{ env.USD_VERSION }}
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: PixarAnimationStudios/OpenUSD
+          ref: v${{ env.USD_VERSION }}
+          path: OpenUSD
+          fetch-depth: 1
+
+      - name: Build USD
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        run: |
+          python3 OpenUSD/build_scripts/build_usd.py \
+            --embree \
+            --no-python --no-usdview \
+            --no-examples --no-tutorials --no-docs \
+            --build-variant release \
+            "$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
+
+      - name: Remove USD build artifacts from install dir
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        run: rm -rf "$GITHUB_WORKSPACE/$USD_INSTALL_DIR/build"
+
+      - name: Verify USD install
+        run: |
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
+          echo "Listing $USD_DIR:"
+          ls -la "$USD_DIR"
+          if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
+            echo "ERROR: pxrConfig.cmake not found at $USD_DIR"
+            find "$USD_DIR" -name 'pxrConfig.cmake' -print
+            exit 1
+          fi
+
+      - name: Save USD cache
+        if: steps.cache-usd.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+          key: ${{ steps.cache-key.outputs.value }}
+
+  build-usdtweak:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    needs: build-usd
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled crb
+          dnf install -y \
+            gcc gcc-c++ make cmake ninja-build git tar gzip which \
+            tbb-devel glew-devel \
+            mesa-libGL-devel mesa-libGLU-devel \
+            libX11-devel libXrandr-devel libXinerama-devel \
+            libXcursor-devel libXi-devel libXfixes-devel \
+            libXt-devel \
+            wayland-devel wayland-protocols-devel libxkbcommon-devel
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore USD cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}
+          key: ${{ needs.build-usd.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Verify USD install
+        run: |
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
+          echo "Listing $USD_DIR:"
+          ls -la "$USD_DIR"
+          if [ ! -f "$USD_DIR/pxrConfig.cmake" ]; then
+            echo "ERROR: pxrConfig.cmake not found at $USD_DIR"
+            find "$USD_DIR" -name 'pxrConfig.cmake' -print
+            exit 1
+          fi
+
+      - name: Configure
+        run: |
+          USD_DIR="$GITHUB_WORKSPACE/$USD_INSTALL_DIR"
+          cmake -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_PREFIX_PATH=$USD_DIR \
+            -Dpxr_DIR=$USD_DIR \
+            -DOpenSubdiv_DIR=$USD_DIR/lib/cmake/OpenSubdiv \
+            -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package (CPack TGZ)
+        run: cd build && cpack
+
+      - name: Upload tar.gz artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: usdtweak-linux-tgz
+          path: build/usdtweak-*.tar.gz
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build-usdtweak
+    if: (startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-prealpha')) || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download tar.gz artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usdtweak-linux-tgz
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.tar.gz"
+          draft: true
+          prerelease: true
