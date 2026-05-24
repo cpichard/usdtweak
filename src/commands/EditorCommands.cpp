@@ -302,48 +302,6 @@ struct EditorTogglePlayback : public EditorCommand {
 };
 template void ExecuteAfterDraw<EditorTogglePlayback>();
 
-// Launchers, for the moment we don't make the add/remove commands undoable, but they could be in the future
-struct EditorRunLauncher : public EditorCommand {
-    EditorRunLauncher(const std::string launcherName) : _launcherName(launcherName) {}
-    ~EditorRunLauncher() override {}
-    bool DoIt() override {
-        if (_editor) {
-            _editor->RunLauncher(_launcherName);
-        }
-        return false;
-    }
-    std::string _launcherName;
-};
-template void ExecuteAfterDraw<EditorRunLauncher>(const std::string);
-
-struct EditorAddLauncher : public EditorCommand {
-    EditorAddLauncher(const std::string launcherName, const std::string commandLine)
-        : _launcherName(launcherName), _commandLine(commandLine) {}
-    ~EditorAddLauncher() override {}
-    bool DoIt() override {
-        if (_editor) {
-            _editor->AddLauncher(_launcherName, _commandLine);
-        }
-        return false;
-    }
-    std::string _launcherName;
-    std::string _commandLine;
-};
-template void ExecuteAfterDraw<EditorAddLauncher>(const std::string, const std::string);
-
-struct EditorRemoveLauncher : public EditorCommand {
-    EditorRemoveLauncher(const std::string launcherName) : _launcherName(launcherName) {}
-    ~EditorRemoveLauncher() override {}
-    bool DoIt() override {
-        if (_editor) {
-            _editor->RemoveLauncher(_launcherName);
-        }
-        return false;
-    }
-    std::string _launcherName;
-};
-template void ExecuteAfterDraw<EditorRemoveLauncher>(const std::string);
-
 // This will try to find the next matching prim after the selection
 struct EditorFindPrim : public EditorCommand {
     EditorFindPrim(const std::string pattern, bool useRegex) : _pattern(pattern) {

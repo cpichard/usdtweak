@@ -2,6 +2,7 @@
 #include "EditorSettings.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include <imgui.h> // for ImGuiTextBuffer
 
@@ -65,8 +66,6 @@ void EditorSettings::ParseLine(const char *line) {
         _showViewport4 = static_cast<bool>(value);
     } else if (sscanf(line, "ShowStatusBar=%i", &value) == 1) {
         _showStatusBar = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowLauncherBar=%i", &value) == 1) {
-        _showLauncherBar = static_cast<bool>(value);
     } else if (sscanf(line, "ShowDebugWindow=%i", &value) == 1) {
         _showDebugWindow = static_cast<bool>(value);
     } else if (sscanf(line, "ShowArrayEditor=%i", &value) == 1) {
@@ -75,6 +74,16 @@ void EditorSettings::ParseLine(const char *line) {
         _showHydraBrowser = static_cast<bool>(value);
     } else if (sscanf(line, "ShowHydraNoticeLogger=%i", &value) == 1) {
         _showHydraNoticeLogger = static_cast<bool>(value);
+    } else if (strlen(line) > 6 && std::equal(line, line + 6, "Addon.")) {
+        // Addon.<id>.<key>=<value>
+        const char *eq = strchr(line, '=');
+        if (eq) {
+            std::string key(line + 6, eq - (line + 6));
+            std::string val(eq + 1);
+            // Trim trailing newline if present.
+            if (!val.empty() && val.back() == '\n') val.pop_back();
+            _addonValues[key] = val;
+        }
     } else if (sscanf(line, "ShowValidator=%i", &value) == 1) {
         _showValidator = static_cast<bool>(value);
     } else if (sscanf(line, "ShowConnectionEditor=%i", &value) == 1) {
@@ -95,13 +104,6 @@ void EditorSettings::ParseLine(const char *line) {
     } else if (sscanf(line, "MainWindowHeight=%i", &value) == 1) {
         if (value > 0) {
             _mainWindowHeight = value;
-        }
-    } else if (strlen(line) > 9 && std::equal(line, line + 9, "Launcher=")) {
-        std::string launcher(line + 9);
-        auto semiColonPos = std::find(launcher.begin(), launcher.end(), ';');
-        if (semiColonPos != launcher.end()) {
-            auto pos = std::distance(launcher.begin(), semiColonPos);
-            AddLauncher(launcher.substr(0, pos), launcher.substr(pos + 1));
         }
     } else if (strlen(line) > 12 && std::equal(line, line + 12, "PluginPaths=")) {
         std::string pluginPathsLine(line + 12);
@@ -129,7 +131,6 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowViewport3=%d\n", _showViewport3);
     buf->appendf("ShowViewport4=%d\n", _showViewport4);
     buf->appendf("ShowStatusBar=%d\n", _showStatusBar);
-    buf->appendf("ShowLauncherBar=%d\n", _showLauncherBar);
     buf->appendf("ShowDebugWindow=%d\n", _showDebugWindow);
     buf->appendf("ShowArrayEditor=%d\n", _showSdfAttributeEditor);
     buf->appendf("ShowHydraBrowser=%d\n", _showHydraBrowser);
@@ -150,9 +151,6 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     if (_mainWindowHeight > 0) {
         buf->appendf("MainWindowHeight=%d\n", _mainWindowHeight);
     }
-    for (int i = 0; i < _launcherNames.size(); ++i) {
-        buf->appendf("Launcher=%s;%s\n", _launcherNames[i].c_str(), _launcherCommandLines[i].c_str());
-    }
     if (!_pluginPaths.empty()) {
         buf->appendf("PluginPaths=%s\n", JoinSemiColon(_pluginPaths).c_str());
     }
@@ -160,6 +158,29 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
         buf->appendf("BlueprintLocations=%s\n", JoinSemiColon(_blueprintLocations).c_str());
     }
     buf->appendf("UiScale=%f\n", _uiScale);
+    for (const auto &kv : _addonValues) {
+        buf->appendf("Addon.%s=%s\n", kv.first.c_str(), kv.second.c_str());
+    }
+}
+
+bool EditorSettings::GetAddonBool(const std::string &addonId, const std::string &key, bool defaultValue) const {
+    auto it = _addonValues.find(addonId + "." + key);
+    if (it == _addonValues.end()) return defaultValue;
+    return it->second != "0";
+}
+
+void EditorSettings::SetAddonBool(const std::string &addonId, const std::string &key, bool value) {
+    _addonValues[addonId + "." + key] = value ? "1" : "0";
+}
+
+std::string EditorSettings::GetAddonString(const std::string &addonId, const std::string &key,
+                                           const std::string &defaultValue) const {
+    auto it = _addonValues.find(addonId + "." + key);
+    return it == _addonValues.end() ? defaultValue : it->second;
+}
+
+void EditorSettings::SetAddonString(const std::string &addonId, const std::string &key, const std::string &value) {
+    _addonValues[addonId + "." + key] = value;
 }
 
 void EditorSettings::UpdateRecentFiles(const std::string &newFile) {
@@ -175,34 +196,3 @@ void EditorSettings::UpdateRecentFiles(const std::string &newFile) {
     }
 }
 
-bool EditorSettings::AddLauncher(const std::string &launcherName, const std::string &commandLine) {
-    // ensure the name and command line are not empty
-    if (launcherName == "" || commandLine == "")
-        return false;
-    // Ensure the launcher name is unique
-    if (std::find(_launcherNames.begin(), _launcherNames.end(), launcherName) != _launcherNames.end())
-        return false;
-    // TODO check for carriage return in command line and name
-    _launcherNames.emplace_back(launcherName);
-    _launcherCommandLines.emplace_back(commandLine);
-    return true;
-}
-
-bool EditorSettings::RemoveLauncher(const std::string &launcherName) {
-    auto found = std::find(_launcherNames.begin(), _launcherNames.end(), launcherName);
-    if (found == _launcherNames.end())
-        return false;
-    auto pos = std::distance(_launcherNames.begin(), found);
-    _launcherNames.erase(_launcherNames.begin() + pos);
-    _launcherCommandLines.erase(_launcherCommandLines.begin() + pos);
-    return true;
-}
-
-std::string EditorSettings::GetLauncherCommandLine(const std::string &commandName) const {
-    auto found = std::find(_launcherNames.begin(), _launcherNames.end(), commandName);
-    if (found != _launcherNames.end()) {
-        auto pos = std::distance(_launcherNames.begin(), found);
-        return _launcherCommandLines[pos];
-    }
-    return "";
-}
