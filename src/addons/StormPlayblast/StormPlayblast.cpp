@@ -1,9 +1,13 @@
+#include "addons/Api.h"
+
 #include "FileBrowser.h"
 #include "Gui.h"
-#include "Playblast.h"
+
+#include <pxr/imaging/hd/rendererPluginRegistry.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/camera.h>
+#include <pxr/usdImaging/usdAppUtils/frameRecorder.h>
 
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -16,6 +20,29 @@ namespace fs = ghc::filesystem;
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
+namespace {
+
+struct PlayblastModalDialog : public ModalDialog {
+
+    PlayblastModalDialog(UsdStagePtr stage);
+    ~PlayblastModalDialog() override = default;
+
+    void Draw() override;
+    const char *DialogId() const override { return "Playblast"; }
+
+    UsdAppUtilsFrameRecorder _recorder;
+    UsdStagePtr _stage;
+    SdfPath _cameraPath;
+    SdfPathVector _stageCameras;
+
+    static std::string directory;
+    static std::string filenamePrefix;
+    bool isSequence = true;
+    static int start;
+    static int end;
+    static int width;
+};
+
 std::string PlayblastModalDialog::directory = "";
 std::string PlayblastModalDialog::filenamePrefix = "";
 int PlayblastModalDialog::start = -1;
@@ -24,7 +51,7 @@ int PlayblastModalDialog::width = 960;
 
 PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage) : _stage(stage) {
     if (directory.empty()) {
-        directory = fs::temp_directory_path().string(); // TODO : check it works with macOS and linux
+        directory = fs::temp_directory_path().string();
     }
     if (filenamePrefix.empty()) {
         filenamePrefix = "playblast";
@@ -33,7 +60,6 @@ PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage) : _stage(stage) {
         start = static_cast<int>(_stage->GetStartTimeCode());
         end = static_cast<int>(_stage->GetEndTimeCode());
     }
-    // find all camera in the stqge
     if (stage) {
         for (const auto &prim : stage->Traverse()) {
             if (prim.IsA<UsdGeomCamera>()) {
@@ -41,14 +67,12 @@ PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage) : _stage(stage) {
             }
         }
     }
-    // Select the first camera
     if (!_stageCameras.empty()) {
         _cameraPath = _stageCameras[0];
     }
-};
+}
 
 void PlayblastModalDialog::Draw() {
-    // Draw available cameras
     const char *selectedCameraName = _cameraPath == SdfPath() ? "No camera" : _cameraPath.GetText();
     if (ImGui::BeginCombo("Stage camera", selectedCameraName)) {
         for (const SdfPath &stageCameraPath : _stageCameras) {
@@ -104,4 +128,30 @@ void PlayblastModalDialog::Draw() {
     if (ImGui::Button("Cancel")) {
         CloseModal();
     }
+}
+
+bool IsStormAvailable() {
+    HfPluginDescVector descs;
+    HdRendererPluginRegistry::GetInstance().GetPluginDescs(&descs);
+    for (const auto &desc : descs) {
+        if (desc.id == TfToken("HdStormRendererPlugin")) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+TF_REGISTRY_FUNCTION_WITH_TAG(UsdTweakAddonRegistry, StormPlayblast) {
+    UsdTweakAddon addon;
+    addon.id = "StormPlayblast";
+    addon.menuLabel = ICON_FA_IMAGES " Storm playblast";
+    addon.kind = UsdTweakAddon::Kind::Action;
+    addon.activate = []() {
+        auto stage = usdtweak::GetCurrentStage();
+        if (stage) DrawModalDialog<PlayblastModalDialog>(stage);
+    };
+    addon.isAvailable = []() {
+        return usdtweak::GetCurrentStage() && IsStormAvailable();
+    };
+    UsdTweakAddonRegistry::GetInstance().Add(std::move(addon));
 }

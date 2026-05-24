@@ -11,13 +11,13 @@
 #include "FileBrowser.h"
 #include "Gui.h"
 #include "HydraBrowser.h"
-#include "ShaderRegistryInspector.h"
 #include "HydraNoticeLogger.h"
 #include "ImGuiHelpers.h"
-#include "LauncherBar.h"
 #include "ManipulatorToolbox.h"
-#include "Playblast.h"
 #include "Preferences.h"
+#include "addons/AddonRegistry.h"
+#include "addons/Api.h"
+#include "addons/Notices.h"
 #include "ResourcesLoader.h"
 #include "SdfAttributeEditor.h"
 #include "SdfLayerEditor.h"
@@ -78,7 +78,6 @@ namespace clk = std::chrono;
 #define SdfLayerAsciiEditorWindowTitle "Layer text editor"
 #define SdfAttributeWindowTitle "Attribute editor"
 #define HydraBrowserWindowTitle "Hydra browser"
-#define ShaderRegistryInspectorWindowTitle "Shader registry inspector"
 #define HydraNoticeLoggerWindowTitle "Hydra notice logger"
 #define FindWindowTitle "Find"
 #define ValidatorWindowTitle "Validation"
@@ -88,7 +87,6 @@ namespace clk = std::chrono;
 #define Viewport3WindowTitle "Viewport3"
 #define Viewport4WindowTitle "Viewport4"
 #define StatusBarWindowTitle "Status bar"
-#define LauncherBarWindowTitle "Launcher bar"
 
 // Used only in the editor, so no point adding them to ImGuiHelpers yet
 inline bool BelongToSameDockTab(ImGuiWindow *w1, ImGuiWindow *w2) {
@@ -547,6 +545,10 @@ Editor::Editor()
     LoadSettings();
     SetFileBrowserDirectory(_settings._lastFileBrowserDirectory);
     Blueprints::GetInstance().SetBlueprintsLocations(_settings._blueprintLocations);
+    // Expose this editor to the addon API, then run every addon's
+    // TF_REGISTRY_FUNCTION_WITH_TAG(UsdTweakAddonRegistry, ...) body.
+    usdtweak::_RegisterEditor(this);
+    UsdTweakAddonRegistry::GetInstance().SubscribeAll();
     if (_settings._showSplashScreen) {
         DrawModalDialog<SplashScreenModalDialog>();
     }
@@ -555,6 +557,7 @@ Editor::Editor()
 Editor::~Editor() {
     _settings._lastFileBrowserDirectory = GetFileBrowserDirectory();
     SaveSettings();
+    usdtweak::_RegisterEditor(nullptr);
 }
 
 void Editor::InstallCallbacks(GLFWwindow *window) {
@@ -582,6 +585,7 @@ void Editor::SetCurrentStage(UsdStageRefPtr stage) {
         _viewport2.SetCurrentStage(stage);
         _viewport3.SetCurrentStage(stage);
         _viewport4.SetCurrentStage(stage);
+        UsdTweakCurrentStageChangedNotice().Send();
     }
 }
 
@@ -589,8 +593,9 @@ void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
     if (!layer)
         return;
     StringSearchIndex::GetInstance().IndexLayer(layer);
+    const bool changed = GetCurrentLayer() != layer;
     if (!_layerHistory.empty()) {
-        if (GetCurrentLayer() != layer) {
+        if (changed) {
             if (_layerHistoryPointer < _layerHistory.size() - 1) {
                 _layerHistory.resize(_layerHistoryPointer + 1);
             }
@@ -604,11 +609,13 @@ void Editor::SetCurrentLayer(SdfLayerRefPtr layer, bool showContentBrowser) {
     if (showContentBrowser) {
         _settings._showContentBrowser = true;
     }
+    if (changed) UsdTweakCurrentLayerChangedNotice().Send();
 }
 
 void Editor::SetCurrentEditTarget(SdfLayerHandle layer) {
     if (GetCurrentStage()) {
         GetCurrentStage()->SetEditTarget(UsdEditTarget(layer));
+        UsdTweakCurrentEditTargetChangedNotice().Send();
     }
 }
 
@@ -781,16 +788,19 @@ void Editor::ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs) { DrawModalDial
 void Editor::AddLayerPathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentLayer(), primPath);
     BringWindowToTabFront(SdfPrimPropertiesWindowTitle);
+    UsdTweakSelectionChangedNotice().Send();
 }
 
 void Editor::SetLayerPathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentLayer(), primPath);
     BringWindowToTabFront(SdfPrimPropertiesWindowTitle);
+    UsdTweakSelectionChangedNotice().Send();
 }
 
 void Editor::AddStagePathSelection(const SdfPath &primPath) {
     _selection.AddSelected(GetCurrentStage(), primPath);
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
+    UsdTweakSelectionChangedNotice().Send();
 }
 
 void Editor::SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath) {
@@ -817,6 +827,7 @@ void Editor::SetStagePathSelection(const SdfPath &primPath) {
     _selection.SetSelected(GetCurrentStage(), primPath);
     SetCurrentUsdPrim(GetCurrentStage(), primPath);
     BringWindowToTabFront(UsdPrimPropertiesWindowTitle);
+    UsdTweakSelectionChangedNotice().Send();
 }
 
 void Editor::SetPreviousPrim() {
@@ -969,10 +980,17 @@ void Editor::DrawMainMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Tools")) {
-            // TODO: we should really check if storm is available
-            if (ImGui::MenuItem(ICON_FA_IMAGES " Storm playblast")) {
-                if (GetCurrentStage()) {
-                    DrawModalDialog<PlayblastModalDialog>(GetCurrentStage());
+            for (const auto &addon : UsdTweakAddonRegistry::GetInstance().GetAll()) {
+                const bool enabled = !addon.isAvailable || addon.isAvailable();
+                if (addon.kind == UsdTweakAddon::Kind::Window) {
+                    bool open = usdtweak::GetAddonBool(addon.id, "open", addon.defaultOpen);
+                    if (ImGui::MenuItem(addon.menuLabel.c_str(), nullptr, &open, enabled)) {
+                        usdtweak::SetAddonBool(addon.id, "open", open);
+                    }
+                } else { // Action
+                    if (ImGui::MenuItem(addon.menuLabel.c_str(), nullptr, false, enabled)) {
+                        if (addon.activate) addon.activate();
+                    }
                 }
             }
             ImGui::EndMenu();
@@ -990,7 +1008,6 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
-            ImGui::MenuItem(ShaderRegistryInspectorWindowTitle, nullptr, &_settings._showShaderInspector);
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
 #ifdef HAVE_USDVALIDATION
             ImGui::MenuItem(ValidatorWindowTitle, nullptr, &_settings._showValidator);
@@ -1001,7 +1018,6 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(Viewport3WindowTitle, nullptr, &_settings._showViewport3);
             ImGui::MenuItem(Viewport4WindowTitle, nullptr, &_settings._showViewport4);
             ImGui::MenuItem(StatusBarWindowTitle, nullptr, &_settings._showStatusBar);
-            ImGui::MenuItem(LauncherBarWindowTitle, nullptr, &_settings._showLauncherBar);
             ImGui::MenuItem("Twiki", nullptr, &_settings._showAgentChat);
             ImGui::EndMenu();
         }
@@ -1135,13 +1151,6 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_settings._showLauncherBar) {
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
-        ImGui::Begin(LauncherBarWindowTitle, &_settings._showLauncherBar, windowFlags);
-        DrawLauncherBar(this);
-        ImGui::End();
-    }
-
     if (_settings._showPropertyEditor) {
         TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
@@ -1272,6 +1281,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+
     if (_settings._showAgentChat) {
         TRACE_SCOPE("Twiki");
         if (!_agentChatPanel) {
@@ -1288,11 +1298,16 @@ void Editor::Draw() {
         _agentChatPanel->Draw(&_settings._showAgentChat);
     }
 
-    if (_settings._showShaderInspector) {
-        TRACE_SCOPE(ShaderRegistryInspectorWindowTitle);
-        ImGui::Begin(ShaderRegistryInspectorWindowTitle, &_settings._showShaderInspector);
-        DrawShaderRegistryInspector();
+    // Draw every registered addon that is a window-kind addon and currently open.
+    for (const auto &addon : UsdTweakAddonRegistry::GetInstance().GetAll()) {
+        if (addon.kind != UsdTweakAddon::Kind::Window || !addon.draw) continue;
+        if (addon.isAvailable && !addon.isAvailable()) continue;
+        bool open = _settings.GetAddonBool(addon.id, "open", addon.defaultOpen);
+        if (!open) continue;
+        ImGui::Begin(addon.menuLabel.c_str(), &open, addon.windowFlags);
+        addon.draw();
         ImGui::End();
+        _settings.SetAddonBool(addon.id, "open", open);
     }
 
     if (_settings._showHydraNoticeLogger) {
@@ -1318,35 +1333,6 @@ void Editor::Draw() {
     AddShortcut<RedoCommand, ImGuiKey_LeftCtrl, ImGuiKey_R>();
     EndBackgroundDock();
     ResourcesLoader::PopFontRegular();
-}
-
-void Editor::RunLauncher(const std::string &launcherName) {
-    std::string commandLine = _settings.GetLauncherCommandLine(launcherName);
-    if (commandLine == "")
-        return;
-    // Process the command line
-    auto pos = commandLine.find("__STAGE_PATH__");
-    if (pos != std::string::npos) {
-        commandLine.replace(pos, 14, GetCurrentStage() ? GetCurrentStage()->GetRootLayer()->GetRealPath() : "");
-    }
-
-    pos = commandLine.find("__LAYER_PATH__");
-    if (pos != std::string::npos) {
-        commandLine.replace(pos, 14, GetCurrentLayer() ? GetCurrentLayer()->GetRealPath() : "");
-    }
-
-    pos = commandLine.find("__CURRENT_TIME__");
-    if (pos != std::string::npos) {
-        auto timeCode = GetViewport().GetCurrentTimeCode();
-        if (!timeCode.IsDefault()) {
-            commandLine.replace(pos, 16, std::to_string(timeCode.GetValue()));
-        }
-    }
-
-    auto command = [commandLine]() -> int { return std::system(commandLine.c_str()); };
-    // TODO: we are just storing the tasks in a vector, we shoud do some
-    // cleaning when the tasks are done
-    _launcherTasks.emplace_back(std::async(std::launch::async, command));
 }
 
 void Editor::LoadSettings() { _settings = ResourcesLoader::GetEditorSettings(); }

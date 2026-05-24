@@ -37,3 +37,8 @@ add_subdirectory(search)
 add_subdirectory(widgets)
 add_subdirectory(viewport)
 add_subdirectory(agent)
+add_subdirectory(addons)
+
+# Tag for USD's TfRegistryManager. usdtweak is a single executable, so a
+# single MFB_ALT_PACKAGE_NAME for every TU using TF_REGISTRY_FUNCTION is fine.
+target_compile_definitions(usdtweak PRIVATE MFB_ALT_PACKAGE_NAME=usdtweak)

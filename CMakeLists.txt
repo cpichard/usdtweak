@@ -90,6 +90,11 @@ if(APPLE)
     include("cmake/macos_installer.cmake")
 endif()
 
+# Installer on Linux
+if(UNIX AND NOT APPLE)
+    include("cmake/linux_installer.cmake")
+endif()
+
 # Remove warnings coming from usd and enable default multithreaded compilation on windows
 target_compile_options(usdtweak PRIVATE
 	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>

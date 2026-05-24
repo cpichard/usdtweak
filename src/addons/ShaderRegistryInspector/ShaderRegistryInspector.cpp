@@ -1,4 +1,4 @@
-#include "ShaderRegistryInspector.h"
+#include "addons/Api.h"
 
 #include "Gui.h"
 // We need to fix all the api changes to get it working for older versions
@@ -17,12 +17,14 @@
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
-static std::string ToLower(std::string s) {
+namespace {
+
+std::string ToLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
-static bool PassesFilter(const SdrShaderNode *node, const char *filterBuf) {
+bool PassesFilter(const SdrShaderNode *node, const char *filterBuf) {
     if (!node || filterBuf[0] == '\0')
         return true;
 
@@ -50,11 +52,10 @@ static bool PassesFilter(const SdrShaderNode *node, const char *filterBuf) {
     return field.find(ToLower(std::string(prefix))) != std::string::npos;
 }
 
-static void DrawShaderNodeProperties(SdrShaderNodeConstPtr node) {
+void DrawShaderNodeProperties(SdrShaderNodeConstPtr node) {
     constexpr ImGuiTableFlags tableFlags =
         ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY;
 
-    // Save and override the normal hover delay for property tooltips
     float &hoverDelayNormal = ImGui::GetStyle().HoverDelayNormal;
     const float savedHoverDelay = hoverDelayNormal;
     hoverDelayNormal = 2.0f;
@@ -151,7 +152,6 @@ void DrawShaderRegistryInspector() {
         initialized = true;
     }
 
-    // Filter input
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
     if (ImGui::InputTextWithHint("##filter", "Filter by name, family:, source:, context:", filterBuf, sizeof(filterBuf))) {
         filterDirty = true;
@@ -162,7 +162,6 @@ void DrawShaderRegistryInspector() {
         filterDirty = true;
     }
 
-    // Recompute filtered indices if needed
     if (filterDirty) {
         filteredIndices.clear();
         for (int i = 0; i < static_cast<int>(shaderNodes.size()); ++i) {
@@ -175,7 +174,6 @@ void DrawShaderRegistryInspector() {
     const float totalHeight = ImGui::GetContentRegionAvail().y;
     const float listHeight = totalHeight * 0.4f;
 
-    // Count display
     const bool isFiltered = filterBuf[0] != '\0';
     if (isFiltered) {
         ImGui::TextDisabled("%zu / %zu shaders", filteredIndices.size(), shaderNodes.size());
@@ -183,7 +181,6 @@ void DrawShaderRegistryInspector() {
         ImGui::TextDisabled("%zu shaders", shaderNodes.size());
     }
 
-    // Top pane: shader list as a sortable 4-column table
     constexpr ImGuiTableFlags listFlags =
         ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp |
         ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Sortable;
@@ -275,7 +272,6 @@ void DrawShaderRegistryInspector() {
         ImGui::EndTable();
     }
 
-    // Bottom pane: selected shader details
     if (ImGui::BeginChild("##ShaderDetails", ImVec2(0.f, 0.f), true)) {
         if (selectedNode) {
             ImGui::Text("Name:    %s", selectedNode->GetName().c_str());
@@ -290,9 +286,22 @@ void DrawShaderRegistryInspector() {
     }
     ImGui::EndChild();
 }
-#else
-void DrawShaderRegistryInspector() {
-    ImGui::Text("Shader registry editor not available in this version");   
-}
 
+} // namespace
+
+#else
+namespace {
+void DrawShaderRegistryInspector() {
+    ImGui::Text("Shader registry editor not available in this version");
+}
+} // namespace
 #endif
+
+TF_REGISTRY_FUNCTION_WITH_TAG(UsdTweakAddonRegistry, ShaderRegistryInspector) {
+    UsdTweakAddon addon;
+    addon.id = "ShaderRegistryInspector";
+    addon.menuLabel = "Shader registry inspector";
+    addon.kind = UsdTweakAddon::Kind::Window;
+    addon.draw = &DrawShaderRegistryInspector;
+    UsdTweakAddonRegistry::GetInstance().Add(std::move(addon));
+}

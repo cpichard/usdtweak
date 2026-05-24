@@ -3,8 +3,8 @@
 #include "EditorSettings.h"
 #include "Selection.h"
 #include "Viewport.h"
-#include <future>
 #include <memory>
+#include <future>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usdUtils/stageCache.h>
@@ -56,6 +56,10 @@ class Editor {
 
     UsdStageCache &GetStageCache() { return _stageCache.Get(); }
 
+    /// Mutable settings access for the addon API (per-addon key/value bag).
+    /// Not for general use — prefer the typed addon accessors in addons/Api.h.
+    EditorSettings &GetSettingsForAddons() { return _settings; }
+
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
     Selection &GetSelection() { return _selection; }
@@ -102,14 +106,6 @@ class Editor {
     void TogglePlayback();
 
     void ShowDialogSaveLayerAs(SdfLayerHandle layerToSaveAs);
-
-    // Launcher functions
-    const std::vector<std::string> &GetLauncherNameList() const { return _settings.GetLauncherNameList(); }
-    bool AddLauncher(const std::string &launcherName, const std::string &commandLine) {
-        return _settings.AddLauncher(launcherName, commandLine);
-    }
-    bool RemoveLauncher(std::string launcherName) { return _settings.RemoveLauncher(launcherName); };
-    void RunLauncher(const std::string &launcherName);
 
     // Additional plugin paths kept in the settings
     inline const std::vector<std::string> &GetPluginPaths() const { return _settings._pluginPaths; }
@@ -183,9 +179,6 @@ class Editor {
 
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
-
-    /// Storing the tasks created by launchers.
-    std::vector<std::future<int>> _launcherTasks;
 
     /// Lazily-created agent chat panel (LLM-driven scene assistant).
     std::unique_ptr<UsdAgent::AgentChatPanel> _agentChatPanel;

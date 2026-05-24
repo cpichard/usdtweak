@@ -1,5 +1,6 @@
 #pragma once
 #include <list>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,14 +26,12 @@ struct EditorSettings {
     bool _showViewport3 = false;
     bool _showViewport4 = false;
     bool _showStatusBar = true;
-    bool _showLauncherBar = false;
     bool _showValidator = false;
     bool _textEditor = false;
     bool _showSdfAttributeEditor = false;
     bool _showUsdConnectionEditor = false;
     bool _showHydraBrowser = false;
     bool _showHydraNoticeLogger = false;
-    bool _showShaderInspector = false;
     bool _showSearch = false;
     bool _showSplashScreen = true;
     bool _showAgentChat = false;
@@ -55,18 +54,17 @@ struct EditorSettings {
     /// Blueprints root location on disk
     std::vector<std::string> _blueprintLocations;
 
-    // Launcher commands.
-    // We maintain a mapping between the commandName and the commandLine while keeping
-    // the order as well. As we expect a very few number of commands, we store them
-    // in 2 vectors instead of a map, it is more efficient as the code iterates on the command name list
-    bool AddLauncher(const std::string &commandName, const std::string &commandLine);
-    bool RemoveLauncher(const std::string &commandName);
-    const std::vector<std::string> &GetLauncherNameList() const { return _launcherNames; };
-    std::string GetLauncherCommandLine(const std::string &commandName) const;
-
     // Serialization functions
     void ParseLine(const char *line);
     void Dump(ImGuiTextBuffer *);
+
+    // Per-addon key/value bag. Persisted under "Addon.<addonId>.<key>=…".
+    // Values are stored as strings; typed accessors convert on read/write.
+    bool GetAddonBool(const std::string &addonId, const std::string &key, bool defaultValue) const;
+    void SetAddonBool(const std::string &addonId, const std::string &key, bool value);
+    std::string GetAddonString(const std::string &addonId, const std::string &key,
+                               const std::string &defaultValue) const;
+    void SetAddonString(const std::string &addonId, const std::string &key, const std::string &value);
 
   private:
     // Those are private as they rely on a specific logic, they need to be accessed
@@ -75,7 +73,6 @@ struct EditorSettings {
     /// Recent files
     std::list<std::string> _recentFiles;
 
-    /// Launcher commands
-    std::vector<std::string> _launcherNames;
-    std::vector<std::string> _launcherCommandLines;
+    /// Addon key/value bag, keyed by "<addonId>.<key>".
+    std::map<std::string, std::string> _addonValues;
 };
