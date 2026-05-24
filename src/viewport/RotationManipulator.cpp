@@ -80,9 +80,19 @@ void RotationManipulator::OnSelectionChange(Viewport &viewport) {
     // TODO: we should set here if the new selection will be editable or not
     auto &selection = viewport.GetSelection();
     auto stage = viewport.GetCurrentStage();
+
+    // Skip the camera currently used to render this viewport — its pivot is the eye,
+    // so projecting the gizmo there produces degenerate screen coordinates.
+    const SdfPath &activeCameraPath = viewport.GetSelectedStageCameraPath();
+
     auto primPath = selection.GetAnchorPrimPath(stage);
-    _xformAPI = UsdGeomXformCommonAPI(stage->GetPrimAtPath(primPath));
-    _xformable = UsdGeomXformable(_xformAPI.GetPrim());
+    if (primPath != activeCameraPath) {
+        _xformAPI = UsdGeomXformCommonAPI(stage->GetPrimAtPath(primPath));
+        _xformable = UsdGeomXformable(_xformAPI.GetPrim());
+    } else {
+        _xformAPI = UsdGeomXformCommonAPI();
+        _xformable = UsdGeomXformable();
+    }
 
     // Build multi-select list, filtering out descendants of other selected prims
     _selectedXformables.clear();
@@ -91,6 +101,7 @@ void RotationManipulator::OnSelectionChange(Viewport &viewport) {
 
     SdfPath lastAccepted;
     for (const auto &path : allPaths) {
+        if (path == activeCameraPath) continue;
         if (!lastAccepted.IsEmpty() && path.HasPrefix(lastAccepted)) continue;
         lastAccepted = path;
         UsdGeomXformable xf(stage->GetPrimAtPath(path));

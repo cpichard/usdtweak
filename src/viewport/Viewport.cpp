@@ -1,4 +1,6 @@
 #include <pxr/imaging/garch/glApi.h>
+#include <pxr/imaging/cameraUtil/conformWindow.h>
+#include <pxr/base/gf/range2f.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/boundable.h>
@@ -18,6 +20,8 @@
 #include "UsdPrimEditor.h" // DrawUsdPrimEditTarget
 #include "Viewport.h"
 #include "ViewportSettings.h"
+
+#include <cmath>
 
 namespace clk = std::chrono;
 
@@ -365,12 +369,18 @@ GfVec2d Viewport::GetPickingBoundarySize() const {
 //
 double Viewport::ComputeScaleFactor(const GfVec3d &objectPos, const double multiplier) const {
     double scale = 1.0;
-    const auto &frustum = GetCurrentCamera().GetFrustum();
+    // The gizmos must be scaled using the very camera that projects them on screen. When the
+    // camera frame is shown, GetViewportCamera() conforms the camera to the window
+    // (letterbox/pillarbox), which alters the aperture; scaling from any other camera would
+    // size - and therefore position - the gizmo handles incorrectly. When the frame is off this
+    // is byte-identical to the previous behaviour (the stretch path keeps the horizontal FOV).
+    const GfCamera camera = IsCameraFrameVisible() ? GetViewportCamera() : GetCurrentCamera();
+    const auto &frustum = camera.GetFrustum();
     auto ray = frustum.ComputeRay(GfVec2d(0, 0)); // camera axis
     ray.FindClosestPoint(objectPos, &scale);
     // TODO Ortho case: should the scale be based on the larger/smaller side ?
-    if (GetCurrentCamera().GetProjection() == GfCamera::Orthographic) {
-        const float verticalAperture = GetCurrentCamera().GetVerticalAperture();
+    if (camera.GetProjection() == GfCamera::Orthographic) {
+        const float verticalAperture = camera.GetVerticalAperture();
         scale = 0.01 * verticalAperture;
 
     } else {
@@ -488,6 +498,16 @@ const GfCamera &Viewport::GetCurrentCamera() const { return _cameras.GetCurrentC
 GfCamera Viewport::GetViewportCamera(double width, double height) const {
     GfCamera viewportCamera = GetCurrentCamera();
 
+    if (IsCameraFrameVisible()) {
+        // Keep the stage camera's true aperture aspect ratio: conform it to the window with
+        // CameraUtilFit so the whole camera frame stays visible as a centered inscribed
+        // rectangle (letterbox/pillarbox). The conformed camera fills the whole draw target,
+        // so the grid, manipulators and picking - which all route through GetViewportCamera() -
+        // stay consistent with the rendered image.
+        CameraUtilConformWindow(&viewportCamera, CameraUtilFit, width / height);
+        return viewportCamera;
+    }
+
     if (viewportCamera.GetProjection() == GfCamera::Perspective) {
         viewportCamera.SetPerspectiveFromAspectRatioAndFieldOfView(
             width / height, viewportCamera.GetFieldOfView(GfCamera::FOVHorizontal), GfCamera::FOVHorizontal);
@@ -505,6 +525,81 @@ GfCamera Viewport::GetViewportCamera() const {
     const int width = renderSize[0];
     const int height = renderSize[1];
     return GetViewportCamera(width, height);
+}
+
+bool Viewport::IsCameraFrameVisible() const {
+    if (!_cameras.IsUsingStageCamera())
+        return false;
+    const ViewportSettings &settings = ResourcesLoader::GetViewportSettings();
+    return settings._showCameraMask || settings._showCameraFrameOutline;
+}
+
+GfRange2f Viewport::ComputeCameraFrameRect(double width, double height) const {
+    if (width <= 0.0 || height <= 0.0)
+        return GfRange2f();
+
+    const GfCamera &camera = GetCurrentCamera();
+    const double horizontalAperture = camera.GetHorizontalAperture();
+    const double verticalAperture = camera.GetVerticalAperture();
+    if (horizontalAperture <= 0.0 || verticalAperture <= 0.0)
+        return GfRange2f();
+
+    // The framed rectangle has the camera aperture aspect ratio and is centered in the window.
+    const double cameraAspect = horizontalAperture / verticalAperture;
+    const double windowAspect = width / height;
+    double frameWidth = width;
+    double frameHeight = height;
+    if (windowAspect >= cameraAspect) {
+        // Window wider than the camera -> vertical bars (pillarbox)
+        frameWidth = height * cameraAspect;
+    } else {
+        // Window taller than the camera -> horizontal bars (letterbox)
+        frameHeight = width / cameraAspect;
+    }
+
+    // Round to integral pixels so the mask edges and outline stay crisp.
+    const float x0 = float(std::round((width - frameWidth) * 0.5));
+    const float y0 = float(std::round((height - frameHeight) * 0.5));
+    const float x1 = float(std::round((width + frameWidth) * 0.5));
+    const float y1 = float(std::round((height + frameHeight) * 0.5));
+    return GfRange2f(GfVec2f(x0, y0), GfVec2f(x1, y1));
+}
+
+void Viewport::DrawCameraFrameOverlay() {
+    // Drawn inside the Hydra HUD overlay, in the same pixel space the manipulators project into.
+    const ImGuiViewport *guiViewport = ImGui::GetMainViewport();
+    const float windowWidth = guiViewport->WorkSize[0];
+    const float windowHeight = guiViewport->WorkSize[1];
+    const GfRange2f frame = ComputeCameraFrameRect(windowWidth, windowHeight);
+    if (frame.IsEmpty())
+        return;
+
+    const ViewportSettings &settings = ResourcesLoader::GetViewportSettings();
+    ImDrawList *drawList = ImGui::GetWindowDrawList();
+    const ImVec2 frameMin(frame.GetMin()[0], frame.GetMin()[1]);
+    const ImVec2 frameMax(frame.GetMax()[0], frame.GetMax()[1]);
+
+    if (settings._showCameraMask) {
+        const ImU32 maskColor = ImGui::GetColorU32(ImVec4(settings._cameraMaskColor[0], settings._cameraMaskColor[1],
+                                                         settings._cameraMaskColor[2], settings._cameraMaskColor[3]));
+        // Bars around the camera frame. Depending on letterbox vs pillarbox one of the two
+        // pairs collapses to nothing, which the bounds checks below skip.
+        if (frameMin.y > 0.0f)
+            drawList->AddRectFilled(ImVec2(0.0f, 0.0f), ImVec2(windowWidth, frameMin.y), maskColor);
+        if (frameMax.y < windowHeight)
+            drawList->AddRectFilled(ImVec2(0.0f, frameMax.y), ImVec2(windowWidth, windowHeight), maskColor);
+        if (frameMin.x > 0.0f)
+            drawList->AddRectFilled(ImVec2(0.0f, frameMin.y), ImVec2(frameMin.x, frameMax.y), maskColor);
+        if (frameMax.x < windowWidth)
+            drawList->AddRectFilled(ImVec2(frameMax.x, frameMin.y), ImVec2(windowWidth, frameMax.y), maskColor);
+    }
+
+    if (settings._showCameraFrameOutline) {
+        const ImU32 outlineColor =
+            ImGui::GetColorU32(ImVec4(settings._cameraOutlineColor[0], settings._cameraOutlineColor[1],
+                                      settings._cameraOutlineColor[2], settings._cameraOutlineColor[3]));
+        drawList->AddRect(frameMin, frameMax, outlineColor);
+    }
 }
 
 void Viewport::BeginHydraUI(int width, int height) {
@@ -541,12 +636,20 @@ void Viewport::Render() {
     if (width == 0 || height == 0)
         return;
 
-    // Draw active manipulator and HUD
-    if (_imagingSettings.showGizmos) {
+    // Draw active manipulator, camera frame overlay and HUD
+    const bool showCameraFrame = IsCameraFrameVisible();
+    const bool showHydraUI = _imagingSettings.showGizmos || showCameraFrame;
+    if (showHydraUI) {
         BeginHydraUI(width, height);
-        GetActiveManipulator().OnDrawFrame(*this);
-        if (_currentEditingState && _currentEditingState != _activeManipulator)
-            _currentEditingState->OnDrawFrame(*this);
+        // Mask first so the manipulator gizmos draw on top of it.
+        if (showCameraFrame) {
+            DrawCameraFrameOverlay();
+        }
+        if (_imagingSettings.showGizmos) {
+            GetActiveManipulator().OnDrawFrame(*this);
+            if (_currentEditingState && _currentEditingState != _activeManipulator)
+                _currentEditingState->OnDrawFrame(*this);
+        }
         // DrawHUD(this);
         EndHydraUI();
     }
@@ -607,7 +710,7 @@ void Viewport::Render() {
     if (_imagingSettings.showCameras || _imagingSettings.showLights) {
         _sceneObjectDrawer.Render(*this);
     }
-    if (_imagingSettings.showGizmos) {
+    if (showHydraUI) {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
