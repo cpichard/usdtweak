@@ -18,6 +18,11 @@ endif()
 # download the latest version and add it to the project directly
 if (DEFINED glfw3_DIR)
     find_package(glfw3 3.4 REQUIRED)
+    message(WARNING
+        "Using an externally supplied GLFW (glfw3_DIR=${glfw3_DIR}). "
+        "The cursor-jump fixes in patches/glfw-3.4/ are NOT applied; if "
+        "you observe the disabled-cursor jump (GLFW #2523), apply those "
+        "patches manually to your GLFW build.")
 else ()
     # Fix the DOWNLOAD_EXTRACT_TIMESTAMP warning on cmake 3.23+
     if(POLICY CMP0135)
@@ -25,9 +30,14 @@ else ()
         set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
     endif()
     include(FetchContent)
+    # Patches in patches/glfw-3.4/ fix GLFW #2523 (cursor jump on entry to
+    # GLFW_CURSOR_DISABLED) on macOS, Win32, and X11.  apply.sh writes a
+    # stamp file so the patch step is idempotent across re-configures.
+    set(GLFW_PATCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/patches/glfw-3.4)
     FetchContent_Declare(
         glfw
         URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
+        PATCH_COMMAND sh ${GLFW_PATCH_DIR}/apply.sh ${GLFW_PATCH_DIR}
     )
     set(GLFW_BUILD_EXAMPLES OFF)
     set(GLFW_BUILD_TESTS OFF)

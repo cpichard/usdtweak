@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "MouseCapture.h"
 #include "3rdparty/imgui/imgui.h"
 #include "Blueprints.h"
 #include "StringSearchIndex.h"
@@ -31,7 +32,9 @@
 #include "Timeline.h"
 #include "UsdHelpers.h"
 #include "UsdPrimEditor.h"
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <iostream>
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -1036,43 +1039,28 @@ void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
 
-bool Editor::_enableConnectionEditor = false;
-bool Editor::_enableMouseCapture = false;
+bool Editor::_enableConnectionEditor = true;
 
-static bool gMouseCaptured = false;
-
-// workaround for GLFW bug that reports wrong mouse delta after mouse capture
-static int gSkipCapturedMouseDelta = 0;
+static MouseCapture gMouseCapture;
 
 bool Editor::GetMouseCaptured() {
-    return gMouseCaptured;
+    return gMouseCapture.Get();
+}
+
+bool &Editor::GetEnableMouseCapture() {
+    return gMouseCapture.Enabled();
+}
+
+bool Editor::IsMouseCaptureEnabled() {
+    return gMouseCapture.IsEnabled();
 }
 
 void Editor::SetMouseCaptured(bool captured) {
-    if (!_enableMouseCapture) return;
-    if (gMouseCaptured != captured) {
-        gMouseCaptured = captured;
-        if (auto window = glfwGetCurrentContext()) {
-            ImGuiIO &io = ImGui::GetIO();
-            if (captured) {
-                gSkipCapturedMouseDelta = 2;
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
-                io.MouseDelta = {0, 0};
-            } else {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-            }
-        }
-    }
+    gMouseCapture.Set(captured);
 }
 
 void Editor::Draw() {
-    if (gSkipCapturedMouseDelta > 0) {
-        ImGuiIO &io = ImGui::GetIO();
-        gSkipCapturedMouseDelta--;
-        io.MouseDelta = {0, 0};
-    }
+    gMouseCapture.ProcessFrame();
     ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();

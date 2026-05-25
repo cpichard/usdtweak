@@ -17,6 +17,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Gui.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImGuiHelpers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImGuiHelpers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MouseCapture.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/MouseCapture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdHelpers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdHelpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.cpp

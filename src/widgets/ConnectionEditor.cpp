@@ -312,7 +312,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     };
     
     void Begin(ImDrawList* drawList_) {
-        
+
         // Reset state
         event  = Events::IDLE; // reset event
         hasSelectedNodes = false; // reset selected nodes
@@ -330,11 +330,12 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         widgetBoundingBox.Min = widgetOrigin;
         widgetBoundingBox.Max = widgetOrigin + widgetSize;
         drawList->PushClipRect(widgetBoundingBox.Min, widgetBoundingBox.Max);
-        // There is no overlapping of widgets unfortunateluy
-        //if (ImGui::InvisibleButton("canvas", widgetBoundingBox.GetSize())) {
-        //    std::cout << "Canvas clicked" << std::endl;
-        //}
-        if (widgetBoundingBox.Contains(ImGui::GetMousePos()) || _isCapturing) {
+        // Keep processing events while in any active drag state so that dragging outside
+        // the widget boundary doesn't abort panning, zooming, node moves, etc.
+        const bool isDragging = (state == CANVAS_PANING || state == CANVAS_ZOOMING ||
+                                 state == MOVING_NODE   || state == SELECTING_REGION ||
+                                 state == SELECTING_NODE || state == CONNECTING_NODES);
+        if (widgetBoundingBox.Contains(ImGui::GetMousePos()) || isDragging) {
             // Click on the canvas TODO test bounding box
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
@@ -854,12 +855,10 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 selectionOrigin = ImGui::GetMousePos();
             } else if (event == CANVAS_CLICKED_PANNING) {
                 state = CANVAS_PANING;
-                _isCapturing = Editor::IsMouseCaptureEnabled();
-                Editor::SetMouseCaptured(true);
+                _SetCapture(true);
             } else if (event == CANVAS_CLICKED_ZOOMING) {
                 state = CANVAS_ZOOMING;
-                _isCapturing = Editor::IsMouseCaptureEnabled();
-                Editor::SetMouseCaptured(true);
+                _SetCapture(true);
             } else if (event == CLICK_RELEASED) {
                 state = HOVERING_CANVAS;
             } else if (event == CONNECTOR_CLICKED) {
@@ -883,8 +882,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_PANING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
-                _isCapturing = false;
-                Editor::SetMouseCaptured(false);
+                _SetCapture(false);
             }
             // Update scrolling
             else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
@@ -893,8 +891,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_ZOOMING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
-                _isCapturing = false;
-                Editor::SetMouseCaptured(false);
+                _SetCapture(false);
             }
             else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.f)) {
                 ZoomFromPosition(zoomClick, io.MouseDelta);
@@ -927,6 +924,25 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // NODE_SELECTION and RELEASED : action select node, should we add actions for selections ??
         // We certainly want actions for linking nodes
     }
+
+    // Lock/unlock the OS cursor during canvas pan/zoom so the cursor can't hit screen
+    // edges and limit travel. Deliberately does NOT set ImGuiConfigFlags_NoMouse — ImGui
+    // must still see io.MouseDelta and io.MouseDown for the canvas drag logic to work.
+    void _SetCapture(bool on) {
+        GLFWwindow *w = glfwGetCurrentContext();
+        if (!w) return;
+        if (on) {
+            glfwGetCursorPos(w, &_savedX, &_savedY);
+            glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            if (glfwRawMouseMotionSupported())
+                glfwSetInputMode(w, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        } else {
+            if (glfwRawMouseMotionSupported())
+                glfwSetInputMode(w, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+            glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            glfwSetCursorPos(w, _savedX, _savedY);
+        }
+    }
     
     ImRect GetSelectionRegion() const {
         const ImVec2 mousePos = ImGui::GetMousePos();
@@ -945,7 +961,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     float zooming = 1.f; // TODO: make sure zooming is never 0
     ImVec2 zoomClick = ImVec2(0.0f, 0.0f); // Zoom origin
     ImVec2 selectionOrigin; // TODO this could be union with zoom click (origin)
-    bool _isCapturing = false;
+    double _savedX = 0.0, _savedY = 0.0; // cursor position saved at start of canvas capture
     ImVec2 widgetOrigin = ImVec2(0.0f, 0.0f);  // canvasOrigin, canvasSize in screen coordinates
     ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
     ImRect widgetBoundingBox;
