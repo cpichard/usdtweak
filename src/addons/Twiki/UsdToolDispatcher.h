@@ -61,6 +61,7 @@ private:
     EditLayerProvider _editLayerFn;
 
     // Inspection tools.
+    std::string GetStageInfo        (const JsObject& args) const;
     std::string GetPrimInfo         (const JsObject& args) const;
     std::string GetAttributeValue   (const JsObject& args) const;
     std::string GetValueResolution  (const JsObject& args) const;

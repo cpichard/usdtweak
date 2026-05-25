@@ -112,7 +112,19 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             props, _Strings({"path"}))));
     }
 
-    // 5. get_layer_stack
+    // 5. get_stage_info
+    {
+        JsObject props;
+        tools.push_back(JsValue(_Tool(
+            "get_stage_info",
+            "Returns stage-level metadata: defaultPrim, start/end timecodes, "
+            "timeCodesPerSecond, upAxis, metersPerUnit, total prim count, and "
+            "layer count. Takes no arguments. Use when the user asks about the "
+            "scene as a whole, its time range, coordinate system, or scale.",
+            props, JsArray{})));
+    }
+
+    // 6. get_layer_stack
     {
         JsObject props;
         tools.push_back(JsValue(_Tool(
@@ -209,14 +221,21 @@ ToolDefs BuildEditToolDefinitions() {
         props["time"]      = MakeNumberParam(
             "optional time code; omit to set the default value, otherwise "
             "writes a time sample at this frame");
+        props["layer_id"]  = MakeStringParam(
+            "optional: identifier of the layer to write to, exactly as "
+            "returned by get_layer_stack (e.g. \"/path/to/shot.usda\" or "
+            "\"<anon:asset.usda>\"). When omitted the current edit target "
+            "is used. When provided the edit target is bypassed and the "
+            "named layer is written to directly. The result always reports "
+            "which layer was targeted.");
         tools.push_back(JsValue(_Tool(
             "set_attribute",
-            "QUEUES an edit that sets an attribute value on the current edit "
-            "target. The edit is applied on the next host frame, NOT during "
-            "this call — so the result string only confirms the queue. To "
-            "verify the change took effect, re-read with get_attribute_value "
-            "in your next tool step. Goes through usdtweak's undo stack so "
-            "Ctrl+Z reverts it.",
+            "QUEUES an edit that sets an attribute value. Without layer_id "
+            "it writes to the current edit target; with layer_id it writes "
+            "to that specific layer regardless of the edit target — call "
+            "get_layer_stack first to get valid identifiers. The result "
+            "names the target layer. The edit lands on the next frame, so "
+            "re-read with get_attribute_value to confirm. Undoable.",
             props, _Strings({"path", "attribute", "value"}))));
     }
 

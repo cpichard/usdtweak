@@ -189,6 +189,66 @@ void TestSetAttributeFloat(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
     std::fprintf(stdout, "  after undo:  focalLength = 35\n");
 }
 
+void TestSetAttributeOnNamedLayer() {
+    Section("set_attribute with layer_id writes to the named sublayer");
+
+    // Two-layer fixture: shot sublayers asset. Edit target = shot.
+    SdfLayerRefPtr asset = SdfLayer::CreateAnonymous("asset.usda");
+    asset->ImportFromString(R"(#usda 1.0
+def Xform "World" {
+    def Camera "Camera" {
+        float focalLength = 35.0
+    }
+})");
+    SdfLayerRefPtr shot = SdfLayer::CreateAnonymous("shot.usda");
+    shot->ImportFromString("#usda 1.0\n");
+    shot->SetSubLayerPaths({asset->GetIdentifier()});
+    UsdStageRefPtr twoLayerStage = UsdStage::Open(shot);
+
+    UsdToolDispatcher d2(
+        /*stageFn*/    [&]() { return twoLayerStage; },
+        /*editLayerFn*/[&]() { return shot; });
+
+    // Write to the asset layer by display name (as get_layer_stack would return).
+    std::string assetName = "<anon:asset.usda>";
+    std::string r = d2.Dispatch("set_attribute",
+        Args({{"path",      JsValue(std::string("/World/Camera"))},
+              {"attribute", JsValue(std::string("focalLength"))},
+              {"value",     JsValue(std::string("70.0"))},
+              {"layer_id",  JsValue(assetName)}}));
+    std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "Queued:");
+    CHECK_CONTAINS(r, "asset.usda");
+
+    Pump();
+
+    // Composed value should now be 70.
+    UsdAttribute fl = twoLayerStage->GetPrimAtPath(SdfPath("/World/Camera"))
+                                    .GetAttribute(TfToken("focalLength"));
+    float val = 0.f;
+    fl.Get(&val);
+    std::fprintf(stdout, "  after pump:  focalLength = %g\n", val);
+    CHECK(val == 70.0f);
+
+    // The shot layer must have no opinion — asset layer holds it.
+    bool shotHasOpinion = false;
+    for (const auto& spec : fl.GetPropertyStack()) {
+        if (spec->GetLayer() == SdfLayerHandle(shot)) { shotHasOpinion = true; break; }
+    }
+    CHECK(!shotHasOpinion);
+    std::fprintf(stdout, "  shot has no opinion on focalLength: OK\n");
+
+    // Error: unknown layer_id.
+    r = d2.Dispatch("set_attribute",
+        Args({{"path",      JsValue(std::string("/World/Camera"))},
+              {"attribute", JsValue(std::string("focalLength"))},
+              {"value",     JsValue(std::string("1.0"))},
+              {"layer_id",  JsValue(std::string("<anon:nosuchfile.usda>"))}}));
+    std::fprintf(stdout, "  bad layer_id: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "[error]");
+    CHECK_CONTAINS(r, "not found");
+}
+
 void TestErrorPaths(UsdToolDispatcher& d) {
     Section("set_visibility bad value");
     std::string r = d.Dispatch("set_visibility",
@@ -231,10 +291,11 @@ int main() {
         /*stageFn*/    [&]() { return stage; },
         /*editLayerFn*/[&]() { return layer; });
 
-    TestSetVisibilityAndUndo(dispatcher, stage);
-    TestSetActiveAndUndo    (dispatcher, stage);
-    TestSetAttributeFloat   (dispatcher, stage);
-    TestErrorPaths          (dispatcher);
+    TestSetVisibilityAndUndo    (dispatcher, stage);
+    TestSetActiveAndUndo        (dispatcher, stage);
+    TestSetAttributeFloat       (dispatcher, stage);
+    TestSetAttributeOnNamedLayer();
+    TestErrorPaths              (dispatcher);
 
     if (g_failures != 0) {
         std::fprintf(stderr, "\ntest_usd_edit: %d failure(s)\n", g_failures);

@@ -77,6 +77,7 @@ def Xform "World" (
 // Shot layer: sublayers the asset and overrides one value.
 const char* kShotLayer = R"(#usda 1.0
 (
+    defaultPrim = "World"
     subLayers = [
         @asset.usda@
     ]
@@ -121,6 +122,20 @@ JsObject Args(std::initializer_list<std::pair<std::string, JsValue>> kvs) {
 
 void Section(const char* title) {
     std::fprintf(stdout, "\n=== %s ===\n", title);
+}
+
+void TestGetStageInfo(UsdToolDispatcher& d) {
+    Section("get_stage_info");
+    std::string out = d.Dispatch("get_stage_info", Args());
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "defaultPrim: /World");
+    CHECK_CONTAINS(out, "startTimeCode:");
+    CHECK_CONTAINS(out, "endTimeCode:");
+    CHECK_CONTAINS(out, "timeCodesPerSecond:");
+    CHECK_CONTAINS(out, "upAxis:");
+    CHECK_CONTAINS(out, "metersPerUnit:");
+    CHECK_CONTAINS(out, "layerCount:");
+    CHECK_CONTAINS(out, "primCount:");
 }
 
 void TestGetPrimInfo(UsdToolDispatcher& d) {
@@ -290,6 +305,7 @@ int main() {
         /*stageFn*/    [&]() { return stage; },
         /*editLayerFn*/[&]() { return shot;  });
 
+    TestGetStageInfo      (dispatcher);
     TestGetPrimInfo       (dispatcher);
     TestGetAttributeValue (dispatcher);
     TestGetValueResolution(dispatcher);

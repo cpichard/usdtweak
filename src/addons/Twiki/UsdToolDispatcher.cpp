@@ -24,7 +24,9 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usd/timeCode.h>
 #include <pxr/usd/usd/variantSets.h>
+#include <pxr/usd/usd/editContext.h>
 #include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/metrics.h>
 
 #include <cstdlib>
 #include <exception>
@@ -86,6 +88,17 @@ std::string _LayerName(const SdfLayerHandle& l) {
     return l->GetIdentifier();
 }
 
+// Find a layer in the stage's layer stack by its identifier or its display
+// name as returned by _LayerName (e.g. "<anon:shot.usda>"). Searching by
+// display name lets the LLM reuse the strings it saw from get_layer_stack
+// without needing to know the raw anonymous-layer identifier.
+SdfLayerHandle _FindLayer(const UsdStageRefPtr& stage, const std::string& id) {
+    for (const SdfLayerHandle& l : stage->GetLayerStack(/*includeSessionLayers=*/true)) {
+        if (l->GetIdentifier() == id || _LayerName(l) == id) return l;
+    }
+    return {};
+}
+
 } // namespace
 
 UsdToolDispatcher::UsdToolDispatcher(StageProvider     stageFn,
@@ -125,7 +138,8 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
                                         const JsObject&    args) {
     std::string result;
     try {
-        if      (toolName == "get_prim_info")        result = GetPrimInfo(args);
+        if      (toolName == "get_stage_info")       result = GetStageInfo(args);
+        else if (toolName == "get_prim_info")        result = GetPrimInfo(args);
         else if (toolName == "get_attribute_value")  result = GetAttributeValue(args);
         else if (toolName == "get_value_resolution") result = GetValueResolution(args);
         else if (toolName == "get_composition_arcs") result = GetCompositionArcs(args);
@@ -145,6 +159,35 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         result = "[error] unknown exception in tool " + toolName;
     }
     return _CapResult(std::move(result));
+}
+
+// --------------------------------------------------------------------------
+// 0. get_stage_info
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::GetStageInfo(const JsObject& /*args*/) const {
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    std::ostringstream oss;
+
+    UsdPrim defPrim = stage->GetDefaultPrim();
+    oss << "defaultPrim: "
+        << (defPrim ? defPrim.GetPath().GetString() : "<none>") << "\n";
+
+    oss << "startTimeCode: "      << stage->GetStartTimeCode()     << "\n";
+    oss << "endTimeCode: "        << stage->GetEndTimeCode()        << "\n";
+    oss << "timeCodesPerSecond: " << stage->GetTimeCodesPerSecond() << "\n";
+    oss << "upAxis: "             << UsdGeomGetStageUpAxis(stage).GetString() << "\n";
+    oss << "metersPerUnit: "      << UsdGeomGetStageMetersPerUnit(stage)      << "\n";
+
+    size_t layerCount = stage->GetLayerStack(/*includeSessionLayers=*/true).size();
+    oss << "layerCount: " << layerCount << "\n";
+
+    size_t primCount = 0;
+    for (const UsdPrim& p : stage->Traverse()) { (void)p; ++primCount; }
+    oss << "primCount: " << primCount << "\n";
+
+    return oss.str();
 }
 
 // --------------------------------------------------------------------------
@@ -610,19 +653,50 @@ std::string UsdToolDispatcher::SetAttribute(const JsObject& args) const {
     }
 
     UsdTimeCode time = _GetTime(args);
+    const std::string timeStr = time.IsDefault()
+        ? std::string("DEFAULT")
+        : TfStringPrintf("%g", time.GetValue());
 
-    ExecuteAfterDraw<AttributeSet>(attr, value, time);
+    // Resolve the target layer — either named via layer_id or the edit target.
+    const std::string layerIdArg = JsGetString(args, "layer_id");
+    std::string targetLayerName;
+
+    if (layerIdArg.empty()) {
+        // Default: write to the current edit target.
+        ExecuteAfterDraw<AttributeSet>(attr, value, time);
+        SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+        targetLayerName = editLayer ? _LayerName(editLayer) : "<none>";
+    } else {
+        // Explicit layer: bypass the edit target.
+        SdfLayerHandle layer = _FindLayer(stage, layerIdArg);
+        if (!layer) {
+            return "[error] layer '" + layerIdArg + "' not found in the stage's "
+                   "layer stack. Call get_layer_stack to see available layers.";
+        }
+        if (!layer->PermissionToEdit()) {
+            return "[error] layer '" + layerIdArg + "' is read-only";
+        }
+        targetLayerName = _LayerName(layer);
+
+        // Capture by value so the lambda is safe after this frame.
+        SdfPath attrPath = attr.GetPath();
+        UsdStageRefPtr stageCopy = stage;
+        std::string ident = layer->GetIdentifier();
+        std::function<void()> fn = [stageCopy, attrPath, value, time, ident]() {
+            SdfLayerHandle l = SdfLayer::Find(ident);
+            if (!l) return;
+            UsdEditContext ctx(stageCopy, UsdEditTarget(l));
+            UsdAttribute a = stageCopy->GetAttributeAtPath(attrPath);
+            if (a) a.Set(value, time);
+        };
+        ExecuteAfterDraw<UsdFunctionCall>(layer, fn);
+    }
 
     std::ostringstream oss;
     oss << "Queued: set " << path.GetString() << "." << attrName
         << " (" << attr.GetTypeName().GetAsToken().GetString() << ") = "
-        << valueText
-        << " @ " << (time.IsDefault() ? "DEFAULT"
-                                       : TfStringPrintf("%g", time.GetValue()))
-        << " on edit target "
-        << (stage->GetEditTarget().GetLayer()
-            ? stage->GetEditTarget().GetLayer()->GetIdentifier()
-            : std::string("<none>"))
+        << valueText << " @ " << timeStr
+        << " on layer " << targetLayerName
         << ". Re-read on next step to confirm.";
     return oss.str();
 }
