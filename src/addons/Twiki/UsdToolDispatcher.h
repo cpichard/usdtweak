@@ -61,7 +61,7 @@ private:
     EditLayerProvider _editLayerFn;
 
     // Inspection tools.
-    std::string GetStageInfo        (const JsObject& args) const;
+    std::string GetStageInfo            (const JsObject& args) const;
     std::string GetPrimInfo         (const JsObject& args) const;
     std::string GetAttributeValue   (const JsObject& args) const;
     std::string GetValueResolution  (const JsObject& args) const;
@@ -69,6 +69,9 @@ private:
     std::string GetLayerStack       (const JsObject& args) const;
     std::string ListChildren        (const JsObject& args) const;
     std::string FindPrims           (const JsObject& args) const;
+
+    // Transform tool.
+    std::string SetXform            (const JsObject& args) const;
 
     // Edit tools — queue commands via ExecuteAfterDraw and return immediately.
     // The actual edit lands when the host application drains the command
@@ -82,6 +85,23 @@ private:
     // Selection tools.
     std::string GetSelection        (const JsObject& args) const;
     std::string SelectPrims         (const JsObject& args) const;
+
+    // Authoring tools.
+    std::string CreatePrim          (const JsObject& args) const;
+
+    // Relationship tools.
+    std::string GetRelationshipTargets (const JsObject& args) const;
+    std::string SetRelationship        (const JsObject& args) const;
+
+    // Deletion tools.
+    std::string DeletePrim             (const JsObject& args) const;
+
+    // Composition arc tools.
+    std::string AddReference        (const JsObject& args) const;
+    std::string AddPayload          (const JsObject& args) const;
+    std::string AddInherit          (const JsObject& args) const;
+    std::string AddSpecialize       (const JsObject& args) const;
+    std::string AddSublayer         (const JsObject& args) const;
 
     SelectionProvider _selectionFn;  // declared after the existing providers
 };

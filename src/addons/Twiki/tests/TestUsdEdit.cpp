@@ -16,6 +16,7 @@
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/xformCommonAPI.h>
 
 #include <cstdio>
 #include <string>
@@ -189,6 +190,98 @@ void TestSetAttributeFloat(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
     std::fprintf(stdout, "  after undo:  focalLength = 35\n");
 }
 
+void TestSetXform() {
+    Section("set_xform translate / rotate / scale, with undo");
+
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("xform.usda");
+    layer->ImportFromString(R"(#usda 1.0
+def Xform "Hero" {
+})");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+
+    UsdToolDispatcher d(
+        /*stageFn*/    [&]() { return stage; },
+        /*editLayerFn*/[&]() { return layer; });
+
+    auto makeArgs = [](std::initializer_list<std::pair<std::string, JsValue>> kvs) {
+        JsObject o;
+        for (const auto& kv : kvs) o[kv.first] = kv.second;
+        return o;
+    };
+
+    JsArray t; t.push_back(JsValue(10.0)); t.push_back(JsValue(0.0)); t.push_back(JsValue(0.0));
+    JsArray r; r.push_back(JsValue(0.0));  r.push_back(JsValue(45.0)); r.push_back(JsValue(0.0));
+    JsArray s; s.push_back(JsValue(2.0));  s.push_back(JsValue(2.0));  s.push_back(JsValue(2.0));
+
+    // --- translate ---
+    std::string res = d.Dispatch("set_xform",
+        makeArgs({{"path",      JsValue(std::string("/Hero"))},
+                  {"operation", JsValue(std::string("translate"))},
+                  {"value",     JsValue(t)}}));
+    std::fprintf(stdout, "  translate dispatch: %s\n", res.c_str());
+    CHECK_CONTAINS(res, "Queued:");
+    CHECK_CONTAINS(res, "translate");
+    Pump();
+
+    UsdGeomXformCommonAPI xformAPI(stage->GetPrimAtPath(SdfPath("/Hero")));
+    GfVec3d tr; GfVec3f rot, sc, pivot;
+    UsdGeomXformCommonAPI::RotationOrder rotOrder;
+    xformAPI.GetXformVectors(&tr, &rot, &sc, &pivot, &rotOrder, UsdTimeCode::Default());
+    std::fprintf(stdout, "  after translate pump:  translate = (%g, %g, %g)\n",
+                 tr[0], tr[1], tr[2]);
+    CHECK(tr[0] == 10.0 && tr[1] == 0.0 && tr[2] == 0.0);
+
+    // --- rotate ---
+    res = d.Dispatch("set_xform",
+        makeArgs({{"path",      JsValue(std::string("/Hero"))},
+                  {"operation", JsValue(std::string("rotate"))},
+                  {"value",     JsValue(r)}}));
+    CHECK_CONTAINS(res, "Queued:");
+    Pump();
+
+    xformAPI.GetXformVectors(&tr, &rot, &sc, &pivot, &rotOrder, UsdTimeCode::Default());
+    std::fprintf(stdout, "  after rotate pump:  rotate = (%g, %g, %g)\n",
+                 rot[0], rot[1], rot[2]);
+    CHECK(rot[1] == 45.0f);
+
+    // --- scale ---
+    res = d.Dispatch("set_xform",
+        makeArgs({{"path",      JsValue(std::string("/Hero"))},
+                  {"operation", JsValue(std::string("scale"))},
+                  {"value",     JsValue(s)}}));
+    CHECK_CONTAINS(res, "Queued:");
+    Pump();
+
+    xformAPI.GetXformVectors(&tr, &rot, &sc, &pivot, &rotOrder, UsdTimeCode::Default());
+    std::fprintf(stdout, "  after scale pump:  scale = (%g, %g, %g)\n",
+                 sc[0], sc[1], sc[2]);
+    CHECK(sc[0] == 2.0f && sc[1] == 2.0f && sc[2] == 2.0f);
+
+    // --- undo the scale ---
+    QueueUndo();
+    Pump();
+    xformAPI.GetXformVectors(&tr, &rot, &sc, &pivot, &rotOrder, UsdTimeCode::Default());
+    std::fprintf(stdout, "  after undo scale:  scale = (%g, %g, %g)\n",
+                 sc[0], sc[1], sc[2]);
+    CHECK(sc[0] == 1.0f && sc[1] == 1.0f && sc[2] == 1.0f);
+
+    // --- error: non-xformable prim ---
+    SdfLayerRefPtr layerB = SdfLayer::CreateAnonymous("noXform.usda");
+    layerB->ImportFromString(R"(#usda 1.0
+def Scope "Foo" {
+})");
+    UsdStageRefPtr stageB = UsdStage::Open(layerB);
+    UsdToolDispatcher dB([&]() { return stageB; });
+    JsArray dummy; dummy.push_back(JsValue(1.0)); dummy.push_back(JsValue(0.0)); dummy.push_back(JsValue(0.0));
+    res = dB.Dispatch("set_xform",
+        makeArgs({{"path",      JsValue(std::string("/Foo"))},
+                  {"operation", JsValue(std::string("translate"))},
+                  {"value",     JsValue(dummy)}}));
+    std::fprintf(stdout, "  non-xformable error: %s\n", res.c_str());
+    CHECK_CONTAINS(res, "[error]");
+    CHECK_CONTAINS(res, "not UsdGeomXformable");
+}
+
 void TestSetAttributeOnNamedLayer() {
     Section("set_attribute with layer_id writes to the named sublayer");
 
@@ -294,6 +387,7 @@ int main() {
     TestSetVisibilityAndUndo    (dispatcher, stage);
     TestSetActiveAndUndo        (dispatcher, stage);
     TestSetAttributeFloat       (dispatcher, stage);
+    TestSetXform                ();
     TestSetAttributeOnNamedLayer();
     TestErrorPaths              (dispatcher);
 
