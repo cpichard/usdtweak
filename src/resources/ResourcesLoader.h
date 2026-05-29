@@ -25,6 +25,8 @@ class ResourcesLoader {
     // The empty string is the default application embedded font
     static const std::string &GetFontRegularPath() { return _fontRegularPathLoaded; };
     static const std::string &GetFontMonoPath() { return _fontMonoPathLoaded; };
+    static const std::string &GetFontBoldPath() { return _fontBoldPathLoaded; };
+    static const std::string &GetFontItalicPath() { return _fontItalicPathLoaded; };
     static const std::string &GetGlyphRangeName() { return _glyphRange; };
     static const std::vector<std::string> &GetGlyphRangeNames();
 
@@ -33,17 +35,29 @@ class ResourcesLoader {
     // resourceLoader keeps the path to the desired fonts.
     static void RequestNewFontRegular(const std::string &fontPath) { _fontRegularPathRequested = fontPath; }
     static void RequesNewFontMono(const std::string &fontPath) { _fontMonoPathRequested = fontPath; }
+    static void RequestNewFontBold(const std::string &fontPath) { _fontBoldPathRequested = fontPath; }
+    static void RequestNewFontItalic(const std::string &fontPath) { _fontItalicPathRequested = fontPath; }
     static void SetGlyphRangeName(const std::string &glyphName) { _glyphRange = glyphName; }
 
     // Load regular and mono fonts, should be called outside of the main draw function using the command
     // EditorReloadFonts
     static void LoadFonts();
 
-    // Push the currently load regular fonts
+    // Push the currently loaded fonts
     static void PushFontRegular() { ImGui::PushFont(_fontRegular); }
     static void PopFontRegular() { ImGui::PopFont(); }
     static void PushFontMono() { ImGui::PushFont(_fontMono); }
     static void PopFontMono() { ImGui::PopFont(); }
+    static void PushFontBold() { ImGui::PushFont(_fontBold ? _fontBold : _fontRegular); }
+    static void PopFontBold() { ImGui::PopFont(); }
+    static void PushFontItalic() { ImGui::PushFont(_fontItalic ? _fontItalic : _fontRegular); }
+    static void PopFontItalic() { ImGui::PopFont(); }
+
+    // Raw font pointers — needed to fill ImGui::MarkdownConfig::headingFormats.
+    // Fall back to _fontRegular when the bold/italic slot is not loaded yet.
+    static ImFont* GetFontBoldPtr()   { return _fontBold   ? _fontBold   : _fontRegular; }
+    static ImFont* GetFontItalicPtr() { return _fontItalic ? _fontItalic : _fontRegular; }
+    static ImFont* GetFontMonoPtr()   { return _fontMono; }
 
     // This should not be called during a frame render.
     static void ScaleUI(float scaleValue);
@@ -55,13 +69,21 @@ class ResourcesLoader {
     static EditorSettings _editorSettings;
     static ViewportSettings _viewportSettings;
 
-    static std::string _fontRegularPathRequested; // What the user has asked
-    static std::string _fontRegularPathLoaded;    // What is actually loaded
-    static ImFont *_fontRegular;                  // Font memory location
+    static std::string _fontRegularPathRequested;
+    static std::string _fontRegularPathLoaded;
+    static ImFont *_fontRegular;
 
-    static std::string _fontMonoPathRequested; // What the user has asked
-    static std::string _fontMonoPathLoaded;    // What is actually loaded
-    static ImFont *_fontMono;                  // Font memory location
+    static std::string _fontMonoPathRequested;
+    static std::string _fontMonoPathLoaded;
+    static ImFont *_fontMono;
+
+    static std::string _fontBoldPathRequested;
+    static std::string _fontBoldPathLoaded;
+    static ImFont *_fontBold;
+
+    static std::string _fontItalicPathRequested;
+    static std::string _fontItalicPathLoaded;
+    static ImFont *_fontItalic;
 
     static std::string _glyphRange;
 

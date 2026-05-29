@@ -36,10 +36,15 @@ public:
     using StageProvider     = std::function<UsdStageRefPtr()>;
     using EditLayerProvider = std::function<SdfLayerRefPtr()>;
     using SelectionProvider = std::function<Selection*()>;
+    // Called on the UI thread with (filePath, asStage). asStage=true → open as
+    // composed stage; false → open as layer (FindOrOpenLayer). Leave empty {}
+    // in test builds where the editor is not linked.
+    using OpenFileProvider  = std::function<void(const std::string&, bool)>;
 
     UsdToolDispatcher(StageProvider     stageFn,
-                      EditLayerProvider editLayerFn = {},
-                      SelectionProvider selectionFn = {});
+                      EditLayerProvider editLayerFn  = {},
+                      SelectionProvider selectionFn  = {},
+                      OpenFileProvider  openFileFn   = {});
 
     std::string Dispatch(const std::string& toolName, const JsObject& args);
 
@@ -69,25 +74,34 @@ private:
     std::string GetLayerStack       (const JsObject& args) const;
     std::string ListChildren        (const JsObject& args) const;
     std::string FindPrims           (const JsObject& args) const;
+    std::string GetNameVocabulary   (const JsObject& args) const;
+    std::string FindUsdFiles        (const JsObject& args) const;
 
     // Transform tool.
-    std::string SetXform            (const JsObject& args) const;
+    std::string SetXforms           (const JsObject& args) const;
 
     // Edit tools — queue commands via ExecuteAfterDraw and return immediately.
     // The actual edit lands when the host application drains the command
     // queue (next frame in usdtweak; explicitly via CommandStack::ExecuteCommands
     // in tests). Result strings explain that the edit was queued.
-    std::string SetAttribute        (const JsObject& args) const;
+    std::string SetAttributes       (const JsObject& args) const;
     std::string SetActive           (const JsObject& args) const;
     std::string SetVariant          (const JsObject& args) const;
-    std::string SetVisibility       (const JsObject& args) const;
+    std::string SetVisibilities     (const JsObject& args) const;
 
     // Selection tools.
     std::string GetSelection        (const JsObject& args) const;
     std::string SelectPrims         (const JsObject& args) const;
 
+    // Edit target tools.
+    std::string GetEditTarget       (const JsObject& args) const;
+    std::string SetEditTarget       (const JsObject& args) const;
+
+    // File-open tool.
+    std::string OpenFile            (const JsObject& args) const;
+
     // Authoring tools.
-    std::string CreatePrim          (const JsObject& args) const;
+    std::string CreatePrims         (const JsObject& args) const;
 
     // Relationship tools.
     std::string GetRelationshipTargets (const JsObject& args) const;
@@ -97,13 +111,14 @@ private:
     std::string DeletePrim             (const JsObject& args) const;
 
     // Composition arc tools.
-    std::string AddReference        (const JsObject& args) const;
-    std::string AddPayload          (const JsObject& args) const;
-    std::string AddInherit          (const JsObject& args) const;
-    std::string AddSpecialize       (const JsObject& args) const;
+    std::string AddReferences       (const JsObject& args) const;
+    std::string AddPayloads         (const JsObject& args) const;
+    std::string AddInherits         (const JsObject& args) const;
+    std::string AddSpecializes      (const JsObject& args) const;
     std::string AddSublayer         (const JsObject& args) const;
 
-    SelectionProvider _selectionFn;  // declared after the existing providers
+    SelectionProvider _selectionFn;
+    OpenFileProvider  _openFileFn;
 };
 
 } // namespace UsdAgent

@@ -10,6 +10,8 @@
 #include "FontAwesomeFree5.h"
 #include "IBMPlexMonoFree.h"
 #include "IBMPlexSansMediumFree.h"
+#include "IBMPlexSansBoldFree.h"
+#include "IBMPlexSansItalicFree.h"
 
 #define GUI_CONFIG_FILE "usdtweak_gui.ini"
 
@@ -108,6 +110,10 @@ static void UsdTweakDataReadLine(ImGuiContext *, ImGuiSettingsHandler *iniHandle
         ResourcesLoader::RequestNewFontRegular(line + 5);
     } else if (sscanf(line, "FontMono=%s", strBuffer) == 1) {
         ResourcesLoader::RequesNewFontMono(line + 9);
+    } else if (sscanf(line, "FontBold=%s", strBuffer) == 1) {
+        ResourcesLoader::RequestNewFontBold(line + 9);
+    } else if (sscanf(line, "FontItalic=%s", strBuffer) == 1) {
+        ResourcesLoader::RequestNewFontItalic(line + 11);
     } else if (sscanf(line, "GlyphRange=%s", strBuffer) == 1) {
         ResourcesLoader::SetGlyphRangeName(line + 11);
     }
@@ -126,6 +132,14 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
     if (!fontMonoPath.empty()) {
         buf->appendf("FontMono=%s\n", fontMonoPath.c_str());
     }
+    const std::string &fontBoldPath = ResourcesLoader::GetFontBoldPath();
+    if (!fontBoldPath.empty()) {
+        buf->appendf("FontBold=%s\n", fontBoldPath.c_str());
+    }
+    const std::string &fontItalicPath = ResourcesLoader::GetFontItalicPath();
+    if (!fontItalicPath.empty()) {
+        buf->appendf("FontItalic=%s\n", fontItalicPath.c_str());
+    }
     const std::string &glyphRange = ResourcesLoader::GetGlyphRangeName();
     if (!glyphRange.empty()) {
         buf->appendf("GlyphRange=%s\n", glyphRange.c_str());
@@ -142,10 +156,16 @@ static void UsdTweakDataWriteAll(ImGuiContext *ctx, ImGuiSettingsHandler *iniHan
 bool ResourcesLoader::_resourcesLoaded = false;
 std::string ResourcesLoader::_fontRegularPathRequested = std::string();
 std::string ResourcesLoader::_fontMonoPathRequested = std::string();
+std::string ResourcesLoader::_fontBoldPathRequested = std::string();
+std::string ResourcesLoader::_fontItalicPathRequested = std::string();
 std::string ResourcesLoader::_fontRegularPathLoaded = std::string();
 std::string ResourcesLoader::_fontMonoPathLoaded = std::string();
+std::string ResourcesLoader::_fontBoldPathLoaded = std::string();
+std::string ResourcesLoader::_fontItalicPathLoaded = std::string();
 ImFont *ResourcesLoader::_fontRegular = nullptr;
 ImFont *ResourcesLoader::_fontMono = nullptr;
+ImFont *ResourcesLoader::_fontBold = nullptr;
+ImFont *ResourcesLoader::_fontItalic = nullptr;
 
 std::string ResourcesLoader::_glyphRange = std::string();
 
@@ -250,6 +270,40 @@ void ResourcesLoader::LoadFonts() {
             _fontMonoPathLoaded = "";
         } else {
             _fontMonoPathLoaded = _fontMonoPathRequested;
+        }
+    }
+
+    // Bold font — user path or embedded IBM Plex Sans Bold
+    if (_fontBoldPathRequested != _fontBoldPathLoaded || _fontBold == nullptr) {
+        if (!_fontBoldPathRequested.empty())
+            _fontBold = io.Fonts->AddFontFromFileTTF(_fontBoldPathRequested.c_str(), fontInitialSize, &fontConfig, glyphRange);
+        if (!_fontBold || _fontBoldPathRequested.empty()) {
+            ImFontConfig embeddedCfg;
+            embeddedCfg.FontDataOwnedByAtlas = false;
+            embeddedCfg.Flags |= ImFontFlags_NoLoadError;
+            _fontBold = io.Fonts->AddFontFromMemoryTTF(
+                (void *)ibmplexsansboldfree_data, (int)ibmplexsansboldfree_size,
+                fontInitialSize, &embeddedCfg, nullptr);
+            _fontBoldPathLoaded = "";
+        } else {
+            _fontBoldPathLoaded = _fontBoldPathRequested;
+        }
+    }
+
+    // Italic font — user path or embedded IBM Plex Sans Italic
+    if (_fontItalicPathRequested != _fontItalicPathLoaded || _fontItalic == nullptr) {
+        if (!_fontItalicPathRequested.empty())
+            _fontItalic = io.Fonts->AddFontFromFileTTF(_fontItalicPathRequested.c_str(), fontInitialSize, &fontConfig, glyphRange);
+        if (!_fontItalic || _fontItalicPathRequested.empty()) {
+            ImFontConfig embeddedCfg;
+            embeddedCfg.FontDataOwnedByAtlas = false;
+            embeddedCfg.Flags |= ImFontFlags_NoLoadError;
+            _fontItalic = io.Fonts->AddFontFromMemoryTTF(
+                (void *)ibmplexsansitalicfree_data, (int)ibmplexsansitalicfree_size,
+                fontInitialSize, &embeddedCfg, nullptr);
+            _fontItalicPathLoaded = "";
+        } else {
+            _fontItalicPathLoaded = _fontItalicPathRequested;
         }
     }
 }

@@ -36,8 +36,13 @@ UsdAgent::AgentChatPanel &GetPanel() {
             // const_cast goes away.
             return const_cast<Selection *>(&usdtweak::GetSelection());
         };
+        auto openFileFn = [](const std::string& path, bool asStage) {
+            if (asStage) usdtweak::OpenStage(path);
+            else         usdtweak::FindOrOpenLayer(path);
+        };
         return std::make_unique<UsdAgent::AgentChatPanel>(
-            std::move(stageFn), std::move(editLayerFn), std::move(selectionFn));
+            std::move(stageFn), std::move(editLayerFn),
+            std::move(selectionFn), std::move(openFileFn));
     }();
     return *panel;
 }

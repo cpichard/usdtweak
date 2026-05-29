@@ -52,6 +52,22 @@ JsObject _ArrayOfStringsParam(const std::string& description) {
     return p;
 }
 
+// Build a JSON Schema "array of objects" parameter with a given item shape.
+JsObject _ObjectArrayParam(const JsObject&    itemProps,
+                           const JsArray&     itemRequired,
+                           const std::string& description) {
+    JsObject itemSchema;
+    itemSchema["type"]       = JsValue(std::string("object"));
+    itemSchema["properties"] = JsValue(itemProps);
+    itemSchema["required"]   = JsValue(itemRequired);
+
+    JsObject p;
+    p["type"]        = JsValue(std::string("array"));
+    p["items"]       = JsValue(itemSchema);
+    p["description"] = JsValue(description);
+    return p;
+}
+
 } // namespace
 
 ToolDefs BuildReadOnlyToolDefinitions() {
@@ -148,7 +164,20 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             props, JsArray{})));
     }
 
-    // 6. list_children
+    // get_edit_target
+    {
+        JsObject props;
+        tools.push_back(JsValue(_Tool(
+            "get_edit_target",
+            "Returns the layer that is currently set as the edit target — "
+            "the layer where all write operations (set_attributes, create_prims, "
+            "etc.) land by default. Shows the layer name, identifier, and any "
+            "[readonly] or [muted] flags. Takes no arguments. Use before "
+            "issuing edits when you need to confirm which layer will be written.",
+            props, JsArray{})));
+    }
+
+    // list_children
     {
         JsObject props;
         props["path"]      = MakeStringParam(
@@ -199,15 +228,47 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "\"proxy\", or \"guide\"");
         props["active"]  = MakeBoolParam(
             "if set, only prims whose active state matches");
+        props["name_pattern"] = MakeStringParam(
+            "case-sensitive substring match against the prim's local name "
+            "(last path element, not the full path)");
+        props["name_tokens"] = _ArrayOfStringsParam(
+            "case-insensitive OR match: a prim matches if its name contains "
+            "ANY of these lexical tokens (as produced by get_name_vocabulary). "
+            "Use this to resolve vocabulary terms to prims in one call, e.g. "
+            "[\"towel\",\"plate\"]. Matches whole tokens, not substrings — for "
+            "substring matching on the raw name use name_pattern instead.");
         tools.push_back(JsValue(_Tool(
             "find_prims",
             "Searches the entire stage for prims matching the given filters "
-            "(all filters optional, combined with AND). Result is capped at "
-            "50 prims; the count is reported. Long results are additionally "
+            "(type / kind / purpose / active / name_pattern / name_tokens, all "
+            "optional, combined with AND). Prefer name_pattern when the user "
+            "refers to a prim by name rather than path. To answer questions "
+            "about what KINDS of things are in the scene or to group prims by "
+            "meaning, call get_name_vocabulary first, then pass the relevant "
+            "tokens to name_tokens. The total match count is always reported "
+            "even when the listing is capped at 50 prims — trust that count, "
+            "not the number of lines shown. Long results are additionally "
             "subject to the global 8 KB cap and may end with a "
             "'[... truncated]' marker — narrow the filters if that appears. "
             "Use when the user asks for all prims of a kind, all cameras, "
             "all render-purpose prims, etc.",
+            props, JsArray{})));
+    }
+
+    // 7c. get_name_vocabulary
+    {
+        JsObject props;   // no parameters
+        tools.push_back(JsValue(_Tool(
+            "get_name_vocabulary",
+            "Returns the lexical vocabulary of the stage: every distinct token "
+            "found in prim names, with the number of prims contributing each, "
+            "sorted by frequency. Names are split on '_'/'-'/camelCase, "
+            "lowercased, and pure-number parts dropped (e.g. /Kitchen_001/"
+            "Props/TOwel_1 contributes kitchen, props, towel). Use this as a "
+            "semantic table of contents BEFORE answering questions about what "
+            "is in the scene or grouping prims by meaning, then resolve tokens "
+            "to prims with find_prims name_tokens. Much cheaper than "
+            "enumerating the hierarchy.",
             props, JsArray{})));
     }
 
@@ -228,22 +289,49 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             props, _Strings({"path", "name"}))));
     }
 
+    // find_usd_files
+    {
+        JsObject props;
+        props["name_pattern"] = MakeStringParam(
+            "case-insensitive substring matched against the filename "
+            "(including extension), e.g. \"oscilloscope\" matches "
+            "\"Oscilloscope_v2.usda\". Either name_pattern or "
+            "content_pattern (or both) must be provided.");
+        props["content_pattern"] = MakeStringParam(
+            "case-insensitive substring to search inside file contents. "
+            "Only text USD files (.usda and .usd files that are not binary) "
+            "are searched; .usdc (binary Crate) and .usdz (zip) are skipped.");
+        props["directories"] = _ArrayOfStringsParam(
+            "absolute directory paths to search. If omitted, the parent "
+            "directory of the current stage's root layer is used.");
+        props["recursive"] = MakeBoolParam(
+            "if true (default) descend into subdirectories");
+        tools.push_back(JsValue(_Tool(
+            "find_usd_files",
+            "Searches directories for USD-compatible files (.usd/.usda/.usdc/"
+            ".usdz) matching name_pattern and/or whose text contents match "
+            "content_pattern. Directories are walked in parallel; content "
+            "grep is also parallelised across matching files. "
+            "If directories is omitted the parent folder of the current "
+            "stage is used. Results are capped at 100 files. "
+            "Use for queries like \"find the oscilloscope asset in "
+            "/Users/cyril/Assets\" (name search) or \"find files containing "
+            "television\" (content search). Returns matching paths; for "
+            "content searches also shows the first matching lines.",
+            props, JsArray{})));
+    }
+
     return tools;
 }
 
 ToolDefs BuildEditToolDefinitions() {
     ToolDefs tools;
 
-    // 8. set_attribute
+    // 8. set_attributes
     {
-        JsObject props;
-        props["path"]      = MakeStringParam(
-            "the SdfPath of the prim that owns the attribute");
-        props["attribute"] = MakeStringParam(
-            "the attribute name, e.g. \"visibility\" or \"focalLength\"");
-        props["value"]     = MakeStringParam(
-            "the new value as a string, parsed according to the attribute's "
-            "declared type. Formats by category:\n"
+        const std::string valueFormatNote =
+            "string, parsed according to the attribute's declared type. "
+            "Formats by category:\n"
             "  Scalars — plain value: \"3.14\", \"true\", \"myToken\"\n"
             "  Vectors (float2/3/4, double2/3/4, half2/3/4, int2/3/4, "
             "color3/4f/d/h, point3/normal3/vector3 f/d/h) — "
@@ -257,26 +345,62 @@ ToolDefs BuildEditToolDefinitions() {
             "  String/token/asset arrays — comma-separated, quotes optional: "
             "\"a, b, c\" or \"\\\"foo\\\", \\\"bar\\\"\"\n"
             "  Vec-N arrays (float3[]/color3f[] etc.) — flat list, "
-            "count must be multiple of N: \"r1 g1 b1 r2 g2 b2\"");
+            "count must be multiple of N: \"r1 g1 b1 r2 g2 b2\"";
+
+        JsObject itemProps;
+        itemProps["path"]      = MakeStringParam(
+            "SdfPath of the prim that owns the attribute (required per item)");
+        itemProps["attribute"] = MakeStringParam(
+            "optional: attribute name. Overrides the top-level \"attribute\". "
+            "Required if no top-level default is set.");
+        itemProps["value"]     = MakeStringParam(
+            "optional: " + valueFormatNote
+            + "\nOverrides the top-level \"value\". Required if no top-level "
+            "default is set.");
+        itemProps["time"]      = MakeNumberParam(
+            "optional time code for this item; overrides the top-level "
+            "\"time\". Omit (here and at top) for the default value.");
+
+        JsObject props;
+        props["items"]     = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of attribute edits to apply. Each entry requires \"path\"; "
+            "\"attribute\", \"value\", and \"time\" may be set per-item or "
+            "inherited from the top level. All entries land on the same "
+            "target layer in a single undoable step.");
+        props["attribute"] = MakeStringParam(
+            "optional top-level default attribute name applied to every item "
+            "that does not set its own. Use this for bulk edits of the same "
+            "attribute (e.g. setting \"visibility\" on many prims).");
+        props["value"]     = MakeStringParam(
+            "optional top-level default value applied to every item that "
+            "does not set its own. Use this for bulk edits with a shared "
+            "value (e.g. \"invisible\" or \"0.5\"). " + valueFormatNote);
         props["time"]      = MakeNumberParam(
-            "optional time code; omit to set the default value, otherwise "
-            "writes a time sample at this frame");
+            "optional top-level default time code. Items without their own "
+            "\"time\" inherit this; omit at both levels for the default "
+            "(static) value.");
         props["layer_id"]  = MakeStringParam(
             "optional: identifier of the layer to write to, exactly as "
             "returned by get_layer_stack (e.g. \"/path/to/shot.usda\" or "
-            "\"<anon:asset.usda>\"). When omitted the current edit target "
-            "is used. When provided the edit target is bypassed and the "
-            "named layer is written to directly. The result always reports "
-            "which layer was targeted.");
+            "\"<anon:asset.usda>\"). Applies to every entry. Omit to use "
+            "the current edit target.");
         tools.push_back(JsValue(_Tool(
-            "set_attribute",
-            "QUEUES an edit that sets an attribute value. Without layer_id "
-            "it writes to the current edit target; with layer_id it writes "
-            "to that specific layer regardless of the edit target — call "
-            "get_layer_stack first to get valid identifiers. The result "
-            "names the target layer. The edit lands on the next frame, so "
-            "re-read with get_attribute_value to confirm. Undoable.",
-            props, _Strings({"path", "attribute", "value"}))));
+            "set_attributes",
+            "QUEUES one or more attribute-value edits in a single call — "
+            "always prefer this over multiple sequential calls. Top-level "
+            "\"attribute\", \"value\", and \"time\" act as defaults; each "
+            "item may override them or supply its own. Common patterns:\n"
+            "  • Uniform: set top-level attribute+value, items list only "
+            "paths (e.g. make many prims invisible).\n"
+            "  • Heterogeneous: each item supplies its own attribute and "
+            "value.\n"
+            "  • Mixed: top-level attribute, per-item values.\n"
+            "Per-item validation errors (no prim, no attribute, parse "
+            "failure) are reported in the result and do not block the "
+            "other items. All items land on the same target layer in a "
+            "single undoable command. Re-read with get_attribute_value to "
+            "confirm.",
+            props, _Strings({"items"}))));
     }
 
     // 9. set_active
@@ -330,29 +454,40 @@ ToolDefs BuildEditToolDefinitions() {
             props, _Strings({"path"}))));
     }
 
-    // 10c. create_prim
+    // 10c. create_prims
     {
-        JsObject props;
-        props["path"]      = MakeStringParam(
-            "absolute SdfPath of the prim to create, e.g. \"/World/Hero\"");
-        props["type"]      = MakeStringParam(
+        JsObject itemProps;
+        itemProps["path"]      = MakeStringParam(
+            "absolute SdfPath of the prim to create, e.g. \"/World/Hero_001\"");
+        itemProps["type"]      = MakeStringParam(
             "optional USD type name, e.g. \"Xform\", \"Mesh\", \"Camera\", "
             "\"Sphere\". Omit for a typeless prim.");
-        props["specifier"] = MakeStringParam(
+        itemProps["specifier"] = MakeStringParam(
             "one of \"def\" (default), \"over\", or \"class\". Use \"def\" for "
             "concrete prims, \"over\" to author opinions without defining the "
             "prim, \"class\" for abstract base prims.");
-        props["layer_id"]  = MakeStringParam(
+
+        JsObject props;
+        props["items"]    = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of prim specs to create. Each entry has a required \"path\" "
+            "and optional \"type\" and \"specifier\". All entries are authored "
+            "into the same target layer in a single undoable step.");
+        props["layer_id"] = MakeStringParam(
             "optional: identifier of the layer to write to, exactly as returned "
-            "by get_layer_stack. When omitted the current edit target is used.");
+            "by get_layer_stack. Applies to every entry in \"items\". When "
+            "omitted the current edit target is used.");
         tools.push_back(JsValue(_Tool(
-            "create_prim",
-            "QUEUES creation of a new prim spec. Missing ancestor prims are "
-            "created automatically as typeless \"over\" specs. Returns an error "
-            "if a spec already exists at the given path in the target layer — "
-            "use set_attribute or set_xform to modify an existing prim. Re-read "
-            "with get_prim_info to confirm after the next step. Undoable.",
-            props, _Strings({"path"}))));
+            "create_prims",
+            "QUEUES creation of one or more prim specs in a single call — "
+            "always prefer this over multiple sequential creations when adding "
+            "more than one prim, including when creating instances. Missing "
+            "ancestor prims are created automatically as typeless \"over\" "
+            "specs. Items are processed in order; if an item fails (e.g. a "
+            "spec already exists at that path, or a duplicate path appears in "
+            "the batch) the others still proceed and per-item status is "
+            "reported in the result. All items land on the same target layer "
+            "in one undoable command. Re-read with list_children to confirm.",
+            props, _Strings({"items"}))));
     }
 
     // 10a. select_prims
@@ -378,138 +513,273 @@ ToolDefs BuildEditToolDefinitions() {
             props, _Strings({"paths"}))));
     }
 
-    // 11. set_xform
+    // set_edit_target
     {
         JsObject props;
-        props["path"]      = MakeStringParam("the SdfPath of a UsdGeomXformable prim");
-        props["operation"] = MakeStringParam(
-            "one of \"translate\", \"rotate\", or \"scale\"");
-        props["value"]     = _Vec3Param(
+        props["layer_id"] = MakeStringParam(
+            "identifier of the layer to set as edit target, exactly as "
+            "returned by get_layer_stack (e.g. \"/path/to/shot.usda\" or "
+            "\"<anon:asset.usda>\"). The layer must be in the current "
+            "layer stack and must not be read-only or muted.");
+        tools.push_back(JsValue(_Tool(
+            "set_edit_target",
+            "QUEUES changing the stage's edit target to the named layer. "
+            "After the change, all write operations (set_attributes, "
+            "create_prims, etc.) that do not specify an explicit layer_id "
+            "will write to this layer. Re-read with get_edit_target on your "
+            "next step to confirm. NOT undoable — the edit target is "
+            "session state, not a layer opinion.",
+            props, _Strings({"layer_id"}))));
+    }
+
+    // set_xforms
+    {
+        const std::string valueFormatNote =
             "array of exactly 3 numbers [x, y, z]. Translate is in scene "
             "units. Rotate is in degrees (XYZ order). Scale is a multiplier "
-            "(1.0 = no scale).");
+            "(1.0 = no scale).";
+
+        JsObject itemProps;
+        itemProps["path"]      = MakeStringParam(
+            "SdfPath of a UsdGeomXformable prim (required per item)");
+        itemProps["operation"] = MakeStringParam(
+            "optional: one of \"translate\", \"rotate\", or \"scale\". "
+            "Overrides the top-level \"operation\". Required if no top-level "
+            "default is set.");
+        itemProps["value"]     = _Vec3Param(
+            "optional: " + valueFormatNote
+            + " Overrides the top-level \"value\". Required if no top-level "
+            "default is set.");
+        itemProps["time"]      = MakeNumberParam(
+            "optional time code for this item; overrides the top-level "
+            "\"time\". Omit (here and at top) for the default (static) value.");
+
+        JsObject props;
+        props["items"]     = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of xform edits to apply. Each entry requires \"path\"; "
+            "\"operation\", \"value\", and \"time\" may be set per-item or "
+            "inherited from the top level. All entries land on the same "
+            "target layer in a single undoable step.");
+        props["operation"] = MakeStringParam(
+            "optional top-level default operation applied to every item that "
+            "does not set its own. Use for bulk edits with a shared op "
+            "(e.g. translating many prims).");
+        props["value"]     = _Vec3Param(
+            "optional top-level default value applied to every item that "
+            "does not set its own. " + valueFormatNote);
         props["time"]      = MakeNumberParam(
-            "optional time code; omit for the default (static) value");
+            "optional top-level default time code. Items without their own "
+            "\"time\" inherit this; omit at both levels for the default "
+            "(static) value.");
+        props["layer_id"]  = MakeStringParam(
+            "optional: identifier of the layer to write to, exactly as "
+            "returned by get_layer_stack. Applies to every entry. Omit to "
+            "use the current edit target.");
         tools.push_back(JsValue(_Tool(
-            "set_xform",
-            "QUEUES a translate, rotate, or scale edit on a UsdGeomXformable "
-            "prim using UsdGeomXformCommonAPI. Creates the xform op if it does "
-            "not already exist, so this works on freshly-created prims. Uses "
-            "the current edit target. Re-read with get_attribute_value on "
-            "xformOp:translate / xformOp:rotateXYZ / xformOp:scale to confirm. "
-            "Undoable. Note: only works on prims that use the common "
-            "translate/rotate/scale op layout — not on matrix-based xforms.",
-            props, _Strings({"path", "operation", "value"}))));
+            "set_xforms",
+            "QUEUES one or more translate/rotate/scale edits in a single call "
+            "using UsdGeomXformCommonAPI — always prefer this over multiple "
+            "sequential calls. Top-level \"operation\", \"value\", and \"time\" "
+            "act as defaults; each item may override them or supply its own. "
+            "To set multiple ops (e.g. translate + rotate) on the same prim, "
+            "issue one item per op with the same path. Creates the xform op "
+            "if it does not already exist, so this works on freshly-created "
+            "prims. Per-item validation errors (no prim, not Xformable, bad "
+            "value) are reported in the result and do not block other items. "
+            "All items land on the same target layer in a single undoable "
+            "command. Re-read with get_attribute_value on xformOp:translate / "
+            "xformOp:rotateXYZ / xformOp:scale to confirm. Note: only works on "
+            "prims that use the common translate/rotate/scale op layout — not "
+            "on matrix-based xforms.",
+            props, _Strings({"items"}))));
     }
 
-    // 12. set_visibility
+    // 12. set_visibilities
     {
+        const std::string visEnumNote =
+            "one of \"inherited\", \"invisible\", or \"visible\" (USD uses "
+            "\"inherited\" not \"visible\" by convention; \"visible\" is "
+            "accepted as an alias and normalized to \"inherited\").";
+
+        JsObject itemProps;
+        itemProps["path"]       = MakeStringParam(
+            "SdfPath of a UsdGeomImageable prim (required per item)");
+        itemProps["visibility"] = MakeStringParam(
+            "optional: " + visEnumNote
+            + " Overrides the top-level \"visibility\". Required if no "
+            "top-level default is set.");
+
         JsObject props;
-        props["path"]       = MakeStringParam(
-            "the SdfPath of the UsdGeomImageable prim");
+        props["items"]      = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of visibility edits to apply. Each entry requires \"path\"; "
+            "\"visibility\" may be set per-item or inherited from the top "
+            "level. All entries land on the same target layer in a single "
+            "undoable step.");
         props["visibility"] = MakeStringParam(
-            "one of \"inherited\", \"invisible\", or \"visible\" (note: USD "
-            "uses \"inherited\" not \"visible\" by convention; \"visible\" "
-            "is accepted as an alias)");
+            "optional top-level default visibility applied to every item "
+            "that does not set its own. Use for bulk \"hide all of these\" / "
+            "\"show all of these\" edits. " + visEnumNote);
+        props["layer_id"]   = MakeStringParam(
+            "optional: identifier of the layer to write to, exactly as "
+            "returned by get_layer_stack. Applies to every entry. Omit to "
+            "use the current edit target.");
         tools.push_back(JsValue(_Tool(
-            "set_visibility",
-            "QUEUES a visibility change on an Imageable prim, on the current "
-            "edit target. Convenience wrapper around set_attribute for the "
-            "common case. Re-read with get_value_resolution to confirm and "
-            "see which layer holds the new opinion. Undoable.",
-            props, _Strings({"path", "visibility"}))));
+            "set_visibilities",
+            "QUEUES one or more visibility changes on UsdGeomImageable prims "
+            "in a single call — always prefer this over multiple sequential "
+            "calls. Convenience wrapper around set_attributes for the common "
+            "case. Top-level \"visibility\" acts as a default; each item "
+            "may override it. Per-item validation errors (no prim, not "
+            "Imageable, invalid token) are reported in the result and do "
+            "not block other items. All items land on the same target "
+            "layer in a single undoable command. Re-read with "
+            "get_value_resolution to confirm and see which layer holds "
+            "the new opinion.",
+            props, _Strings({"items"}))));
     }
 
-    // 13. add_reference
+    // 13. add_references
     {
-        JsObject props;
-        props["path"]         = MakeStringParam(
+        JsObject itemProps;
+        itemProps["path"]         = MakeStringParam(
             "absolute SdfPath of the prim that will hold the reference arc");
-        props["asset_path"]   = MakeStringParam(
+        itemProps["asset_path"]   = MakeStringParam(
             "file path to the referenced USD asset, e.g. \"/assets/hero.usda\". "
             "Pass \"\" for an internal (same-layer) reference.");
-        props["prim_path"]    = MakeStringParam(
+        itemProps["prim_path"]    = MakeStringParam(
             "optional: absolute prim path within the referenced asset to target. "
             "Omit to use the asset's defaultPrim.");
-        props["layer_offset"] = MakeNumberParam(
+        itemProps["layer_offset"] = MakeNumberParam(
             "optional time offset in frames (default 0)");
-        props["layer_scale"]  = MakeNumberParam(
+        itemProps["layer_scale"]  = MakeNumberParam(
             "optional time scale multiplier (default 1)");
-        props["layer_id"]     = MakeStringParam(
+
+        JsObject props;
+        props["items"]    = _ObjectArrayParam(itemProps,
+            _Strings({"path", "asset_path"}),
+            "list of references to add. Each entry has required \"path\" and "
+            "\"asset_path\" plus optional \"prim_path\", \"layer_offset\", and "
+            "\"layer_scale\". All entries are authored into the same target "
+            "layer in a single undoable step.");
+        props["layer_id"] = MakeStringParam(
             "optional: identifier of the layer to author in, as returned by "
-            "get_layer_stack. Defaults to the current edit target.");
+            "get_layer_stack. Applies to every entry in \"items\". Defaults "
+            "to the current edit target.");
         tools.push_back(JsValue(_Tool(
-            "add_reference",
-            "QUEUES adding a reference arc to a prim. If the prim has no spec "
-            "in the target layer, a typeless 'over' spec is created automatically. "
-            "The new arc is prepended (strongest). Re-read with get_composition_arcs "
-            "to confirm. Undoable.",
-            props, _Strings({"path", "asset_path"}))));
+            "add_references",
+            "QUEUES adding one or more reference arcs in a single call — "
+            "always prefer this over multiple sequential add_reference-style "
+            "calls (e.g. when instancing the same asset onto many prims, pass "
+            "one entry per target prim). If a target prim has no spec in the "
+            "layer a typeless 'over' is created automatically. New arcs are "
+            "prepended (strongest). Items are processed in order; per-item "
+            "validation errors are reported in the result and do not block "
+            "the others. Re-read with get_composition_arcs to confirm.",
+            props, _Strings({"items"}))));
     }
 
-    // 14. add_payload
+    // 14. add_payloads
     {
-        JsObject props;
-        props["path"]         = MakeStringParam(
+        JsObject itemProps;
+        itemProps["path"]         = MakeStringParam(
             "absolute SdfPath of the prim that will hold the payload arc");
-        props["asset_path"]   = MakeStringParam(
+        itemProps["asset_path"]   = MakeStringParam(
             "file path to the payload USD asset, e.g. \"/assets/hero.usda\".");
-        props["prim_path"]    = MakeStringParam(
+        itemProps["prim_path"]    = MakeStringParam(
             "optional: absolute prim path within the asset. Omit for defaultPrim.");
-        props["layer_offset"] = MakeNumberParam(
+        itemProps["layer_offset"] = MakeNumberParam(
             "optional time offset in frames (default 0)");
-        props["layer_scale"]  = MakeNumberParam(
+        itemProps["layer_scale"]  = MakeNumberParam(
             "optional time scale multiplier (default 1)");
-        props["layer_id"]     = MakeStringParam(
-            "optional: layer to author in (defaults to current edit target)");
+
+        JsObject props;
+        props["items"]    = _ObjectArrayParam(itemProps,
+            _Strings({"path", "asset_path"}),
+            "list of payloads to add. Each entry has required \"path\" and "
+            "\"asset_path\" plus optional \"prim_path\", \"layer_offset\", and "
+            "\"layer_scale\". All entries are authored into the same target "
+            "layer in a single undoable step.");
+        props["layer_id"] = MakeStringParam(
+            "optional: layer to author in (applies to every entry; defaults "
+            "to current edit target)");
         tools.push_back(JsValue(_Tool(
-            "add_payload",
-            "QUEUES adding a payload arc to a prim. Payloads are like references "
-            "but are loaded lazily — use them for heavy geometry or assets that "
-            "should be unloadable at runtime. If the prim has no spec in the "
-            "target layer, a typeless 'over' is created. The arc is prepended. "
-            "Re-read with get_composition_arcs to confirm. Undoable.",
-            props, _Strings({"path", "asset_path"}))));
+            "add_payloads",
+            "QUEUES adding one or more payload arcs in a single call — always "
+            "prefer this over multiple sequential add_payload-style calls. "
+            "Payloads are like references but are loaded lazily — use them for "
+            "heavy geometry or assets that should be unloadable at runtime. If "
+            "a target prim has no spec in the layer a typeless 'over' is "
+            "created. New arcs are prepended (strongest). Items are processed "
+            "in order; per-item validation errors are reported in the result "
+            "and do not block the others. Re-read with get_composition_arcs to "
+            "confirm.",
+            props, _Strings({"items"}))));
     }
 
-    // 15. add_inherit
+    // 15. add_inherits
     {
-        JsObject props;
-        props["path"]        = MakeStringParam(
+        JsObject itemProps;
+        itemProps["path"]        = MakeStringParam(
             "absolute SdfPath of the prim that will inherit");
-        props["target_path"] = MakeStringParam(
+        itemProps["target_path"] = MakeStringParam(
             "absolute SdfPath of the class prim to inherit from, "
             "e.g. \"/_class_Hero\"");
-        props["layer_id"]    = MakeStringParam(
-            "optional: layer to author in (defaults to current edit target)");
+
+        JsObject props;
+        props["items"]    = _ObjectArrayParam(itemProps,
+            _Strings({"path", "target_path"}),
+            "list of inherit arcs to add. Each entry has required \"path\" "
+            "(the inheriting prim) and \"target_path\" (the class prim to "
+            "inherit from). All entries are authored into the same target "
+            "layer in a single undoable step.");
+        props["layer_id"] = MakeStringParam(
+            "optional: layer to author in (applies to every entry; defaults "
+            "to current edit target)");
         tools.push_back(JsValue(_Tool(
-            "add_inherit",
-            "QUEUES adding an inherit arc from a prim to a class prim. Inherits "
-            "are the weakest composition arc but propagate opinions to all "
-            "inheriting prims, making them useful for shared overrides. If the "
-            "prim has no spec in the target layer, a typeless 'over' is created. "
-            "Re-read with get_composition_arcs to confirm. Undoable.",
-            props, _Strings({"path", "target_path"}))));
+            "add_inherits",
+            "QUEUES adding one or more inherit arcs in a single call — always "
+            "prefer this over multiple sequential add_inherit-style calls. "
+            "Inherits are the weakest-but-one composition arc and propagate "
+            "opinions to all inheriting prims, making them useful for shared "
+            "overrides. If a target prim has no spec in the layer a typeless "
+            "'over' is created. New arcs are prepended (strongest). Items are "
+            "processed in order; per-item validation errors are reported in "
+            "the result and do not block the others. Re-read with "
+            "get_composition_arcs to confirm.",
+            props, _Strings({"items"}))));
     }
 
-    // 16. add_specialize
+    // 16. add_specializes
     {
-        JsObject props;
-        props["path"]        = MakeStringParam(
+        JsObject itemProps;
+        itemProps["path"]        = MakeStringParam(
             "absolute SdfPath of the prim that will specialize");
-        props["target_path"] = MakeStringParam(
+        itemProps["target_path"] = MakeStringParam(
             "absolute SdfPath of the base prim to specialize from");
-        props["layer_id"]    = MakeStringParam(
-            "optional: layer to author in (defaults to current edit target)");
+
+        JsObject props;
+        props["items"]    = _ObjectArrayParam(itemProps,
+            _Strings({"path", "target_path"}),
+            "list of specialize arcs to add. Each entry has required \"path\" "
+            "(the specializing prim) and \"target_path\" (the base prim to "
+            "specialize from). All entries are authored into the same target "
+            "layer in a single undoable step.");
+        props["layer_id"] = MakeStringParam(
+            "optional: layer to author in (applies to every entry; defaults "
+            "to current edit target)");
         tools.push_back(JsValue(_Tool(
-            "add_specialize",
-            "QUEUES adding a specialize arc from a prim to a base prim. "
-            "Specializes are weaker than inherits — they are the last arc "
-            "consulted in LIVRPS. Useful for variant-like overrides where the "
-            "base should not retroactively affect the specializing prim. If the "
-            "prim has no spec in the target layer, a typeless 'over' is created. "
-            "Re-read with get_composition_arcs to confirm. Undoable.",
-            props, _Strings({"path", "target_path"}))));
+            "add_specializes",
+            "QUEUES adding one or more specialize arcs in a single call — "
+            "always prefer this over multiple sequential add_specialize-style "
+            "calls. Specializes are weaker than inherits — they are the last "
+            "arc consulted in LIVRPS. Useful for variant-like overrides where "
+            "the base should not retroactively affect the specializing prim. "
+            "If a target prim has no spec in the layer a typeless 'over' is "
+            "created. New arcs are prepended (strongest). Items are processed "
+            "in order; per-item validation errors are reported in the result "
+            "and do not block the others. Re-read with get_composition_arcs "
+            "to confirm.",
+            props, _Strings({"items"}))));
     }
 
     // 17. add_sublayer
@@ -556,6 +826,27 @@ ToolDefs BuildEditToolDefinitions() {
             "a material: name=\"material:binding\", targets=[\"/World/Materials/MyMat\"]. "
             "Re-read with get_relationship_targets to confirm. Undoable.",
             props, _Strings({"path", "name", "targets"}))));
+    }
+
+    // open_file
+    {
+        JsObject props;
+        props["path"] = MakeStringParam(
+            "absolute or relative filesystem path to the USD file to open "
+            "(e.g. \"/shot/asset.usda\", \"~/scenes/hero.usd\")");
+        props["mode"] = MakeStringParam(
+            "optional: \"stage\" (default) opens the file as a composed USD "
+            "stage and makes it the active stage; \"layer\" opens it as an "
+            "SDF layer only (useful for inspecting a sublayer without "
+            "composing a full stage). Omit to open as stage.");
+        tools.push_back(JsValue(_Tool(
+            "open_file",
+            "Opens a USD file in the editor. With mode=\"stage\" (default) "
+            "it loads the file as a composed stage, replacing the currently "
+            "active stage. With mode=\"layer\" it opens only the raw SDF "
+            "layer. After the open completes, use get_stage_info or "
+            "list_children to inspect the newly loaded scene.",
+            props, _Strings({"path"}))));
     }
 
     return tools;

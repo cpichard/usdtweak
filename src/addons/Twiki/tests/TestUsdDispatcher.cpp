@@ -8,10 +8,15 @@
 #include <pxr/base/js/json.h>
 #include <pxr/base/tf/token.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/editTarget.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/stage.h>
 
+#include <CommandStack.h>
+
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -216,7 +221,7 @@ void TestListChildren(UsdToolDispatcher& d) {
         Args({{"path",      JsValue(std::string("/"))},
               {"recursive", JsValue(true)}}));
     std::fprintf(stdout, "%s", out.c_str());
-    CHECK_CONTAINS(out, "/World/Hero");
+    CHECK_CONTAINS(out, "Hero");
 }
 
 void TestFindPrims(UsdToolDispatcher& d) {
@@ -231,8 +236,195 @@ void TestFindPrims(UsdToolDispatcher& d) {
     out = d.Dispatch("find_prims",
         Args({{"kind", JsValue(std::string("group"))}}));
     std::fprintf(stdout, "%s", out.c_str());
-    CHECK_CONTAINS(out, "/World");
-    CHECK_CONTAINS(out, "/World/Lights");
+    CHECK_CONTAINS(out, "base: /World");
+    CHECK_CONTAINS(out, "Lights (Xform)");
+}
+
+void TestFindPrimsNamePattern(UsdToolDispatcher& d) {
+    Section("find_prims name_pattern=Hero");
+    std::string out = d.Dispatch("find_prims",
+        Args({{"name_pattern", JsValue(std::string("Hero"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "name_pattern=Hero");
+    CHECK_CONTAINS(out, "/World/Hero");
+    CHECK_CONTAINS(out, "matched 1 of");
+    // Regression guard: "no filters" must NOT appear when only name_pattern set.
+    CHECK(out.find("no filters") == std::string::npos);
+
+    Section("find_prims name_pattern=era (mid-string substring)");
+    out = d.Dispatch("find_prims",
+        Args({{"name_pattern", JsValue(std::string("era"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "/World/Camera");
+
+    Section("find_prims name_pattern=NoSuchPrim");
+    out = d.Dispatch("find_prims",
+        Args({{"name_pattern", JsValue(std::string("NoSuchPrim"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 0 of");
+
+    Section("find_prims type=Camera + name_pattern=era (AND)");
+    out = d.Dispatch("find_prims",
+        Args({{"type",         JsValue(std::string("Camera"))},
+              {"name_pattern", JsValue(std::string("era"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK_CONTAINS(out, "matched 1 of");
+}
+
+void TestFindPrimsNameTokens(UsdToolDispatcher& d) {
+    Section("find_prims name_tokens=[camera]");
+    JsArray toks; toks.push_back(JsValue(std::string("camera")));
+    std::string out = d.Dispatch("find_prims",
+        Args({{"name_tokens", JsValue(toks)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "name_tokens=[camera]");
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK_CONTAINS(out, "matched 1 of");
+    // Regression guard: "no filters" must NOT appear when only name_tokens set.
+    CHECK(out.find("no filters") == std::string::npos);
+
+    Section("find_prims name_tokens=[CAMERA] (case-insensitive)");
+    JsArray upper; upper.push_back(JsValue(std::string("CAMERA")));
+    out = d.Dispatch("find_prims", Args({{"name_tokens", JsValue(upper)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK_CONTAINS(out, "matched 1 of");
+
+    Section("find_prims name_tokens=[hero,camera] (OR)");
+    JsArray pair; pair.push_back(JsValue(std::string("hero")));
+    pair.push_back(JsValue(std::string("camera")));
+    out = d.Dispatch("find_prims", Args({{"name_tokens", JsValue(pair)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    // 2+ results → common prefix /World is stripped to a "base:" header.
+    CHECK_CONTAINS(out, "base: /World");
+    CHECK_CONTAINS(out, "Hero");
+    CHECK_CONTAINS(out, "Camera");
+    CHECK_CONTAINS(out, "matched 2 of");
+
+    Section("find_prims name_tokens=[cam] (whole-token, not substring)");
+    JsArray partial; partial.push_back(JsValue(std::string("cam")));
+    out = d.Dispatch("find_prims", Args({{"name_tokens", JsValue(partial)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 0 of");
+}
+
+void TestGetNameVocabulary(UsdToolDispatcher& d) {
+    Section("get_name_vocabulary on fixture");
+    std::string out = d.Dispatch("get_name_vocabulary", Args());
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "name_vocabulary:");
+    CHECK_CONTAINS(out, "distinct tokens from");
+    // Tokens from /World/Hero, /World/Camera, /World/Lights, /World.
+    CHECK_CONTAINS(out, "hero");
+    CHECK_CONTAINS(out, "camera");
+    CHECK_CONTAINS(out, "lights");
+    CHECK_CONTAINS(out, "world");
+    // Each token line carries a frequency count.
+    CHECK_CONTAINS(out, "world (1)");
+}
+
+// Tokenization edge cases on a dedicated fixture: camelCase split + full
+// name, acronym-prefix junk guard, and numbered-sibling collapse.
+void TestNameVocabularyTokenization() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("tok.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/ProxyMesh"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/TOwell"),    TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Towel_1"),   TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Towel_2"),   TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Towel_3"),   TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("get_name_vocabulary tokenization edge cases");
+    std::string out = d.Dispatch("get_name_vocabulary", Args());
+    std::fprintf(stdout, "%s", out.c_str());
+
+    // camelCase: pieces AND stripped full name.
+    CHECK_CONTAINS(out, "proxy");
+    CHECK_CONTAINS(out, "mesh");
+    CHECK_CONTAINS(out, "proxymesh");
+    // Junk guard: acronym prefix stays whole, no fragment, no single char.
+    // Vocab lines are formatted "  <token> (<count>)".
+    CHECK_CONTAINS(out, "towell (1)");
+    CHECK(out.find("  owell (") == std::string::npos);  // no standalone fragment
+    CHECK(out.find("  t (")     == std::string::npos);  // no single-char token
+    // Collapse guard: 3 numbered siblings → one token, count 3, no raw names.
+    CHECK_CONTAINS(out, "towel (3)");
+    CHECK(out.find("towel_1") == std::string::npos);
+    CHECK(out.find("towel_2") == std::string::npos);
+}
+
+// Wide fixture with > kFindPrimsLimit matches: the footer must report the
+// TRUE total, not the capped display count (the missing-prims bug).
+void TestFindPrimsTotalCount() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("manytowels.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    const int kCount = 60;  // > kFindPrimsLimit (50)
+    for (int i = 0; i < kCount; ++i)
+        stage->DefinePrim(SdfPath("/World/Towel_" + std::to_string(i)),
+                          TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("find_prims name_tokens=[towel] with 60 matches — true total");
+    JsArray toks; toks.push_back(JsValue(std::string("towel")));
+    std::string out = d.Dispatch("find_prims",
+        Args({{"name_tokens", JsValue(toks)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 60 prims");
+    CHECK_CONTAINS(out, "showing first 50");
+    // Must NOT understate as if only 50 exist.
+    CHECK(out.find("matched 50 of") == std::string::npos);
+}
+
+// Regression for the real-world miss: a prim named "Blackboard01" must be
+// findable by the lowercase token "blackboard", and must NOT be confused with
+// a different board. Before name_tokens, the only name filter was the
+// case-sensitive substring name_pattern, so a lowercase "blackboard" query
+// silently missed "Blackboard01" (capital B) and Twiki returned another board.
+void TestFindBlackboard() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("classroom.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/Room"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Room/Blackboard01"), TfToken("Mesh"));
+    stage->DefinePrim(SdfPath("/Room/Whiteboard01"), TfToken("Mesh"));
+    stage->DefinePrim(SdfPath("/Room/CorkBoard"),    TfToken("Mesh"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("get_name_vocabulary surfaces 'blackboard' from Blackboard01");
+    std::string vocab = d.Dispatch("get_name_vocabulary", Args());
+    std::fprintf(stdout, "%s", vocab.c_str());
+    CHECK_CONTAINS(vocab, "blackboard (1)");
+    // CorkBoard is camelCase → splits into cork + board (and full corkboard).
+    CHECK_CONTAINS(vocab, "board");
+    CHECK_CONTAINS(vocab, "cork");
+
+    Section("find_prims name_tokens=[blackboard] (lowercase) matches Blackboard01");
+    JsArray tok; tok.push_back(JsValue(std::string("blackboard")));
+    std::string out = d.Dispatch("find_prims", Args({{"name_tokens", JsValue(tok)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "Blackboard01");
+    CHECK_CONTAINS(out, "matched 1 of");
+    // Must NOT drag in the other boards.
+    CHECK(out.find("Whiteboard01") == std::string::npos);
+    CHECK(out.find("CorkBoard")    == std::string::npos);
+
+    Section("name_pattern=blackboard (case-sensitive) MISSES Blackboard01 — "
+            "demonstrates why name_tokens is needed");
+    out = d.Dispatch("find_prims",
+        Args({{"name_pattern", JsValue(std::string("blackboard"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 0 of");
+
+    Section("name_tokens=[board] matches the camelCase CorkBoard, not Blackboard01");
+    JsArray board; board.push_back(JsValue(std::string("board")));
+    out = d.Dispatch("find_prims", Args({{"name_tokens", JsValue(board)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "CorkBoard");
+    // "Blackboard01" tokenizes to {blackboard, blackboard01} — no bare "board",
+    // so a [board] query must not match it (whole-token semantics).
+    CHECK(out.find("Blackboard01") == std::string::npos);
 }
 
 // Build a wide flat stage with long prim names so list_children pushes a
@@ -277,6 +469,149 @@ void TestResultTruncation() {
     CHECK(err.find("[... truncated") == std::string::npos);
 }
 
+void TestFindUsdFiles(UsdToolDispatcher& d) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // Build a small temp directory tree with USD files.
+    fs::path tmp = fs::temp_directory_path(ec) / "twiki_test_find_usd";
+    fs::remove_all(tmp, ec);
+    fs::create_directories(tmp / "sub", ec);
+
+    auto write = [](const fs::path& p, const std::string& text) {
+        std::ofstream f(p);
+        f << text;
+    };
+    write(tmp / "oscilloscope_v1.usda",
+          "#usda 1.0\ndef Xform \"Oscilloscope\" {}\n");
+    write(tmp / "camera_rig.usda",
+          "#usda 1.0\ndef Camera \"Main\" { float focalLength = 35 }\n");
+    write(tmp / "sub" / "oscilloscope_v2.usda",
+          "#usda 1.0\ndef Xform \"OscV2\" {\n"
+          "    string label = \"television prop\"\n"
+          "}\n");
+    // A binary-looking file (has null bytes) — should be invisible to grep.
+    {
+        std::ofstream f(tmp / "sub" / "binary.usdc", std::ios::binary);
+        const char data[] = "crate\x00\x01\x02binary";
+        f.write(data, sizeof(data));
+    }
+
+    const std::string dirStr = tmp.string();
+
+    Section("find_usd_files: name_pattern=oscilloscope");
+    {
+        JsArray dirs; dirs.push_back(JsValue(dirStr));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"name_pattern", JsValue(std::string("oscilloscope"))},
+                  {"directories",  JsValue(dirs)}}));
+        std::fprintf(stdout, "%s", out.c_str());
+        CHECK_CONTAINS(out, "oscilloscope_v1.usda");
+        CHECK_CONTAINS(out, "oscilloscope_v2.usda");
+        CHECK(out.find("camera_rig") == std::string::npos);
+        CHECK(out.find("[error]")    == std::string::npos);
+    }
+
+    Section("find_usd_files: content_pattern=television");
+    {
+        JsArray dirs; dirs.push_back(JsValue(dirStr));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"content_pattern", JsValue(std::string("television"))},
+                  {"directories",     JsValue(dirs)}}));
+        std::fprintf(stdout, "%s", out.c_str());
+        CHECK_CONTAINS(out, "oscilloscope_v2.usda");
+        CHECK_CONTAINS(out, "television");
+        CHECK(out.find("oscilloscope_v1") == std::string::npos);
+        CHECK(out.find("[error]")         == std::string::npos);
+    }
+
+    Section("find_usd_files: name + content");
+    {
+        JsArray dirs; dirs.push_back(JsValue(dirStr));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"name_pattern",    JsValue(std::string("oscilloscope"))},
+                  {"content_pattern", JsValue(std::string("television"))},
+                  {"directories",     JsValue(dirs)}}));
+        std::fprintf(stdout, "%s", out.c_str());
+        CHECK_CONTAINS(out, "oscilloscope_v2.usda");
+        CHECK(out.find("oscilloscope_v1") == std::string::npos);
+    }
+
+    Section("find_usd_files: no pattern → error");
+    {
+        JsArray dirs; dirs.push_back(JsValue(dirStr));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"directories", JsValue(dirs)}}));
+        std::fprintf(stdout, "%s\n", out.c_str());
+        CHECK_CONTAINS(out, "[error]");
+    }
+
+    Section("find_usd_files: bad directory → error");
+    {
+        JsArray dirs; dirs.push_back(JsValue(std::string("/nonexistent_dir_xyz_99999")));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"name_pattern", JsValue(std::string("anything"))},
+                  {"directories",  JsValue(dirs)}}));
+        std::fprintf(stdout, "%s\n", out.c_str());
+        CHECK_CONTAINS(out, "[error]");
+    }
+
+    Section("find_usd_files: non-recursive skips sub/");
+    {
+        JsArray dirs; dirs.push_back(JsValue(dirStr));
+        std::string out = d.Dispatch("find_usd_files",
+            Args({{"name_pattern", JsValue(std::string("oscilloscope"))},
+                  {"directories",  JsValue(dirs)},
+                  {"recursive",    JsValue(false)}}));
+        std::fprintf(stdout, "%s", out.c_str());
+        CHECK_CONTAINS(out, "oscilloscope_v1.usda");
+        CHECK(out.find("oscilloscope_v2") == std::string::npos);
+    }
+
+    fs::remove_all(tmp, ec);
+}
+
+void TestEditTarget(UsdStageRefPtr stage, SdfLayerRefPtr asset, SdfLayerRefPtr shot) {
+    Section("get_edit_target / set_edit_target");
+
+    // Build a dispatcher whose edit layer starts as 'shot'.
+    UsdToolDispatcher d(
+        [&]() { return stage; },
+        [&]() { return shot;  });
+
+    // get_edit_target should report shot as the current target.
+    std::string out = d.Dispatch("get_edit_target", Args());
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "edit target:");
+
+    // set_edit_target with the asset's layer name.
+    const std::string assetName = asset->GetIdentifier();
+    out = d.Dispatch("set_edit_target",
+        Args({{"layer_id", JsValue(assetName)}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "Queued");
+
+    // Flush the queue so the edit target change takes effect.
+    CommandStack::GetInstance().ExecuteCommands();
+    CHECK(stage->GetEditTarget().GetLayer() == asset);
+
+    // get_edit_target now shows asset.
+    out = d.Dispatch("get_edit_target", Args());
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "edit target:");
+    CHECK(out.find(assetName) != std::string::npos ||
+          out.find("asset") != std::string::npos);
+
+    // set_edit_target with a bogus layer_id returns an error.
+    out = d.Dispatch("set_edit_target",
+        Args({{"layer_id", JsValue(std::string("not_a_real_layer.usda"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+
+    // Restore.
+    stage->SetEditTarget(UsdEditTarget(shot));
+}
+
 void TestErrorPaths(UsdToolDispatcher& d) {
     Section("unknown tool");
     std::string out = d.Dispatch("totally_made_up", Args());
@@ -313,8 +648,16 @@ int main() {
     TestGetLayerStack     (dispatcher);
     TestListChildren      (dispatcher);
     TestFindPrims         (dispatcher);
+    TestFindPrimsNamePattern(dispatcher);
+    TestFindPrimsNameTokens(dispatcher);
+    TestGetNameVocabulary (dispatcher);
+    TestFindUsdFiles      (dispatcher);
+    TestEditTarget        (stage, asset, shot);
     TestErrorPaths        (dispatcher);
     TestResultTruncation  ();
+    TestNameVocabularyTokenization();
+    TestFindPrimsTotalCount();
+    TestFindBlackboard();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "\ntest_usd_dispatcher: %d failure(s)\n", g_failures);

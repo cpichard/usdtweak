@@ -1,35 +1,48 @@
 #include "AgentChatPanel.h"
 
-#include "AnthropicBackend.h"
-#include "UsdTools.h"
-
 #include <imgui.h>
+#include <imgui_markdown.h>
 #include <imgui_stdlib.h>
+
+#include "AnthropicBackend.h"
+#include "ResourcesLoader.h"
+#include "UsdTools.h"
 
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
 #include <utility>
+#include <variant>
 
 namespace UsdAgent {
 
 namespace {
 
-// Small helper: append a line to a thread-safe trace buffer.
-struct TraceSink {
-    std::mutex                mu;
-    std::vector<std::string>  lines;
-    void add(const std::string& l) {
-        std::lock_guard<std::mutex> g(mu);
-        lines.push_back(l);
+// Markdown format callback: push italic font for *emphasis*, everything else
+// (bold via headingFormats[2], headings, links, lists) uses the default.
+void _MarkdownFormatCallback(const ImGui::MarkdownFormatInfo& info, bool start) {
+    if (info.type == ImGui::MarkdownFormatType::EMPHASIS && info.level == 1) {
+        if (start) ResourcesLoader::PushFontItalic();
+        else       ResourcesLoader::PopFontItalic();
+        return;
     }
-    std::vector<std::string> drain() {
-        std::lock_guard<std::mutex> g(mu);
-        std::vector<std::string> out;
-        out.swap(lines);
-        return out;
-    }
-};
+    ImGui::defaultMarkdownFormatCallback(info, start);
+}
+
+// Build a MarkdownConfig wired to the current font slots.
+// Called each frame so font pointer changes (user reload) are picked up.
+ImGui::MarkdownConfig _MakeMarkdownConfig() {
+    ImGui::MarkdownConfig cfg{};
+    cfg.formatCallback    = _MarkdownFormatCallback;
+    cfg.linkCallback      = nullptr;
+    cfg.tooltipCallback   = nullptr;
+    cfg.imageCallback     = nullptr;
+    ImFont* bold = ResourcesLoader::GetFontBoldPtr();
+    cfg.headingFormats[0] = { bold, true  };  // H1 + separator
+    cfg.headingFormats[1] = { bold, true  };  // H2 + separator
+    cfg.headingFormats[2] = { bold, false };  // H3; also used for **strong**
+    return cfg;
+}
 
 const char* _RoleLabel(Message::Role r) {
     switch (r) {
@@ -64,13 +77,137 @@ int _CacheHitPercent(const LLMUsage& u) {
     return (u.cache_read_input_tokens * 100) / total;
 }
 
+// ---- Markdown-with-tables renderer ----------------------------------------
+// imgui_markdown has no table support. We split the content at GFM table
+// blocks and render them with ImGui::BeginTable; everything else goes through
+// ImGui::Markdown as usual.
+
+static std::string _Trim(const std::string& s) {
+    const auto a = s.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return {};
+    const auto b = s.find_last_not_of(" \t\r\n");
+    return s.substr(a, b - a + 1);
+}
+
+static std::vector<std::string> _SplitTableRow(const std::string& line) {
+    std::string s = line;
+    if (!s.empty() && s.front() == '|') s = s.substr(1);
+    if (!s.empty() && s.back()  == '|') s.pop_back();
+    std::vector<std::string> cells;
+    size_t pos = 0;
+    while (pos <= s.size()) {
+        const auto next = s.find('|', pos);
+        const auto end  = (next == std::string::npos) ? s.size() : next;
+        cells.push_back(_Trim(s.substr(pos, end - pos)));
+        if (next == std::string::npos) break;
+        pos = next + 1;
+    }
+    return cells;
+}
+
+static bool _IsTableRow(const std::string& line) {
+    const std::string t = _Trim(line);
+    return !t.empty() && t.front() == '|';
+}
+
+static bool _IsTableSeparator(const std::string& line) {
+    const std::string t = _Trim(line);
+    if (t.empty() || t.front() != '|') return false;
+    if (t.find('-') == std::string::npos) return false;
+    for (char c : t) {
+        if (c != '|' && c != '-' && c != ':' && c != ' ') return false;
+    }
+    return true;
+}
+
+struct _TextBlock  { std::string text; };
+struct _TableBlock {
+    std::vector<std::string>              headers;
+    std::vector<std::vector<std::string>> rows;
+};
+using _Block = std::variant<_TextBlock, _TableBlock>;
+
+static std::vector<_Block> _SplitBlocks(const std::string& md) {
+    std::vector<std::string> lines;
+    size_t pos = 0;
+    while (pos <= md.size()) {
+        const auto nl  = md.find('\n', pos);
+        const auto end = (nl == std::string::npos) ? md.size() : nl;
+        lines.push_back(md.substr(pos, end - pos));
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+
+    std::vector<_Block> blocks;
+    std::string textAcc;
+
+    size_t i = 0;
+    while (i < lines.size()) {
+        if (_IsTableRow(lines[i]) &&
+            i + 1 < lines.size() && _IsTableSeparator(lines[i+1])) {
+            if (!textAcc.empty()) {
+                blocks.push_back(_TextBlock{std::move(textAcc)});
+                textAcc.clear();
+            }
+            _TableBlock tbl;
+            tbl.headers = _SplitTableRow(lines[i]);
+            i += 2;
+            while (i < lines.size() && _IsTableRow(lines[i])) {
+                tbl.rows.push_back(_SplitTableRow(lines[i++]));
+            }
+            blocks.push_back(std::move(tbl));
+        } else {
+            textAcc += lines[i];
+            textAcc += '\n';
+            ++i;
+        }
+    }
+    if (!textAcc.empty())
+        blocks.push_back(_TextBlock{std::move(textAcc)});
+    return blocks;
+}
+
+static void _RenderMarkdownWithTables(const std::string& md,
+                                      const ImGui::MarkdownConfig& cfg) {
+    int tableIdx = 0;
+    for (const _Block& blk : _SplitBlocks(md)) {
+        if (const auto* tb = std::get_if<_TextBlock>(&blk)) {
+            if (!tb->text.empty())
+                ImGui::Markdown(tb->text.c_str(), tb->text.size(), cfg);
+        } else if (const auto* tbl = std::get_if<_TableBlock>(&blk)) {
+            const int cols = static_cast<int>(tbl->headers.size());
+            if (cols <= 0) continue;
+            char id[32];
+            snprintf(id, sizeof(id), "##mdtable%d", tableIdx++);
+            const ImGuiTableFlags flags = ImGuiTableFlags_Borders
+                                        | ImGuiTableFlags_RowBg
+                                        | ImGuiTableFlags_SizingStretchProp;
+            if (ImGui::BeginTable(id, cols, flags)) {
+                for (const auto& h : tbl->headers)
+                    ImGui::TableSetupColumn(h.c_str());
+                ImGui::TableHeadersRow();
+                for (const auto& row : tbl->rows) {
+                    ImGui::TableNextRow();
+                    for (int c = 0; c < cols; ++c) {
+                        ImGui::TableSetColumnIndex(c);
+                        const std::string& cell = c < (int)row.size() ? row[c] : "";
+                        ImGui::Markdown(cell.c_str(), cell.size(), cfg);
+                    }
+                }
+                ImGui::EndTable();
+            }
+        }
+    }
+}
+
 } // namespace
 
 AgentChatPanel::AgentChatPanel(UsdToolDispatcher::StageProvider     stageFn,
                                UsdToolDispatcher::EditLayerProvider editLayerFn,
-                               UsdToolDispatcher::SelectionProvider selectionFn)
+                               UsdToolDispatcher::SelectionProvider selectionFn,
+                               UsdToolDispatcher::OpenFileProvider  openFileFn)
     : _dispatcher(std::move(stageFn), std::move(editLayerFn),
-                  std::move(selectionFn)) {}
+                  std::move(selectionFn), std::move(openFileFn)) {}
 
 AgentChatPanel::~AgentChatPanel() {
     // If a request is in flight, wait for it before tearing down the
@@ -119,7 +256,12 @@ std::string AgentChatPanel::_BuildSystemPrompt() const {
         "lands on the next host frame. Re-read with the matching inspection "
         "tool to confirm.\n"
         "- Keep answers concise. Cite the prim path and the layer that "
-        "introduced the relevant opinion when explaining a value.\n";
+        "introduced the relevant opinion when explaining a value.\n"
+        "- For questions about what KINDS of things are in the scene, or to "
+        "group prims by meaning, call get_name_vocabulary first, then resolve "
+        "the relevant terms to paths with find_prims using name_tokens. "
+        "find_prims always reports the true total match count even when the "
+        "listing is capped — rely on that count, not the lines shown.\n";
 }
 
 void AgentChatPanel::Draw() {
@@ -134,13 +276,27 @@ void AgentChatPanel::Draw() {
         _lastUsage = result.usage;
         _hasLastUsage = true;
         _AccumulateUsage(_sessionUsage, result.usage);
+        // Drain the worker's trace now that the turn is complete.
+        if (_pendingSink) {
+            _trace = _pendingSink->drain();
+            _pendingSink.reset();
+        }
         _scrollToBottom = true;
     }
 
     const bool busy = _pending.valid();
+    const ImGui::MarkdownConfig mdConfig = _MakeMarkdownConfig();
 
     // ----- conversation history ------------------------------------------
-    const float footerH = ImGui::GetFrameHeightWithSpacing() * 4.5f;
+    // footerH must cover every item rendered below the history child.
+    // Base (4.5×): separator + hint + InputTextMultiline(2.5 frames) + buttons.
+    // Add one unit per optional line so the outer window never gets a scrollbar.
+    const float fhs = ImGui::GetFrameHeightWithSpacing();
+    float footerH = fhs * 4.5f;
+    if (_hasLastUsage)       footerH += fhs;        // token count line
+    if (!_trace.empty())     footerH += fhs;        // trace collapsing header
+    if (!_lastError.empty()) footerH += fhs * 2.0f; // error banner (rough 2-line est.)
+
     if (ImGui::BeginChild("##history", ImVec2(0, -footerH), true)) {
         for (const Message& m : _history) {
             // Show only the user-visible roles; tool calls/results are
@@ -154,7 +310,17 @@ void AgentChatPanel::Draw() {
                     : ImVec4(0.85f, 1.0f, 0.85f, 1.0f));
             ImGui::TextUnformatted(_RoleLabel(m.role));
             ImGui::PopStyleColor();
-            ImGui::TextWrapped("%s", m.content.c_str());
+            if (m.role == Message::Role::Assistant) {
+                ImGui::SameLine();
+                ImGui::PushID(&m);
+                if (ImGui::SmallButton("copy")) {
+                    ImGui::SetClipboardText(m.content.c_str());
+                }
+                _RenderMarkdownWithTables(m.content, mdConfig);
+                ImGui::PopID();
+            } else {
+                ImGui::TextWrapped("%s", m.content.c_str());
+            }
             ImGui::Separator();
         }
         if (_scrollToBottom) {
@@ -244,9 +410,11 @@ void AgentChatPanel::Draw() {
             _input.clear();
             _history.push_back(Message::User(question));
 
-            // Trace is collected on the worker thread via a shared sink;
-            // we snapshot it back onto the panel after the future resolves.
+            // Trace is collected on the worker thread via a shared sink kept
+            // as a member; the poll block drains it once _pending resolves.
             auto sink = std::make_shared<TraceSink>();
+            _pendingSink = sink;
+            _trace.clear();  // hide the previous turn's trace while this runs
             const std::string sysPrompt = _BuildSystemPrompt();
 
             // Snapshot history (without the brand-new user msg — the
@@ -261,8 +429,6 @@ void AgentChatPanel::Draw() {
                     return _orchestrator->Run(sysPrompt, question, hist, trace);
                 });
 
-            // Schedule trace drain for next frame.
-            _trace = sink->drain();  // probably empty here; main drain on result
             _scrollToBottom = true;
         }
     }

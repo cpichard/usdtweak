@@ -54,9 +54,18 @@
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/metrics.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
+#include <fstream>
+#include <future>
+#include <map>
+#include <set>
 #include <sstream>
+#include <thread>
+#include <vector>
 
 namespace UsdAgent {
 
@@ -150,14 +159,91 @@ SdfPrimSpecHandle _EnsurePrimSpec(const SdfLayerHandle& layer, const SdfPath& pa
     return layer->GetPrimAtPath(path);
 }
 
+// ----- name tokenization (shared by find_prims and get_name_vocabulary) ----
+
+std::string _ToLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+// Tokenize a prim's LOCAL name into lowercased lexical tokens. Emits the
+// camelCase/separator split pieces PLUS the "stripped full name" (all
+// alphabetic content concatenated, numbers & separators removed), deduped.
+// Single-character and pure-numeric tokens are dropped.
+//   "Towel_1"     -> {"towel"}                    (single piece == full name)
+//   "Kitchen_001" -> {"kitchen"}
+//   "ProxyMesh"   -> {"proxymesh","proxy","mesh"} (full + pieces)
+//   "Left_Arm_Rig"-> {"leftarmrig","left","arm","rig"}
+//   "Props"       -> {"props"}
+//   "TOwell"      -> {"towell"}                    (no lower->upper split)
+//
+// Splitting: on separators (_ - . : space) and on lower->upper transitions
+// only. The lower->upper-only rule keeps acronym-prefixed names like "TOwell"
+// whole (avoids emitting a junk "owell") while still splitting genuine
+// camelCase ("ProxyMesh" -> proxy, mesh).
+std::vector<std::string> _TokenizeName(const std::string& name) {
+    auto isSep = [](char c){
+        return c == '_' || c == '-' || c == '.' || c == ':' ||
+               std::isspace(static_cast<unsigned char>(c));
+    };
+
+    // 1. Split into alpha-numeric fragments on separators.
+    std::vector<std::string> fragments;
+    std::string cur;
+    for (char c : name) {
+        if (isSep(c)) { if (!cur.empty()) { fragments.push_back(cur); cur.clear(); } }
+        else           cur.push_back(c);
+    }
+    if (!cur.empty()) fragments.push_back(cur);
+
+    // 2. Within each fragment, split on a lower->upper transition; collect the
+    //    pieces. Also accumulate the stripped full name (alpha only) across
+    //    all fragments.
+    std::vector<std::string> pieces;
+    std::string fullAlpha;
+    for (const std::string& frag : fragments) {
+        std::string piece;
+        char prev = 0;
+        for (char c : frag) {
+            const bool lowerToUpper =
+                prev != 0 &&
+                std::islower(static_cast<unsigned char>(prev)) &&
+                std::isupper(static_cast<unsigned char>(c));
+            if (lowerToUpper && !piece.empty()) { pieces.push_back(piece); piece.clear(); }
+            piece.push_back(c);
+            if (std::isalpha(static_cast<unsigned char>(c))) fullAlpha.push_back(c);
+            prev = c;
+        }
+        if (!piece.empty()) pieces.push_back(piece);
+    }
+
+    // 3. Lowercase, drop empty / single-char / all-digit tokens, dedupe.
+    //    Emit the stripped full name first (when it differs from the pieces).
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    auto add = [&](const std::string& raw){
+        if (raw.size() < 2) return;                         // drop single char
+        if (std::all_of(raw.begin(), raw.end(),
+                        [](unsigned char c){ return std::isdigit(c); })) return;
+        const std::string tok = _ToLower(raw);
+        if (seen.insert(tok).second) out.push_back(tok);
+    };
+    add(fullAlpha);
+    for (const std::string& p : pieces) add(p);
+    return out;
+}
+
 } // namespace
 
 UsdToolDispatcher::UsdToolDispatcher(StageProvider     stageFn,
                                      EditLayerProvider editLayerFn,
-                                     SelectionProvider selectionFn)
+                                     SelectionProvider selectionFn,
+                                     OpenFileProvider  openFileFn)
     : _stageFn(std::move(stageFn))
     , _editLayerFn(std::move(editLayerFn))
-    , _selectionFn(std::move(selectionFn)) {}
+    , _selectionFn(std::move(selectionFn))
+    , _openFileFn(std::move(openFileFn)) {}
 
 namespace {
 
@@ -197,22 +283,27 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         else if (toolName == "get_layer_stack")      result = GetLayerStack(args);
         else if (toolName == "list_children")        result = ListChildren(args);
         else if (toolName == "find_prims")           result = FindPrims(args);
-        else if (toolName == "set_xform")            result = SetXform(args);
-        else if (toolName == "set_attribute")        result = SetAttribute(args);
+        else if (toolName == "get_name_vocabulary")  result = GetNameVocabulary(args);
+        else if (toolName == "find_usd_files")       result = FindUsdFiles(args);
+        else if (toolName == "set_xforms")           result = SetXforms(args);
+        else if (toolName == "set_attributes")       result = SetAttributes(args);
         else if (toolName == "set_active")           result = SetActive(args);
         else if (toolName == "set_variant")          result = SetVariant(args);
-        else if (toolName == "set_visibility")       result = SetVisibility(args);
+        else if (toolName == "set_visibilities")     result = SetVisibilities(args);
         else if (toolName == "get_selection")        result = GetSelection(args);
         else if (toolName == "select_prims")         result = SelectPrims(args);
-        else if (toolName == "create_prim")          result = CreatePrim(args);
-        else if (toolName == "add_reference")        result = AddReference(args);
-        else if (toolName == "add_payload")          result = AddPayload(args);
-        else if (toolName == "add_inherit")          result = AddInherit(args);
-        else if (toolName == "add_specialize")       result = AddSpecialize(args);
+        else if (toolName == "create_prims")         result = CreatePrims(args);
+        else if (toolName == "add_references")       result = AddReferences(args);
+        else if (toolName == "add_payloads")         result = AddPayloads(args);
+        else if (toolName == "add_inherits")         result = AddInherits(args);
+        else if (toolName == "add_specializes")      result = AddSpecializes(args);
         else if (toolName == "add_sublayer")         result = AddSublayer(args);
         else if (toolName == "delete_prim")          result = DeletePrim(args);
         else if (toolName == "get_relationship_targets") result = GetRelationshipTargets(args);
         else if (toolName == "set_relationship")     result = SetRelationship(args);
+        else if (toolName == "open_file")            result = OpenFile(args);
+        else if (toolName == "get_edit_target")      result = GetEditTarget(args);
+        else if (toolName == "set_edit_target")      result = SetEditTarget(args);
         else                                         result = "[error] unknown tool: " + toolName;
     } catch (const std::exception& e) {
         result = std::string("[error] ") + e.what();
@@ -518,10 +609,17 @@ std::string UsdToolDispatcher::ListChildren(const JsObject& args) const {
                         + std::to_string(kListChildrenMaxDepth) + "):\n"
                       : ":\n");
 
+    auto nameAndType = [](const UsdPrim& p) -> std::string {
+        std::string s = p.GetName().GetString();
+        s += p.GetTypeName().IsEmpty() ? " (untyped)"
+                                       : " (" + p.GetTypeName().GetString() + ")";
+        return s;
+    };
+
     if (!recursive) {
         int n = 0;
         for (const UsdPrim& c : prim.GetChildren()) {
-            oss << "  " << _PrimSummary(c) << "\n";
+            oss << "  " << nameAndType(c) << "\n";
             ++n;
         }
         if (n == 0) oss << "  (no children)\n";
@@ -537,7 +635,7 @@ std::string UsdToolDispatcher::ListChildren(const JsObject& args) const {
                   - prim.GetPath().GetPathElementCount();
         if (depth > kListChildrenMaxDepth) { ++truncated; continue; }
         oss << "  " << std::string(depth * 2, ' ')
-            << _PrimSummary(p) << "\n";
+            << nameAndType(p) << "\n";
         ++written;
     }
     if (written == 0)   oss << "  (no descendants)\n";
@@ -559,6 +657,12 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
     const std::string purposeFilter = JsGetString(args, "purpose");
     const bool        hasActive     = JsHasKey(args, "active");
     const bool        activeFilter  = JsGetBool(args, "active", true);
+    const std::string namePattern   = JsGetString(args, "name_pattern");
+
+    // Case-insensitive, OR-matched lexical tokens (see get_name_vocabulary).
+    std::vector<std::string> nameTokens;
+    for (const JsValue& v : JsGetArray(args, "name_tokens"))
+        if (v.IsString()) nameTokens.push_back(_ToLower(v.GetString()));
 
     std::ostringstream oss;
     oss << "find_prims: ";
@@ -566,16 +670,42 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
     if (!kindFilter.empty())    oss << "kind=" << kindFilter << " ";
     if (!purposeFilter.empty()) oss << "purpose=" << purposeFilter << " ";
     if (hasActive)              oss << "active=" << (activeFilter ? "true" : "false") << " ";
-    if (typeFilter.empty() && kindFilter.empty() && purposeFilter.empty() && !hasActive) {
+    if (!namePattern.empty())   oss << "name_pattern=" << namePattern << " ";
+    if (!nameTokens.empty()) {
+        oss << "name_tokens=[";
+        for (size_t i = 0; i < nameTokens.size(); ++i)
+            oss << (i ? "," : "") << nameTokens[i];
+        oss << "] ";
+    }
+    if (typeFilter.empty() && kindFilter.empty() && purposeFilter.empty()
+        && !hasActive && namePattern.empty() && nameTokens.empty()) {
         oss << "(no filters — listing all prims)";
     }
     oss << "\n";
 
-    size_t kept     = 0;
-    size_t scanned  = 0;
-    bool   truncated = false;
+    // Collect matches (up to kFindPrimsLimit) for display, but count every
+    // match in matchedTotal so the footer never understates the real scale
+    // (the LLM must know it is seeing a fraction, not the whole set).
+    std::vector<UsdPrim> results;
+    results.reserve(kFindPrimsLimit);
+    size_t scanned      = 0;
+    size_t matchedTotal = 0;
+    bool   truncated    = false;
     for (const UsdPrim& prim : stage->Traverse()) {
         ++scanned;
+        // name_tokens: cheap and usually the most discriminating — check first.
+        if (!nameTokens.empty()) {
+            const std::vector<std::string> primToks =
+                _TokenizeName(prim.GetName().GetString());
+            bool any = false;
+            for (const std::string& q : nameTokens)
+                if (std::find(primToks.begin(), primToks.end(), q) != primToks.end()) {
+                    any = true; break;
+                }
+            if (!any) continue;
+        }
+        if (!namePattern.empty() &&
+            prim.GetName().GetString().find(namePattern) == std::string::npos) continue;
         if (!typeFilter.empty() &&
             prim.GetTypeName().GetString() != typeFilter) continue;
         if (!kindFilter.empty()) {
@@ -591,17 +721,78 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
         }
         if (hasActive && prim.IsActive() != activeFilter) continue;
 
-        if (kept >= kFindPrimsLimit) { truncated = true; continue; }
+        ++matchedTotal;
+        if (results.size() >= kFindPrimsLimit) { truncated = true; continue; }
+        results.push_back(prim);
+    }
 
-        oss << "  - " << _PrimSummary(prim) << "\n";
-        ++kept;
+    // With 2+ results, compute the common ancestor. If it has depth >= 1 (i.e.
+    // not the pseudo-root) print it as a header and strip it from each entry,
+    // saving repeated prefix tokens. Single-result queries keep their full path.
+    SdfPath commonPrefix;
+    if (results.size() >= 2) {
+        commonPrefix = results[0].GetPath();
+        for (size_t i = 1; i < results.size(); ++i)
+            commonPrefix = commonPrefix.GetCommonPrefix(results[i].GetPath());
     }
-    oss << "matched " << kept << " of " << scanned << " prims";
-    if (truncated) {
-        oss << " (truncated to first " << kFindPrimsLimit << ")";
+    const bool usePrefix = commonPrefix.GetPathElementCount() >= 1;
+    if (usePrefix)
+        oss << "base: " << commonPrefix.GetString() << "\n";
+
+    for (const UsdPrim& prim : results) {
+        std::string display;
+        if (usePrefix) {
+            const std::string full   = prim.GetPath().GetString();
+            const std::string& pfx   = commonPrefix.GetString();
+            display = (full == pfx) ? std::string(".") : full.substr(pfx.size() + 1);
+        } else {
+            display = prim.GetPath().GetString();
+        }
+        const std::string typeName = prim.GetTypeName().GetString();
+        display += typeName.empty() ? " (untyped)" : " (" + typeName + ")";
+        oss << "  - " << display << "\n";
     }
-    oss << "\n";
+
+    if (truncated)
+        oss << "matched " << matchedTotal << " prims, showing first "
+            << kFindPrimsLimit << " (" << scanned << " scanned)\n";
+    else
+        oss << "matched " << matchedTotal << " of " << scanned << " prims\n";
     return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// 7c. get_name_vocabulary
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::GetNameVocabulary(const JsObject& args) const {
+    (void)args;   // no parameters
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    // token -> number of prims contributing it. Built fresh per call: the
+    // stage is mutable, so a cached vocabulary would go stale.
+    std::map<std::string, int> counts;
+    size_t primCount = 0;
+    for (const UsdPrim& prim : stage->Traverse()) {
+        ++primCount;
+        // _TokenizeName already dedupes within a single name, so each prim
+        // contributes at most 1 to a given token's count.
+        for (const std::string& tok : _TokenizeName(prim.GetName().GetString()))
+            ++counts[tok];
+    }
+
+    // Sort by count desc, then alpha, for a stable, scan-friendly list.
+    std::vector<std::pair<std::string, int>> sorted(counts.begin(), counts.end());
+    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b){
+        return a.second != b.second ? a.second > b.second : a.first < b.first;
+    });
+
+    std::ostringstream oss;
+    oss << "name_vocabulary: " << sorted.size() << " distinct tokens from "
+        << primCount << " prims\n";
+    for (const auto& entry : sorted)
+        oss << "  " << entry.first << " (" << entry.second << ")\n";
+    return oss.str();   // global 8 KB cap (_CapResult) is the backstop
 }
 
 // --------------------------------------------------------------------------
@@ -1002,146 +1193,333 @@ bool _ParseValueForAttribute(const std::string& text,
 } // namespace
 
 // --------------------------------------------------------------------------
-// set_xform  (queued via UsdGeomXformCommonAPI)
+// set_xforms  (queued, batched, via UsdGeomXformCommonAPI)
+//
+// Top-level optional defaults — `operation`, `value`, `time` — can be set
+// once for the whole batch; each item may override them. `path` is always
+// per-item. `layer_id` is top-level only so the batch lands in a single
+// undoable command.
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::SetXform(const JsObject& args) const {
+std::string UsdToolDispatcher::SetXforms(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath path = _GetPath(args);
-    if (path.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    UsdPrim prim = stage->GetPrimAtPath(path);
-    if (!prim) return "[error] no prim at " + path.GetString();
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to set";
 
-    if (!UsdGeomXformable(prim)) {
-        return "[error] " + path.GetString()
-             + " is not UsdGeomXformable — cannot set xform ops";
+    auto validOp = [](const std::string& s) {
+        return s == "translate" || s == "rotate" || s == "scale";
+    };
+
+    // Shared defaults.
+    const bool        topHasOp   = JsHasKey(args, "operation");
+    const std::string topOp      = JsGetString(args, "operation");
+    if (topHasOp && !topOp.empty() && !validOp(topOp)) {
+        return "[error] top-level 'operation' must be \"translate\", "
+               "\"rotate\", or \"scale\"; got \"" + topOp + "\"";
+    }
+    const bool   topHasValue = JsHasKey(args, "value");
+    JsArray      topValueArr;
+    double       topX = 0, topY = 0, topZ = 0;
+    if (topHasValue) {
+        topValueArr = JsGetArray(args, "value");
+        std::string perr;
+        if (!_ParseVec3(topValueArr, topX, topY, topZ, perr)) {
+            return "[error] top-level 'value': " + perr;
+        }
+    }
+    const bool   topHasTime = JsHasKey(args, "time");
+    const double topTime    = JsGetDouble(args, "time", 0.0);
+
+    // Resolve target layer once.
+    const std::string layerIdArg = JsGetString(args, "layer_id");
+    SdfLayerHandle targetLayer;
+    std::string targetLayerName;
+    if (layerIdArg.empty()) {
+        targetLayer = stage->GetEditTarget().GetLayer();
+        targetLayerName = targetLayer ? _LayerName(targetLayer) : "<none>";
+    } else {
+        targetLayer = _FindLayer(stage, layerIdArg);
+        if (!targetLayer) {
+            return "[error] layer '" + layerIdArg + "' not found in the stage's "
+                   "layer stack. Call get_layer_stack to see available layers.";
+        }
+        if (!targetLayer->PermissionToEdit()) {
+            return "[error] layer '" + layerIdArg + "' is read-only";
+        }
+        targetLayerName = _LayerName(targetLayer);
+    }
+    if (!targetLayer) return "[error] no edit target layer";
+
+    struct Item {
+        SdfPath     path;
+        std::string op;
+        GfVec3d     value;
+        UsdTimeCode time;
+    };
+    std::vector<Item>        toApply;
+    std::vector<std::string> errors;
+    toApply.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+        UsdPrim prim = stage->GetPrimAtPath(primPath);
+        if (!prim) { bad(pathStr + ": no prim at this path"); continue; }
+        if (!UsdGeomXformable(prim)) {
+            bad(pathStr + ": not UsdGeomXformable"); continue;
+        }
+
+        // Resolve effective operation.
+        const bool        itemHasOp = JsHasKey(item, "operation");
+        const std::string op        = itemHasOp ? JsGetString(item, "operation")
+                                                : topOp;
+        if (!(itemHasOp || topHasOp) || op.empty()) {
+            bad(pathStr + ": missing 'operation' (set per-item or top-level)");
+            continue;
+        }
+        if (!validOp(op)) {
+            bad(pathStr + ": 'operation' must be \"translate\", \"rotate\", or "
+                "\"scale\"; got \"" + op + "\""); continue;
+        }
+
+        // Resolve effective value.
+        double x = topX, y = topY, z = topZ;
+        const bool itemHasValue = JsHasKey(item, "value");
+        if (itemHasValue) {
+            JsArray arr = JsGetArray(item, "value");
+            std::string perr;
+            if (!_ParseVec3(arr, x, y, z, perr)) {
+                bad(pathStr + ": 'value': " + perr); continue;
+            }
+        } else if (!topHasValue) {
+            bad(pathStr + ": missing 'value' (set per-item or top-level)");
+            continue;
+        }
+
+        // Resolve effective time.
+        UsdTimeCode time = UsdTimeCode::Default();
+        if (JsHasKey(item, "time"))      time = UsdTimeCode(JsGetDouble(item, "time", 0.0));
+        else if (topHasTime)             time = UsdTimeCode(topTime);
+
+        toApply.push_back({primPath, op, GfVec3d(x, y, z), time});
     }
 
-    const std::string op = JsGetString(args, "operation");
-    if (op != "translate" && op != "rotate" && op != "scale") {
-        return "[error] 'operation' must be \"translate\", \"rotate\", or "
-               "\"scale\"; got \"" + op + "\"";
+    if (toApply.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
     }
 
-    if (!JsHasKey(args, "value")) return "[error] missing 'value' argument";
-    JsArray arr = JsGetArray(args, "value");
-    double x = 0, y = 0, z = 0;
-    std::string parseErr;
-    if (!_ParseVec3(arr, x, y, z, parseErr)) return "[error] " + parseErr;
-
-    UsdTimeCode time = _GetTime(args);
-    const std::string timeStr = time.IsDefault()
-        ? std::string("DEFAULT")
-        : TfStringPrintf("%g", time.GetValue());
-
-    SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+    const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toApply.size();
     UsdStageRefPtr stageCopy = stage;
 
-    std::function<void()> fn;
-    if (op == "translate") {
-        GfVec3d t(x, y, z);
-        fn = [stageCopy, path, t, time]() {
-            UsdGeomXformCommonAPI api(stageCopy->GetPrimAtPath(path));
-            api.SetTranslate(t, time);
-        };
-    } else if (op == "rotate") {
-        GfVec3f r(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-        fn = [stageCopy, path, r, time]() {
-            UsdGeomXformCommonAPI api(stageCopy->GetPrimAtPath(path));
-            api.SetRotate(r, UsdGeomXformCommonAPI::RotationOrderXYZ, time);
-        };
-    } else {  // scale
-        GfVec3f s(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-        fn = [stageCopy, path, s, time]() {
-            UsdGeomXformCommonAPI api(stageCopy->GetPrimAtPath(path));
-            api.SetScale(s, time);
-        };
-    }
-    ExecuteAfterDraw<UsdFunctionCall>(editLayer, fn);
+    std::function<void()> fn = [stageCopy, items = std::move(toApply), ident]() {
+        SdfLayerHandle l = SdfLayer::Find(ident);
+        if (!l) return;
+        UsdEditContext ctx(stageCopy, UsdEditTarget(l));
+        for (const auto& it : items) {
+            UsdGeomXformCommonAPI api(stageCopy->GetPrimAtPath(it.path));
+            if (it.op == "translate") {
+                api.SetTranslate(it.value, it.time);
+            } else if (it.op == "rotate") {
+                api.SetRotate(GfVec3f(static_cast<float>(it.value[0]),
+                                      static_cast<float>(it.value[1]),
+                                      static_cast<float>(it.value[2])),
+                              UsdGeomXformCommonAPI::RotationOrderXYZ,
+                              it.time);
+            } else {  // scale
+                api.SetScale(GfVec3f(static_cast<float>(it.value[0]),
+                                     static_cast<float>(it.value[1]),
+                                     static_cast<float>(it.value[2])),
+                             it.time);
+            }
+        }
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
 
     std::ostringstream oss;
-    oss << "Queued: " << op << " on " << path.GetString()
-        << " = [" << x << ", " << y << ", " << z << "]"
-        << " @ " << timeStr << ". Re-read on next step to confirm.";
+    oss << "Queued: set " << okCount << " xform op"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_attribute_value on xformOp:translate / "
+           "xformOp:rotateXYZ / xformOp:scale to confirm.";
     return oss.str();
 }
 
 // --------------------------------------------------------------------------
-// 8. set_attribute  (queued)
+// 8. set_attributes  (queued, batched)
+//
+// Top-level optional defaults — `attribute`, `value`, `time` — can be set
+// once for the whole batch; each item may override them. `path` is always
+// per-item. `layer_id` is top-level only so the batch lands in a single
+// undoable command.
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::SetAttribute(const JsObject& args) const {
+std::string UsdToolDispatcher::SetAttributes(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath path = _GetPath(args);
-    if (path.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    UsdPrim prim = stage->GetPrimAtPath(path);
-    if (!prim) return "[error] no prim at " + path.GetString();
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to set";
 
-    const std::string attrName = JsGetString(args, "attribute");
-    if (attrName.empty()) return "[error] missing 'attribute' argument";
+    // Shared defaults at top level.
+    const bool        topHasAttr  = JsHasKey(args, "attribute");
+    const std::string topAttrName = JsGetString(args, "attribute");
+    const bool        topHasValue = JsHasKey(args, "value");
+    const std::string topValueStr = JsGetString(args, "value");
+    const bool        topHasTime  = JsHasKey(args, "time");
+    const double      topTime     = JsGetDouble(args, "time", 0.0);
 
-    UsdAttribute attr = prim.GetAttribute(TfToken(attrName));
-    if (!attr) return "[error] no attribute '" + attrName + "' on " + path.GetString();
-
-    const std::string valueText = JsGetString(args, "value");
-    if (valueText.empty() && !JsHasKey(args, "value")) {
-        return "[error] missing 'value' argument";
-    }
-
-    VtValue value;
-    std::string err;
-    if (!_ParseValueForAttribute(valueText, attr.GetTypeName(), &value, &err)) {
-        return "[error] " + err;
-    }
-
-    UsdTimeCode time = _GetTime(args);
-    const std::string timeStr = time.IsDefault()
-        ? std::string("DEFAULT")
-        : TfStringPrintf("%g", time.GetValue());
-
-    // Resolve the target layer — either named via layer_id or the edit target.
+    // Resolve target layer once.
     const std::string layerIdArg = JsGetString(args, "layer_id");
+    SdfLayerHandle targetLayer;
     std::string targetLayerName;
-
     if (layerIdArg.empty()) {
-        // Default: write to the current edit target.
-        ExecuteAfterDraw<AttributeSet>(attr, value, time);
-        SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
-        targetLayerName = editLayer ? _LayerName(editLayer) : "<none>";
+        targetLayer = stage->GetEditTarget().GetLayer();
+        targetLayerName = targetLayer ? _LayerName(targetLayer) : "<none>";
     } else {
-        // Explicit layer: bypass the edit target.
-        SdfLayerHandle layer = _FindLayer(stage, layerIdArg);
-        if (!layer) {
+        targetLayer = _FindLayer(stage, layerIdArg);
+        if (!targetLayer) {
             return "[error] layer '" + layerIdArg + "' not found in the stage's "
                    "layer stack. Call get_layer_stack to see available layers.";
         }
-        if (!layer->PermissionToEdit()) {
+        if (!targetLayer->PermissionToEdit()) {
             return "[error] layer '" + layerIdArg + "' is read-only";
         }
-        targetLayerName = _LayerName(layer);
+        targetLayerName = _LayerName(targetLayer);
+    }
+    if (!targetLayer) return "[error] no edit target layer";
 
-        // Capture by value so the lambda is safe after this frame.
-        SdfPath attrPath = attr.GetPath();
-        UsdStageRefPtr stageCopy = stage;
-        std::string ident = layer->GetIdentifier();
-        std::function<void()> fn = [stageCopy, attrPath, value, time, ident]() {
-            SdfLayerHandle l = SdfLayer::Find(ident);
-            if (!l) return;
-            UsdEditContext ctx(stageCopy, UsdEditTarget(l));
-            UsdAttribute a = stageCopy->GetAttributeAtPath(attrPath);
-            if (a) a.Set(value, time);
+    struct Item {
+        SdfPath     attrPath;
+        VtValue     value;
+        UsdTimeCode time;
+    };
+    std::vector<Item>        toApply;
+    std::vector<std::string> errors;
+    toApply.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
         };
-        ExecuteAfterDraw<UsdFunctionCall>(layer, fn);
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+        UsdPrim prim = stage->GetPrimAtPath(primPath);
+        if (!prim) { bad(pathStr + ": no prim at this path"); continue; }
+
+        // Resolve effective attribute name (item overrides top-level).
+        const bool        itemHasAttr = JsHasKey(item, "attribute");
+        const std::string attrName    = itemHasAttr
+            ? JsGetString(item, "attribute")
+            : topAttrName;
+        if (!(itemHasAttr || topHasAttr) || attrName.empty()) {
+            bad(pathStr + ": missing 'attribute' (set per-item or top-level)");
+            continue;
+        }
+
+        UsdAttribute attr = prim.GetAttribute(TfToken(attrName));
+        if (!attr) {
+            bad(pathStr + ": no attribute '" + attrName + "'"); continue;
+        }
+
+        // Resolve effective value (JsHasKey so empty strings are honored).
+        const bool        itemHasValue = JsHasKey(item, "value");
+        const std::string valueText    = itemHasValue
+            ? JsGetString(item, "value")
+            : topValueStr;
+        if (!(itemHasValue || topHasValue)) {
+            bad(pathStr + "." + attrName
+                + ": missing 'value' (set per-item or top-level)");
+            continue;
+        }
+
+        VtValue value;
+        std::string perr;
+        if (!_ParseValueForAttribute(valueText, attr.GetTypeName(), &value, &perr)) {
+            bad(pathStr + "." + attrName + ": " + perr); continue;
+        }
+
+        // Resolve effective time (item, then top-level, then Default).
+        UsdTimeCode time = UsdTimeCode::Default();
+        if (JsHasKey(item, "time"))      time = UsdTimeCode(JsGetDouble(item, "time", 0.0));
+        else if (topHasTime)             time = UsdTimeCode(topTime);
+
+        toApply.push_back({attr.GetPath(), value, time});
     }
 
+    if (toApply.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
+    }
+
+    const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toApply.size();
+    UsdStageRefPtr stageCopy = stage;
+
+    std::function<void()> fn = [stageCopy, items = std::move(toApply), ident]() {
+        SdfLayerHandle l = SdfLayer::Find(ident);
+        if (!l) return;
+        UsdEditContext ctx(stageCopy, UsdEditTarget(l));
+        for (const auto& it : items) {
+            UsdAttribute a = stageCopy->GetAttributeAtPath(it.attrPath);
+            if (a) a.Set(it.value, it.time);
+        }
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
+
     std::ostringstream oss;
-    oss << "Queued: set " << path.GetString() << "." << attrName
-        << " (" << attr.GetTypeName().GetAsToken().GetString() << ") = "
-        << valueText << " @ " << timeStr
-        << " on layer " << targetLayerName
-        << ". Re-read on next step to confirm.";
+    oss << "Queued: set " << okCount << " attribute"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_attribute_value to confirm.";
     return oss.str();
 }
 
@@ -1206,39 +1584,142 @@ std::string UsdToolDispatcher::SetVariant(const JsObject& args) const {
 }
 
 // --------------------------------------------------------------------------
-// 11. set_visibility  (queued — convenience wrapper around set_attribute)
+// 11. set_visibilities  (queued, batched — convenience wrapper around set_attributes)
+//
+// Top-level optional `visibility` default; per-item `path` required, optional
+// `visibility` override. `layer_id` top-level only so the batch lands in a
+// single undoable command.
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::SetVisibility(const JsObject& args) const {
+std::string UsdToolDispatcher::SetVisibilities(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath path = _GetPath(args);
-    if (path.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    UsdPrim prim = stage->GetPrimAtPath(path);
-    if (!prim) return "[error] no prim at " + path.GetString();
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to set";
 
-    const std::string vis = JsGetString(args, "visibility");
-    if (vis != "inherited" && vis != "invisible" && vis != "visible") {
-        return "[error] 'visibility' must be \"inherited\", \"invisible\", "
-               "or \"visible\"; got \"" + vis + "\"";
+    // "visible" is accepted as an alias for "inherited" (USD's canonical name).
+    auto normalize = [](const std::string& v) {
+        return v == "visible" ? std::string("inherited") : v;
+    };
+    auto isValid = [](const std::string& v) {
+        return v == "inherited" || v == "invisible" || v == "visible";
+    };
+
+    // Shared default.
+    const bool        topHasVis = JsHasKey(args, "visibility");
+    const std::string topVisRaw = JsGetString(args, "visibility");
+    if (topHasVis && !topVisRaw.empty() && !isValid(topVisRaw)) {
+        return "[error] top-level 'visibility' must be \"inherited\", "
+               "\"invisible\", or \"visible\"; got \"" + topVisRaw + "\"";
+    }
+    const std::string topVis = normalize(topVisRaw);
+
+    // Resolve target layer once.
+    const std::string layerIdArg = JsGetString(args, "layer_id");
+    SdfLayerHandle targetLayer;
+    std::string targetLayerName;
+    if (layerIdArg.empty()) {
+        targetLayer = stage->GetEditTarget().GetLayer();
+        targetLayerName = targetLayer ? _LayerName(targetLayer) : "<none>";
+    } else {
+        targetLayer = _FindLayer(stage, layerIdArg);
+        if (!targetLayer) {
+            return "[error] layer '" + layerIdArg + "' not found in the stage's "
+                   "layer stack. Call get_layer_stack to see available layers.";
+        }
+        if (!targetLayer->PermissionToEdit()) {
+            return "[error] layer '" + layerIdArg + "' is read-only";
+        }
+        targetLayerName = _LayerName(targetLayer);
+    }
+    if (!targetLayer) return "[error] no edit target layer";
+
+    struct Item { SdfPath attrPath; TfToken value; };
+    std::vector<Item>        toApply;
+    std::vector<std::string> errors;
+    toApply.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+        UsdPrim prim = stage->GetPrimAtPath(primPath);
+        if (!prim) { bad(pathStr + ": no prim at this path"); continue; }
+
+        UsdGeomImageable img(prim);
+        if (!img) {
+            bad(pathStr + ": not UsdGeomImageable"); continue;
+        }
+        UsdAttribute attr = img.GetVisibilityAttr();
+        if (!attr) {
+            bad(pathStr + ": no visibility attribute"); continue;
+        }
+
+        const bool        itemHasVis = JsHasKey(item, "visibility");
+        const std::string visRaw     = itemHasVis
+            ? JsGetString(item, "visibility")
+            : topVisRaw;
+        if (!(itemHasVis || topHasVis) || visRaw.empty()) {
+            bad(pathStr + ": missing 'visibility' (set per-item or top-level)");
+            continue;
+        }
+        if (!isValid(visRaw)) {
+            bad(pathStr + ": 'visibility' must be \"inherited\", \"invisible\", "
+                "or \"visible\"; got \"" + visRaw + "\""); continue;
+        }
+
+        toApply.push_back({attr.GetPath(), TfToken(normalize(visRaw))});
     }
 
-    UsdGeomImageable img(prim);
-    if (!img) {
-        return "[error] " + path.GetString()
-             + " is not UsdGeomImageable; visibility cannot be set";
-    }
-    UsdAttribute attr = img.GetVisibilityAttr();
-    if (!attr) {
-        return "[error] no visibility attribute on " + path.GetString();
+    if (toApply.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
     }
 
-    ExecuteAfterDraw<AttributeSet>(attr, VtValue(TfToken(vis)),
-                                   UsdTimeCode::Default());
+    const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toApply.size();
+    UsdStageRefPtr stageCopy = stage;
+
+    std::function<void()> fn = [stageCopy, items = std::move(toApply), ident]() {
+        SdfLayerHandle l = SdfLayer::Find(ident);
+        if (!l) return;
+        UsdEditContext ctx(stageCopy, UsdEditTarget(l));
+        for (const auto& it : items) {
+            UsdAttribute a = stageCopy->GetAttributeAtPath(it.attrPath);
+            if (a) a.Set(VtValue(it.value), UsdTimeCode::Default());
+        }
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
 
     std::ostringstream oss;
-    oss << "Queued: set visibility on " << path.GetString() << " = '"
-        << vis << "'. Re-read on next step to confirm.";
+    oss << "Queued: set visibility on " << okCount << " prim"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_attribute_value on visibility to confirm.";
     return oss.str();
 }
 
@@ -1373,41 +1854,22 @@ std::string UsdToolDispatcher::SelectPrims(const JsObject& args) const {
 }
 
 // --------------------------------------------------------------------------
-// 13. create_prim  (queued)
+// 13. create_prims  (queued, batched)
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::CreatePrim(const JsObject& args) const {
+std::string UsdToolDispatcher::CreatePrims(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath path = _GetPath(args);
-    if (path.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    if (!path.IsPrimPath()) {
-        return "[error] 'path' must be a prim path (e.g. \"/World/Hero\")";
-    }
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to create";
 
-    // Parse specifier — default "def".
-    const std::string specStr = JsGetString(args, "specifier");
-    SdfSpecifier specifier = SdfSpecifierDef;
-    std::string specifierLabel = "def";
-    if (specStr == "over") {
-        specifier = SdfSpecifierOver;
-        specifierLabel = "over";
-    } else if (specStr == "class") {
-        specifier = SdfSpecifierClass;
-        specifierLabel = "class";
-    } else if (!specStr.empty() && specStr != "def") {
-        return "[error] 'specifier' must be \"def\", \"over\", or \"class\"; got \""
-               + specStr + "\"";
-    }
-
-    // Optional type name (e.g. "Xform", "Mesh", "Camera").
-    const std::string typeName = JsGetString(args, "type");
-
-    // Resolve target layer — named via layer_id or current edit target.
+    // Resolve target layer once for the whole batch.
     const std::string layerIdArg = JsGetString(args, "layer_id");
     SdfLayerHandle targetLayer;
     std::string targetLayerName;
-
     if (layerIdArg.empty()) {
         targetLayer = stage->GetEditTarget().GetLayer();
         targetLayerName = _LayerName(targetLayer);
@@ -1422,73 +1884,102 @@ std::string UsdToolDispatcher::CreatePrim(const JsObject& args) const {
         }
         targetLayerName = _LayerName(targetLayer);
     }
-
     if (!targetLayer) return "[error] no edit target layer";
 
-    if (targetLayer->GetPrimAtPath(path)) {
-        return "[error] a spec already exists at " + path.GetString()
-               + " in " + targetLayerName
-               + ". Use set_attribute or set_xform to modify it.";
+    // Per-item validated form, ready to author.
+    struct Item {
+        SdfPath      path;
+        SdfSpecifier specifier;
+        std::string  typeName;
+    };
+    std::vector<Item>        toCreate;
+    std::vector<std::string> errors;  // pre-formatted "  [i] msg" lines
+    std::set<SdfPath>        seenInBatch;
+    toCreate.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath path(pathStr);
+        if (!path.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+        if (!seenInBatch.insert(path).second) {
+            bad(pathStr + ": duplicate path within batch"); continue;
+        }
+        if (targetLayer->GetPrimAtPath(path)) {
+            bad(pathStr + ": a spec already exists at that path in "
+                + targetLayerName); continue;
+        }
+
+        SdfSpecifier specifier = SdfSpecifierDef;
+        const std::string specStr = JsGetString(item, "specifier");
+        if (specStr == "over")       specifier = SdfSpecifierOver;
+        else if (specStr == "class") specifier = SdfSpecifierClass;
+        else if (!specStr.empty() && specStr != "def") {
+            bad(pathStr + ": 'specifier' must be \"def\", \"over\", or \"class\""
+                "; got \"" + specStr + "\""); continue;
+        }
+
+        toCreate.push_back({path, specifier, JsGetString(item, "type")});
+    }
+
+    if (toCreate.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
     }
 
     const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toCreate.size();
 
-    std::function<void()> fn = [stage, path, specifier, typeName, ident]() {
+    std::function<void()> fn = [items = std::move(toCreate), ident]() {
         SdfLayerHandle layer = SdfLayer::Find(ident);
         if (!layer) return;
-
-        // Collect ancestor paths that are missing in this layer (deepest first).
-        std::vector<SdfPath> missing;
-        SdfPath cur = path.GetParentPath();
-        while (!cur.IsAbsoluteRootPath() && !layer->GetPrimAtPath(cur)) {
-            missing.push_back(cur);
-            cur = cur.GetParentPath();
-        }
-
-        // Create ancestors shallow-first as typeless "over" specs.
-        for (auto it = missing.rbegin(); it != missing.rend(); ++it) {
-            const SdfPath& ancPath = *it;
-            if (ancPath.IsRootPrimPath()) {
-                SdfPrimSpecHandle spec =
-                    SdfPrimSpec::New(layer, ancPath.GetName(), SdfSpecifierOver);
-                layer->InsertRootPrim(spec);
+        for (const auto& it : items) {
+            SdfPrimSpecHandle newSpec;
+            if (it.path.IsRootPrimPath()) {
+                newSpec = SdfPrimSpec::New(layer, it.path.GetName(), it.specifier);
+                layer->InsertRootPrim(newSpec);
             } else {
                 SdfPrimSpecHandle parent =
-                    layer->GetPrimAtPath(ancPath.GetParentPath());
-                if (!parent) return;
-                SdfPrimSpec::New(parent, ancPath.GetName(), SdfSpecifierOver);
+                    _EnsurePrimSpec(layer, it.path.GetParentPath());
+                if (!parent) continue;
+                newSpec = SdfPrimSpec::New(parent, it.path.GetName(), it.specifier);
             }
-        }
-
-        // Create the target prim spec.
-        SdfPrimSpecHandle newSpec;
-        if (path.IsRootPrimPath()) {
-            newSpec = SdfPrimSpec::New(layer, path.GetName(), specifier);
-            layer->InsertRootPrim(newSpec);
-        } else {
-            SdfPrimSpecHandle parent = layer->GetPrimAtPath(path.GetParentPath());
-            if (!parent) return;
-            newSpec = SdfPrimSpec::New(parent, path.GetName(), specifier);
-        }
-
-        if (newSpec && !typeName.empty()) {
-            newSpec->SetTypeName(typeName);
+            if (newSpec && !it.typeName.empty()) newSpec->SetTypeName(it.typeName);
         }
     };
-
     ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
 
     std::ostringstream oss;
-    oss << "Queued: create " << specifierLabel << " prim at " << path.GetString();
-    if (!typeName.empty()) oss << " (type=" << typeName << ")";
-    oss << " on layer " << targetLayerName
-        << ". Re-read with get_prim_info to confirm.";
+    oss << "Queued: create " << okCount << " prim"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with list_children to confirm.";
     return oss.str();
 }
 
 // --------------------------------------------------------------------------
-// Composition arc helpers — shared by add_reference, add_payload,
-// add_inherit, add_specialize.
+// Composition arc helpers — shared by add_references, add_payloads,
+// add_inherits, add_specializes.
 // --------------------------------------------------------------------------
 namespace {
 
@@ -1520,192 +2011,324 @@ SdfLayerHandle _ResolveArcLayer(const UsdStageRefPtr& stage,
     return layer;
 }
 
+// Batch helper for path-arc tools (add_inherits, add_specializes). They share
+// the same shape (path + target_path per item) and only differ in which list
+// proxy the appender writes to. `label` is the user-facing arc noun (e.g.
+// "inherit arc") used in the result string.
+using _PathArcAppender =
+    std::function<void(const SdfPrimSpecHandle&, const SdfPath&)>;
+
+std::string _AddPathArcsBatch(const UsdStageRefPtr& stage,
+                              const JsObject&       args,
+                              const std::string&    label,
+                              _PathArcAppender      appender) {
+    if (!stage) return "[error] no active stage";
+
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to add";
+
+    std::string targetLayerName, err;
+    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, targetLayerName, err);
+    if (!targetLayer) return err;
+
+    struct Item { SdfPath primPath; SdfPath targetPath; };
+    std::vector<Item>        toAdd;
+    std::vector<std::string> errors;
+    toAdd.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+
+        const std::string targetStr = JsGetString(item, "target_path");
+        if (targetStr.empty()) {
+            bad(pathStr + ": missing 'target_path'"); continue;
+        }
+        if (!SdfPath::IsValidPathString(targetStr)) {
+            bad(pathStr + ": 'target_path' is not a valid SdfPath: " + targetStr);
+            continue;
+        }
+        SdfPath targetPath(targetStr);
+        if (!targetPath.IsAbsolutePath()) {
+            bad(pathStr + ": 'target_path' must be an absolute path"); continue;
+        }
+
+        toAdd.push_back({primPath, targetPath});
+    }
+
+    if (toAdd.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
+    }
+
+    const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toAdd.size();
+
+    std::function<void()> fn = [items = std::move(toAdd), ident,
+                                appender = std::move(appender)]() {
+        SdfLayerHandle layer = SdfLayer::Find(ident);
+        if (!layer) return;
+        for (const auto& it : items) {
+            SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, it.primPath);
+            if (spec) appender(spec, it.targetPath);
+        }
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
+
+    std::ostringstream oss;
+    oss << "Queued: add " << okCount << " " << label
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_composition_arcs to confirm.";
+    return oss.str();
+}
+
 } // anonymous namespace
 
 // --------------------------------------------------------------------------
-// 14. add_reference  (queued)
+// 14. add_references  (queued, batched)
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::AddReference(const JsObject& args) const {
+std::string UsdToolDispatcher::AddReferences(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath primPath = _GetPath(args);
-    if (primPath.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    if (!primPath.IsPrimPath())
-        return "[error] 'path' must be a prim path (e.g. \"/World/Hero\")";
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to add";
 
-    const std::string assetPath = JsGetString(args, "asset_path");
+    std::string targetLayerName, err;
+    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, targetLayerName, err);
+    if (!targetLayer) return err;
 
-    SdfPath targetPrimPath;
-    const std::string primPathStr = JsGetString(args, "prim_path");
-    if (!primPathStr.empty()) {
-        if (!SdfPath::IsValidPathString(primPathStr))
-            return "[error] 'prim_path' is not a valid SdfPath: " + primPathStr;
-        targetPrimPath = SdfPath(primPathStr);
+    struct Item {
+        SdfPath      primPath;
+        SdfReference ref;
+    };
+    std::vector<Item>        toAdd;
+    std::vector<std::string> errors;
+    toAdd.reserve(itemsArr.size());
+
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+
+        if (!JsHasKey(item, "asset_path")) {
+            bad(pathStr + ": missing 'asset_path' (use \"\" for an internal "
+                "reference)"); continue;
+        }
+        const std::string assetPath = JsGetString(item, "asset_path");
+
+        SdfPath targetPrimPath;
+        const std::string targetStr = JsGetString(item, "prim_path");
+        if (!targetStr.empty()) {
+            if (!SdfPath::IsValidPathString(targetStr)) {
+                bad(pathStr + ": 'prim_path' is not a valid SdfPath: " + targetStr);
+                continue;
+            }
+            targetPrimPath = SdfPath(targetStr);
+        }
+
+        const double offset = JsGetDouble(item, "layer_offset", 0.0);
+        const double scale  = JsGetDouble(item, "layer_scale",  1.0);
+
+        toAdd.push_back({primPath,
+                         SdfReference(assetPath, targetPrimPath,
+                                      SdfLayerOffset(offset, scale))});
     }
 
-    const double offset = JsGetDouble(args, "layer_offset", 0.0);
-    const double scale  = JsGetDouble(args, "layer_scale",  1.0);
-
-    std::string layerName, err;
-    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, layerName, err);
-    if (!targetLayer) return err;
-
-    const std::string ident = targetLayer->GetIdentifier();
-    SdfReference ref(assetPath, targetPrimPath, SdfLayerOffset(offset, scale));
-
-    std::function<void()> fn = [primPath, ref, ident]() {
-        SdfLayerHandle layer = SdfLayer::Find(ident);
-        if (!layer) return;
-        SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, primPath);
-        if (spec) spec->GetReferenceList().Prepend(ref);
-    };
-    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
-
-    std::ostringstream oss;
-    oss << "Queued: add reference on " << primPath.GetString()
-        << " -> asset=\"" << assetPath << "\"";
-    if (!targetPrimPath.IsEmpty()) oss << " prim=" << targetPrimPath.GetString();
-    if (offset != 0.0 || scale != 1.0)
-        oss << " offset=" << offset << " scale=" << scale;
-    oss << " on layer " << layerName
-        << ". Re-read with get_composition_arcs to confirm.";
-    return oss.str();
-}
-
-// --------------------------------------------------------------------------
-// 15. add_payload  (queued)
-// --------------------------------------------------------------------------
-std::string UsdToolDispatcher::AddPayload(const JsObject& args) const {
-    UsdStageRefPtr stage = _stageFn();
-    if (!stage) return "[error] no active stage";
-
-    SdfPath primPath = _GetPath(args);
-    if (primPath.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    if (!primPath.IsPrimPath())
-        return "[error] 'path' must be a prim path (e.g. \"/World/Hero\")";
-
-    const std::string assetPath = JsGetString(args, "asset_path");
-
-    SdfPath targetPrimPath;
-    const std::string primPathStr = JsGetString(args, "prim_path");
-    if (!primPathStr.empty()) {
-        if (!SdfPath::IsValidPathString(primPathStr))
-            return "[error] 'prim_path' is not a valid SdfPath: " + primPathStr;
-        targetPrimPath = SdfPath(primPathStr);
+    if (toAdd.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
     }
 
-    const double offset = JsGetDouble(args, "layer_offset", 0.0);
-    const double scale  = JsGetDouble(args, "layer_scale",  1.0);
-
-    std::string layerName, err;
-    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, layerName, err);
-    if (!targetLayer) return err;
-
     const std::string ident = targetLayer->GetIdentifier();
-    SdfPayload payload(assetPath, targetPrimPath, SdfLayerOffset(offset, scale));
+    const size_t okCount = toAdd.size();
 
-    std::function<void()> fn = [primPath, payload, ident]() {
+    std::function<void()> fn = [items = std::move(toAdd), ident]() {
         SdfLayerHandle layer = SdfLayer::Find(ident);
         if (!layer) return;
-        SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, primPath);
-        if (spec) spec->GetPayloadList().Prepend(payload);
+        for (const auto& it : items) {
+            SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, it.primPath);
+            if (spec) spec->GetReferenceList().Prepend(it.ref);
+        }
     };
     ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
 
     std::ostringstream oss;
-    oss << "Queued: add payload on " << primPath.GetString()
-        << " -> asset=\"" << assetPath << "\"";
-    if (!targetPrimPath.IsEmpty()) oss << " prim=" << targetPrimPath.GetString();
-    if (offset != 0.0 || scale != 1.0)
-        oss << " offset=" << offset << " scale=" << scale;
-    oss << " on layer " << layerName
-        << ". Re-read with get_composition_arcs to confirm.";
+    oss << "Queued: add " << okCount << " reference"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_composition_arcs to confirm.";
     return oss.str();
 }
 
 // --------------------------------------------------------------------------
-// 16. add_inherit  (queued)
+// 15. add_payloads  (queued, batched)
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::AddInherit(const JsObject& args) const {
+std::string UsdToolDispatcher::AddPayloads(const JsObject& args) const {
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    SdfPath primPath = _GetPath(args);
-    if (primPath.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    if (!primPath.IsPrimPath())
-        return "[error] 'path' must be a prim path";
+    if (!JsHasKey(args, "items"))
+        return "[error] missing 'items' argument";
+    const JsArray itemsArr = JsGetArray(args, "items");
+    if (itemsArr.empty())
+        return "[error] 'items' is empty — nothing to add";
 
-    const std::string targetStr = JsGetString(args, "target_path");
-    if (targetStr.empty()) return "[error] missing 'target_path' argument";
-    if (!SdfPath::IsValidPathString(targetStr))
-        return "[error] 'target_path' is not a valid SdfPath: " + targetStr;
-    const SdfPath targetPath(targetStr);
-    if (!targetPath.IsAbsolutePath())
-        return "[error] 'target_path' must be an absolute path";
-
-    std::string layerName, err;
-    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, layerName, err);
+    std::string targetLayerName, err;
+    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, targetLayerName, err);
     if (!targetLayer) return err;
 
-    const std::string ident = targetLayer->GetIdentifier();
+    struct Item {
+        SdfPath    primPath;
+        SdfPayload payload;
+    };
+    std::vector<Item>        toAdd;
+    std::vector<std::string> errors;
+    toAdd.reserve(itemsArr.size());
 
-    std::function<void()> fn = [primPath, targetPath, ident]() {
+    for (size_t i = 0; i < itemsArr.size(); ++i) {
+        auto bad = [&](const std::string& msg) {
+            errors.push_back("  [" + std::to_string(i) + "] " + msg);
+        };
+        const JsValue& v = itemsArr[i];
+        if (!v.IsObject()) { bad("item is not an object"); continue; }
+        const JsObject& item = v.GetJsObject();
+
+        const std::string pathStr = JsGetString(item, "path");
+        if (pathStr.empty()) { bad("missing 'path'"); continue; }
+        if (!SdfPath::IsValidPathString(pathStr)) {
+            bad(pathStr + ": not a valid SdfPath"); continue;
+        }
+        SdfPath primPath(pathStr);
+        if (!primPath.IsPrimPath()) {
+            bad(pathStr + ": not a prim path"); continue;
+        }
+
+        if (!JsHasKey(item, "asset_path")) {
+            bad(pathStr + ": missing 'asset_path'"); continue;
+        }
+        const std::string assetPath = JsGetString(item, "asset_path");
+
+        SdfPath targetPrimPath;
+        const std::string targetStr = JsGetString(item, "prim_path");
+        if (!targetStr.empty()) {
+            if (!SdfPath::IsValidPathString(targetStr)) {
+                bad(pathStr + ": 'prim_path' is not a valid SdfPath: " + targetStr);
+                continue;
+            }
+            targetPrimPath = SdfPath(targetStr);
+        }
+
+        const double offset = JsGetDouble(item, "layer_offset", 0.0);
+        const double scale  = JsGetDouble(item, "layer_scale",  1.0);
+
+        toAdd.push_back({primPath,
+                         SdfPayload(assetPath, targetPrimPath,
+                                    SdfLayerOffset(offset, scale))});
+    }
+
+    if (toAdd.empty()) {
+        std::ostringstream oss;
+        oss << "[error] no valid items in batch (" << itemsArr.size()
+            << " requested, " << errors.size() << " failed):";
+        for (const auto& e : errors) oss << "\n" << e;
+        return oss.str();
+    }
+
+    const std::string ident = targetLayer->GetIdentifier();
+    const size_t okCount = toAdd.size();
+
+    std::function<void()> fn = [items = std::move(toAdd), ident]() {
         SdfLayerHandle layer = SdfLayer::Find(ident);
         if (!layer) return;
-        SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, primPath);
-        if (spec) spec->GetInheritPathList().Prepend(targetPath);
+        for (const auto& it : items) {
+            SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, it.primPath);
+            if (spec) spec->GetPayloadList().Prepend(it.payload);
+        }
     };
     ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
 
     std::ostringstream oss;
-    oss << "Queued: add inherit on " << primPath.GetString()
-        << " <- " << targetPath.GetString()
-        << " on layer " << layerName
-        << ". Re-read with get_composition_arcs to confirm.";
+    oss << "Queued: add " << okCount << " payload"
+        << (okCount == 1 ? "" : "s") << " on layer " << targetLayerName;
+    if (!errors.empty()) {
+        oss << ". " << okCount << " ok, " << errors.size() << " errors:";
+        for (const auto& e : errors) oss << "\n" << e;
+    } else {
+        oss << ".";
+    }
+    oss << " Re-read with get_composition_arcs to confirm.";
     return oss.str();
 }
 
 // --------------------------------------------------------------------------
-// 17. add_specialize  (queued)
+// 16. add_inherits  (queued, batched)
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::AddSpecialize(const JsObject& args) const {
-    UsdStageRefPtr stage = _stageFn();
-    if (!stage) return "[error] no active stage";
+std::string UsdToolDispatcher::AddInherits(const JsObject& args) const {
+    return _AddPathArcsBatch(_stageFn(), args, "inherit arc",
+        [](const SdfPrimSpecHandle& s, const SdfPath& t) {
+            s->GetInheritPathList().Prepend(t);
+        });
+}
 
-    SdfPath primPath = _GetPath(args);
-    if (primPath.IsEmpty()) return "[error] missing or invalid 'path' argument";
-    if (!primPath.IsPrimPath())
-        return "[error] 'path' must be a prim path";
-
-    const std::string targetStr = JsGetString(args, "target_path");
-    if (targetStr.empty()) return "[error] missing 'target_path' argument";
-    if (!SdfPath::IsValidPathString(targetStr))
-        return "[error] 'target_path' is not a valid SdfPath: " + targetStr;
-    const SdfPath targetPath(targetStr);
-    if (!targetPath.IsAbsolutePath())
-        return "[error] 'target_path' must be an absolute path";
-
-    std::string layerName, err;
-    SdfLayerHandle targetLayer = _ResolveArcLayer(stage, args, layerName, err);
-    if (!targetLayer) return err;
-
-    const std::string ident = targetLayer->GetIdentifier();
-
-    std::function<void()> fn = [primPath, targetPath, ident]() {
-        SdfLayerHandle layer = SdfLayer::Find(ident);
-        if (!layer) return;
-        SdfPrimSpecHandle spec = _EnsurePrimSpec(layer, primPath);
-        if (spec) spec->GetSpecializesList().Prepend(targetPath);
-    };
-    ExecuteAfterDraw<UsdFunctionCall>(targetLayer, fn);
-
-    std::ostringstream oss;
-    oss << "Queued: add specialize on " << primPath.GetString()
-        << " <- " << targetPath.GetString()
-        << " on layer " << layerName
-        << ". Re-read with get_composition_arcs to confirm.";
-    return oss.str();
+// --------------------------------------------------------------------------
+// 17. add_specializes  (queued, batched)
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::AddSpecializes(const JsObject& args) const {
+    return _AddPathArcsBatch(_stageFn(), args, "specialize arc",
+        [](const SdfPrimSpecHandle& s, const SdfPath& t) {
+            s->GetSpecializesList().Prepend(t);
+        });
 }
 
 // --------------------------------------------------------------------------
@@ -1946,6 +2569,305 @@ std::string UsdToolDispatcher::DeletePrim(const JsObject& args) const {
         << ". Note: if other layers hold opinions on this prim it will still "
            "appear on the composed stage. Re-read with get_prim_info to confirm.";
     return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// find_usd_files  — helpers and implementation
+// --------------------------------------------------------------------------
+namespace {
+
+bool _IsUsdExt(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".usd" || ext == ".usda" || ext == ".usdc" || ext == ".usdz";
+}
+
+// Only .usda and .usd may be text; .usdc is binary Crate, .usdz is a zip.
+bool _IsGrepableExt(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".usd" || ext == ".usda";
+}
+
+// Returns false if the file looks binary (null byte in first 1 KB).
+bool _IsTextFile(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    char buf[1024];
+    f.read(buf, sizeof(buf));
+    const std::streamsize n = f.gcount();
+    for (std::streamsize i = 0; i < n; ++i)
+        if (buf[i] == '\0') return false;
+    return true;
+}
+
+struct FileGrepMatch {
+    std::string              path;
+    std::vector<std::string> lines;  // up to 3 "  line N: <text>"
+    int                      total = 0;
+};
+
+FileGrepMatch _GrepFile(const std::string& path, const std::string& patLower) {
+    FileGrepMatch m;
+    m.path = path;
+    std::ifstream f(path);
+    if (!f) return m;
+    std::string line;
+    int n = 0;
+    while (std::getline(f, line)) {
+        ++n;
+        if (_ToLower(line).find(patLower) != std::string::npos) {
+            ++m.total;
+            if ((int)m.lines.size() < 3) {
+                std::string disp = line.size() > 120
+                    ? line.substr(0, 120) + "..." : line;
+                m.lines.push_back("  line " + std::to_string(n) + ": " + disp);
+            }
+        }
+    }
+    return m;
+}
+
+} // anonymous namespace
+
+std::string UsdToolDispatcher::FindUsdFiles(const JsObject& args) const {
+    namespace fs = std::filesystem;
+
+    const std::string namePat    = JsGetString(args, "name_pattern");
+    const std::string contentPat = JsGetString(args, "content_pattern");
+    const bool        recursive  = JsGetBool(args, "recursive", true);
+
+    if (namePat.empty() && contentPat.empty())
+        return "[error] provide at least one of 'name_pattern' or 'content_pattern'";
+
+    // Resolve search directories.
+    std::vector<std::string> dirs;
+    if (JsHasKey(args, "directories")) {
+        for (const JsValue& v : JsGetArray(args, "directories"))
+            if (v.IsString()) dirs.push_back(v.GetString());
+    }
+    if (dirs.empty()) {
+        // Fall back to the parent directory of the current stage's root layer.
+        UsdStageRefPtr stage = _stageFn ? _stageFn() : UsdStageRefPtr();
+        if (stage) {
+            SdfLayerHandle root = stage->GetRootLayer();
+            if (root && !root->IsAnonymous()) {
+                const std::string rp = root->GetRealPath();
+                if (!rp.empty())
+                    dirs.push_back(fs::path(rp).parent_path().string());
+            }
+        }
+        if (dirs.empty())
+            return "[error] no directories to search — specify 'directories' "
+                   "or open an on-disk USD stage first.";
+    }
+
+    // Validate.
+    for (const std::string& d : dirs) {
+        std::error_code ec;
+        if (!fs::is_directory(d, ec))
+            return "[error] not a directory: '" + d + "'";
+    }
+
+    const std::string nameLower    = _ToLower(namePat);
+    const std::string contentLower = _ToLower(contentPat);
+
+    // Phase 1: walk every directory on its own thread — no cap on what is
+    // collected; we cap what is *displayed*, not what is searched.
+    std::vector<std::future<std::vector<std::string>>> walkFutures;
+    walkFutures.reserve(dirs.size());
+
+    for (const std::string& dir : dirs) {
+        walkFutures.push_back(std::async(std::launch::async,
+            [dir, nameLower, recursive]() -> std::vector<std::string> {
+                std::vector<std::string> found;
+                try {
+                    std::error_code ec;
+                    auto visit = [&](const std::filesystem::path& p) {
+                        if (!_IsUsdExt(p)) return;
+                        if (!nameLower.empty()) {
+                            if (_ToLower(p.filename().string()).find(nameLower)
+                                    == std::string::npos) return;
+                        }
+                        found.push_back(p.string());
+                    };
+                    using opts = std::filesystem::directory_options;
+                    if (recursive) {
+                        for (const auto& e : std::filesystem::recursive_directory_iterator(
+                                 dir, opts::skip_permission_denied, ec))
+                            if (e.is_regular_file(ec)) visit(e.path());
+                    } else {
+                        for (const auto& e : std::filesystem::directory_iterator(
+                                 dir, opts::skip_permission_denied, ec))
+                            if (e.is_regular_file(ec)) visit(e.path());
+                    }
+                } catch (...) {}
+                return found;
+            }));
+    }
+
+    std::vector<std::string> allFiles;
+    for (auto& fut : walkFutures)
+        for (std::string& p : fut.get())
+            allFiles.push_back(std::move(p));
+
+    if (allFiles.empty()) {
+        std::ostringstream oss;
+        oss << "No USD files";
+        if (!namePat.empty()) oss << " with name matching '" << namePat << "'";
+        oss << " found in:";
+        for (const auto& d : dirs) oss << "\n  " << d;
+        return oss.str();
+    }
+
+    // Phase 2: content grep — batched by hardware_concurrency to bound the
+    // number of live threads; all files are searched, results are capped.
+    if (!contentPat.empty()) {
+        // Collect grepable candidates.
+        std::vector<std::string> toGrep;
+        for (const auto& fp : allFiles)
+            if (_IsGrepableExt(fs::path(fp))) toGrep.push_back(fp);
+
+        const int batchSize = std::max(4,
+            static_cast<int>(std::thread::hardware_concurrency()));
+
+        std::vector<FileGrepMatch> matches;
+        for (size_t i = 0; i < toGrep.size(); i += batchSize) {
+            const size_t end = std::min(i + static_cast<size_t>(batchSize),
+                                        toGrep.size());
+            std::vector<std::future<FileGrepMatch>> batch;
+            batch.reserve(end - i);
+            for (size_t j = i; j < end; ++j) {
+                const std::string fp = toGrep[j];
+                batch.push_back(std::async(std::launch::async,
+                    [fp, contentLower]() -> FileGrepMatch {
+                        if (!_IsTextFile(fp)) return {};
+                        return _GrepFile(fp, contentLower);
+                    }));
+            }
+            for (auto& f : batch) {
+                FileGrepMatch m = f.get();
+                if (m.total > 0) matches.push_back(std::move(m));
+            }
+        }
+
+        static constexpr int kMaxMatchDisplay = 50;
+        const int display = std::min((int)matches.size(), kMaxMatchDisplay);
+        std::ostringstream oss;
+        for (int i = 0; i < display; ++i) {
+            const FileGrepMatch& m = matches[i];
+            oss << m.path << "\n";
+            for (const auto& l : m.lines) oss << l << "\n";
+            const int remaining = m.total - (int)m.lines.size();
+            if (remaining > 0)
+                oss << "  (... " << remaining << " more match"
+                    << (remaining == 1 ? "" : "es") << ")\n";
+        }
+        if (matches.empty()) {
+            oss << "No files contain '" << contentPat << "'";
+            if (!namePat.empty())
+                oss << " (searched " << toGrep.size()
+                    << " files matching '" << namePat << "')";
+        } else {
+            oss << matches.size() << " file" << (matches.size() == 1 ? "" : "s")
+                << " of " << toGrep.size() << " searched contain '"
+                << contentPat << "'";
+            if ((int)matches.size() > kMaxMatchDisplay)
+                oss << " (showing first " << kMaxMatchDisplay << ")";
+        }
+        oss << "\n";
+        return oss.str();
+    }
+
+    // Name-only results — cap display, report total.
+    static constexpr int kMaxNameDisplay = 200;
+    const int display = std::min((int)allFiles.size(), kMaxNameDisplay);
+    std::ostringstream oss;
+    oss << allFiles.size() << " USD file"
+        << (allFiles.size() == 1 ? "" : "s")
+        << " matching '" << namePat << "'";
+    if ((int)allFiles.size() > kMaxNameDisplay)
+        oss << " (showing first " << kMaxNameDisplay << ")";
+    oss << ":\n";
+    for (int i = 0; i < display; ++i) oss << "  " << allFiles[i] << "\n";
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// open_file  (queued on UI thread)
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::OpenFile(const JsObject& args) const {
+    const std::string path = JsGetString(args, "path");
+    if (path.empty()) return "[error] missing 'path' argument";
+
+    if (!_openFileFn)
+        return "[error] open_file is not available in this context";
+
+    const std::string modeStr = JsGetString(args, "mode");
+    bool asStage = true;
+    if (modeStr == "layer") {
+        asStage = false;
+    } else if (!modeStr.empty() && modeStr != "stage") {
+        return "[error] 'mode' must be \"stage\" or \"layer\"; got \""
+               + modeStr + "\"";
+    }
+
+    OpenFileProvider fn = _openFileFn;
+    QueueOnUIThread([fn, path, asStage]() { fn(path, asStage); });
+
+    std::ostringstream oss;
+    oss << "Queued: open \"" << path << "\" as " << (asStage ? "stage" : "layer")
+        << ". The active scene will change on the next frame — "
+           "call get_stage_info on your next step to confirm the new stage.";
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// get_edit_target
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::GetEditTarget(const JsObject& /*args*/) const {
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    SdfLayerHandle layer = stage->GetEditTarget().GetLayer();
+    if (!layer) return "[error] no edit target set";
+
+    std::ostringstream oss;
+    oss << "edit target: " << _LayerName(layer);
+    if (!layer->PermissionToEdit()) oss << "  [readonly]";
+    if (stage->IsLayerMuted(layer->GetIdentifier())) oss << "  [muted]";
+    oss << "\nidentifier: " << layer->GetIdentifier();
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// set_edit_target  (queued on UI thread — stage->SetEditTarget is not
+// an SDF mutation so it can't use ExecuteAfterDraw<UsdFunctionCall>)
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::SetEditTarget(const JsObject& args) const {
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    const std::string layerId = JsGetString(args, "layer_id");
+    if (layerId.empty()) return "[error] missing 'layer_id' argument";
+
+    SdfLayerHandle layer = _FindLayer(stage, layerId);
+    if (!layer)
+        return "[error] layer '" + layerId
+               + "' not found in the layer stack. "
+                 "Call get_layer_stack to see available layers.";
+
+    if (!layer->PermissionToEdit())
+        return "[error] layer '" + _LayerName(layer) + "' is read-only";
+    if (stage->IsLayerMuted(layer->GetIdentifier()))
+        return "[error] layer '" + _LayerName(layer) + "' is muted";
+
+    QueueOnUIThread([stage, layer]() {
+        stage->SetEditTarget(UsdEditTarget(layer));
+    });
+
+    return "Queued: set edit target to " + _LayerName(layer)
+           + ". Re-read with get_edit_target on your next step to confirm.";
 }
 
 } // namespace UsdAgent

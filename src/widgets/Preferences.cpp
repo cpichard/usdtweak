@@ -57,13 +57,27 @@ void PreferencesModalDialog::Draw() {
             ImGui::Text("Select font from your operating system:");
             std::string font = ResourcesLoader::GetFontRegularPath();
             std::string fontMono = ResourcesLoader::GetFontMonoPath();
-            ImGui::InputTextWithHint("Regular Font", "Select alternative font path", &font);
+            std::string fontBold = ResourcesLoader::GetFontBoldPath();
+            std::string fontItalic = ResourcesLoader::GetFontItalicPath();
+            ImGui::InputTextWithHint("Regular Font", "Default: IBM Plex Sans Medium", &font);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 ResourcesLoader::RequestNewFontRegular(font);
                 ExecuteAfterDraw<EditorReloadFonts>();
             }
 
-            ImGui::InputTextWithHint("Mono Font", "Select alternative font path", &fontMono);
+            ImGui::InputTextWithHint("Bold Font", "Default: IBM Plex Sans Bold", &fontBold);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                ResourcesLoader::RequestNewFontBold(fontBold);
+                ExecuteAfterDraw<EditorReloadFonts>();
+            }
+
+            ImGui::InputTextWithHint("Italic Font", "Default: IBM Plex Sans Italic", &fontItalic);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                ResourcesLoader::RequestNewFontItalic(fontItalic);
+                ExecuteAfterDraw<EditorReloadFonts>();
+            }
+
+            ImGui::InputTextWithHint("Mono Font", "Default: IBM Plex Mono", &fontMono);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 ResourcesLoader::RequesNewFontMono(fontMono);
                 ExecuteAfterDraw<EditorReloadFonts>();
@@ -104,15 +118,16 @@ void PreferencesModalDialog::Draw() {
             ImGui::SameLine();
 #endif
             if (ImGui::Button("Reset to default fonts")) {
-                if (!font.empty()) {
+                if (!font.empty())
                     ResourcesLoader::RequestNewFontRegular("");
-                }
-                if (!fontMono.empty()) {
+                if (!fontMono.empty())
                     ResourcesLoader::RequesNewFontMono("");
-                }
-                if (selectedGlyph != "Default") {
+                if (!fontBold.empty())
+                    ResourcesLoader::RequestNewFontBold("");
+                if (!fontItalic.empty())
+                    ResourcesLoader::RequestNewFontItalic("");
+                if (selectedGlyph != "Default")
                     ResourcesLoader::SetGlyphRangeName("");
-                }
                 ExecuteAfterDraw<EditorReloadFonts>();
             }
             ImGui::EndChild();

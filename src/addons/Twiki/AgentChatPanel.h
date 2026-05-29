@@ -6,10 +6,28 @@
 
 #include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 namespace UsdAgent {
+
+// Thread-safe buffer the orchestrator's trace callback appends to from the
+// worker thread; the UI thread drains it once the turn resolves.
+struct TraceSink {
+    std::mutex               mu;
+    std::vector<std::string> lines;
+    void add(const std::string& l) {
+        std::lock_guard<std::mutex> g(mu);
+        lines.push_back(l);
+    }
+    std::vector<std::string> drain() {
+        std::lock_guard<std::mutex> g(mu);
+        std::vector<std::string> out;
+        out.swap(lines);
+        return out;
+    }
+};
 
 // ImGui chat panel that talks to the agent on a background thread.
 //
@@ -28,7 +46,8 @@ public:
     // uses them on the background thread when it executes tools.
     AgentChatPanel(UsdToolDispatcher::StageProvider     stageFn,
                    UsdToolDispatcher::EditLayerProvider editLayerFn,
-                   UsdToolDispatcher::SelectionProvider selectionFn = {});
+                   UsdToolDispatcher::SelectionProvider selectionFn  = {},
+                   UsdToolDispatcher::OpenFileProvider  openFileFn   = {});
     ~AgentChatPanel();
 
     // Render the panel contents. The host wraps this in ImGui::Begin/End,
@@ -52,6 +71,10 @@ private:
 
     // In-flight call. Valid() while a turn is being processed.
     std::future<AgentOrchestrator::RunResult> _pending;
+
+    // Trace sink shared with the in-flight worker. Outlives the submit call so
+    // the poll block can drain it into _trace once _pending resolves.
+    std::shared_ptr<TraceSink> _pendingSink;
 
     // Last error to display in the UI (network failure, missing API key, …).
     std::string _lastError;
