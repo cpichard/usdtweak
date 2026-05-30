@@ -237,11 +237,27 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "Use this to resolve vocabulary terms to prims in one call, e.g. "
             "[\"towel\",\"plate\"]. Matches whole tokens, not substrings — for "
             "substring matching on the raw name use name_pattern instead.");
+        props["under"] = _ArrayOfStringsParam(
+            "restrict the search to these prims and their descendants (absolute "
+            "prim paths). Pass one path to scope to a single subtree, e.g. "
+            "[\"/Kitchen_set/Appliances_grp\"], or several to sweep multiple "
+            "subtrees in ONE call, e.g. every Mesh under each appliance. ANDs "
+            "with the other filters and with store_as, so this is the way to "
+            "collect a scoped set (e.g. all Meshes under the appliances) without "
+            "listing children subtree-by-subtree.");
+        props["store_as"] = MakeStringParam(
+            "optional handle name. If set, the FULL match set (every match, not "
+            "just the 50 shown) is saved client-side under this name. Reuse it "
+            "with list_id on the edit tools to act on ALL matches in one "
+            "undoable command without re-listing paths, or page through it with "
+            "read_list. This is the way to bulk-edit more than 50 prims.");
         tools.push_back(JsValue(_Tool(
             "find_prims",
-            "Searches the entire stage for prims matching the given filters "
-            "(type / kind / purpose / active / name_pattern / name_tokens, all "
-            "optional, combined with AND). Prefer name_pattern when the user "
+            "Searches the stage for prims matching the given filters "
+            "(type / kind / purpose / active / name_pattern / name_tokens / "
+            "under, all optional, combined with AND). Use 'under' to scope the "
+            "search to one or more subtrees (a prim path and its descendants) "
+            "instead of the whole stage. Prefer name_pattern when the user "
             "refers to a prim by name rather than path. To answer questions "
             "about what KINDS of things are in the scene or to group prims by "
             "meaning, call get_name_vocabulary first, then pass the relevant "
@@ -251,8 +267,65 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "subject to the global 8 KB cap and may end with a "
             "'[... truncated]' marker — narrow the filters if that appears. "
             "Use when the user asks for all prims of a kind, all cameras, "
-            "all render-purpose prims, etc.",
+            "all render-purpose prims, etc. To then edit ALL matches (not just "
+            "the 50 shown), pass store_as and reuse the handle via list_id.",
             props, JsArray{})));
+    }
+
+    // 7d. read_list
+    {
+        JsObject props;
+        props["list_id"] = MakeStringParam(
+            "name of a list previously created by find_prims (store_as) or "
+            "manage_lists.");
+        props["offset"]  = MakeNumberParam(
+            "index of the first path to return (default 0). Use the next_offset "
+            "value from the previous call to page forward.");
+        props["limit"]   = MakeNumberParam(
+            "max paths to return this call (default and hard cap 50).");
+        tools.push_back(JsValue(_Tool(
+            "read_list",
+            "Pages through a stored named list, printing paths[offset, "
+            "offset+limit) plus the total and a next_offset hint. Use this when "
+            "you must READ candidate paths to judge them (e.g. curating a "
+            "semantic set like 'kitchen utensils') and the set is larger than "
+            "the 50 find_prims shows. To merely EDIT a whole list you do NOT "
+            "need read_list — pass list_id to the edit tool directly.",
+            props, _Strings({"list_id"}))));
+    }
+
+    // 7e. manage_lists
+    {
+        JsObject props;
+        props["operation"] = MakeStringParam(
+            "one of: \"list\" (no other params; show all handles + counts); "
+            "\"delete\" (needs list_id); \"create\" (needs store_as + paths; "
+            "store an explicit path set — use for the few items you curated by "
+            "hand, e.g. false positives to drop); \"combine\" (needs op + "
+            "inputs + store_as; set algebra over existing lists).");
+        props["op"] = MakeStringParam(
+            "for operation=combine: \"union\" (merge several searches), "
+            "\"intersect\" (paths in ALL inputs — AND two criteria), or "
+            "\"difference\" (inputs[0] minus the rest — curation/exclusion).");
+        props["inputs"]   = _ArrayOfStringsParam(
+            "for operation=combine: names of the lists to combine (>= 2).");
+        props["paths"]    = _ArrayOfStringsParam(
+            "for operation=create: SdfPath strings to store (de-duplicated).");
+        props["store_as"] = MakeStringParam(
+            "for operation=create/combine: name to store the resulting list "
+            "under.");
+        props["list_id"]  = MakeStringParam(
+            "for operation=delete: name of the list to remove.");
+        tools.push_back(JsValue(_Tool(
+            "manage_lists",
+            "Manage the client-side named prim lists: inventory (list), remove "
+            "(delete), create one from explicit paths (create), or derive a new "
+            "one by set algebra over existing lists (combine). Combine keeps "
+            "paths client-side, so prefer it over re-listing paths yourself: "
+            "union to merge several semantic searches, difference to drop a "
+            "small set of curated false positives, intersect to AND two "
+            "filters. Lists are sets (no duplicates) and live for the session.",
+            props, _Strings({"operation"}))));
     }
 
     // 7c. get_name_vocabulary
@@ -384,6 +457,12 @@ ToolDefs BuildEditToolDefinitions() {
             "returned by get_layer_stack (e.g. \"/path/to/shot.usda\" or "
             "\"<anon:asset.usda>\"). Applies to every entry. Omit to use "
             "the current edit target.");
+        props["list_id"]   = MakeStringParam(
+            "optional: instead of \"items\", apply to EVERY path in this stored "
+            "list (created by find_prims store_as or manage_lists). Mutually "
+            "exclusive with \"items\". The top-level \"attribute\"/\"value\"/"
+            "\"time\" defaults supply the values for every path — set them. This "
+            "is how you edit more than the 50 prims find_prims shows.");
         tools.push_back(JsValue(_Tool(
             "set_attributes",
             "QUEUES one or more attribute-value edits in a single call — "
@@ -399,22 +478,50 @@ ToolDefs BuildEditToolDefinitions() {
             "failure) are reported in the result and do not block the "
             "other items. All items land on the same target layer in a "
             "single undoable command. Re-read with get_attribute_value to "
-            "confirm.",
-            props, _Strings({"items"}))));
+            "confirm. Supply either \"items\" or \"list_id\".",
+            props, JsArray{})));
     }
 
-    // 9. set_active
+    // 9. set_actives
     {
+        const std::string activeNote =
+            "true to activate, false to deactivate (deactivated prims, and "
+            "their descendants, are pruned from the composed stage).";
+
+        JsObject itemProps;
+        itemProps["path"]   = MakeStringParam(
+            "SdfPath of the prim (required per item)");
+        itemProps["active"] = MakeBoolParam(
+            "optional: " + activeNote + " Overrides the top-level \"active\". "
+            "Required if no top-level default is set.");
+
         JsObject props;
-        props["path"]   = MakeStringParam("the SdfPath of the prim");
-        props["active"] = MakeBoolParam(
-            "true to activate, false to deactivate (deactivated prims are "
-            "pruned from the composed stage)");
+        props["items"]    = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of active-state edits. Each entry requires \"path\"; "
+            "\"active\" may be set per-item or inherited from the top level. "
+            "All entries land on the same target layer in a single undoable "
+            "step.");
+        props["active"]   = MakeBoolParam(
+            "optional top-level default applied to every item that does not set "
+            "its own. Use for bulk activate/deactivate. " + activeNote);
+        props["layer_id"] = MakeStringParam(
+            "optional: identifier of the layer to write to, exactly as returned "
+            "by get_layer_stack. Applies to every entry. Omit to use the "
+            "current edit target.");
+        props["list_id"]  = MakeStringParam(
+            "optional: instead of \"items\", apply to EVERY path in this stored "
+            "list (from find_prims store_as / manage_lists). Mutually exclusive "
+            "with \"items\". The top-level \"active\" default is applied to "
+            "every path — set it (e.g. false to deactivate the whole set).");
         tools.push_back(JsValue(_Tool(
-            "set_active",
-            "QUEUES a SetActive edit on a prim, on the current edit target. "
-            "Re-read with get_prim_info to confirm. Undoable.",
-            props, _Strings({"path", "active"}))));
+            "set_actives",
+            "QUEUES one or more SetActive edits in a single call — always prefer "
+            "this over multiple sequential calls. Top-level \"active\" acts as a "
+            "default; each item may override it. Per-item errors (no prim) are "
+            "reported and do not block the others. All items land on the same "
+            "target layer in a single undoable command. Re-read with "
+            "get_prim_info to confirm. Supply either \"items\" or \"list_id\".",
+            props, JsArray{})));
     }
 
     // 10. set_variant
@@ -435,23 +542,37 @@ ToolDefs BuildEditToolDefinitions() {
             props, _Strings({"path", "variantSet", "variant"}))));
     }
 
-    // 10b. delete_prim
+    // 10b. delete_prims
     {
+        JsObject itemProps;
+        itemProps["path"] = MakeStringParam(
+            "absolute SdfPath of the prim spec to delete, e.g. \"/World/Hero\" "
+            "(required per item)");
+
         JsObject props;
-        props["path"]     = MakeStringParam(
-            "absolute SdfPath of the prim spec to delete, e.g. \"/World/Hero\"");
+        props["items"]    = _ObjectArrayParam(itemProps, _Strings({"path"}),
+            "list of prim specs to delete. Each entry requires \"path\". All "
+            "entries are removed from the same target layer in a single "
+            "undoable step.");
         props["layer_id"] = MakeStringParam(
             "optional: identifier of the layer to delete from, as returned by "
-            "get_layer_stack. Defaults to the current edit target. Use "
-            "get_layer_stack to find which layer holds the spec you want to remove.");
+            "get_layer_stack. Applies to every entry. Defaults to the current "
+            "edit target. Use get_layer_stack to find which layer holds the "
+            "specs you want to remove.");
+        props["list_id"]  = MakeStringParam(
+            "optional: instead of \"items\", delete EVERY path in this stored "
+            "list (from find_prims store_as / manage_lists). Mutually exclusive "
+            "with \"items\". Use this to bulk-prune a found/curated set.");
         tools.push_back(JsValue(_Tool(
-            "delete_prim",
-            "QUEUES deletion of the SdfPrimSpec at the given path from a specific "
-            "layer. This is a layer-level operation: if other layers hold opinions "
-            "on this prim it will still appear on the composed stage after deletion. "
-            "Returns an error if no spec exists at the path in the target layer. "
-            "Re-read with get_prim_info to confirm. Undoable.",
-            props, _Strings({"path"}))));
+            "delete_prims",
+            "QUEUES deletion of one or more SdfPrimSpecs from a single layer in "
+            "one undoable command — always prefer this over multiple sequential "
+            "deletions. This is a layer-level operation: if other layers hold "
+            "opinions on a prim it will still appear on the composed stage after "
+            "deletion. Per-item errors (no spec in the target layer, invalid "
+            "path) are reported and do not block the others. Re-read with "
+            "get_prim_info to confirm. Supply either \"items\" or \"list_id\".",
+            props, JsArray{})));
     }
 
     // 10c. create_prims
@@ -504,13 +625,19 @@ ToolDefs BuildEditToolDefinitions() {
         props["extend"] = MakeBoolParam(
             "false (default) replaces the existing selection; true appends "
             "the given paths to it.");
+        props["list_id"] = MakeStringParam(
+            "optional: instead of \"paths\", select EVERY path in this stored "
+            "list (from find_prims store_as / manage_lists). Mutually exclusive "
+            "with \"paths\". Handy to let the user visually confirm a found or "
+            "curated set in the viewport before editing it.");
         tools.push_back(JsValue(_Tool(
             "select_prims",
             "QUEUES a change to what the user has selected in the editor. "
-            "Re-read with get_selection on the next step to confirm. "
-            "Selection changes are NOT undoable in usdtweak's command "
-            "stack — Ctrl+Z will not revert them.",
-            props, _Strings({"paths"}))));
+            "Provide either \"paths\" or \"list_id\". Re-read with "
+            "get_selection on the next step to confirm. Selection changes are "
+            "NOT undoable in usdtweak's command stack — Ctrl+Z will not revert "
+            "them.",
+            props, JsArray{})));
     }
 
     // set_edit_target
@@ -575,6 +702,11 @@ ToolDefs BuildEditToolDefinitions() {
             "optional: identifier of the layer to write to, exactly as "
             "returned by get_layer_stack. Applies to every entry. Omit to "
             "use the current edit target.");
+        props["list_id"]   = MakeStringParam(
+            "optional: instead of \"items\", apply to EVERY path in this stored "
+            "list (from find_prims store_as / manage_lists). Mutually exclusive "
+            "with \"items\". The top-level \"operation\"/\"value\"/\"time\" "
+            "defaults are applied to every path — set them.");
         tools.push_back(JsValue(_Tool(
             "set_xforms",
             "QUEUES one or more translate/rotate/scale edits in a single call "
@@ -590,8 +722,8 @@ ToolDefs BuildEditToolDefinitions() {
             "command. Re-read with get_attribute_value on xformOp:translate / "
             "xformOp:rotateXYZ / xformOp:scale to confirm. Note: only works on "
             "prims that use the common translate/rotate/scale op layout — not "
-            "on matrix-based xforms.",
-            props, _Strings({"items"}))));
+            "on matrix-based xforms. Supply either \"items\" or \"list_id\".",
+            props, JsArray{})));
     }
 
     // 12. set_visibilities
@@ -623,6 +755,11 @@ ToolDefs BuildEditToolDefinitions() {
             "optional: identifier of the layer to write to, exactly as "
             "returned by get_layer_stack. Applies to every entry. Omit to "
             "use the current edit target.");
+        props["list_id"]    = MakeStringParam(
+            "optional: instead of \"items\", apply to EVERY path in this stored "
+            "list (from find_prims store_as / manage_lists). Mutually exclusive "
+            "with \"items\". The top-level \"visibility\" default is applied to "
+            "every path — set it (e.g. \"invisible\").");
         tools.push_back(JsValue(_Tool(
             "set_visibilities",
             "QUEUES one or more visibility changes on UsdGeomImageable prims "
@@ -634,8 +771,8 @@ ToolDefs BuildEditToolDefinitions() {
             "not block other items. All items land on the same target "
             "layer in a single undoable command. Re-read with "
             "get_value_resolution to confirm and see which layer holds "
-            "the new opinion.",
-            props, _Strings({"items"}))));
+            "the new opinion. Supply either \"items\" or \"list_id\".",
+            props, JsArray{})));
     }
 
     // 13. add_references

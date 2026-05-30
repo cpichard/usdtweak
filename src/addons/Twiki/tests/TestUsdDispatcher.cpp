@@ -3,11 +3,13 @@
 // key substrings, and prints full output for inspection.
 
 #include "JsHelpers.h"
+#include "Selection.h"
 #include "UsdToolDispatcher.h"
 
 #include <pxr/base/js/json.h>
 #include <pxr/base/tf/token.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usd/editTarget.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/stage.h>
@@ -612,6 +614,398 @@ void TestEditTarget(UsdStageRefPtr stage, SdfLayerRefPtr asset, SdfLayerRefPtr s
     stage->SetEditTarget(UsdEditTarget(shot));
 }
 
+// Helper: build a JsArray of strings from a brace list.
+JsArray StrArray(std::initializer_list<const char*> ss) {
+    JsArray a;
+    for (const char* s : ss) a.push_back(JsValue(std::string(s)));
+    return a;
+}
+
+// find_prims store_as keeps the FULL match set; list_id then edits ALL of them
+// in one command — including prims past the 50-prim display cap. This is the
+// core of the prim-lists feature: the apply cap is gone.
+void TestStoreAndApplyList() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("boxes.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    const int kCount = 60;  // > kFindPrimsLimit (50)
+    for (int i = 0; i < kCount; ++i)
+        stage->DefinePrim(SdfPath("/World/Box_" + std::to_string(i)),
+                          TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("find_prims store_as=boxes stores all 60 (not just 50)");
+    JsArray toks; toks.push_back(JsValue(std::string("box")));
+    std::string out = d.Dispatch("find_prims",
+        Args({{"name_tokens", JsValue(toks)},
+              {"store_as",    JsValue(std::string("boxes"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 60 prims");
+    CHECK_CONTAINS(out, "stored 60 paths as \"boxes\"");
+
+    Section("set_visibilities list_id=boxes applies to ALL 60");
+    out = d.Dispatch("set_visibilities",
+        Args({{"list_id",    JsValue(std::string("boxes"))},
+              {"visibility", JsValue(std::string("invisible"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "Queued");
+    CHECK_CONTAINS(out, "60 prim");
+
+    CommandStack::GetInstance().ExecuteCommands();  // flush the queued edit
+
+    // A prim PAST the 50-prim display cap must have been edited — direct proof
+    // the apply cap is gone.
+    std::string v = d.Dispatch("get_attribute_value",
+        Args({{"path",      JsValue(std::string("/World/Box_57"))},
+              {"attribute", JsValue(std::string("visibility"))}}));
+    std::fprintf(stdout, "%s\n", v.c_str());
+    CHECK_CONTAINS(v, "invisible");
+}
+
+void TestReadListPagination() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("pager.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    for (int i = 0; i < 60; ++i)
+        stage->DefinePrim(SdfPath("/World/Box_" + std::to_string(i)),
+                          TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+    JsArray toks; toks.push_back(JsValue(std::string("box")));
+    d.Dispatch("find_prims", Args({{"name_tokens", JsValue(toks)},
+                                   {"store_as", JsValue(std::string("boxes"))}}));
+
+    Section("read_list page 1 (offset 0)");
+    std::string out = d.Dispatch("read_list",
+        Args({{"list_id", JsValue(std::string("boxes"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "list \"boxes\": 60 paths");
+    CHECK_CONTAINS(out, "showing [0, 50)");
+    CHECK_CONTAINS(out, "next_offset: 50");
+
+    Section("read_list page 2 (offset 50) — last page, no next_offset");
+    out = d.Dispatch("read_list",
+        Args({{"list_id", JsValue(std::string("boxes"))},
+              {"offset",  JsValue(double(50))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "showing [50, 60)");
+    CHECK(out.find("next_offset") == std::string::npos);
+
+    Section("read_list unknown list → error");
+    out = d.Dispatch("read_list", Args({{"list_id", JsValue(std::string("nope"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+}
+
+// manage_lists: create (with set de-dup), combine (union/intersect/difference),
+// list inventory, delete.
+void TestManageLists() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("ml.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("manage_lists create dedupes (it is a set)");
+    std::string out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("dups"))},
+              {"paths",     JsValue(StrArray({"/A", "/A", "/B"}))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "created \"dups\" with 2 paths");
+    CHECK_CONTAINS(out, "1 duplicate");
+
+    d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("A"))},
+              {"paths",     JsValue(StrArray({"/A", "/B", "/C"}))}}));
+    d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("B"))},
+              {"paths",     JsValue(StrArray({"/B", "/C", "/D"}))}}));
+
+    Section("combine union A∪B = 4");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("combine"))},
+              {"op",        JsValue(std::string("union"))},
+              {"inputs",    JsValue(StrArray({"A", "B"}))},
+              {"store_as",  JsValue(std::string("U"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "= 4 paths");
+
+    Section("combine intersect A∩B = 2");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("combine"))},
+              {"op",        JsValue(std::string("intersect"))},
+              {"inputs",    JsValue(StrArray({"A", "B"}))},
+              {"store_as",  JsValue(std::string("I"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "= 2 paths");
+
+    Section("combine difference A−B = 1");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("combine"))},
+              {"op",        JsValue(std::string("difference"))},
+              {"inputs",    JsValue(StrArray({"A", "B"}))},
+              {"store_as",  JsValue(std::string("D"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "= 1 path");
+
+    Section("manage_lists list inventory");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("list"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "\"A\"");
+    CHECK_CONTAINS(out, "\"U\"");
+
+    Section("manage_lists delete, then delete again → error");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("delete"))},
+              {"list_id",   JsValue(std::string("A"))}}));
+    CHECK_CONTAINS(out, "deleted \"A\"");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("delete"))},
+              {"list_id",   JsValue(std::string("A"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+
+    Section("combine with bad op → error");
+    out = d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("combine"))},
+              {"op",        JsValue(std::string("xor"))},
+              {"inputs",    JsValue(StrArray({"B", "U"}))},
+              {"store_as",  JsValue(std::string("X"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+}
+
+// find_prims `under` scopes the search to one or more subtrees, ANDs with the
+// other filters, composes with store_as, and prunes nested roots so a prim is
+// counted once.
+void TestFindPrimsUnder() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("kitchen.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/Set"), TfToken("Xform"));
+    // Two appliance subtrees, each with a Mesh and an Xform child.
+    stage->DefinePrim(SdfPath("/Set/Stove"),         TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Set/Stove/Body"),    TfToken("Mesh"));
+    stage->DefinePrim(SdfPath("/Set/Stove/Knob"),    TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Set/Fridge"),        TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Set/Fridge/Door"),   TfToken("Mesh"));
+    // A Mesh OUTSIDE the appliances — must never be matched when scoped.
+    stage->DefinePrim(SdfPath("/Set/Floor"),         TfToken("Mesh"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("find_prims type=Mesh under=[/Set/Stove] (single subtree)");
+    JsArray one; one.push_back(JsValue(std::string("/Set/Stove")));
+    std::string out = d.Dispatch("find_prims",
+        Args({{"type", JsValue(std::string("Mesh"))},
+              {"under", JsValue(one)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "under=[/Set/Stove]");
+    CHECK_CONTAINS(out, "/Set/Stove/Body");
+    CHECK_CONTAINS(out, "matched 1 of");
+    CHECK(out.find("Floor") == std::string::npos);
+    CHECK(out.find("Door")  == std::string::npos);
+
+    Section("find_prims type=Mesh under=[stove,fridge] (multi subtree) + store_as");
+    JsArray two;
+    two.push_back(JsValue(std::string("/Set/Stove")));
+    two.push_back(JsValue(std::string("/Set/Fridge")));
+    out = d.Dispatch("find_prims",
+        Args({{"type",     JsValue(std::string("Mesh"))},
+              {"under",    JsValue(two)},
+              {"store_as", JsValue(std::string("appliance_meshes"))}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    // 2 results share /Set → output is prefix-compressed (base: /Set + relative).
+    CHECK_CONTAINS(out, "base: /Set");
+    CHECK_CONTAINS(out, "Stove/Body");
+    CHECK_CONTAINS(out, "Fridge/Door");
+    CHECK_CONTAINS(out, "matched 2 of");
+    CHECK_CONTAINS(out, "stored 2 paths as \"appliance_meshes\"");
+    CHECK(out.find("Floor") == std::string::npos);
+
+    Section("nested roots pruned: under=[/Set, /Set/Stove] counts once");
+    JsArray nested;
+    nested.push_back(JsValue(std::string("/Set")));
+    nested.push_back(JsValue(std::string("/Set/Stove")));
+    out = d.Dispatch("find_prims",
+        Args({{"type",  JsValue(std::string("Mesh"))},
+              {"under", JsValue(nested)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    // All 3 meshes under /Set, each counted exactly once (Stove not double).
+    CHECK_CONTAINS(out, "matched 3 of");
+    CHECK_CONTAINS(out, "under=[/Set]");
+
+    Section("under with an unresolved path → noted, no full-stage fallback");
+    JsArray bad; bad.push_back(JsValue(std::string("/Nope")));
+    out = d.Dispatch("find_prims",
+        Args({{"type",  JsValue(std::string("Mesh"))},
+              {"under", JsValue(bad)}}));
+    std::fprintf(stdout, "%s", out.c_str());
+    CHECK_CONTAINS(out, "matched 0 of");
+    CHECK_CONTAINS(out, "not found");
+    // Must NOT have fallen back to scanning the whole stage.
+    CHECK(out.find("Floor") == std::string::npos);
+}
+
+// delete_prims is batched and accepts list_id: bulk-prune a stored set in one
+// undoable command.
+void TestDeletePrimsList() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("del.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"),      TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/A"),    TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/B"),    TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/Keep"), TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("doomed"))},
+              {"paths",     JsValue(StrArray({"/World/A", "/World/B"}))}}));
+
+    Section("delete_prims list_id=doomed deletes both, leaves Keep");
+    std::string out = d.Dispatch("delete_prims",
+        Args({{"list_id", JsValue(std::string("doomed"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "Queued: delete 2 specs");
+    CommandStack::GetInstance().ExecuteCommands();
+
+    CHECK_CONTAINS(d.Dispatch("get_prim_info",
+        Args({{"path", JsValue(std::string("/World/A"))}})), "[error]");
+    CHECK_CONTAINS(d.Dispatch("get_prim_info",
+        Args({{"path", JsValue(std::string("/World/B"))}})), "[error]");
+    std::string keep = d.Dispatch("get_prim_info",
+        Args({{"path", JsValue(std::string("/World/Keep"))}}));
+    CHECK(keep.find("[error]") == std::string::npos);
+
+    Section("delete_prims both items & list_id → error");
+    JsArray items;
+    { JsObject o; o["path"] = JsValue(std::string("/World/Keep")); items.push_back(JsValue(o)); }
+    out = d.Dispatch("delete_prims",
+        Args({{"items",   JsValue(items)},
+              {"list_id", JsValue(std::string("doomed"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "not both");
+
+    Section("delete_prims unknown list_id → error");
+    out = d.Dispatch("delete_prims", Args({{"list_id", JsValue(std::string("ghost"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+}
+
+// set_actives is batched and accepts list_id: bulk activate/deactivate a set
+// in one undoable command, using the top-level `active` default.
+void TestSetActivesList() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("act.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"),   TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/A"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/B"), TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("ab"))},
+              {"paths",     JsValue(StrArray({"/World/A", "/World/B"}))}}));
+
+    Section("set_actives list_id without 'active' → error batch");
+    std::string out = d.Dispatch("set_actives",
+        Args({{"list_id", JsValue(std::string("ab"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "missing 'active'");
+
+    // Sanity: both prims start active.
+    CHECK_CONTAINS(d.Dispatch("get_prim_info",
+        Args({{"path", JsValue(std::string("/World/A"))}})), "active: true");
+
+    Section("set_actives list_id=ab active=false deactivates both");
+    out = d.Dispatch("set_actives",
+        Args({{"list_id", JsValue(std::string("ab"))},
+              {"active",  JsValue(false)}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "Queued: set active on 2 prim");
+    CommandStack::GetInstance().ExecuteCommands();
+
+    // The active=false opinion must be authored on the target (root) layer.
+    SdfPrimSpecHandle specA = layer->GetPrimAtPath(SdfPath("/World/A"));
+    SdfPrimSpecHandle specB = layer->GetPrimAtPath(SdfPath("/World/B"));
+    CHECK(specA && specA->HasActive() && !specA->GetActive());
+    CHECK(specB && specB->HasActive() && !specB->GetActive());
+    // And they must no longer report as active via the composed stage.
+    CHECK(d.Dispatch("get_prim_info",
+        Args({{"path", JsValue(std::string("/World/A"))}})).find("active: true")
+          == std::string::npos);
+}
+
+// select_prims accepts list_id: select a whole stored set so the user can see
+// it highlighted in the viewport.
+void TestSelectPrimsList() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("sel.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"),   TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/A"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/B"), TfToken("Xform"));
+    Selection selection;
+    UsdToolDispatcher d(
+        /*stageFn*/    [&]() { return stage; },
+        /*editLayerFn*/[&]() { return layer; },
+        /*selectionFn*/[&]() { return &selection; });
+
+    d.Dispatch("manage_lists",
+        Args({{"operation", JsValue(std::string("create"))},
+              {"store_as",  JsValue(std::string("sel2"))},
+              {"paths",     JsValue(StrArray({"/World/A", "/World/B"}))}}));
+
+    Section("select_prims list_id=sel2 selects both");
+    std::string out = d.Dispatch("select_prims",
+        Args({{"list_id", JsValue(std::string("sel2"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "Queued: select");
+    CHECK_CONTAINS(out, "2 path");
+    CommandStack::GetInstance().ExecuteCommands();
+    CHECK(selection.GetSelectedPaths(stage).size() == 2);
+
+    Section("select_prims both paths & list_id → error");
+    out = d.Dispatch("select_prims",
+        Args({{"paths",   JsValue(StrArray({"/World/A"}))},
+              {"list_id", JsValue(std::string("sel2"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "not both");
+
+    Section("select_prims unknown list_id → error");
+    out = d.Dispatch("select_prims", Args({{"list_id", JsValue(std::string("ghost"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+}
+
+void TestListIdConflicts() {
+    SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("conf.usda");
+    UsdStageRefPtr stage = UsdStage::Open(layer);
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    Section("set_visibilities with both items and list_id → error");
+    JsArray items;
+    { JsObject o; o["path"] = JsValue(std::string("/World")); items.push_back(JsValue(o)); }
+    std::string out = d.Dispatch("set_visibilities",
+        Args({{"items",      JsValue(items)},
+              {"list_id",    JsValue(std::string("x"))},
+              {"visibility", JsValue(std::string("invisible"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "not both");
+
+    Section("set_visibilities with unknown list_id → error");
+    out = d.Dispatch("set_visibilities",
+        Args({{"list_id",    JsValue(std::string("ghost"))},
+              {"visibility", JsValue(std::string("invisible"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "no list");
+}
+
 void TestErrorPaths(UsdToolDispatcher& d) {
     Section("unknown tool");
     std::string out = d.Dispatch("totally_made_up", Args());
@@ -658,6 +1052,14 @@ int main() {
     TestNameVocabularyTokenization();
     TestFindPrimsTotalCount();
     TestFindBlackboard();
+    TestStoreAndApplyList();
+    TestReadListPagination();
+    TestManageLists();
+    TestFindPrimsUnder();
+    TestDeletePrimsList();
+    TestSetActivesList();
+    TestSelectPrimsList();
+    TestListIdConflicts();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "\ntest_usd_dispatcher: %d failure(s)\n", g_failures);

@@ -7,7 +7,10 @@
 #include <pxr/usd/usd/stage.h>
 
 #include <functional>
+#include <map>
+#include <mutex>
 #include <string>
+#include <vector>
 
 struct Selection;
 
@@ -77,6 +80,12 @@ private:
     std::string GetNameVocabulary   (const JsObject& args) const;
     std::string FindUsdFiles        (const JsObject& args) const;
 
+    // Named prim-list tools — operate on the client-side list store below.
+    // Paths never leave the process via these (except the page read_list
+    // deliberately prints). See plan_prim_lists.md.
+    std::string ReadList            (const JsObject& args) const;
+    std::string ManageLists         (const JsObject& args) const;
+
     // Transform tool.
     std::string SetXforms           (const JsObject& args) const;
 
@@ -85,7 +94,7 @@ private:
     // queue (next frame in usdtweak; explicitly via CommandStack::ExecuteCommands
     // in tests). Result strings explain that the edit was queued.
     std::string SetAttributes       (const JsObject& args) const;
-    std::string SetActive           (const JsObject& args) const;
+    std::string SetActives          (const JsObject& args) const;
     std::string SetVariant          (const JsObject& args) const;
     std::string SetVisibilities     (const JsObject& args) const;
 
@@ -108,7 +117,7 @@ private:
     std::string SetRelationship        (const JsObject& args) const;
 
     // Deletion tools.
-    std::string DeletePrim             (const JsObject& args) const;
+    std::string DeletePrims            (const JsObject& args) const;
 
     // Composition arc tools.
     std::string AddReferences       (const JsObject& args) const;
@@ -119,6 +128,29 @@ private:
 
     SelectionProvider _selectionFn;
     OpenFileProvider  _openFileFn;
+
+    // ----- client-side named prim lists --------------------------------------
+    // Session-scoped scratchpad of named path sets, populated by find_prims
+    // (store_as) and manage_lists, consumed by the batched edit tools (list_id)
+    // and read_list. Stored as SORTED, de-duplicated vectors so set semantics
+    // are an enforced invariant, pagination is deterministic, and combine() is
+    // a linear std::set_* merge. `mutable` because the tool methods are const;
+    // the mutex because Dispatch runs on the async worker thread while the
+    // store outlives a single turn (the dispatcher is owned by the panel).
+    mutable std::map<std::string, std::vector<SdfPath>> _lists;
+    mutable std::mutex                                  _listsMutex;
+
+    // Store `paths` under `name` (normalized to sorted-unique). Overwrites.
+    void _StoreList(const std::string& name, std::vector<SdfPath> paths) const;
+    // Copy the list `name` into `out`. Returns false if no such list.
+    bool _GetListCopy(const std::string& name, std::vector<SdfPath>& out) const;
+    // Resolve the effective items array for a batched edit tool: the explicit
+    // `items` array, or — when `list_id` is given — one {path:...} object per
+    // path in the named list (other fields then come from the tool's top-level
+    // shared defaults). Mutually exclusive. On failure returns false and fills
+    // errOut with a ready-to-return "[error] ..." string.
+    bool _ResolveBatchItems(const JsObject& args, JsArray& out,
+                            std::string& errOut) const;
 };
 
 } // namespace UsdAgent

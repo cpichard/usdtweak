@@ -261,7 +261,21 @@ std::string AgentChatPanel::_BuildSystemPrompt() const {
         "group prims by meaning, call get_name_vocabulary first, then resolve "
         "the relevant terms to paths with find_prims using name_tokens. "
         "find_prims always reports the true total match count even when the "
-        "listing is capped — rely on that count, not the lines shown.\n";
+        "listing is capped — rely on that count, not the lines shown.\n"
+        "- To edit MORE than the 50 prims find_prims shows, do NOT relist "
+        "paths. Call find_prims with store_as to save the full match set, then "
+        "pass that handle as list_id to the edit tool (set_attributes, "
+        "set_visibilities, set_xforms) with the shared value at the top level — "
+        "all matches are edited in one undoable command. When the request is "
+        "semantic and you must judge candidates (e.g. 'kitchen utensils'), page "
+        "through them with read_list, then use manage_lists (create a small "
+        "list of false positives and combine with op=difference, or union "
+        "several searches) to build the final set client-side before editing.\n"
+        "- To restrict a search to part of the hierarchy (e.g. only Meshes "
+        "belonging to certain appliances), pass find_prims 'under' with the "
+        "ancestor prim path(s) — do NOT page through the whole stage and filter "
+        "by path yourself. 'under' takes several roots at once and combines "
+        "with store_as, so one call collects the scoped set.\n";
 }
 
 void AgentChatPanel::Draw() {

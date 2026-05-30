@@ -18,11 +18,12 @@ namespace UsdAgent {
 //   7. find_prims
 ToolDefs BuildReadOnlyToolDefinitions();
 
-// V1 edit set (4 tools), all queued through usdtweak's command system:
-//   8.  set_attribute  (scalar simple types only in v1)
-//   9.  set_active
-//   10. set_variant
-//   11. set_visibility
+// Edit set, all queued through usdtweak's command system. Batched plural tools
+// take an `items` array or a `list_id` (a stored prim list); singular ones a
+// `path`. (Indicative list — see UsdTools.cpp for the full, current set.)
+//   set_attributes, set_actives, set_variant, set_visibilities, set_xforms,
+//   create_prims, delete_prims, add_references/payloads/inherits/specializes,
+//   add_sublayer, set_relationship, select_prims, set_edit_target
 ToolDefs BuildEditToolDefinitions();
 
 // All v1 tools (read-only + edit), in the order above. Use this for the
