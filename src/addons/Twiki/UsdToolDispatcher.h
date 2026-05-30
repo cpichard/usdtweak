@@ -64,6 +64,18 @@ public:
     // English-y text, generous headroom for any single tool result.
     static constexpr size_t kMaxResultBytes       = 8 * 1024;
 
+    // ----- list store read accessors (UI thread) -----------------------------
+    // Read-only snapshots of the client-side named-list store for the Lists
+    // panel. Mutex-guarded so the UI thread can read while Dispatch mutates on
+    // the worker. Two-call form keeps the hot path cheap: GetListNames every
+    // frame (small), GetList full-path copy only for the section the user has
+    // expanded. Copy under the lock; draw outside it (never hold _listsMutex
+    // across ImGui calls). The store is modifiable only by the agent's tools —
+    // these are the only outside-facing entry points and they are read-only.
+    std::vector<std::string> GetListNames() const;
+    bool   GetList(const std::string& name, std::vector<SdfPath>& out) const;
+    size_t GetListSize(const std::string& name) const;
+
 private:
     StageProvider     _stageFn;
     EditLayerProvider _editLayerFn;

@@ -62,6 +62,20 @@ private:
     // Build the per-turn system prompt with live scene context.
     std::string _BuildSystemPrompt() const;
 
+    // Tab bodies. _DrawChatTab is the original panel contents verbatim;
+    // _DrawListsTab is a read-only viewer over the dispatcher's named prim
+    // lists — the agent curates a set, the user clicks it, the prims select.
+    void _DrawChatTab();
+    void _DrawListsTab(const std::vector<std::string>& names);
+    void _DrawListMembers(const std::string& name,
+                          const std::vector<SdfPath>& paths,
+                          const UsdStageRefPtr& stage);
+    // Select list paths through the frontend selection API (called on the UI
+    // thread). add=false clears then selects (first live path Sets, rest Add);
+    // add=true extends. Paths with no prim in `stage` are skipped (stale).
+    static void _SelectPaths(const std::vector<SdfPath>& paths,
+                             const UsdStageRefPtr& stage, bool add);
+
     // History across user turns. The orchestrator builds a fresh Conversation
     // (system + history + user) on each Run() — see AgentOrchestrator::Run.
     Conversation _history;

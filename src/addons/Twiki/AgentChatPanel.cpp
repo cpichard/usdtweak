@@ -7,6 +7,7 @@
 #include "AnthropicBackend.h"
 #include "ResourcesLoader.h"
 #include "UsdTools.h"
+#include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection
 
 #include <chrono>
 #include <cstdlib>
@@ -298,6 +299,30 @@ void AgentChatPanel::Draw() {
         _scrollToBottom = true;
     }
 
+    // Tabs: Chat (the conversation, unchanged) + Lists (agent-curated prim
+    // sets the user can click to select). The Lists label carries a live count
+    // so the user sees the agent build sets without leaving the chat.
+    if (ImGui::BeginTabBar("##twiki_tabs")) {
+        if (ImGui::BeginTabItem("Chat")) {
+            _DrawChatTab();
+            ImGui::EndTabItem();
+        }
+        const std::vector<std::string> listNames = _dispatcher.GetListNames();
+        char listsLabel[64];
+        if (listNames.empty())
+            snprintf(listsLabel, sizeof(listsLabel), "Lists###twiki_lists");
+        else
+            snprintf(listsLabel, sizeof(listsLabel),
+                     "Lists (%zu)###twiki_lists", listNames.size());
+        if (ImGui::BeginTabItem(listsLabel)) {
+            _DrawListsTab(listNames);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+}
+
+void AgentChatPanel::_DrawChatTab() {
     const bool busy = _pending.valid();
     const ImGui::MarkdownConfig mdConfig = _MakeMarkdownConfig();
 
@@ -446,6 +471,135 @@ void AgentChatPanel::Draw() {
             _scrollToBottom = true;
         }
     }
+}
+
+// ----- Lists tab ------------------------------------------------------------
+// Read-only viewer over the dispatcher's client-side named prim lists. The
+// store is modifiable only by Twiki's tools; this panel only reads + selects.
+
+void AgentChatPanel::_SelectPaths(const std::vector<SdfPath>& paths,
+                                  const UsdStageRefPtr& stage, bool add) {
+    // Lists hold stage paths, so route through the stage-selection API. Each
+    // call fires its own UsdTweakSelectionChangedNotice (fine for v1; a batch
+    // API firing a single notice is the documented follow-up). Skip stale
+    // paths so the selection mirrors what still resolves in the current stage.
+    bool needSet = !add;   // first live path Sets (clears); the rest Add
+    for (const SdfPath& p : paths) {
+        if (stage && !stage->GetPrimAtPath(p)) continue;
+        if (needSet) { usdtweak::SetStagePathSelection(p); needSet = false; }
+        else           usdtweak::AddStagePathSelection(p);
+    }
+}
+
+void AgentChatPanel::_DrawListMembers(const std::string& name,
+                                      const std::vector<SdfPath>& paths,
+                                      const UsdStageRefPtr& stage) {
+    ImGui::PushID(name.c_str());
+
+    if (ImGui::SmallButton("Select all"))
+        _SelectPaths(paths, stage, /*add=*/false);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Add to selection"))
+        _SelectPaths(paths, stage, /*add=*/true);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Frame")) {
+        _SelectPaths(paths, stage, /*add=*/false);
+        usdtweak::FrameCameraOnSelection();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Copy paths")) {
+        std::string blob;
+        for (const SdfPath& p : paths) { blob += p.GetString(); blob += '\n'; }
+        ImGui::SetClipboardText(blob.c_str());
+    }
+
+    // Lists can hold thousands of paths — clip the rows.
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(paths.size()));
+    while (clipper.Step()) {
+        for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+            const SdfPath& p = paths[static_cast<size_t>(row)];
+            const bool live = stage && stage->GetPrimAtPath(p);
+            ImGui::PushID(row);
+            if (!live)
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+            const bool clicked = ImGui::Selectable(
+                p.GetString().c_str(), false,
+                ImGuiSelectableFlags_AllowDoubleClick);
+            if (!live) ImGui::PopStyleColor();
+            if (clicked && live) {
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    usdtweak::SetStagePathSelection(p);
+                    usdtweak::FrameCameraOnSelection();
+                } else if (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper) {
+                    usdtweak::AddStagePathSelection(p);
+                } else {
+                    usdtweak::SetStagePathSelection(p);
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+    clipper.End();
+
+    ImGui::PopID();
+}
+
+void AgentChatPanel::_DrawListsTab(const std::vector<std::string>& names) {
+    // Scroll inside a child so long lists don't drag the tab bar off-screen —
+    // the bar stays put and the user can always switch back to Chat.
+    ImGui::BeginChild("##twiki_lists_scroll", ImVec2(0, 0), false);
+
+    if (names.empty()) {
+        ImGui::TextDisabled("No lists yet.");
+        ImGui::Spacing();
+        ImGui::TextWrapped(
+            "Twiki stores named prim sets when you ask it to find or curate "
+            "prims for a bulk edit (for example \"select all the lights\" or "
+            "\"make the kitchen utensils grey\"). They appear here so you can "
+            "click a set to select those prims in the viewport and outliner.");
+        ImGui::EndChild();
+        return;
+    }
+
+    const UsdStageRefPtr stage = usdtweak::GetCurrentStage();
+
+    for (const std::string& name : names) {
+        const size_t total = _dispatcher.GetListSize(name);
+        char header[160];
+        snprintf(header, sizeof(header), "%s  (%zu)###twiki_list_%s",
+                 name.c_str(), total, name.c_str());
+        const bool open = ImGui::CollapsingHeader(header);
+
+        // Right-click the header → quick actions without expanding it.
+        if (ImGui::BeginPopupContextItem()) {
+            std::vector<SdfPath> paths;
+            if (_dispatcher.GetList(name, paths)) {
+                if (ImGui::MenuItem("Select all"))
+                    _SelectPaths(paths, stage, /*add=*/false);
+                if (ImGui::MenuItem("Add to selection"))
+                    _SelectPaths(paths, stage, /*add=*/true);
+                if (ImGui::MenuItem("Copy paths")) {
+                    std::string blob;
+                    for (const SdfPath& p : paths) {
+                        blob += p.GetString();
+                        blob += '\n';
+                    }
+                    ImGui::SetClipboardText(blob.c_str());
+                }
+            }
+            ImGui::EndPopup();
+        }
+
+        if (open) {
+            std::vector<SdfPath> paths;
+            if (_dispatcher.GetList(name, paths))
+                _DrawListMembers(name, paths, stage);
+        }
+    }
+
+    ImGui::EndChild();
 }
 
 } // namespace UsdAgent

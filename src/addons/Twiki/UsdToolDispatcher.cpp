@@ -276,6 +276,28 @@ bool UsdToolDispatcher::_GetListCopy(const std::string& name,
     return true;
 }
 
+// ----- public read accessors (UI thread / Lists panel) ---------------------
+
+std::vector<std::string> UsdToolDispatcher::GetListNames() const {
+    std::lock_guard<std::mutex> lock(_listsMutex);
+    std::vector<std::string> names;
+    names.reserve(_lists.size());
+    for (const auto& kv : _lists)   // std::map keeps keys sorted
+        names.push_back(kv.first);
+    return names;
+}
+
+bool UsdToolDispatcher::GetList(const std::string& name,
+                                std::vector<SdfPath>& out) const {
+    return _GetListCopy(name, out);
+}
+
+size_t UsdToolDispatcher::GetListSize(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(_listsMutex);
+    auto it = _lists.find(name);
+    return it == _lists.end() ? size_t(0) : it->second.size();
+}
+
 bool UsdToolDispatcher::_ResolveBatchItems(const JsObject& args, JsArray& out,
                                            std::string& errOut) const {
     const bool hasList  = JsHasKey(args, "list_id");
