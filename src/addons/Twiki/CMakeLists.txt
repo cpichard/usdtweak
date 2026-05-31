@@ -3,18 +3,18 @@
 # Pulled in by src/addons/CMakeLists.txt via its glob over */CMakeLists.txt.
 # Adds cpp-httplib (header-only) and links OpenSSL for HTTPS.
 #
-# OpenSSL is located with find_package on all platforms. If it isn't found we
-# skip the whole addon (no httplib fetch, no sources, no tests) so the rest of
-# usdtweak still builds. On macOS, point CMake at a local build with
-# -DOPENSSL_ROOT_DIR=<path>.
+# Off by default — enable with -DBUILD_TWIKI=ON (our CI builds set this). When
+# enabled, OpenSSL is required and located via find_package on all platforms;
+# on macOS, point CMake at a local/brew build with -DOPENSSL_ROOT_DIR=<path>.
 
-# --- OpenSSL (required; skip the addon if absent) -----------------------------
-find_package(OpenSSL)
-if (NOT OpenSSL_FOUND)
-    message(STATUS "Twiki addon: OpenSSL not found — skipping (LLM agent disabled in this build). "
-                   "Set OPENSSL_ROOT_DIR to enable it.")
+option(BUILD_TWIKI "Build the Twiki LLM agent addon" OFF)
+if (NOT BUILD_TWIKI)
+    message(STATUS "Twiki addon: BUILD_TWIKI is OFF — skipping. Enable with -DBUILD_TWIKI=ON")
     return()
 endif()
+
+# --- OpenSSL (required when the addon is enabled) -----------------------------
+find_package(OpenSSL REQUIRED)
 message(STATUS "Twiki addon: using OpenSSL ${OPENSSL_VERSION} (${OPENSSL_INCLUDE_DIR})")
 
 include(FetchContent)

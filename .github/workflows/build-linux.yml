@@ -140,6 +140,7 @@ jobs:
             -DCMAKE_PREFIX_PATH=$USD_DIR \
             -Dpxr_DIR=$USD_DIR \
             -DOpenSubdiv_DIR=$USD_DIR/lib/cmake/OpenSubdiv \
+            -DBUILD_TWIKI=ON \
             -B build
 
       - name: Build
