@@ -1,7 +1,21 @@
 # Twiki — natural-language USD agent, packaged as a usdtweak addon.
 #
 # Pulled in by src/addons/CMakeLists.txt via its glob over */CMakeLists.txt.
-# Adds cpp-httplib + OpenSSL via FetchContent (transitively to usdtweak).
+# Adds cpp-httplib (header-only) and links OpenSSL for HTTPS.
+#
+# OpenSSL is located with find_package on all platforms. If it isn't found we
+# skip the whole addon (no httplib fetch, no sources, no tests) so the rest of
+# usdtweak still builds. On macOS, point CMake at a local build with
+# -DOPENSSL_ROOT_DIR=<path>.
+
+# --- OpenSSL (required; skip the addon if absent) -----------------------------
+find_package(OpenSSL)
+if (NOT OpenSSL_FOUND)
+    message(STATUS "Twiki addon: OpenSSL not found — skipping (LLM agent disabled in this build). "
+                   "Set OPENSSL_ROOT_DIR to enable it.")
+    return()
+endif()
+message(STATUS "Twiki addon: using OpenSSL ${OPENSSL_VERSION} (${OPENSSL_INCLUDE_DIR})")
 
 include(FetchContent)
 
@@ -16,16 +30,6 @@ set(HTTPLIB_REQUIRE_OPENSSL          OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cpp_httplib)
-
-# --- OpenSSL via FetchContent -------------------------------------------------
-set(OPENSSL_TARGET_VERSION 3.3.2 CACHE STRING "OpenSSL version to fetch")
-set(OPENSSL_INSTALL OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    openssl-cmake
-    GIT_REPOSITORY https://github.com/jimmy-park/openssl-cmake.git
-    GIT_TAG        3.3.2
-)
-FetchContent_MakeAvailable(openssl-cmake)
 
 set(_twiki_tls_define CPPHTTPLIB_OPENSSL_SUPPORT)
 set(_twiki_tls_libs   OpenSSL::SSL OpenSSL::Crypto)
