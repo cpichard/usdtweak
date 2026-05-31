@@ -1,21 +1,17 @@
 # Twiki — natural-language USD agent, packaged as a usdtweak addon.
 #
 # Pulled in by src/addons/CMakeLists.txt via its glob over */CMakeLists.txt.
-# Adds cpp-httplib (header-only) and links OpenSSL for HTTPS.
+# Adds cpp-httplib (header-only) + a private, statically-linked OpenSSL (built
+# from source via FetchContent) for HTTPS. Building our own static OpenSSL means
+# usdtweak depends on no system OpenSSL and ships no extra shared libraries.
 #
-# Off by default — enable with -DBUILD_TWIKI=ON (our CI builds set this). When
-# enabled, OpenSSL is required and located via find_package on all platforms;
-# on macOS, point CMake at a local/brew build with -DOPENSSL_ROOT_DIR=<path>.
+# Off by default — enable with -DBUILD_TWIKI=ON (our CI builds set this).
 
 option(BUILD_TWIKI "Build the Twiki LLM agent addon" OFF)
 if (NOT BUILD_TWIKI)
     message(STATUS "Twiki addon: BUILD_TWIKI is OFF — skipping. Enable with -DBUILD_TWIKI=ON")
     return()
 endif()
-
-# --- OpenSSL (required when the addon is enabled) -----------------------------
-find_package(OpenSSL REQUIRED)
-message(STATUS "Twiki addon: using OpenSSL ${OPENSSL_VERSION} (${OPENSSL_INCLUDE_DIR})")
 
 include(FetchContent)
 
@@ -30,6 +26,33 @@ set(HTTPLIB_REQUIRE_OPENSSL          OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cpp_httplib)
+
+# --- OpenSSL (built from source, linked statically) ---------------------------
+# Notes for CI:
+#   * Linux: OpenSSL's Perl Configure needs FindBin/IPC::Cmd/Data::Dumper —
+#     install perl-FindBin perl-IPC-Cmd perl-Data-Dumper (see build-linux.yml).
+#   * Windows: OPENSSL_USE_CCACHE OFF avoids ccache wrapping `cl` under NMAKE,
+#     which breaks the OpenSSL build (NMAKE U1077). `no-asm` (below) drops the
+#     NASM requirement so nothing extra needs installing on the runner.
+set(OPENSSL_TARGET_VERSION 3.3.2 CACHE STRING "OpenSSL version to fetch")
+set(OPENSSL_INSTALL    OFF CACHE BOOL "" FORCE)
+set(OPENSSL_USE_CCACHE OFF CACHE BOOL "" FORCE)
+if (WIN32)
+    # Build without assembly so we don't depend on NASM being installed on the
+    # Windows runner. The crypto perf cost is irrelevant for our HTTPS usage.
+    set(OPENSSL_CONFIGURE_OPTIONS no-asm CACHE STRING "" FORCE)
+endif()
+FetchContent_Declare(
+    openssl-cmake
+    GIT_REPOSITORY https://github.com/jimmy-park/openssl-cmake.git
+    GIT_TAG        3.3.2
+)
+# Force a static OpenSSL regardless of the project-wide BUILD_SHARED_LIBS:
+# openssl-cmake adds `no-shared` to Configure when BUILD_SHARED_LIBS is OFF.
+set(_twiki_saved_build_shared "${BUILD_SHARED_LIBS}")
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_MakeAvailable(openssl-cmake)
+set(BUILD_SHARED_LIBS "${_twiki_saved_build_shared}")
 
 set(_twiki_tls_define CPPHTTPLIB_OPENSSL_SUPPORT)
 set(_twiki_tls_libs   OpenSSL::SSL OpenSSL::Crypto)
