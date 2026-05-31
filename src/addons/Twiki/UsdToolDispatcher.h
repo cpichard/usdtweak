@@ -121,6 +121,11 @@ private:
     // File-open tool.
     std::string OpenFile            (const JsObject& args) const;
 
+    // File-creation tool — materialises a new empty USD layer on disk so a
+    // sublayer target that does not exist yet can be created. Synchronous (not
+    // queued) so the model gets accurate success/failure in the same step.
+    std::string CreateLayerFile     (const JsObject& args) const;
+
     // Authoring tools.
     std::string CreatePrims         (const JsObject& args) const;
 

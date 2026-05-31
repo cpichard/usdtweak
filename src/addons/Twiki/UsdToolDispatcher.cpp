@@ -400,6 +400,7 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         else if (toolName == "get_relationship_targets") result = GetRelationshipTargets(args);
         else if (toolName == "set_relationship")     result = SetRelationship(args);
         else if (toolName == "open_file")            result = OpenFile(args);
+        else if (toolName == "create_layer_file")    result = CreateLayerFile(args);
         else if (toolName == "get_edit_target")      result = GetEditTarget(args);
         else if (toolName == "set_edit_target")      result = SetEditTarget(args);
         else                                         result = "[error] unknown tool: " + toolName;
@@ -3329,6 +3330,84 @@ std::string UsdToolDispatcher::OpenFile(const JsObject& args) const {
     oss << "Queued: open \"" << path << "\" as " << (asStage ? "stage" : "layer")
         << ". The active scene will change on the next frame — "
            "call get_stage_info on your next step to confirm the new stage.";
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// create_layer_file  — create a new empty USD layer file on disk
+// --------------------------------------------------------------------------
+// Materialises a sublayer target that does not exist yet. Creation is
+// SYNCHRONOUS (not queued via ExecuteAfterDraw) so the model gets an accurate
+// success/failure and the real on-disk path back in the same step — the file
+// must exist before a queued add_sublayer recomposes the stage on the next
+// frame. SdfLayer::CreateNew is registry-safe and does not touch the active
+// stage (nothing references the new layer yet), so it is safe to call on the
+// worker thread alongside the read-only tools that already traverse the stage.
+//
+// Permission is conversational: Twiki must ask the user before calling this
+// (enforced by the system prompt + this tool's description), not by a host
+// modal — the orchestrator runs on a background thread with no UI gate.
+std::string UsdToolDispatcher::CreateLayerFile(const JsObject& args) const {
+    namespace fs = std::filesystem;
+
+    const std::string pathArg = JsGetString(args, "path");
+    if (pathArg.empty()) return "[error] missing 'path' argument";
+
+    // Must be a USD layer extension SdfLayer can write (not .usdz — that is a
+    // package, not a writable layer).
+    fs::path p(pathArg);
+    {
+        std::string ext = p.extension().string();
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext != ".usd" && ext != ".usda" && ext != ".usdc")
+            return "[error] path must end in .usd, .usda or .usdc; got \""
+                 + pathArg + "\"";
+    }
+
+    // Resolve a relative path against the current stage's root-layer directory,
+    // so the model can pass the same string it gives add_sublayer (sublayer
+    // paths are stored relative to the layer that owns them).
+    std::string resolved = pathArg;
+    if (p.is_relative()) {
+        UsdStageRefPtr stage = _stageFn ? _stageFn() : UsdStageRefPtr();
+        SdfLayerHandle root = stage ? stage->GetRootLayer() : SdfLayerHandle();
+        if (root && !root->IsAnonymous()) {
+            const std::string rp = root->GetRealPath();
+            if (!rp.empty())
+                resolved = (fs::path(rp).parent_path() / p).string();
+        } else {
+            return "[error] cannot resolve relative path \"" + pathArg
+                 + "\" — the current stage has no on-disk root layer. "
+                   "Pass an absolute path.";
+        }
+    }
+
+    // Never clobber an existing file — if it exists the model should just
+    // add_sublayer directly.
+    std::error_code ec;
+    if (fs::exists(resolved, ec))
+        return "[error] file already exists: \"" + resolved
+             + "\". No need to create it — add it as a sublayer directly.";
+
+    // Make sure the parent directory exists.
+    const fs::path parent = fs::path(resolved).parent_path();
+    if (!parent.empty() && !fs::exists(parent, ec)) {
+        fs::create_directories(parent, ec);
+        if (ec)
+            return "[error] could not create parent directory \""
+                 + parent.string() + "\": " + ec.message();
+    }
+
+    SdfLayerRefPtr layer = SdfLayer::CreateNew(resolved);
+    if (!layer)
+        return "[error] SdfLayer::CreateNew failed for \"" + resolved
+             + "\" — check the path is writable and the extension is supported.";
+    layer->Save();
+
+    std::ostringstream oss;
+    oss << "Created empty USD layer \"" << resolved
+        << "\". You can now add it as a sublayer with add_sublayer.";
     return oss.str();
 }
 

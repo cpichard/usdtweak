@@ -19,7 +19,9 @@
 #include <pxr/usd/usdGeom/xformCommonAPI.h>
 
 #include <cstdio>
+#include <filesystem>
 #include <string>
+#include <unistd.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 using namespace UsdAgent;
@@ -370,6 +372,42 @@ void TestErrorPaths(UsdToolDispatcher& d) {
     CHECK_CONTAINS(r, "float");
 }
 
+// create_layer_file is synchronous (not queued), so no Pump() is needed. Use
+// absolute temp paths so the test does not depend on an on-disk root layer.
+void TestCreateLayerFile(UsdToolDispatcher& d) {
+    Section("create_layer_file");
+
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path()
+                       / ("twiki_create_layer_" + std::to_string(::getpid()));
+    fs::remove_all(dir);
+    const std::string newPath = (dir / "anim.usda").string();
+
+    // Happy path: file is created on disk and openable as a layer.
+    std::string r = d.Dispatch("create_layer_file",
+        Args({{"path", JsValue(newPath)}}));
+    CHECK_CONTAINS(r, "Created empty USD layer");
+    CHECK(fs::exists(newPath));
+    CHECK(SdfLayer::FindOrOpen(newPath) != nullptr);
+
+    // Re-creating the same path must refuse to clobber.
+    r = d.Dispatch("create_layer_file", Args({{"path", JsValue(newPath)}}));
+    CHECK_CONTAINS(r, "[error]");
+    CHECK_CONTAINS(r, "already exists");
+
+    // Bad extension is rejected before touching the filesystem.
+    const std::string badExt = (dir / "notusd.txt").string();
+    r = d.Dispatch("create_layer_file", Args({{"path", JsValue(badExt)}}));
+    CHECK_CONTAINS(r, "[error]");
+    CHECK(!fs::exists(badExt));
+
+    // Missing argument.
+    r = d.Dispatch("create_layer_file", Args({}));
+    CHECK_CONTAINS(r, "[error]");
+
+    fs::remove_all(dir);
+}
+
 } // namespace
 
 int main() {
@@ -390,6 +428,7 @@ int main() {
     TestSetXform                ();
     TestSetAttributeOnNamedLayer();
     TestErrorPaths              (dispatcher);
+    TestCreateLayerFile         (dispatcher);
 
     if (g_failures != 0) {
         std::fprintf(stderr, "\ntest_usd_edit: %d failure(s)\n", g_failures);

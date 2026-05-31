@@ -931,10 +931,34 @@ ToolDefs BuildEditToolDefinitions() {
         tools.push_back(JsValue(_Tool(
             "add_sublayer",
             "QUEUES inserting a sublayer path into a layer (prepended, i.e. "
-            "strongest). The sublayer file does not need to exist yet. Returns "
-            "an error if the path is already a sublayer of the target. "
-            "Re-read with get_layer_stack to confirm. Undoable.",
+            "strongest). The sublayer file does NOT need to exist on disk — the "
+            "path is stored regardless. If the user wants the file to actually "
+            "exist, first ASK them for permission, then call create_layer_file "
+            "before add_sublayer. Returns an error if the path is already a "
+            "sublayer of the target. Re-read with get_layer_stack to confirm. "
+            "Undoable.",
             props, _Strings({"sublayer_path"}))));
+    }
+
+    // create_layer_file
+    {
+        JsObject props;
+        props["path"] = MakeStringParam(
+            "path of the USD layer file to create, e.g. \"/shot/anim.usda\" or "
+            "\"./anim.usda\". Must end in .usd, .usda or .usdc. A relative path "
+            "is resolved against the current stage's root-layer directory — "
+            "pass the SAME string you use for add_sublayer's sublayer_path.");
+        tools.push_back(JsValue(_Tool(
+            "create_layer_file",
+            "Creates a new EMPTY USD layer file on disk. Use this to "
+            "materialise a sublayer target that does not exist yet, then call "
+            "add_sublayer to reference it. This writes a real file to the "
+            "user's filesystem: you MUST ask the user for explicit permission "
+            "and get a clear yes before calling it. Never clobbers an existing "
+            "file (returns an error if the path already exists). Creation is "
+            "immediate (not queued), so the result tells you right away whether "
+            "it succeeded.",
+            props, _Strings({"path"}))));
     }
 
     // 18. set_relationship
