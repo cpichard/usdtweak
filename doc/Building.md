@@ -6,37 +6,35 @@ The project is almost self contained and only needs:
 
 - [cmake](https://cmake.org/) installed (version > 3.14)
 - a C++17 compiler installed: MSVC 19 or 17, g++ or clang++.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v24.08) version >= 20.11. In theory the USD libraries provided with mayausd should work but they are not tested, let me know if you manage to compile with them.
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v26.03) version >= 20.11. In theory the OpenUSD libraries provided with mayausd should work but they are not tested, let me know if you manage to compile with them.
 
 To compile usdtweak you normally need to provide cmake with only 1 required variables:
 
-- __pxr_DIR__ pointing to the USD installation directory containing the file pxrConfig.cmake
+- __pxr_DIR__ pointing to the OpenUSD installation directory containing the file pxrConfig.cmake
 
-Unfortunately if you have compiled USD >= 22.08 with MaterialX you will also need to provide:
+Unfortunately if you have compiled a vanilla OpenUSD >= 22.08, depending on the version you might also need to provide:
 
 - __MaterialX_DIR__ pointing to the MaterialX installation directory containing the file MaterialXConfig.cmake.
+- __OpenSubdiv_DIR__ pointing to the OpenSubdiv installation directory containing the file OpenSubdivConfig.cmake.
 
+Since the OpenUSD config doesn't always add them as dependencies.
 
 ## Compiling on linux
 
-On linux it should compile with:
+On linux the latest version should compile with:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/path/to/usd-24.08 ..
+    cmake -Dpxr_DIR=/path/to/usd-26.03 -DOpenSubdiv_DIR=/path/to/usd-26.03/lib/cmake/OpenSubdiv ..
     make
-
-If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
-
-    cmake -Dpxr_DIR=/path/to/usd-24.08 -DMaterialX_DIR=/path/to/usd-24.08/lib/cmake/MaterialX ..
 
 
 ## Compiling on MacOs
 
-It compiles on MacOS Monterey. The viewport is now enabled for versions of USD superior or equal to 22.08, otherwise it is deactivated as the OpenGL version is not supported on MacOS for those versions.
+It compiles on MacOS Monterey. The viewport is now enabled for versions of OpenUSD superior or equal to 22.08, otherwise it is deactivated as the OpenGL version is not supported on MacOS for those versions.
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
@@ -46,13 +44,13 @@ It compiles on MacOS Monterey. The viewport is now enabled for versions of USD s
     cmake -Dpxr_DIR=/path/to/usd-24.08 ..
     make
 
-If you have USD >= 22.08 compiled with MaterialX, cmake becomes:
+If you have OpenUSD >= 22.08 compiled with MaterialX, cmake becomes:
 
     cmake -Dpxr_DIR=/path/to/usd-24.08 -DMaterialX_DIR=/path/to/usd-24.08/lib/cmake/MaterialX ..
 
 ## Compiling on Windows
 
-It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWithDbInfo config. Make sure you open/use the x64 Native Tools commands prompt before typing the following commands:
+It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWithDebInfo config. Make sure you open/use the x64 Native Tools commands prompt before typing the following commands:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
@@ -62,15 +60,15 @@ It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWit
     cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-24.08 ..
     cmake --build . --config RelWithDebInfo
 
-If you have USD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
+If you have OpenUSD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
 
     cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.08 -DMaterialX_DIR=C:\path\to\usd-22.08\lib\cmake\MaterialX ..
 
-### Using NVidia's USD build (experimental)
+### Using NVidia's OpenUSD build (experimental)
 
-NVidia provides a USD build [here](https://developer.nvidia.com/usd) if you don't want to compile USD yourself. We tested 2 versions, 22.11 and 24.08.
+NVidia provides a OpenUSD build [here](https://developer.nvidia.com/usd) if you don't want to compile OpenUSD yourself. We tested 2 versions, 22.11 and 24.08.
 
-#### USD 24.08
+#### OpenUSD 24.08
 
 This was tested on windows with MSVC2019. Unfortunatelly the configuration coming with the nvidia libraries doesn't have the correct python directories, so the cmake command is a bit more involved than with 22.11. Make sure you type the following commands in a x64 Native Tools commands prompt and replace `C:\path\to\nvidia-usd-24.08` by the actual path containing the nvidia usd libraries.
 
@@ -95,16 +93,16 @@ This is because the libraries `osdGPU.lib` and `osdCPU.lib` are not included in 
 
 And you should get usdtweak.exe compiled in the RelWithDebInfo folder. 
 
-#### USD 22.11
+#### OpenUSD 22.11
 
-It needs either VisualStudio 2017 or a more recent version (2019, 2022) with the "MSVC141 - C++ build tools x86/x64" installed. The cmake commands to build usdtweak differ, if you have a more recent version you'll need to specify the toolkit using `-T v141`. The Nvidia USD build also needs Python3.7, set the `USE_PYTHON3` argument to force cmake to look after Python3, but you'll have to make sure Python3.7 is installed already.
+It needs either VisualStudio 2017 or a more recent version (2019, 2022) with the "MSVC141 - C++ build tools x86/x64" installed. The cmake commands to build usdtweak differ, if you have a more recent version you'll need to specify the toolkit using `-T v141`. The Nvidia OpenUSD build also needs Python3.7, set the `USE_PYTHON3` argument to force cmake to look after Python3, but you'll have to make sure Python3.7 is installed already.
 
     cmake  -G "Visual Studio 16 2019" -T v141 -A x64 -Dpxr_DIR=C:\path\to\nvidia-usd-22.11 -DMaterialX_DIR=C:\path\to\nvidia-usd-22.11\lib\cmake\MaterialX -DUSE_PYTHON3=ON ..
     cmake --build . --config Release
 
-### Using Houdini's USD build (experimental, only Houdini 20+ on Windows)
+### Using Houdini's OpenUSD build (experimental, only Houdini 20+ on Windows)
 
-First make sure there is no USD and Python path in the environment variables. Open a [houdini command line shell](https://www.sidefx.com/faq/question/how-do-i-set-up-the-houdini-environment-for-command-line-tools/), inside the shell, create a build directory, like in the previous example then run the cmake command pointing pxr_DIR to the cmake\houdini subdirectory. 
+First make sure there is no OpenUSD and Python path in the environment variables. Open a [houdini command line shell](https://www.sidefx.com/faq/question/how-do-i-set-up-the-houdini-environment-for-command-line-tools/), inside the shell, create a build directory, like in the previous example then run the cmake command pointing pxr_DIR to the cmake\houdini subdirectory. 
 
     cmake -Dpxr_DIR=<USDTWEAK_DIR>\cmake\houdini ..
     cmake --build . --config RelWithDebInfo
