@@ -4,6 +4,12 @@
 // usdtweak drains the queue once per frame; here the test pumps the queue
 // explicitly via CommandStack::ExecuteCommands() between dispatches, then
 // reads back to confirm. UndoCommand reverts; RedoCommand reapplies.
+//
+// The edit tools are batched and plural — set_visibilities / set_actives /
+// set_attributes / set_xforms each take an `items` array (one object per
+// prim) plus optional top-level shared defaults (e.g. `layer_id`). A single
+// {path, ...} item is the common one-prim case exercised below; one test
+// drives a genuine multi-item batch.
 
 #include "CommandStack.h"
 #include "Commands.h"
@@ -77,6 +83,20 @@ JsObject Args(std::initializer_list<std::pair<std::string, JsValue>> kvs) {
     return o;
 }
 
+// One per-prim entry for a batched edit tool's `items` array.
+JsValue Item(std::initializer_list<std::pair<std::string, JsValue>> kvs) {
+    JsObject o;
+    for (const auto& kv : kvs) o[kv.first] = kv.second;
+    return JsValue(o);
+}
+
+// Build the `items` array value from one or more Item() entries.
+JsValue Items(std::initializer_list<JsValue> items) {
+    JsArray arr;
+    for (const auto& it : items) arr.push_back(it);
+    return JsValue(arr);
+}
+
 void Pump() {
     CommandStack::GetInstance().ExecuteCommands();
 }
@@ -108,13 +128,14 @@ float ReadFocalLength(const UsdStageRefPtr& stage) {
 // -------------------------------------------------------------------------
 
 void TestSetVisibilityAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
-    Section("set_visibility /World/Hero -> invisible, then undo");
+    Section("set_visibilities /World/Hero -> invisible, then undo");
 
     CHECK(ReadVisibility(stage) == "inherited");
 
-    std::string r = d.Dispatch("set_visibility",
-        Args({{"path",       JsValue(std::string("/World/Hero"))},
-              {"visibility", JsValue(std::string("invisible"))}}));
+    std::string r = d.Dispatch("set_visibilities",
+        Args({{"items", Items({Item({
+            {"path",       JsValue(std::string("/World/Hero"))},
+            {"visibility", JsValue(std::string("invisible"))}})})}}));
     std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
     CHECK_CONTAINS(r, "Queued:");
 
@@ -149,16 +170,17 @@ void TestSetVisibilityAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage)
 }
 
 void TestSetActiveAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
-    Section("set_active /World/Hero=false, then undo");
+    Section("set_actives /World/Hero=false, then undo");
 
     CHECK(ReadActive(stage, "/World/Hero") == true);
 
-    std::string r = d.Dispatch("set_active",
-        Args({{"path",   JsValue(std::string("/World/Hero"))},
-              {"active", JsValue(false)}}));
+    std::string r = d.Dispatch("set_actives",
+        Args({{"items", Items({Item({
+            {"path",   JsValue(std::string("/World/Hero"))},
+            {"active", JsValue(false)}})})}}));
     std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
     CHECK_CONTAINS(r, "Queued:");
-    CHECK_CONTAINS(r, "false");
+    CHECK_CONTAINS(r, "set active");
 
     Pump();
     CHECK(ReadActive(stage, "/World/Hero") == false);
@@ -171,14 +193,15 @@ void TestSetActiveAndUndo(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
 }
 
 void TestSetAttributeFloat(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
-    Section("set_attribute /World/Camera.focalLength=50.0, then undo");
+    Section("set_attributes /World/Camera.focalLength=50.0, then undo");
 
     CHECK(ReadFocalLength(stage) == 35.0f);
 
-    std::string r = d.Dispatch("set_attribute",
-        Args({{"path",      JsValue(std::string("/World/Camera"))},
-              {"attribute", JsValue(std::string("focalLength"))},
-              {"value",     JsValue(std::string("50.0"))}}));
+    std::string r = d.Dispatch("set_attributes",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/World/Camera"))},
+            {"attribute", JsValue(std::string("focalLength"))},
+            {"value",     JsValue(std::string("50.0"))}})})}}));
     std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
     CHECK_CONTAINS(r, "Queued:");
 
@@ -193,7 +216,7 @@ void TestSetAttributeFloat(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
 }
 
 void TestSetXform() {
-    Section("set_xform translate / rotate / scale, with undo");
+    Section("set_xforms translate / rotate / scale, with undo");
 
     SdfLayerRefPtr layer = SdfLayer::CreateAnonymous("xform.usda");
     layer->ImportFromString(R"(#usda 1.0
@@ -205,24 +228,19 @@ def Xform "Hero" {
         /*stageFn*/    [&]() { return stage; },
         /*editLayerFn*/[&]() { return layer; });
 
-    auto makeArgs = [](std::initializer_list<std::pair<std::string, JsValue>> kvs) {
-        JsObject o;
-        for (const auto& kv : kvs) o[kv.first] = kv.second;
-        return o;
-    };
-
     JsArray t; t.push_back(JsValue(10.0)); t.push_back(JsValue(0.0)); t.push_back(JsValue(0.0));
     JsArray r; r.push_back(JsValue(0.0));  r.push_back(JsValue(45.0)); r.push_back(JsValue(0.0));
     JsArray s; s.push_back(JsValue(2.0));  s.push_back(JsValue(2.0));  s.push_back(JsValue(2.0));
 
     // --- translate ---
-    std::string res = d.Dispatch("set_xform",
-        makeArgs({{"path",      JsValue(std::string("/Hero"))},
-                  {"operation", JsValue(std::string("translate"))},
-                  {"value",     JsValue(t)}}));
+    std::string res = d.Dispatch("set_xforms",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/Hero"))},
+            {"operation", JsValue(std::string("translate"))},
+            {"value",     JsValue(t)}})})}}));
     std::fprintf(stdout, "  translate dispatch: %s\n", res.c_str());
     CHECK_CONTAINS(res, "Queued:");
-    CHECK_CONTAINS(res, "translate");
+    CHECK_CONTAINS(res, "xform op");
     Pump();
 
     UsdGeomXformCommonAPI xformAPI(stage->GetPrimAtPath(SdfPath("/Hero")));
@@ -234,10 +252,11 @@ def Xform "Hero" {
     CHECK(tr[0] == 10.0 && tr[1] == 0.0 && tr[2] == 0.0);
 
     // --- rotate ---
-    res = d.Dispatch("set_xform",
-        makeArgs({{"path",      JsValue(std::string("/Hero"))},
-                  {"operation", JsValue(std::string("rotate"))},
-                  {"value",     JsValue(r)}}));
+    res = d.Dispatch("set_xforms",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/Hero"))},
+            {"operation", JsValue(std::string("rotate"))},
+            {"value",     JsValue(r)}})})}}));
     CHECK_CONTAINS(res, "Queued:");
     Pump();
 
@@ -247,10 +266,11 @@ def Xform "Hero" {
     CHECK(rot[1] == 45.0f);
 
     // --- scale ---
-    res = d.Dispatch("set_xform",
-        makeArgs({{"path",      JsValue(std::string("/Hero"))},
-                  {"operation", JsValue(std::string("scale"))},
-                  {"value",     JsValue(s)}}));
+    res = d.Dispatch("set_xforms",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/Hero"))},
+            {"operation", JsValue(std::string("scale"))},
+            {"value",     JsValue(s)}})})}}));
     CHECK_CONTAINS(res, "Queued:");
     Pump();
 
@@ -275,17 +295,18 @@ def Scope "Foo" {
     UsdStageRefPtr stageB = UsdStage::Open(layerB);
     UsdToolDispatcher dB([&]() { return stageB; });
     JsArray dummy; dummy.push_back(JsValue(1.0)); dummy.push_back(JsValue(0.0)); dummy.push_back(JsValue(0.0));
-    res = dB.Dispatch("set_xform",
-        makeArgs({{"path",      JsValue(std::string("/Foo"))},
-                  {"operation", JsValue(std::string("translate"))},
-                  {"value",     JsValue(dummy)}}));
+    res = dB.Dispatch("set_xforms",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/Foo"))},
+            {"operation", JsValue(std::string("translate"))},
+            {"value",     JsValue(dummy)}})})}}));
     std::fprintf(stdout, "  non-xformable error: %s\n", res.c_str());
     CHECK_CONTAINS(res, "[error]");
     CHECK_CONTAINS(res, "not UsdGeomXformable");
 }
 
 void TestSetAttributeOnNamedLayer() {
-    Section("set_attribute with layer_id writes to the named sublayer");
+    Section("set_attributes with layer_id writes to the named sublayer");
 
     // Two-layer fixture: shot sublayers asset. Edit target = shot.
     SdfLayerRefPtr asset = SdfLayer::CreateAnonymous("asset.usda");
@@ -306,10 +327,11 @@ def Xform "World" {
 
     // Write to the asset layer by display name (as get_layer_stack would return).
     std::string assetName = "<anon:asset.usda>";
-    std::string r = d2.Dispatch("set_attribute",
-        Args({{"path",      JsValue(std::string("/World/Camera"))},
-              {"attribute", JsValue(std::string("focalLength"))},
-              {"value",     JsValue(std::string("70.0"))},
+    std::string r = d2.Dispatch("set_attributes",
+        Args({{"items", Items({Item({
+                  {"path",      JsValue(std::string("/World/Camera"))},
+                  {"attribute", JsValue(std::string("focalLength"))},
+                  {"value",     JsValue(std::string("70.0"))}})})},
               {"layer_id",  JsValue(assetName)}}));
     std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
     CHECK_CONTAINS(r, "Queued:");
@@ -334,39 +356,79 @@ def Xform "World" {
     std::fprintf(stdout, "  shot has no opinion on focalLength: OK\n");
 
     // Error: unknown layer_id.
-    r = d2.Dispatch("set_attribute",
-        Args({{"path",      JsValue(std::string("/World/Camera"))},
-              {"attribute", JsValue(std::string("focalLength"))},
-              {"value",     JsValue(std::string("1.0"))},
+    r = d2.Dispatch("set_attributes",
+        Args({{"items", Items({Item({
+                  {"path",      JsValue(std::string("/World/Camera"))},
+                  {"attribute", JsValue(std::string("focalLength"))},
+                  {"value",     JsValue(std::string("1.0"))}})})},
               {"layer_id",  JsValue(std::string("<anon:nosuchfile.usda>"))}}));
     std::fprintf(stdout, "  bad layer_id: %s\n", r.c_str());
     CHECK_CONTAINS(r, "[error]");
     CHECK_CONTAINS(r, "not found");
 }
 
+// Drive a real multi-item batch: two prims in one set_visibilities call land
+// in a single undoable command, so one undo reverts both.
+void TestBatchedVisibilities(UsdToolDispatcher& d, const UsdStageRefPtr& stage) {
+    Section("set_visibilities batch: /World/Hero + /World/Camera, one undo reverts both");
+
+    auto vis = [&](const char* path) {
+        UsdGeomImageable img(stage->GetPrimAtPath(SdfPath(path)));
+        TfToken v; img.GetVisibilityAttr().Get(&v);
+        return v.GetString();
+    };
+
+    CHECK(vis("/World/Hero") == "inherited");
+    CHECK(vis("/World/Camera") == "inherited");
+
+    std::string r = d.Dispatch("set_visibilities",
+        Args({{"visibility", JsValue(std::string("invisible"))},   // shared default
+              {"items", Items({
+                  Item({{"path", JsValue(std::string("/World/Hero"))}}),
+                  Item({{"path", JsValue(std::string("/World/Camera"))}})})}}));
+    std::fprintf(stdout, "  dispatch: %s\n", r.c_str());
+    CHECK_CONTAINS(r, "Queued:");
+    CHECK_CONTAINS(r, "2 prims");
+
+    Pump();
+    CHECK(vis("/World/Hero") == "invisible");
+    CHECK(vis("/World/Camera") == "invisible");
+    std::fprintf(stdout, "  after pump:  both invisible\n");
+
+    // A single undo must revert the whole batch.
+    QueueUndo();
+    Pump();
+    CHECK(vis("/World/Hero") == "inherited");
+    CHECK(vis("/World/Camera") == "inherited");
+    std::fprintf(stdout, "  after undo:  both inherited again\n");
+}
+
 void TestErrorPaths(UsdToolDispatcher& d) {
-    Section("set_visibility bad value");
-    std::string r = d.Dispatch("set_visibility",
-        Args({{"path",       JsValue(std::string("/World/Hero"))},
-              {"visibility", JsValue(std::string("opaque"))}}));
+    Section("set_visibilities bad value");
+    std::string r = d.Dispatch("set_visibilities",
+        Args({{"items", Items({Item({
+            {"path",       JsValue(std::string("/World/Hero"))},
+            {"visibility", JsValue(std::string("opaque"))}})})}}));
     std::fprintf(stdout, "  %s\n", r.c_str());
     CHECK_CONTAINS(r, "[error]");
     CHECK_CONTAINS(r, "opaque");
 
-    Section("set_attribute on missing prim");
-    r = d.Dispatch("set_attribute",
-        Args({{"path",      JsValue(std::string("/Nope"))},
-              {"attribute", JsValue(std::string("x"))},
-              {"value",     JsValue(std::string("1"))}}));
+    Section("set_attributes on missing prim");
+    r = d.Dispatch("set_attributes",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/Nope"))},
+            {"attribute", JsValue(std::string("x"))},
+            {"value",     JsValue(std::string("1"))}})})}}));
     std::fprintf(stdout, "  %s\n", r.c_str());
     CHECK_CONTAINS(r, "[error]");
 
-    Section("set_attribute unsupported type (vec3)");
+    Section("set_attributes unsupported type (vec3)");
     // No vec3 attribute in fixture, so simulate with focalLength + bogus value.
-    r = d.Dispatch("set_attribute",
-        Args({{"path",      JsValue(std::string("/World/Camera"))},
-              {"attribute", JsValue(std::string("focalLength"))},
-              {"value",     JsValue(std::string("not_a_number"))}}));
+    r = d.Dispatch("set_attributes",
+        Args({{"items", Items({Item({
+            {"path",      JsValue(std::string("/World/Camera"))},
+            {"attribute", JsValue(std::string("focalLength"))},
+            {"value",     JsValue(std::string("not_a_number"))}})})}}));
     std::fprintf(stdout, "  %s\n", r.c_str());
     CHECK_CONTAINS(r, "[error]");
     CHECK_CONTAINS(r, "float");
@@ -427,6 +489,7 @@ int main() {
     TestSetAttributeFloat       (dispatcher, stage);
     TestSetXform                ();
     TestSetAttributeOnNamedLayer();
+    TestBatchedVisibilities     (dispatcher, stage);
     TestErrorPaths              (dispatcher);
     TestCreateLayerFile         (dispatcher);
 
