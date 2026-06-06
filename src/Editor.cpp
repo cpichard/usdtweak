@@ -1279,6 +1279,7 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+
     // Draw every registered addon that is a window-kind addon and currently open.
     for (const auto &addon : UsdTweakAddonRegistry::GetInstance().GetAll()) {
         if (addon.kind != UsdTweakAddon::Kind::Window || !addon.draw) continue;

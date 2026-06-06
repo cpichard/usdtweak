@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -55,3 +56,8 @@ template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(Arg
         commandStack.SetNextCommand(new CommandClass(arguments...));
     }
 }
+
+// Note: the QueueUndo / QueueRedo / QueueOnUIThread helpers are declared in
+// Commands.h so callers can use them without seeing the ExecuteAfterDraw
+// template body (which forces local instantiation of incomplete command
+// types). Definitions live in CommandStack.cpp.

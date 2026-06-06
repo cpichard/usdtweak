@@ -174,7 +174,8 @@ jobs:
               "-DPython3_EXECUTABLE=$usdDir/python/python.exe" `
               "-DPython3_LIBRARY=$usdDir/python/libs/python312.lib" `
               "-DPython3_INCLUDE_DIR=$usdDir/python/include" `
-              "-DPython3_VERSION=3.12"
+              "-DPython3_VERSION=3.12" `
+              "-DBUILD_TWIKI=ON"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build
