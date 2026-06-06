@@ -3,6 +3,8 @@
 #include "EditorSettings.h"
 #include "Selection.h"
 #include "Viewport.h"
+#include <memory>
+#include <future>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usdUtils/stageCache.h>

@@ -104,6 +104,7 @@ jobs:
           dnf config-manager --set-enabled crb
           dnf install -y \
             gcc gcc-c++ make cmake ninja-build git tar gzip which \
+            perl perl-FindBin perl-IPC-Cmd perl-Data-Dumper \
             tbb-devel glew-devel \
             mesa-libGL-devel mesa-libGLU-devel \
             libX11-devel libXrandr-devel libXinerama-devel \
@@ -140,6 +141,7 @@ jobs:
             -DCMAKE_PREFIX_PATH=$USD_DIR \
             -Dpxr_DIR=$USD_DIR \
             -DOpenSubdiv_DIR=$USD_DIR/lib/cmake/OpenSubdiv \
+            -DBUILD_TWIKI=ON \
             -B build
 
       - name: Build
