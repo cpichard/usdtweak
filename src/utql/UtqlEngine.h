@@ -9,13 +9,14 @@
 ///     CompileError immediately), then dispatches Execute() to a WorkDispatcher.
 ///   - Update()  (UI thread, once per frame): swaps a finished result in and
 ///     bumps a generation counter the widget compares against.
-///   - The worker only *reads* USD. Two mechanisms keep reads off concurrent
-///     writes:
-///       1. CancelRunningQuery() is called from CommandStack::ExecuteCommands()
-///          right before any queued edit runs — it stops and joins the worker
-///          before the mutation, closing the read-during-write window.
-///       2. SdfNotice::LayersDidChange marks the active result stale and signals
-///          cancellation for edits that bypass the command stack.
+///   - The worker only *reads* USD. Concurrent writes are handled by listening
+///     for SdfNotice::LayersDidChange (OnLayersDidChange): any layer mutation
+///     marks the active result stale and signals cancellation, so the worker
+///     observes _cancel and returns promptly rather than reading mid-write. The
+///     engine therefore needs no coupling to the command stack — it learns of
+///     every scene edit (command-driven or not) through the notice. Submit()
+///     also calls CancelRunningQuery() to stop any in-flight run before starting
+///     a new one.
 ///
 class UtqlEngine;
 

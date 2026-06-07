@@ -1022,6 +1022,71 @@ void TestErrorPaths(UsdToolDispatcher& d) {
 
 } // namespace
 
+// run_query: basic execution, the Stage-world guard, compile errors, empties.
+void TestRunQuery(UsdToolDispatcher& d) {
+    Section("run_query: basic + guards");
+
+    // Basic Stage-world prim query.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE PRIMTYPE = \"Camera\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK_CONTAINS(out, "1 matched");
+
+    // Layer-world entity is rejected with a clear message (v1 = Stage-world).
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE PRIMTYPE = \"Camera\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "Stage-world");
+
+    // Compile error is recoverable and labelled as such.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string("FIND NOSUCHENTITY"))}}));
+    CHECK_CONTAINS(out, "[error] compile");
+
+    // A valid query that matches nothing reports 'none found', not an error.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE PRIMNAME = \"DoesNotExist\""))}}));
+    CHECK_CONTAINS(out, "no rows matched");
+}
+
+// run_query: AS caches a result that a later, separate call can reference via
+// PATH UNDER RESULTSET / IN RESULTSET — the query->query composition path.
+void TestRunQueryChaining(UsdToolDispatcher& d) {
+    Section("run_query: RESULTSET chaining across calls");
+
+    // Query A caches its result under "comps" (/World/Hero is the one component).
+    std::string a = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE KIND = \"component\" AS \"comps\""))}}));
+    std::fprintf(stdout, "%s\n", a.c_str());
+    CHECK_CONTAINS(a, "/World/Hero");
+    CHECK_CONTAINS(a, "cached as RESULTSET \"comps\"");
+
+    // Query B (a separate Dispatch) scopes to the cached set's subtree.
+    std::string b = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE PATH UNDER RESULTSET \"comps\""))}}));
+    std::fprintf(stdout, "%s\n", b.c_str());
+    CHECK_CONTAINS(b, "/World/Hero");
+    // Scoping really happened: a sibling outside the cached subtree is absent.
+    CHECK(b.find("/World/Camera") == std::string::npos);
+
+    // IN RESULTSET scopes the scan to the cached set's exact paths.
+    std::string g = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE KIND = \"group\" AS \"groups\""))}}));
+    CHECK_CONTAINS(g, "cached as RESULTSET \"groups\"");
+    std::string c = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM IN RESULTSET \"groups\" WHERE PRIMNAME = \"Lights\""))}}));
+    std::fprintf(stdout, "%s\n", c.c_str());
+    CHECK_CONTAINS(c, "/World/Lights");
+}
+
 int main() {
     SdfLayerRefPtr asset, shot;
     UsdStageRefPtr stage = BuildFixture(&asset, &shot);
@@ -1042,6 +1107,8 @@ int main() {
     TestGetLayerStack     (dispatcher);
     TestListChildren      (dispatcher);
     TestFindPrims         (dispatcher);
+    TestRunQuery          (dispatcher);
+    TestRunQueryChaining  (dispatcher);
     TestFindPrimsNamePattern(dispatcher);
     TestFindPrimsNameTokens(dispatcher);
     TestGetNameVocabulary (dispatcher);

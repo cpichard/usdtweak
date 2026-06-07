@@ -272,6 +272,102 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             props, JsArray{})));
     }
 
+    // 7b. run_query — UTQL, the expressive complement to find_prims.
+    {
+        JsObject props;
+        props["query"] = MakeStringParam(
+            "a single UTQL query string. Grammar (Stage-world subset):\n"
+            "  FIND <entity> [CONNECTED [UPSTREAM|DOWNSTREAM] (TO|OF) <origin> "
+            "[WITHIN n]] [IN RESULTSET \"name\"] [AT <time>] [WHERE <cond>] "
+            "[RETURN <fields>|*] [ORDERED BY <field> [ASC|DESC]] [LIMIT n] "
+            "[AS \"name\"]\n"
+            "Only FIND is required; clauses must appear in that order; keywords "
+            "are case-insensitive; string literals use \"double quotes\".\n"
+            "ENTITIES (composed/Stage only in this tool): USDPRIM, USDATTRIBUTE, "
+            "USDRELATIONSHIP. (SDF*/LAYER and CONTRIBUTING TO are NOT supported "
+            "here — use find_prims / the get_* tools instead.)\n"
+            "WHERE operators: `field OP literal` (OP = = != < <= > >=); "
+            "`field LIKE \"sub\"` (substring) or `LIKE /regex/`; "
+            "`field IN (\"a\",\"b\")`; `set CONTAINS \"v\"` (set/family fields); "
+            "`field IS [NOT] NULL`; `PATH UNDER \"/p\"` (true namespace prefix); "
+            "bare boolflag (e.g. ACTIVE). Combine with AND/OR/NOT and parens "
+            "(NOT > AND > OR). Same-family predicates in one AND correlate to ONE "
+            "arc.\n"
+            "PRIM fields: PRIMNAME PATH PRIMTYPE(\"Mesh\") KIND(\"component\") "
+            "SPECIFIER(\"def\"/\"over\"/\"class\") ACTIVE• DEPTH CHILDCOUNT "
+            "ATTRIBUTECOUNT HAS_REFERENCE• HAS_PAYLOAD• HAS_VARIANT• "
+            "HAS_API• HAS_TIMESAMPLES• ISINSTANCE• ISPROTOTYPE• "
+            "ISINPROTOTYPE• ISINSTANCEPROXY• INSTANCEABLE• "
+            "HAS_RELATIONSHIP• RELATIONSHIPS(set: CONTAINS \"material:binding\"); "
+            "families REFERENCE.* PAYLOAD.* VARIANT.* (.SET/.SELECTION) and "
+            "API (API CONTAINS \"PhysicsCollisionAPI\", API.COUNT).\n"
+            "ATTRIBUTE fields: ATTRIBUTE.NAME ATTRIBUTE.TYPENAME "
+            "ATTRIBUTE.NAMESPACE(\"primvars\") VALUE.SCALAR (resolved value; "
+            "numeric/string/bool, arrays excluded so gate with NOT VALUE.ISARRAY) "
+            "VALUE.ISARRAY• VALUE.ARRAYSIZE VALUE.HASTIMESAMPLES• "
+            "VALUE.ISNONE• VALUE.ASSETMISSING• VARIABILITY INTERPOLATION "
+            "HAS_CONNECTION• CONNECTION.SOURCE(set) CONNECTION.COUNT PATH. Use "
+            "AT TIME t to pin a frame; otherwise the UI's current time is used. "
+            "(• = unary bool flag.)\n"
+            "RELATIONSHIP fields: RELATIONSHIP.NAME RELATIONSHIP.NAMESPACE "
+            "RELATIONSHIP.TARGET RELATIONSHIP.TARGETCOUNT.\n"
+            "CONNECTED TO (USDPRIM only) walks the attribute-connection graph and "
+            "returns reached prims: `FIND USDPRIM CONNECTED TO \"/Looks/Mat\"` "
+            "(undirected component), CONNECTED UPSTREAM OF feeds, WITHIN n bounds "
+            "hops. Origin = a prim or attribute path.\n"
+            "CHAINING (compose queries): end a query with AS \"name\" to cache "
+            "its result for this session, then a later run_query can restrict to "
+            "it with IN RESULTSET \"name\" (scan only those prims) or "
+            "PATH UNDER RESULTSET \"name\" in WHERE (prims at/under them). Prefer "
+            "this over re-deriving a set by hand. Both queries must be the same "
+            "(Stage) world, which is always true in this tool.\n"
+            "NOTE: UsdLux/UsdShade params are namespaced under inputs: — match "
+            "\"inputs:intensity\", not \"intensity\". Plain geom attrs (points, "
+            "visibility, purpose) are NOT namespaced.\n"
+            "EXAMPLES:\n"
+            "  FIND USDPRIM WHERE PRIMTYPE = \"Mesh\" AND NOT ACTIVE\n"
+            "  FIND USDPRIM WHERE API CONTAINS \"MaterialBindingAPI\"\n"
+            "  FIND USDPRIM WHERE ISINSTANCE\n"
+            "  FIND USDATTRIBUTE WHERE ATTRIBUTE.NAME = \"inputs:intensity\" AND "
+            "VALUE.SCALAR > 1000\n"
+            "  FIND USDATTRIBUTE WHERE VALUE.ASSETMISSING\n"
+            "  FIND USDPRIM CONNECTED UPSTREAM OF \"/Looks/Mat.outputs:surface\"\n"
+            "  FIND USDPRIM WHERE KIND = \"component\" AS \"comps\"   then   "
+            "FIND USDPRIM WHERE PRIMTYPE = \"Mesh\" AND PATH UNDER RESULTSET "
+            "\"comps\"\n");
+        props["store_as"] = MakeStringParam(
+            "optional handle name. If set, the FULL result path set is saved "
+            "client-side under this name (like find_prims store_as). For a "
+            "USDPRIM query reuse it with list_id on the edit tools to act on all "
+            "matches in one undoable command, or page it with read_list. (For "
+            "attribute/relationship queries the stored paths are property paths, "
+            "not directly usable by the prim edit tools.)");
+        tools.push_back(JsValue(_Tool(
+            "run_query",
+            "Runs a UTQL query (usdtweak's query language) against the current "
+            "stage and returns a result table. This is the EXPRESSIVE complement "
+            "to find_prims: reach for it when the question needs criteria "
+            "find_prims cannot express — resolved attribute values "
+            "(VALUE.SCALAR), connection reachability (CONNECTED TO), instancing "
+            "(ISINSTANCE / ISPROTOTYPE), relationship names (RELATIONSHIPS), "
+            "animation (HAS_TIMESAMPLES), missing assets (VALUE.ASSETMISSING), "
+            "composition predicates (REFERENCE.* / API), or boolean combinations "
+            "of these. Prefer find_prims for simple type/kind/name lookups. The "
+            "result reports matched/scanned counts and is capped at 50 displayed "
+            "rows plus the global 8 KB cap. A compile error is recoverable — "
+            "read the message, fix the query, and call again. Stage-world only.\n"
+            "WHEN TO STORE THE RESULT (do not re-derive a set by hand): if the "
+            "user's request implies acting on the matches, store them instead of "
+            "re-listing paths. To EDIT or hand-curate the set, pass store_as and "
+            "reuse the handle via list_id on the edit tools (or read_list to page "
+            "it) — this is how you act on ALL matches, not just the 50 shown. To "
+            "FILTER the set further in a follow-up query, end with AS \"name\" and "
+            "reference it via IN RESULTSET \"name\" or PATH UNDER RESULTSET "
+            "\"name\". Reach for store_as / AS proactively whenever a next step on "
+            "the same prims is likely.",
+            props, _Strings({"query"}))));
+    }
+
     // 7d. read_list
     {
         JsObject props;

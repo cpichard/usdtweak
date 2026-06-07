@@ -4,6 +4,14 @@
 #include "JsHelpers.h"
 #include "Selection.h"
 
+// UTQL query engine (compiled into the usdtweak target / the test agent
+// sources). We use only the synchronous compile+execute path — Parse, Bind,
+// Execute — never UtqlEngine, which is the UI-thread async marshaller.
+#include "utql/Binder.h"
+#include "utql/Executor.h"
+#include "utql/Parser.h"
+#include "utql/UtqlTypes.h"
+
 #include <pxr/base/gf/matrix2d.h>
 #include <pxr/base/gf/matrix3d.h>
 #include <pxr/base/gf/matrix4d.h>
@@ -55,6 +63,7 @@
 #include <pxr/usd/usdGeom/metrics.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <exception>
@@ -379,6 +388,7 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         else if (toolName == "get_layer_stack")      result = GetLayerStack(args);
         else if (toolName == "list_children")        result = ListChildren(args);
         else if (toolName == "find_prims")           result = FindPrims(args);
+        else if (toolName == "run_query")            result = RunQuery(args);
         else if (toolName == "read_list")            result = ReadList(args);
         else if (toolName == "manage_lists")         result = ManageLists(args);
         else if (toolName == "get_name_vocabulary")  result = GetNameVocabulary(args);
@@ -937,6 +947,138 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
             << " as \"" << storeAs << "\" (use list_id=\"" << storeAs
             << "\" on edit tools, or read_list to page through)\n";
     }
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// 7b. run_query — compile + execute a UTQL query against the active stage.
+//
+// This is the expressive complement to find_prims: it reaches features find_prims
+// structurally cannot (VALUE.SCALAR, CONNECTED TO, ISINSTANCE, RELATIONSHIPS,
+// HAS_TIMESAMPLES, asset-missing, …). It runs the SYNCHRONOUS utql path on the
+// dispatcher's own worker thread — Parse → Bind → Execute — never UtqlEngine
+// (which exists only to marshal async results back to the ImGui frame loop).
+//
+// v1 is Stage-world only: the context is built from a single stage (_stageFn),
+// so Layer-world queries (FIND SDF* / LAYER) are rejected with a clear message
+// rather than run against an empty layer set. A CompileError is recoverable —
+// the model reads the message, fixes the query, and retries.
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
+    const std::string query   = JsGetString(args, "query");
+    if (query.empty()) return "[error] missing 'query' argument";
+    // When set, the FULL result path set is retained client-side under this
+    // handle for reuse by the edit tools (list_id) and read_list — exactly like
+    // find_prims store_as, so a query result composes with the batched edits.
+    const std::string storeAs = JsGetString(args, "store_as");
+
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    // Compile. Parse failures carry a column; bind failures a plain message.
+    utql::Query ast;
+    std::string err;
+    size_t      errPos = 0;
+    if (!utql::Parse(query, ast, err, errPos))
+        return "[error] compile: " + err + " (at column "
+               + std::to_string(errPos + 1) + ") — fix the query and retry";
+    utql::BoundQuery bound;
+    if (!utql::Bind(std::move(ast), bound, err))
+        return "[error] compile: " + err + " — fix the query and retry";
+
+    // v1 scope guard: Stage-world only.
+    if (bound.world == utql::UtqlWorld::Layer)
+        return "[error] this tool runs Stage-world queries only (FIND USDPRIM / "
+               "USDATTRIBUTE / USDRELATIONSHIP). Layer-world entities (SDFPRIM, "
+               "SDFATTRIBUTE, LAYER, and CONTRIBUTING TO) are not yet supported.";
+
+    // Minimal Stage context: just the active stage. The named-results cache is
+    // shared across run_query calls so `AS "x"` / `IN RESULTSET "x"` compose;
+    // current time = the context default. Execute only reads USD.
+    utql::UtqlContext ctx;
+    ctx.currentStage = stage;
+    ctx.allStages    = {stage};
+    ctx.named        = &_namedResults;
+
+    std::atomic<bool> cancel{false};
+    const utql::UtqlResult res = utql::Execute(bound, ctx, cancel);
+
+    // Cache under the AS name so a later query can reference this set. Mirror
+    // UtqlEngine::Update: cache only fully-completed runs (Ok / OkEmpty), never
+    // a degraded/partial one — chaining off a truncated set would mislead.
+    if (!bound.asName.empty() &&
+        (res.status == utql::UtqlStatus::Ok ||
+         res.status == utql::UtqlStatus::OkEmpty)) {
+        _namedResults[bound.asName] = res;
+    }
+
+    // Status → behaviour the model should follow (mirrors the UtqlStatus design).
+    if (res.status == utql::UtqlStatus::CompileError)
+        return "[error] compile: " + res.message + " — fix the query and retry";
+
+    std::ostringstream oss;
+    oss << "run_query: " << res.matched << " matched, " << res.scanned
+        << " scanned";
+    if (res.status == utql::UtqlStatus::OkDegraded)
+        oss << " (degraded — the scan was cut short; treat as partial)";
+    oss << "\n";
+
+    // If the query named itself with AS, it is now cached for later reference.
+    auto appendCacheNote = [&]() {
+        if (!bound.asName.empty() &&
+            (res.status == utql::UtqlStatus::Ok ||
+             res.status == utql::UtqlStatus::OkEmpty))
+            oss << "cached as RESULTSET \"" << bound.asName << "\" — a later "
+                   "run_query can reference it with IN RESULTSET \"" << bound.asName
+                << "\" or PATH UNDER RESULTSET \"" << bound.asName << "\".\n";
+    };
+
+    if (res.status == utql::UtqlStatus::OkEmpty || res.rows.empty()) {
+        oss << "no rows matched — report 'none found'; do NOT retry the same "
+               "query.\n";
+        appendCacheNote();
+        return oss.str();
+    }
+
+    // Column header: the path is always present; RETURN fields follow.
+    oss << "columns: path";
+    for (const std::string& c : res.columnNames) oss << " | " << c;
+    oss << "\n";
+
+    // Rows, capped for display like find_prims. The full set still feeds store_as.
+    const size_t shown = std::min<size_t>(res.rows.size(), kFindPrimsLimit);
+    for (size_t i = 0; i < shown; ++i) {
+        const utql::UtqlRow& row = res.rows[i];
+        oss << "  " << row.path.GetString();
+        for (const utql::UtqlValue& v : row.columns) oss << " | " << v.ToDisplay();
+        oss << "\n";
+    }
+    if (res.rows.size() > shown)
+        oss << "... showing first " << shown << " of " << res.rows.size()
+            << " rows\n";
+
+    if (!storeAs.empty()) {
+        // store_as is cleanest for prim queries — the named-list store feeds the
+        // prim edit tools (list_id). For attribute/relationship entities the
+        // stored paths are property paths; flag that so the model doesn't pass
+        // them to a prim edit tool by mistake.
+        std::vector<SdfPath> paths;
+        paths.reserve(res.rows.size());
+        for (const utql::UtqlRow& row : res.rows) paths.push_back(row.path);
+        const size_t n = paths.size();
+        _StoreList(storeAs, std::move(paths));
+        oss << "stored " << n << " path" << (n == 1 ? "" : "s") << " as \""
+            << storeAs << "\"";
+        if (bound.entity != utql::UtqlEntity::UsdPrim)
+            oss << " (note: these are " << (bound.entity == utql::UtqlEntity::UsdAttribute
+                    ? "attribute" : "property") << " paths, not prim paths — not "
+                   "directly usable by the prim edit tools)";
+        else
+            oss << " (use list_id=\"" << storeAs << "\" on edit tools, or "
+                   "read_list to page through)";
+        oss << "\n";
+    }
+    appendCacheNote();
     return oss.str();
 }
 
