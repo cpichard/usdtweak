@@ -21,7 +21,7 @@ namespace {
 
 // --------------------------------------------------------------- field model
 
-enum class Category { Prim, Attribute, Relationship };
+enum class Category { Prim, Attribute, Relationship, Layer };
 
 enum class FieldType { String, Number, Bool };
 
@@ -39,6 +39,7 @@ Category CategoryOf(UtqlEntity e) {
         case UtqlEntity::SdfAttribute:    return Category::Attribute;
         case UtqlEntity::UsdRelationship:
         case UtqlEntity::SdfRelationship: return Category::Relationship;
+        case UtqlEntity::Layer:           return Category::Layer;
         default:                          return Category::Prim;
     }
 }
@@ -92,6 +93,10 @@ FieldInfo LookupPrimField(const std::string &f) {
     if (f == "ISINSTANCE" || f == "ISPROTOTYPE" || f == "ISINPROTOTYPE" ||
         f == "ISINSTANCEPROXY" || f == "INSTANCEABLE")
         return mk(FieldType::Bool, false);
+    // Payload load state (composed/runtime stage fact — Stage world only, enforced
+    // in ValidateLeaf). UsdPrim::IsLoaded(); pair with HAS_PAYLOAD for "loaded /
+    // unloaded payloads" since a prim with no loadable ancestor reports loaded.
+    if (f == "ISLOADED") return mk(FieldType::Bool, false);
     // Relationship-existence predicates (design I2). HAS_RELATIONSHIP is a nullary
     // bool gate (the prim has ≥1 relationship), mirroring HAS_API. RELATIONSHIPS is
     // a set field of the prim's relationship names, queried with CONTAINS / existential
@@ -106,7 +111,7 @@ const char *kPrimFieldList =
     "PRIMNAME, PATH, PRIMTYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
     "CHILDCOUNT, ATTRIBUTECOUNT, SPECCOUNT, HAS_REFERENCE, HAS_PAYLOAD, "
     "HAS_VARIANT, HAS_API, HAS_TIMESAMPLES, ISINSTANCE, ISPROTOTYPE, ISINPROTOTYPE, "
-    "ISINSTANCEPROXY, INSTANCEABLE, HAS_RELATIONSHIP, RELATIONSHIPS";
+    "ISINSTANCEPROXY, INSTANCEABLE, ISLOADED, HAS_RELATIONSHIP, RELATIONSHIPS";
 
 FieldInfo LookupAttrField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
@@ -164,11 +169,51 @@ const char *kRelFieldList =
     "RELATIONSHIP.NAME, RELATIONSHIP.NAMESPACE, RELATIONSHIP.TARGET, "
     "RELATIONSHIP.TARGETCOUNT, PATH";
 
+/// LAYER entity fields (design §5) plus the sublayer predicate (design A3). The
+/// stage-root metadata (UPAXIS/METERSPERUNIT/time codes/DEFAULTPRIM) is read off the
+/// layer; ISROOTLAYER / ISSESSIONLAYER recover the per-stage view. SUBLAYERS is a set
+/// field (sublayer asset paths) queried with CONTAINS / LIKE; HAS_SUBLAYER is the
+/// bool gate, SUBLAYER.COUNT the count.
+FieldInfo LookupLayerField(const std::string &f) {
+    auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
+    if (f == "PATH")                     return mk(FieldType::String, true);
+    if (f == "LAYER.IDENTIFIER")         return mk(FieldType::String, false);
+    if (f == "LAYER.DISPLAYNAME")        return mk(FieldType::String, false);
+    if (f == "LAYER.REALPATH")           return mk(FieldType::String, true);
+    if (f == "LAYER.FILEFORMAT")         return mk(FieldType::String, true);
+    if (f == "LAYER.DIRTY")              return mk(FieldType::Bool, false);
+    if (f == "LAYER.ANONYMOUS")          return mk(FieldType::Bool, false);
+    if (f == "LAYER.MUTED")              return mk(FieldType::Bool, false);
+    if (f == "LAYER.EMPTY")              return mk(FieldType::Bool, false);
+    if (f == "LAYER.ISROOTLAYER")        return mk(FieldType::Bool, false);
+    if (f == "LAYER.ISSESSIONLAYER")     return mk(FieldType::Bool, false);
+    if (f == "LAYER.DEFAULTPRIM")        return mk(FieldType::String, true);
+    if (f == "LAYER.UPAXIS")             return mk(FieldType::String, true);
+    if (f == "LAYER.METERSPERUNIT")      return mk(FieldType::Number, true);
+    if (f == "LAYER.ROOTPRIMCOUNT")      return mk(FieldType::Number, false);
+    if (f == "LAYER.STARTTIME")          return mk(FieldType::Number, true);
+    if (f == "LAYER.ENDTIME")            return mk(FieldType::Number, true);
+    if (f == "LAYER.TIMECODESPERSECOND") return mk(FieldType::Number, false);
+    if (f == "LAYER.FRAMESPERSECOND")    return mk(FieldType::Number, false);
+    if (f == "HAS_SUBLAYER")             return mk(FieldType::Bool, false);
+    if (f == "SUBLAYER.COUNT")           return mk(FieldType::Number, false);
+    if (f == "SUBLAYERS")                return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    return FieldInfo{};
+}
+
+const char *kLayerFieldList =
+    "LAYER.IDENTIFIER, LAYER.DISPLAYNAME, LAYER.REALPATH, LAYER.FILEFORMAT, "
+    "LAYER.DIRTY, LAYER.ANONYMOUS, LAYER.MUTED, LAYER.EMPTY, LAYER.ISROOTLAYER, "
+    "LAYER.ISSESSIONLAYER, LAYER.DEFAULTPRIM, LAYER.UPAXIS, LAYER.METERSPERUNIT, "
+    "LAYER.ROOTPRIMCOUNT, LAYER.STARTTIME, LAYER.ENDTIME, LAYER.TIMECODESPERSECOND, "
+    "LAYER.FRAMESPERSECOND, HAS_SUBLAYER, SUBLAYER.COUNT, SUBLAYERS";
+
 FieldInfo LookupField(Category c, const std::string &f) {
     switch (c) {
         case Category::Prim:         return LookupPrimField(f);
         case Category::Attribute:    return LookupAttrField(f);
         case Category::Relationship: return LookupRelField(f);
+        case Category::Layer:        return LookupLayerField(f);
     }
     return FieldInfo{};
 }
@@ -178,6 +223,7 @@ const char *FieldListFor(Category c) {
         case Category::Prim:         return kPrimFieldList;
         case Category::Attribute:    return kAttrFieldList;
         case Category::Relationship: return kRelFieldList;
+        case Category::Layer:        return kLayerFieldList;
     }
     return "";
 }
@@ -378,11 +424,6 @@ class Binder {
         // 1. Entity → world.
         if (!ResolveEntity(q.entityName, out.entity, out.world))
             return false;
-        if (out.entity == UtqlEntity::Layer) {
-            Fail("FIND LAYER is recognised but not yet supported in this build "
-                 "(planned for a later phase).");
-            return false;
-        }
         _entity = out.entity;
         _cat = CategoryOf(out.entity);
 
@@ -390,7 +431,7 @@ class Binder {
         //    SDF entities only; mutually exclusive with IN.
         const bool contributing = q.contributing.targetKind != ContributingTo::TargetKind::None;
         if (contributing) {
-            if (out.world != UtqlWorld::Layer) {
+            if (out.world != UtqlWorld::Layer || out.entity == UtqlEntity::Layer) {
                 Fail("CONTRIBUTING TO produces authored specs; use SDFPRIM, "
                      "SDFATTRIBUTE, or SDFRELATIONSHIP.");
                 return false;
@@ -664,7 +705,7 @@ class Binder {
         // is authored metadata and stays valid in both worlds.
         if (_cat == Category::Prim &&
             (f == "ISINSTANCE" || f == "ISPROTOTYPE" || f == "ISINPROTOTYPE" ||
-             f == "ISINSTANCEPROXY") &&
+             f == "ISINSTANCEPROXY" || f == "ISLOADED") &&
             world == UtqlWorld::Layer) {
             Fail(f + " is a composed-stage fact, invalid in Layer world. Query USDPRIM.");
             return false;

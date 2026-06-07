@@ -6,6 +6,7 @@
 #include <pxr/usd/pcp/types.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/attributeSpec.h>
+#include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerOffset.h>
 #include <pxr/usd/sdf/layerUtils.h>
@@ -536,6 +537,11 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "ISINPROTOTYPE")  return UtqlValue::Bool(prim.IsInPrototype());
     if (f == "ISINSTANCEPROXY") return UtqlValue::Bool(prim.IsInstanceProxy());
     if (f == "INSTANCEABLE")   return UtqlValue::Bool(prim.IsInstanceable());
+    // Payload load state (composed/runtime stage fact). Almost always true unless
+    // paired with HAS_PAYLOAD: a prim with no loadable ancestor reports loaded. An
+    // unloaded payloaded prim is still on the stage (only its subtree is absent),
+    // so the all-prims scan reaches it as a row.
+    if (f == "ISLOADED")       return UtqlValue::Bool(prim.IsLoaded());
     // Relationship existence (design I2). RELATIONSHIPS is a set field — the scalar
     // form here is its display join; membership goes through getSet.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!prim.GetRelationships().empty());
@@ -581,6 +587,75 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     // Relationship existence (design I2). Authored relationship specs on this prim.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!spec->GetRelationships().empty());
     if (f == "RELATIONSHIPS")    return UtqlValue::String_(JoinStrings(SdfPrimRelationshipNames(spec)));
+    return UtqlValue::Null();
+}
+
+// ------------------------------------------------------------ layer accessors
+
+/// The layer's authored sublayer asset paths — the SUBLAYERS set field (design
+/// A3). Existential membership via CONTAINS / LIKE answers "where is X used as a
+/// sublayer", the composition path that WHERE could never reach before.
+std::vector<std::string> LayerSublayerPaths(const SdfLayerHandle &layer) {
+    std::vector<std::string> out;
+    for (const std::string &p : layer->GetSubLayerPaths())
+        out.push_back(p);
+    return out;
+}
+
+/// Read a root-layer metadata field (upAxis / metersPerUnit) authored as pseudo-root
+/// metadata. Returns null when unauthored — stage metadata lives on the root layer
+/// (design §5), so a non-root layer simply has no opinion here.
+UtqlValue RootMetadataField(const SdfLayerHandle &layer, const TfToken &key) {
+    VtValue v;
+    if (!layer->HasField(SdfPath::AbsoluteRootPath(), key, &v) || v.IsEmpty())
+        return UtqlValue::Null();
+    if (v.IsHolding<TfToken>())
+        return UtqlValue::String_(v.UncheckedGet<TfToken>().GetString());
+    if (v.CanCast<double>())
+        return UtqlValue::Number_(v.Cast<double>().Get<double>());
+    return UtqlValue::String_(TfStringify(v));
+}
+
+/// LAYER entity field reader (design §5 + A3). `roots`/`sessions` are the identifiers
+/// of layers currently serving as a root / session layer of some open stage, used by
+/// the ISROOTLAYER / ISSESSIONLAYER flags (layer-relative, never "is a stage").
+UtqlValue GetLayerField(const SdfLayerHandle &layer,
+                        const std::unordered_set<std::string> &roots,
+                        const std::unordered_set<std::string> &sessions,
+                        const std::string &f) {
+    if (f == "LAYER.IDENTIFIER")  return UtqlValue::String_(layer->GetIdentifier());
+    if (f == "LAYER.DISPLAYNAME") return UtqlValue::String_(layer->GetDisplayName());
+    if (f == "PATH" || f == "LAYER.REALPATH") {
+        const std::string rp = layer->GetRealPath();
+        return rp.empty() ? UtqlValue::Null() : UtqlValue::String_(rp);
+    }
+    if (f == "LAYER.FILEFORMAT") {
+        if (const SdfFileFormatConstPtr ff = layer->GetFileFormat())
+            return UtqlValue::String_(ff->GetFormatId().GetString());
+        return UtqlValue::Null();
+    }
+    if (f == "LAYER.DIRTY")          return UtqlValue::Bool(layer->IsDirty());
+    if (f == "LAYER.ANONYMOUS")      return UtqlValue::Bool(layer->IsAnonymous());
+    if (f == "LAYER.MUTED")          return UtqlValue::Bool(layer->IsMuted());
+    if (f == "LAYER.EMPTY")          return UtqlValue::Bool(layer->IsEmpty());
+    if (f == "LAYER.ISROOTLAYER")    return UtqlValue::Bool(roots.count(layer->GetIdentifier()) != 0);
+    if (f == "LAYER.ISSESSIONLAYER") return UtqlValue::Bool(sessions.count(layer->GetIdentifier()) != 0);
+    if (f == "LAYER.DEFAULTPRIM") {
+        const TfToken dp = layer->GetDefaultPrim();
+        return dp.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(dp.GetString());
+    }
+    if (f == "LAYER.ROOTPRIMCOUNT")  return UtqlValue::Number_(static_cast<double>(layer->GetRootPrims().size()));
+    if (f == "SUBLAYER.COUNT")       return UtqlValue::Number_(static_cast<double>(layer->GetNumSubLayerPaths()));
+    if (f == "HAS_SUBLAYER")         return UtqlValue::Bool(layer->GetNumSubLayerPaths() > 0);
+    if (f == "SUBLAYERS")            return UtqlValue::String_(JoinStrings(LayerSublayerPaths(layer)));
+    if (f == "LAYER.STARTTIME")
+        return layer->HasStartTimeCode() ? UtqlValue::Number_(layer->GetStartTimeCode()) : UtqlValue::Null();
+    if (f == "LAYER.ENDTIME")
+        return layer->HasEndTimeCode() ? UtqlValue::Number_(layer->GetEndTimeCode()) : UtqlValue::Null();
+    if (f == "LAYER.TIMECODESPERSECOND") return UtqlValue::Number_(layer->GetTimeCodesPerSecond());
+    if (f == "LAYER.FRAMESPERSECOND")    return UtqlValue::Number_(layer->GetFramesPerSecond());
+    if (f == "LAYER.UPAXIS")             return RootMetadataField(layer, TfToken("upAxis"));
+    if (f == "LAYER.METERSPERUNIT")      return RootMetadataField(layer, TfToken("metersPerUnit"));
     return UtqlValue::Null();
 }
 
@@ -1180,6 +1255,9 @@ bool ResolveLayers(const BoundQuery &q, const UtqlContext &ctx,
 std::vector<std::string> BuildColumns(const BoundQuery &q) {
     if (!q.returnAll && !q.returnFields.empty())
         return q.returnFields;
+    // LAYER rows have no prim path; identify them by their layer identifier.
+    if (q.entity == UtqlEntity::Layer)
+        return {"LAYER.IDENTIFIER"};
     return {"PATH", q.world == UtqlWorld::Stage ? "STAGE" : "LAYER"};
 }
 
@@ -1223,6 +1301,9 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     // Attribute connection-source set field (design C1, CONNECTION.SOURCE CONTAINS …).
     else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
         setFields = {"CONNECTION.SOURCE"};
+    // Layer sublayer-asset set field (design A3, SUBLAYERS CONTAINS / LIKE …).
+    else if (q.entity == UtqlEntity::Layer)
+        setFields = {"SUBLAYERS"};
 
     auto makeRow = [&](const std::string &source, const SdfPath &path,
                        const std::function<UtqlValue(const std::string &)> &get) {
@@ -1260,13 +1341,17 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     // IN RESULTSET path filter: restrict to items whose prim path is in the set.
     std::unordered_set<std::string> filterPrims;
     bool filterActive = false;
+    // For FIND LAYER, IN RESULTSET restricts to the distinct layers that appear as a
+    // source in the cached set (rows have no usable prim path), filtered by identifier.
+    std::unordered_set<std::string> filterLayerSources;
 
     // Shared emit: evaluate WHERE then build a row. scanned/cancel stay in loops.
     auto emit = [&](const std::string &source, const SdfPath &path,
                     const std::function<UtqlValue(const std::string &)> &get,
                     const std::function<std::vector<std::string>(const std::string &)> &getSet,
                     const std::function<const std::vector<Arc> &(Family)> &getArcs) {
-        if (filterActive && !filterPrims.count(SourceKey(source, path.GetPrimPath().GetString())))
+        if (filterActive && q.entity != UtqlEntity::Layer &&
+            !filterPrims.count(SourceKey(source, path.GetPrimPath().GetString())))
             return;
         EvalCtx ectx;
         ectx.get = get;
@@ -1316,8 +1401,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                    "Stage query.";
             return result;
         }
-        for (const UtqlRow &row : cached->rows)
+        for (const UtqlRow &row : cached->rows) {
             filterPrims.insert(SourceKey(row.source, row.path.GetPrimPath().GetString()));
+            if (q.entity == UtqlEntity::Layer)
+                filterLayerSources.insert(row.source);
+        }
         filterActive = true;
     }
 
@@ -1715,6 +1803,19 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         }
         result.stages = ctx.allStages; // keep stages alive for click resolution
 
+        // Identifiers of layers currently serving as a root / session layer of some
+        // open stage — backs LAYER.ISROOTLAYER / .ISSESSIONLAYER (design §5).
+        std::unordered_set<std::string> rootLayerIds, sessionLayerIds;
+        if (q.entity == UtqlEntity::Layer) {
+            for (const auto &s : ctx.allStages) {
+                if (!s) continue;
+                if (const SdfLayerHandle r = s->GetRootLayer())
+                    rootLayerIds.insert(r->GetIdentifier());
+                if (const SdfLayerHandle ss = s->GetSessionLayer())
+                    sessionLayerIds.insert(ss->GetIdentifier());
+            }
+        }
+
         // Recurse prim specs explicitly — SdfLayer::Traverse does not emit
         // property spec paths, so attributes/relationships are read off each
         // prim spec directly (mirrors StringSearchIndex::BuildShardEntries).
@@ -1724,6 +1825,25 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             hadSources = true;
             const SdfLayerHandle layerH(layer);
             const std::string source = layer->GetIdentifier();
+
+            // FIND LAYER: one row per resolved layer (design §5). No prim recursion.
+            if (q.entity == UtqlEntity::Layer) {
+                if (filterActive && !filterLayerSources.count(source))
+                    continue;
+                if (checkCancel()) break;
+                ++result.scanned;
+                emit(source, SdfPath::AbsoluteRootPath(),
+                     [&](const std::string &fld) {
+                         return GetLayerField(layerH, rootLayerIds, sessionLayerIds, fld);
+                     },
+                     [&](const std::string &fld) -> std::vector<std::string> {
+                         if (fld == "SUBLAYERS")
+                             return LayerSublayerPaths(layerH);
+                         return {};
+                     },
+                     noArcs);
+                continue;
+            }
 
             std::function<void(const SdfPrimSpecHandle &)> visit =
                 [&](const SdfPrimSpecHandle &prim) {

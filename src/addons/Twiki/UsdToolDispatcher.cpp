@@ -959,10 +959,12 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
 // dispatcher's own worker thread — Parse → Bind → Execute — never UtqlEngine
 // (which exists only to marshal async results back to the ImGui frame loop).
 //
-// v1 is Stage-world only: the context is built from a single stage (_stageFn),
-// so Layer-world queries (FIND SDF* / LAYER) are rejected with a clear message
-// rather than run against an empty layer set. A CompileError is recoverable —
-// the model reads the message, fixes the query, and retries.
+// Scope: composed Stage entities (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP) plus
+// FIND LAYER, which scans the active stage's used-layer set (sublayers +
+// referenced/payload layers). The authored per-spec SDF* entities and
+// CONTRIBUTING TO are still rejected — they need per-layer authoring context this
+// single-stage tool doesn't expose. A CompileError is recoverable — the model
+// reads the message, fixes the query, and retries.
 // --------------------------------------------------------------------------
 std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     const std::string query   = JsGetString(args, "query");
@@ -986,18 +988,29 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     if (!utql::Bind(std::move(ast), bound, err))
         return "[error] compile: " + err + " — fix the query and retry";
 
-    // v1 scope guard: Stage-world only.
-    if (bound.world == utql::UtqlWorld::Layer)
-        return "[error] this tool runs Stage-world queries only (FIND USDPRIM / "
-               "USDATTRIBUTE / USDRELATIONSHIP). Layer-world entities (SDFPRIM, "
-               "SDFATTRIBUTE, LAYER, and CONTRIBUTING TO) are not yet supported.";
+    // Scope guard: composed Stage entities plus FIND LAYER. The authored
+    // per-spec SDF* entities (SDFPRIM/SDFATTRIBUTE/SDFRELATIONSHIP) and
+    // CONTRIBUTING TO are still out of scope — they need per-layer authoring
+    // context this tool doesn't expose. LAYER is Layer-world but reads only layer
+    // metadata, so it runs against the stage's used-layer set below.
+    if (bound.world == utql::UtqlWorld::Layer &&
+        bound.entity != utql::UtqlEntity::Layer)
+        return "[error] this tool runs Stage-world queries (FIND USDPRIM / "
+               "USDATTRIBUTE / USDRELATIONSHIP) plus FIND LAYER. The authored "
+               "per-spec entities (SDFPRIM, SDFATTRIBUTE, SDFRELATIONSHIP) and "
+               "CONTRIBUTING TO are not supported here — use find_prims / the "
+               "get_* tools instead.";
 
-    // Minimal Stage context: just the active stage. The named-results cache is
-    // shared across run_query calls so `AS "x"` / `IN RESULTSET "x"` compose;
-    // current time = the context default. Execute only reads USD.
+    // Stage context: the active stage, plus its used-layer set so FIND LAYER has
+    // layers to scan (sublayers + referenced/payload layers). The named-results
+    // cache is shared across run_query calls so `AS "x"` / `IN RESULTSET "x"`
+    // compose; current time = the context default. Execute only reads USD.
     utql::UtqlContext ctx;
     ctx.currentStage = stage;
     ctx.allStages    = {stage};
+    for (const SdfLayerHandle& h : stage->GetUsedLayers(/*includeClipLayers*/ true))
+        if (h)
+            ctx.allLayers.push_back(SdfLayerRefPtr(h));
     ctx.named        = &_namedResults;
 
     std::atomic<bool> cancel{false};

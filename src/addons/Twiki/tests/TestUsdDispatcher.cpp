@@ -1034,12 +1034,39 @@ void TestRunQuery(UsdToolDispatcher& d) {
     CHECK_CONTAINS(out, "/World/Camera");
     CHECK_CONTAINS(out, "1 matched");
 
-    // Layer-world entity is rejected with a clear message (v1 = Stage-world).
+    // Authored per-spec SDF* entity is still rejected with a clear message.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
             "FIND SDFPRIM WHERE PRIMTYPE = \"Camera\""))}}));
     CHECK_CONTAINS(out, "[error]");
     CHECK_CONTAINS(out, "Stage-world");
+
+    // FIND LAYER runs against the stage's used-layer set (Layer-world, but the one
+    // Layer entity this tool supports). The stage's root layer is one such row.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string("FIND LAYER"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // LAYER.ISROOTLAYER recovers the per-stage view: exactly the stage root.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND LAYER WHERE LAYER.ISROOTLAYER"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "1 matched");
+
+    // ISLOADED runs (composed payload load state): active non-payloaded prims are
+    // loaded, so this matches the scene and is not a compile error.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string("FIND USDPRIM WHERE ISLOADED"))}}));
+    CHECK_CONTAINS(out, "matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // ISLOADED is a composed-stage fact — a binder error in Layer world (SDFPRIM).
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string("FIND SDFPRIM WHERE ISLOADED"))}}));
+    CHECK_CONTAINS(out, "[error]");
 
     // Compile error is recoverable and labelled as such.
     out = d.Dispatch("run_query",
