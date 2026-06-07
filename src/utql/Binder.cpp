@@ -427,29 +427,29 @@ class Binder {
         _entity = out.entity;
         _cat = CategoryOf(out.entity);
 
-        // 2. CONTRIBUTING TO — composition inversion (design §4). Layer-world
+        // 2. COMPOSING INTO — composition inversion (design §4). Layer-world
         //    SDF entities only; mutually exclusive with IN.
-        const bool contributing = q.contributing.targetKind != ContributingTo::TargetKind::None;
-        if (contributing) {
+        const bool composing = q.composingInto.targetKind != ComposingInto::TargetKind::None;
+        if (composing) {
             if (out.world != UtqlWorld::Layer || out.entity == UtqlEntity::Layer) {
-                Fail("CONTRIBUTING TO produces authored specs; use SDFPRIM, "
+                Fail("COMPOSING INTO produces authored specs; use SDFPRIM, "
                      "SDFATTRIBUTE, or SDFRELATIONSHIP.");
                 return false;
             }
             if (q.scope.kind != ScopeSpec::Kind::Default) {
-                Fail("CONTRIBUTING TO replaces IN; remove the IN clause.");
+                Fail("COMPOSING INTO replaces IN; remove the IN clause.");
                 return false;
             }
         }
-        _contributing = contributing;
-        _perTarget = q.contributing.perTarget;
+        _composing = composing;
+        _perTarget = q.composingInto.perTarget;
 
         // 2b. CONNECTED TO — connection-graph reachability (design C2). Returns
-        //     composed prims, so USDPRIM only; mutually exclusive with CONTRIBUTING.
+        //     composed prims, so USDPRIM only; mutually exclusive with COMPOSING.
         const bool connected = q.connected.kind != ConnectedTo::Kind::None;
         if (connected) {
-            if (contributing) {
-                Fail("CONNECTED TO and CONTRIBUTING TO cannot be combined.");
+            if (composing) {
+                Fail("CONNECTED TO and COMPOSING INTO cannot be combined.");
                 return false;
             }
             if (out.entity != UtqlEntity::UsdPrim) {
@@ -460,6 +460,32 @@ class Binder {
             }
             if (q.connected.hasWithin && q.connected.within < 1) {
                 Fail("WITHIN requires a hop count of at least 1.");
+                return false;
+            }
+        }
+
+        // 2c. COMPOSED FROM — forward composition (design A4): an authored spec
+        //     origin → the composed objects it feeds. Returns Stage-world objects,
+        //     so USD* entities only; mutually exclusive with COMPOSING/CONNECTED.
+        //     Unlike COMPOSING INTO it keeps IN to bound the stage scope (default
+        //     the current stage); layer / resultset scopes are rejected.
+        const bool composedFrom = q.composedFrom.kind != ComposedFrom::Kind::None;
+        if (composedFrom) {
+            if (composing || connected) {
+                Fail("COMPOSED FROM cannot be combined with COMPOSING INTO or "
+                     "CONNECTED TO.");
+                return false;
+            }
+            if (out.world != UtqlWorld::Stage) {
+                Fail("COMPOSED FROM returns composed objects; use USDPRIM, "
+                     "USDATTRIBUTE, or USDRELATIONSHIP.");
+                return false;
+            }
+            using K = ScopeSpec::Kind;
+            if (q.scope.kind != K::Default && q.scope.kind != K::Stage &&
+                q.scope.kind != K::Stages && q.scope.kind != K::StagesAll) {
+                Fail("COMPOSED FROM searches composed prims; bound it with a stage "
+                     "scope (IN STAGE/STAGES, or omit IN for the current stage).");
                 return false;
             }
         }
@@ -510,7 +536,8 @@ class Binder {
         }
 
         // Move validated pieces into the bound query.
-        out.contributing = std::move(q.contributing);
+        out.composingInto = std::move(q.composingInto);
+        out.composedFrom = std::move(q.composedFrom);
         out.connected = std::move(q.connected);
         out.scope = std::move(q.scope);
         out.where = std::move(q.where);
@@ -556,7 +583,7 @@ class Binder {
             return false;
         }
         // IN RESULTSET "n" — restrict to a cached set's paths (same world only;
-        // cross-world bridging goes through CONTRIBUTING TO). Existence/world are
+        // cross-world bridging goes through COMPOSING INTO). Existence/world are
         // checked at execution since the cache isn't visible to the binder.
         return true;
     }
@@ -622,20 +649,20 @@ class Binder {
         return true;
     }
 
-    bool IsContributionField(const std::string &f) const {
-        return StartsWith(f, "CONTRIBUTION.");
+    bool IsCompositionField(const std::string &f) const {
+        return StartsWith(f, "COMPOSITION.");
     }
 
-    /// CONTRIBUTION.TARGET/STRENGTH/ARCTYPE — valid only under CONTRIBUTING TO … PER TARGET.
-    bool ValidateContributionField(const std::string &f) {
-        if (!(_contributing && _perTarget)) {
-            Fail("CONTRIBUTION.STRENGTH/ARCTYPE/TARGET require PER TARGET.");
+    /// COMPOSITION.TARGET/STRENGTH/ARCTYPE — valid only under COMPOSING INTO … PER TARGET.
+    bool ValidateCompositionField(const std::string &f) {
+        if (!(_composing && _perTarget)) {
+            Fail("COMPOSITION.STRENGTH/ARCTYPE/TARGET require PER TARGET.");
             return false;
         }
-        if (f == "CONTRIBUTION.TARGET" || f == "CONTRIBUTION.STRENGTH" || f == "CONTRIBUTION.ARCTYPE")
+        if (f == "COMPOSITION.TARGET" || f == "COMPOSITION.STRENGTH" || f == "COMPOSITION.ARCTYPE")
             return true;
         Fail("Unknown field " + f +
-             ". Valid: CONTRIBUTION.TARGET, CONTRIBUTION.STRENGTH, CONTRIBUTION.ARCTYPE.");
+             ". Valid: COMPOSITION.TARGET, COMPOSITION.STRENGTH, COMPOSITION.ARCTYPE.");
         return false;
     }
 
@@ -690,8 +717,8 @@ class Binder {
             return true;
         }
 
-        if (IsContributionField(f))
-            return ValidateContributionField(f);
+        if (IsCompositionField(f))
+            return ValidateCompositionField(f);
 
         // .OP authoring-only check fires before everything else so the §7 catalog
         // error is exact for Stage-world queries (nl-examples 59/60).
@@ -784,8 +811,8 @@ class Binder {
     bool ValidateDisplayField(const std::string &f, UtqlWorld world, const char *clause) {
         if (f == "PATH")
             return true;
-        if (IsContributionField(f))
-            return ValidateContributionField(f);
+        if (IsCompositionField(f))
+            return ValidateCompositionField(f);
         if (f == "STAGE") {
             if (world == UtqlWorld::Stage)
                 return true;
@@ -835,7 +862,7 @@ class Binder {
 
     UtqlEntity _entity = UtqlEntity::UsdPrim;
     Category   _cat = Category::Prim;
-    bool       _contributing = false;
+    bool       _composing = false;
     bool       _perTarget = false;
     std::string _error;
     std::vector<std::string> _warnings;

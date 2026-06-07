@@ -1105,7 +1105,7 @@ UtqlValue JoinArcField(const std::vector<Arc> &arcs, const std::string &field) {
     return any ? UtqlValue::String_(out) : UtqlValue::Null();
 }
 
-// -------------------------------------------------- CONTRIBUTING TO (§4)
+// -------------------------------------------------- COMPOSING INTO (§4)
 
 std::string ArcTypeName(PcpArcType t) {
     switch (t) {
@@ -1119,8 +1119,8 @@ std::string ArcTypeName(PcpArcType t) {
     }
 }
 
-/// Map each layer feeding a prim to the arc type it contributes through, so a
-/// contributing spec can be tagged with CONTRIBUTION.ARCTYPE. Strongest arc wins.
+/// Map each layer feeding a prim to the arc type it composes through, so a
+/// composing spec can be tagged with COMPOSITION.ARCTYPE. Strongest arc wins.
 std::map<std::string, std::string> BuildArcTypeByLayer(const UsdPrim &prim) {
     std::map<std::string, std::string> m;
     UsdPrimCompositionQuery query(prim);
@@ -1395,7 +1395,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         if (cached->world != q.world) {
             result.status = UtqlStatus::CompileError;
             result.message = (cached->world == UtqlWorld::Stage)
-                                 ? "RESULTSET \"" + name + "\" is Stage world; use CONTRIBUTING TO "
+                                 ? "RESULTSET \"" + name + "\" is Stage world; use COMPOSING INTO "
                                    "RESULTSET \"" + name + "\" to bridge to Layer."
                                  : "RESULTSET \"" + name + "\" is Layer world; it cannot scope a "
                                    "Stage query.";
@@ -1409,8 +1409,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         filterActive = true;
     }
 
-    // CONTRIBUTING TO: composition inversion — composed targets → authored specs (§4).
-    if (q.contributing.targetKind != ContributingTo::TargetKind::None) {
+    // COMPOSING INTO: composition inversion — composed targets → authored specs (§4).
+    if (q.composingInto.targetKind != ComposingInto::TargetKind::None) {
         auto findStage = [&](const UtqlResult &res, const std::string &src) -> UsdStageRefPtr {
             for (const auto &s : res.stages)
                 if (s && s->GetRootLayer() && s->GetRootLayer()->GetIdentifier() == src)
@@ -1420,8 +1420,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
 
         // 1. Resolve target (stage, composed-path) pairs.
         std::vector<std::pair<UsdStageRefPtr, SdfPath>> targets;
-        if (q.contributing.targetKind == ContributingTo::TargetKind::Resultset) {
-            const std::string &name = q.contributing.resultsetName;
+        if (q.composingInto.targetKind == ComposingInto::TargetKind::Resultset) {
+            const std::string &name = q.composingInto.resultsetName;
             const UtqlResult *cached =
                 (ctx.named && ctx.named->count(name)) ? &ctx.named->at(name) : nullptr;
             if (!cached) {
@@ -1437,27 +1437,27 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         } else {
             if (ctx.currentStage)
                 result.stages.push_back(ctx.currentStage);
-            for (const std::string &p : q.contributing.paths)
+            for (const std::string &p : q.composingInto.paths)
                 targets.emplace_back(ctx.currentStage, SdfPath(p));
         }
         if (!targets.empty())
             hadSources = true;
 
-        // 2. Invert each target to its authored contributing specs.
+        // 2. Invert each target to the authored specs composing into it.
         std::unordered_set<std::string> seenSpecs; // (layerId\x01specPath) for dedup mode
-        auto emitContribution =
+        auto emitComposition =
             [&](const SdfLayerHandle &layer, const SdfPath &specPath, int strength,
                 const std::string &arctype, const SdfPath &targetPath,
                 const std::function<UtqlValue(const std::string &)> &specGet,
                 const std::function<std::vector<std::string>(const std::string &)> &specGetSet) {
                 const std::string layerId = layer ? layer->GetIdentifier() : "";
-                if (!q.contributing.perTarget &&
+                if (!q.composingInto.perTarget &&
                     !seenSpecs.insert(layerId + "\x01" + specPath.GetString()).second)
                     return;
                 auto get = [&specGet, strength, arctype, targetPath](const std::string &fld) -> UtqlValue {
-                    if (fld == "CONTRIBUTION.TARGET")   return UtqlValue::String_(targetPath.GetString());
-                    if (fld == "CONTRIBUTION.STRENGTH") return UtqlValue::Number_(strength);
-                    if (fld == "CONTRIBUTION.ARCTYPE")  return UtqlValue::String_(arctype);
+                    if (fld == "COMPOSITION.TARGET")   return UtqlValue::String_(targetPath.GetString());
+                    if (fld == "COMPOSITION.STRENGTH") return UtqlValue::Number_(strength);
+                    if (fld == "COMPOSITION.ARCTYPE")  return UtqlValue::String_(arctype);
                     return specGet(fld);
                 };
                 emit(layerId, specPath, get, specGetSet, noArcs);
@@ -1475,7 +1475,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             std::map<std::string, std::string> arcByLayer;
             bool arcMapBuilt = false;
             auto arcFor = [&](const SdfLayerHandle &l) -> std::string {
-                if (!q.contributing.perTarget)
+                if (!q.composingInto.perTarget)
                     return "local";
                 if (!arcMapBuilt && owningPrim) {
                     arcByLayer = BuildArcTypeByLayer(owningPrim);
@@ -1501,7 +1501,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     const SdfPrimSpecHandle s = specs[i];
                     if (!s) continue;
                     const SdfLayerHandle l = s->GetLayer();
-                    emitContribution(l, s->GetPath(), i, arcFor(l), targetPath,
+                    emitComposition(l, s->GetPath(), i, arcFor(l), targetPath,
                                      [s](const std::string &f) { return GetSdfPrimField(s, f); },
                                      [s](const std::string &f) -> std::vector<std::string> {
                                          if (f == "RELATIONSHIPS") return SdfPrimRelationshipNames(s);
@@ -1521,7 +1521,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     if (!s) continue;
                     const SdfLayerHandle l = s->GetLayer();
                     auto vc = std::make_shared<ValueCache>();
-                    emitContribution(l, s->GetPath(), i, arcFor(l), targetPath,
+                    emitComposition(l, s->GetPath(), i, arcFor(l), targetPath,
                                      [s, l, vc, &q](const std::string &f) {
                                          return GetSdfAttrField(s, l, q.hasAt, q.atTime, f, *vc);
                                      },
@@ -1547,7 +1547,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     s->GetTargetPathList().ApplyEditsToList(&tg);
                     const std::string nm = s->GetName();
                     const SdfPath pp = s->GetPath();
-                    emitContribution(l, pp, i, arcFor(l), targetPath,
+                    emitComposition(l, pp, i, arcFor(l), targetPath,
                                      [nm, tg, pp](const std::string &f) { return GetRelScalarField(nm, tg, pp, f); },
                                      [tg](const std::string &) { return PathsToStrings(tg); });
                 }
@@ -1701,6 +1701,157 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 emit(source, prim.GetPath(), get, getSet, getArcs);
             }
             if (cancelled) break;
+        }
+    } else if (q.composedFrom.kind != ComposedFrom::Kind::None) {
+        // COMPOSED FROM: forward composition (design A4) — the inverse of
+        // COMPOSING INTO. Walk composed objects in the stage scope and keep those
+        // whose composition stack contains the origin authored spec, resolving the
+        // reference/variant path remap that a same-path heuristic would miss.
+        std::vector<UsdStageRefPtr> stages;
+        if (!ResolveStages(q, ctx, stages, result.message)) {
+            result.status = UtqlStatus::CompileError;
+            return result;
+        }
+        result.stages = stages;
+
+        // Resolve the origin into match sets. Layer-agnostic paths match a spec at
+        // that path in any layer; (layer-id, path) keys (from LAYER … PATH … or a
+        // Layer-world RESULTSET) match provenance-aware, like SourceKey elsewhere.
+        std::unordered_set<std::string> originPaths; // path only (any layer)
+        std::unordered_set<std::string> originKeys;  // SourceKey(layerId, path)
+        if (q.composedFrom.kind == ComposedFrom::Kind::Resultset) {
+            const std::string &name = q.composedFrom.resultsetName;
+            const UtqlResult *cached =
+                (ctx.named && ctx.named->count(name)) ? &ctx.named->at(name) : nullptr;
+            if (!cached) {
+                result.status = UtqlStatus::CompileError;
+                result.message = "RESULTSET \"" + name + "\" not found. Run a query with AS \"" +
+                                 name + "\" first.";
+                return result;
+            }
+            if (cached->world != UtqlWorld::Layer) {
+                result.status = UtqlStatus::CompileError;
+                result.message = "COMPOSED FROM RESULTSET \"" + name +
+                                 "\" must reference a Layer-world (SDF*) result set.";
+                return result;
+            }
+            for (const UtqlRow &row : cached->rows)
+                originKeys.insert(SourceKey(row.source, row.path.GetString()));
+        } else if (!q.composedFrom.layerId.empty()) {
+            for (const std::string &p : q.composedFrom.paths)
+                originKeys.insert(SourceKey(q.composedFrom.layerId, p));
+        } else {
+            for (const std::string &p : q.composedFrom.paths)
+                originPaths.insert(p);
+        }
+
+        // Does an authored spec match the origin? (path-only or provenance-keyed)
+        auto specMatches = [&](const SdfSpecHandle &s) -> bool {
+            if (!s)
+                return false;
+            const std::string path = s->GetPath().GetString();
+            if (originPaths.count(path))
+                return true;
+            if (!originKeys.empty()) {
+                const SdfLayerHandle l = s->GetLayer();
+                if (l && originKeys.count(SourceKey(l->GetIdentifier(), path)))
+                    return true;
+            }
+            return false;
+        };
+        auto primComposedFrom = [&](const UsdPrim &p) -> bool {
+            for (const SdfPrimSpecHandle &s : p.GetPrimStack())
+                if (specMatches(s))
+                    return true;
+            return false;
+        };
+        auto propComposedFrom = [&](const UsdProperty &prop) -> bool {
+            for (const SdfPropertySpecHandle &s : prop.GetPropertyStack(time))
+                if (specMatches(s))
+                    return true;
+            return false;
+        };
+
+        for (const auto &stage : stages) {
+            if (!stage)
+                continue;
+            hadSources = true;
+            const std::string source = stage->GetRootLayer()->GetIdentifier();
+            auto scanUsdPrim = [&](const UsdPrim &prim) {
+                if (q.entity == UtqlEntity::UsdPrim) {
+                    if (checkCancel()) return;
+                    ++result.scanned;
+                    if (!primComposedFrom(prim))
+                        return;
+                    std::map<Family, std::vector<Arc>> arcCache;
+                    auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
+                        auto it = arcCache.find(fam);
+                        if (it == arcCache.end())
+                            it = arcCache.emplace(fam, BuildUsdArcs(prim, fam)).first;
+                        return it->second;
+                    };
+                    auto get = [&](const std::string &fld) -> UtqlValue {
+                        Family fam;
+                        if (FamilyDisplayField(fld, fam))
+                            return JoinArcField(getArcs(fam), fld);
+                        return GetUsdPrimField(prim, fld);
+                    };
+                    auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
+                        if (fld == "RELATIONSHIPS")
+                            return UsdPrimRelationshipNames(prim);
+                        return {};
+                    };
+                    emit(source, prim.GetPath(), get, getSet, getArcs);
+                } else if (q.entity == UtqlEntity::UsdAttribute) {
+                    for (const UsdAttribute &attr : prim.GetAttributes()) {
+                        if (checkCancel()) break;
+                        ++result.scanned;
+                        if (!propComposedFrom(attr))
+                            continue;
+                        ValueCache vc;
+                        emit(source, attr.GetPath(),
+                             [&](const std::string &fld) { return GetUsdAttrField(attr, time, fld, vc); },
+                             [&](const std::string &fld) -> std::vector<std::string> {
+                                 if (fld == "CONNECTION.SOURCE")
+                                     return PathsToStrings(UsdAttrConnectionSources(attr));
+                                 return {};
+                             },
+                             noArcs);
+                    }
+                } else { // UsdRelationship
+                    for (const UsdRelationship &rel : prim.GetRelationships()) {
+                        if (checkCancel()) break;
+                        ++result.scanned;
+                        if (!propComposedFrom(rel))
+                            continue;
+                        SdfPathVector targets;
+                        rel.GetTargets(&targets);
+                        const std::string name = rel.GetName().GetString();
+                        const SdfPath path = rel.GetPath();
+                        emit(source, path,
+                             [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
+                             [&](const std::string &) { return PathsToStrings(targets); }, noArcs);
+                    }
+                }
+            };
+
+            for (UsdPrim prim : UsdPrimRange(stage->GetPseudoRoot(),
+                                             UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate))) {
+                if (cancelled)
+                    break;
+                scanUsdPrim(prim);
+            }
+            for (const UsdPrim &proto : stage->GetPrototypes()) {
+                if (cancelled)
+                    break;
+                for (UsdPrim prim : UsdPrimRange::AllPrims(proto)) {
+                    if (cancelled)
+                        break;
+                    scanUsdPrim(prim);
+                }
+            }
+            if (cancelled)
+                break;
         }
     } else if (q.world == UtqlWorld::Stage) {
         std::vector<UsdStageRefPtr> stages;

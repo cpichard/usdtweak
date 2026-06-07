@@ -1114,6 +1114,52 @@ void TestRunQueryChaining(UsdToolDispatcher& d) {
     CHECK_CONTAINS(c, "/World/Lights");
 }
 
+// run_query: COMPOSED FROM — forward composition (design A4). The authored spec
+// at /World/Hero (def in asset.usda, over in shot.usda) feeds the composed prim
+// /World/Hero; COMPOSED FROM recovers it from the spec side, the inverse of
+// COMPOSING INTO (which this tool rejects).
+void TestRunQueryComposedFrom(UsdToolDispatcher& d) {
+    Section("run_query: COMPOSED FROM (forward composition)");
+
+    // A bare path matches the spec in any layer in scope → the composed prim it feeds.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM COMPOSED FROM \"/World/Hero\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "/World/Hero");
+    CHECK_CONTAINS(out, "1 matched");
+
+    // WHERE filters the composed rows (Hero is an Xform, not a Camera).
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM COMPOSED FROM \"/World/Hero\" WHERE PRIMTYPE = \"Camera\""))}}));
+    CHECK_CONTAINS(out, "no rows matched");
+
+    // A layer / non-stage scope is a CompileError — the inverse walks composed prims.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM COMPOSED FROM \"/World/Hero\" IN LAYER \"x.usda\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "stage scope");
+
+    // COMPOSED FROM returns composed objects — an authored entity is rejected.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM COMPOSED FROM \"/World/Hero\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+
+    // RESULTSET must be Layer-world. Cache a Stage set then misuse it → CompileError.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE KIND = \"component\" AS \"cbComps\""))}}));
+    CHECK_CONTAINS(out, "cached as RESULTSET \"cbComps\"");
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM COMPOSED FROM RESULTSET \"cbComps\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "Layer-world");
+}
+
 int main() {
     SdfLayerRefPtr asset, shot;
     UsdStageRefPtr stage = BuildFixture(&asset, &shot);
@@ -1136,6 +1182,7 @@ int main() {
     TestFindPrims         (dispatcher);
     TestRunQuery          (dispatcher);
     TestRunQueryChaining  (dispatcher);
+    TestRunQueryComposedFrom(dispatcher);
     TestFindPrimsNamePattern(dispatcher);
     TestFindPrimsNameTokens(dispatcher);
     TestGetNameVocabulary (dispatcher);

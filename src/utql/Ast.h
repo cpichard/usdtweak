@@ -89,14 +89,31 @@ struct ScopeSpec {
     std::string              name;  ///< Resultset name
 };
 
-// ------------------------------------------------------------ CONTRIBUTING TO
+// ------------------------------------------------------------ COMPOSING INTO
 
-struct ContributingTo {
+struct ComposingInto {
     enum class TargetKind { None, Resultset, Paths };
     TargetKind               targetKind = TargetKind::None;
     std::string              resultsetName;
     std::vector<std::string> paths;
     bool                     perTarget = false;
+};
+
+// ------------------------------------------------------------ COMPOSED FROM
+
+/// The forward inverse of COMPOSING INTO (design A4): given a Layer-world authored
+/// spec origin, return the composed (Stage-world) objects it feeds into. The FIND
+/// entity is the USD side (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP); the origin names
+/// an SDF spec — a precise `LAYER "id" PATH "/p"`, a layer-agnostic path, or a
+/// Layer-world RESULTSET. Bounded by the stage scope (IN STAGE/STAGES; default the
+/// current stage).
+struct ComposedFrom {
+    enum class Kind { None, Resultset, Paths };
+    Kind                     kind = Kind::None;
+    std::string              resultsetName; ///< Kind::Resultset (a Layer-world set)
+    std::string              layerId;       ///< optional LAYER "id" restriction (Kind::Paths)
+    std::vector<std::string> paths;         ///< Kind::Paths: authored spec path(s)
+    // PER SOURCE (forward fan-out detail / COMPOSITION.* fields) deferred (A4).
 };
 
 // --------------------------------------------------------------- CONNECTED TO
@@ -127,7 +144,8 @@ struct OrderBy {
 
 struct Query {
     std::string     entityName;     ///< raw entity token, upper-cased
-    ContributingTo  contributing;   ///< present only if .targetKind != None
+    ComposingInto  composingInto;   ///< present only if .targetKind != None
+    ComposedFrom   composedFrom;  ///< present only if .kind != None (design A4)
     ConnectedTo     connected;      ///< present only if .kind != None (design C2)
     ScopeSpec       scope;
     bool            hasAt = false;

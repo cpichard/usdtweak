@@ -30,7 +30,7 @@ struct UtqlContext {
     UsdTimeCode                 currentTime = UsdTimeCode::Default();
     std::vector<UsdStageRefPtr> allStages; ///< all open stages (stage cache)
     std::vector<SdfLayerRefPtr> allLayers; ///< all loaded layers (Content Browser set)
-    /// AS-named cached results (RESULTSET / CONTRIBUTING TO RESULTSET). Owned by
+    /// AS-named cached results (RESULTSET / COMPOSING INTO RESULTSET). Owned by
     /// the engine; stable for the duration of a query run.
     const std::map<std::string, UtqlResult> *named = nullptr;
 };

@@ -19,7 +19,8 @@ namespace utql {
 struct BoundQuery {
     UtqlEntity entity = UtqlEntity::UsdPrim;
     UtqlWorld  world = UtqlWorld::Stage;
-    ContributingTo contributing; ///< composition inversion (design §4); .targetKind != None
+    ComposingInto composingInto; ///< composition inversion (design §4); .targetKind != None
+    ComposedFrom  composedFrom; ///< forward composition (design A4); .kind != None
     ConnectedTo    connected;     ///< connection-graph reachability (design C2); .kind != None
     ScopeSpec  scope;
     bool       hasAt = false;

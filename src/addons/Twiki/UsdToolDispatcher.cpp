@@ -962,7 +962,7 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
 // Scope: composed Stage entities (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP) plus
 // FIND LAYER, which scans the active stage's used-layer set (sublayers +
 // referenced/payload layers). The authored per-spec SDF* entities and
-// CONTRIBUTING TO are still rejected — they need per-layer authoring context this
+// COMPOSING INTO are still rejected — they need per-layer authoring context this
 // single-stage tool doesn't expose. A CompileError is recoverable — the model
 // reads the message, fixes the query, and retries.
 // --------------------------------------------------------------------------
@@ -990,7 +990,7 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
 
     // Scope guard: composed Stage entities plus FIND LAYER. The authored
     // per-spec SDF* entities (SDFPRIM/SDFATTRIBUTE/SDFRELATIONSHIP) and
-    // CONTRIBUTING TO are still out of scope — they need per-layer authoring
+    // COMPOSING INTO are still out of scope — they need per-layer authoring
     // context this tool doesn't expose. LAYER is Layer-world but reads only layer
     // metadata, so it runs against the stage's used-layer set below.
     if (bound.world == utql::UtqlWorld::Layer &&
@@ -998,7 +998,7 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
         return "[error] this tool runs Stage-world queries (FIND USDPRIM / "
                "USDATTRIBUTE / USDRELATIONSHIP) plus FIND LAYER. The authored "
                "per-spec entities (SDFPRIM, SDFATTRIBUTE, SDFRELATIONSHIP) and "
-               "CONTRIBUTING TO are not supported here — use find_prims / the "
+               "COMPOSING INTO are not supported here — use find_prims / the "
                "get_* tools instead.";
 
     // Stage context: the active stage, plus its used-layer set so FIND LAYER has

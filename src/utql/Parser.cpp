@@ -27,10 +27,11 @@ bool IEquals(const std::string &a, const char *b) {
 
 /// Words that may never be read as a field name inside a WHERE expression.
 bool IsReservedWord(const std::string &w) {
-    static const char *kws[] = {"FIND",   "CONTRIBUTING", "TO",      "PER",   "TARGET",
+    static const char *kws[] = {"FIND",   "COMPOSING", "TO",      "PER",   "TARGET",
                                 "IN",     "AT",           "WHERE",   "RETURN", "ORDERED",
                                 "BY",     "LIMIT",        "AS",      "AND",    "OR",
-                                "CONNECTED", "UPSTREAM",   "DOWNSTREAM", "OF",  "WITHIN"};
+                                "CONNECTED", "UPSTREAM",   "DOWNSTREAM", "OF",  "WITHIN",
+                                "COMPOSED",  "INTO",       "FROM"};
     for (const char *kw : kws)
         if (IEquals(w, kw))
             return true;
@@ -51,8 +52,12 @@ class Parser {
         out.entityName = Upper(Cur().text);
         Advance();
 
-        if (CurIsKeyword("CONTRIBUTING")) {
-            if (!ParseContributing(out.contributing))
+        if (CurIsKeyword("COMPOSING")) {
+            if (!ParseComposingInto(out.composingInto))
+                return false;
+        }
+        if (CurIsKeyword("COMPOSED")) {
+            if (!ParseComposedFrom(out.composedFrom))
                 return false;
         }
         if (CurIsKeyword("CONNECTED")) {
@@ -107,8 +112,9 @@ class Parser {
 
         if (Cur().kind != Token::Kind::End) {
             Fail("Unexpected '" + TokenText(Cur()) +
-                 "'. Clauses must appear in order: FIND … [CONTRIBUTING TO] "
-                 "[CONNECTED TO] [IN] [AT] [WHERE] [RETURN] [ORDERED BY] [LIMIT] [AS]");
+                 "'. Clauses must appear in order: FIND … [COMPOSING INTO | "
+                 "COMPOSED FROM | CONNECTED TO] [IN] [AT] [WHERE] [RETURN] "
+                 "[ORDERED BY] [LIMIT] [AS]");
             return false;
         }
         return true;
@@ -156,29 +162,29 @@ class Parser {
         }
     }
 
-    // -------------------------------------------------------- CONTRIBUTING TO
-    bool ParseContributing(ContributingTo &c) {
-        Advance(); // CONTRIBUTING
-        if (!ExpectKeyword("TO"))
+    // -------------------------------------------------------- COMPOSING INTO
+    bool ParseComposingInto(ComposingInto &c) {
+        Advance(); // COMPOSING
+        if (!ExpectKeyword("INTO"))
             return false;
         if (AcceptKeyword("RESULTSET")) {
             if (Cur().kind != Token::Kind::String) {
                 Fail("Expected a quoted name after RESULTSET");
                 return false;
             }
-            c.targetKind = ContributingTo::TargetKind::Resultset;
+            c.targetKind = ComposingInto::TargetKind::Resultset;
             c.resultsetName = Cur().text;
             Advance();
         } else if (Cur().kind == Token::Kind::String) {
-            c.targetKind = ContributingTo::TargetKind::Paths;
+            c.targetKind = ComposingInto::TargetKind::Paths;
             c.paths.push_back(Cur().text);
             Advance();
         } else if (Cur().kind == Token::Kind::LParen) {
             Advance();
-            c.targetKind = ContributingTo::TargetKind::Paths;
+            c.targetKind = ComposingInto::TargetKind::Paths;
             while (true) {
                 if (Cur().kind != Token::Kind::String) {
-                    Fail("Expected a quoted path in CONTRIBUTING TO (…)");
+                    Fail("Expected a quoted path in COMPOSING INTO (…)");
                     return false;
                 }
                 c.paths.push_back(Cur().text);
@@ -196,13 +202,80 @@ class Parser {
             Advance();
         } else {
             Fail("Expected RESULTSET \"name\", a quoted path, or (\"a\",\"b\") "
-                 "after CONTRIBUTING TO");
+                 "after COMPOSING INTO");
             return false;
         }
         if (AcceptKeyword("PER")) {
             if (!ExpectKeyword("TARGET"))
                 return false;
             c.perTarget = true;
+        }
+        return true;
+    }
+
+    // --------------------------------------------------------- COMPOSED FROM
+    // COMPOSED FROM <origin>
+    //   <origin> = RESULTSET "name"              (a Layer-world result set)
+    //            | LAYER "id" PATH "path"        (a precise authored spec)
+    //            | "path"                        (any layer in scope)
+    //            | ("p1","p2", …)
+    bool ParseComposedFrom(ComposedFrom &c) {
+        Advance(); // COMPOSED
+        if (!ExpectKeyword("FROM"))
+            return false;
+        if (AcceptKeyword("RESULTSET")) {
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted name after RESULTSET");
+                return false;
+            }
+            c.kind = ComposedFrom::Kind::Resultset;
+            c.resultsetName = Cur().text;
+            Advance();
+        } else if (AcceptKeyword("LAYER")) {
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted layer identifier after LAYER");
+                return false;
+            }
+            c.kind = ComposedFrom::Kind::Paths;
+            c.layerId = Cur().text;
+            Advance();
+            if (!ExpectKeyword("PATH"))
+                return false;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted spec path after PATH");
+                return false;
+            }
+            c.paths.push_back(Cur().text);
+            Advance();
+        } else if (Cur().kind == Token::Kind::String) {
+            c.kind = ComposedFrom::Kind::Paths;
+            c.paths.push_back(Cur().text);
+            Advance();
+        } else if (Cur().kind == Token::Kind::LParen) {
+            Advance();
+            c.kind = ComposedFrom::Kind::Paths;
+            while (true) {
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted path in COMPOSED FROM (…)");
+                    return false;
+                }
+                c.paths.push_back(Cur().text);
+                Advance();
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RParen) {
+                Fail("Expected ')'");
+                return false;
+            }
+            Advance();
+        } else {
+            Fail("Expected RESULTSET \"name\", LAYER \"id\" PATH \"p\", a quoted "
+                 "path, or (\"a\",\"b\") after COMPOSED FROM");
+            return false;
         }
         return true;
     }
