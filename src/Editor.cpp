@@ -28,6 +28,7 @@
 #include "Stamp.h"
 #include "SplashScreen.h"
 #include "TextEditor.h"
+#include "TextEditorWindow.h"
 #include "Timeline.h"
 #include "UsdHelpers.h"
 #include "UsdPrimEditor.h"
@@ -1005,6 +1006,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
+            ImGui::MenuItem(TextEditorV2WindowTitle, nullptr, &_settings._showTextEditorV2);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
@@ -1253,6 +1255,17 @@ void Editor::Draw() {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
         ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
         DrawTextEditor(GetCurrentLayer());
+        ImGui::End();
+    }
+
+    if (_settings._showTextEditorV2) {
+        TRACE_SCOPE(TextEditorV2WindowTitle);
+        ImGui::Begin(TextEditorV2WindowTitle, &_settings._showTextEditorV2);
+        SdfPath textEditorSelection = GetSelection().GetAnchorPropertyPath(GetCurrentLayer());
+        if (textEditorSelection.IsEmpty()) {
+            textEditorSelection = GetSelection().GetAnchorPrimPath(GetCurrentLayer());
+        }
+        DrawTextEditorV2(GetCurrentLayer(), textEditorSelection, &_settings._showSdfAttributeEditor);
         ImGui::End();
     }
 
