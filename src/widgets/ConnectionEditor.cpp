@@ -83,10 +83,15 @@ struct ConnectionsSheet {
     std::vector<NodeConnection> connections;
     
     void AddNodes(const std::vector<UsdPrim> &prims) {
-        // TODO Make sure there are no duplicates,
-        // we don't want to have the same prim multiple time in nodes
+        // Skip prims that are already present so we never show the same prim twice.
+        std::unordered_set<SdfPath, SdfPath::Hash> existing;
+        existing.reserve(nodes.size());
+        for (const UsdPrimNode &node : nodes)
+            existing.insert(node.primPath);
         for (const UsdPrim &prim:prims) {
-            nodes.emplace_back(prim);
+            if (prim && existing.insert(prim.GetPath()).second) {
+                nodes.emplace_back(prim);
+            }
         }
     }
     
@@ -316,6 +321,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // Reset state
         event  = Events::IDLE; // reset event
         hasSelectedNodes = false; // reset selected nodes
+        openNodeContextMenu = false; // reset right-click menu request
 
         drawList = drawList_;
         ImGuiContext& g = *GImGui;
@@ -334,7 +340,10 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         //if (ImGui::InvisibleButton("canvas", widgetBoundingBox.GetSize())) {
         //    std::cout << "Canvas clicked" << std::endl;
         //}
-        if (widgetBoundingBox.Contains(ImGui::GetMousePos()) || _isCapturing) {
+        // While a popup (e.g. the node context menu) is open, the canvas must ignore
+        // clicks — otherwise clicking a menu item also starts a region selection.
+        const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+        if (!popupOpen && (widgetBoundingBox.Contains(ImGui::GetMousePos()) || _isCapturing)) {
             // Click on the canvas TODO test bounding box
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
@@ -423,6 +432,15 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     
     inline ImVec2 ScreenToCanvas(const ImVec2 &posInScreen) {
         return WindowToCanvas(ScreenToWindow(posInScreen));
+    }
+
+    // Zoom by a multiplicative factor while keeping posInScreen anchored under the cursor.
+    // Used by the mouse-wheel zoom.
+    inline void ZoomAtScreenPosition(const ImVec2 &posInScreen, float factor) {
+        const ImVec2 posInCanvas = ScreenToCanvas(posInScreen);
+        zooming = std::max(0.01f, std::min(zooming * factor, 50.f));
+        // Re-anchor: shift scrolling so posInCanvas maps back to posInScreen.
+        scrolling -= CanvasToScreen(posInCanvas) - posInScreen;
     }
 
     // Zoom using posInScreen as the origin of the zoom
@@ -558,6 +576,13 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 event = Events::NODE_CLICKED; // Node clicked
                 nodeClicked = &node;
             }
+        }
+        // Right-click on a node opens its context menu (alt+right is reserved for zoom)
+        if (ImGui::IsMouseClicked(1) && !ImGui::IsKeyDown(ImGuiKey_LeftAlt)
+            && nodeBoundingBox.Contains(ImGui::GetMousePos())) {
+            openNodeContextMenu = true;
+            contextNodePath = node.primPath;
+            contextNodeSelected = node.selected;
         }
         // "Select prim" button — top-right corner of the header, same size as connectors.
         // Overrides NODE_CLICKED when the button is the actual click target.
@@ -737,6 +762,17 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         for (auto &node : sheet.nodes) {
             DrawNode(node);
         }
+
+        // A right-click on a node that isn't part of the current selection makes it the
+        // sole selection, so the context menu acts on a visible, unambiguous target.
+        // (Right-clicking an already-selected node keeps the whole node selection.)
+        if (openNodeContextMenu && !contextNodeSelected) {
+            for (auto &node : sheet.nodes)
+                node.selected = (node.primPath == contextNodePath);
+            contextNodeSelected = true;
+            hasSelectedNodes = true;
+        }
+
         drawList->ChannelsSetCurrent(0); // Background
 
         // Reset hovered edge each frame
@@ -950,7 +986,12 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
     ImRect widgetBoundingBox;
     UsdPrimNode *nodeClicked = nullptr;
-    
+
+    // Right-click node context menu (opened in DrawNode, consumed in DrawConnectionEditor)
+    bool openNodeContextMenu = false;
+    SdfPath contextNodePath;
+    bool contextNodeSelected = false;
+
     SdfPath connectorTailClicked;
     SdfPath connectorHeadClicked;
 
@@ -1193,7 +1234,7 @@ static void AutoLayout(ConnectionsSheet &sheet) {
     }
 }
 
-void DrawConnectionEditor(const UsdStageRefPtr &stage) {
+void DrawConnectionEditor(const UsdStageRefPtr &stage, const Selection &selection) {
     // We are maintaining a list of graph edit session per stage
     // Each session contains a list of edited node, node visible on the whiteboard
     // Initialization
@@ -1204,6 +1245,7 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
             sheets->DeleteSheet(sheets->GetSelectedSheetID());
         }
         ImGui::SameLine();
+
         if (ImGui::BeginCombo("##StageSheets", sheets->GetSelectedSheetName().c_str())) {
             for (const auto &sheetName : sheets->GetSheetNames()) {
                 if (ImGui::Selectable(sheetName.c_str())) {
@@ -1212,8 +1254,18 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
             }
             ImGui::EndCombo();
         }
-        
-        // Current canvas position, in absolute coordinates.
+        // New line
+        if (ImGui::Button(ICON_FA_FILE_IMPORT " Import Selected")) {
+            std::vector<UsdPrim> seeds;
+            for (const SdfPath &path : selection.GetSelectedPaths(stage)) {
+                if (UsdPrim prim = stage->GetPrimAtPath(path))
+                    seeds.push_back(prim);
+            }
+            AddConnectedPrimsToCurrentSession(seeds);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Import the selected prims and everything connected to them");
+                // Current canvas position, in absolute coordinates.
         //ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();// canvasOrigin, canvasSize
         //ImVec2 canvasSize = ImGui::GetWindowSize();
         // fmodf floating point remainder of the division operation
@@ -1248,13 +1300,17 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
                 }
             }, stage);
         }
-
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         canvas.Begin(drawList);
         if (pendingFitView) {
             canvas.FitView(sheet, pendingFitViewSelected);
             pendingFitView = false;
             pendingFitViewSelected = false;
+        }
+        // Mouse-wheel zoom, anchored under the cursor.
+        const float wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.f && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+            canvas.ZoomAtScreenPosition(ImGui::GetMousePos(), powf(1.1f, wheel));
         }
         canvas.DrawGrid();
         canvas.DrawSheet(sheet);
@@ -1270,18 +1326,46 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage) {
             pendingFitViewSelected = canvas.hasSelectedNodes;
         }
 
-        if (!canvas.selectedConnections.empty()
-            && ImGui::IsKeyPressed(ImGuiKey_Backspace)
-            && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+        // Remove nodes from the editor view only (does not modify the stage).
+        auto removeNodesFromView = [&](auto pred) {
+            const size_t sizeBefore = sheet.nodes.size();
+            sheet.nodes.erase(std::remove_if(sheet.nodes.begin(), sheet.nodes.end(), pred),
+                              sheet.nodes.end());
+            if (sheet.nodes.size() != sizeBefore)
+                canvas.nodeClicked = nullptr; // pointers into nodes may dangle after the erase
+        };
+
+        // Backspace deletes the selected connections (a real stage edit) if any are
+        // selected, otherwise it removes the selected nodes from the view.
+        const bool backspacePressed = ImGui::IsKeyPressed(ImGuiKey_Backspace)
+            && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos());
+        if (backspacePressed && !canvas.selectedConnections.empty()) {
             std::vector<std::pair<SdfPath, SdfPath>> toDelete;
             toDelete.reserve(canvas.selectedConnections.size());
             for (const auto &c : canvas.selectedConnections)
                 toDelete.emplace_back(c.begin, c.end);
             ExecuteAfterDraw<AttributeDisconnectBatch>(canvas.currentStage, std::move(toDelete));
             canvas.selectedConnections.clear();
+        } else if (backspacePressed && canvas.hasSelectedNodes) {
+            removeNodesFromView([](const UsdPrimNode &n) { return n.selected; });
         }
 
         canvas.End();
+
+        // Node context menu (right-click). A right-click on an unselected node acts on
+        // that node alone; on a selected node it acts on the whole node selection.
+        if (canvas.openNodeContextMenu)
+            ImGui::OpenPopup("##NodeContextMenu");
+        if (ImGui::BeginPopup("##NodeContextMenu")) {
+            if (ImGui::MenuItem(ICON_FA_MOUSE_POINTER " Select prim")) {
+                if (stage->GetPrimAtPath(canvas.contextNodePath))
+                    ExecuteAfterDraw<EditorSetSelection>(stage, canvas.contextNodePath);
+            }
+            if (ImGui::MenuItem(ICON_FA_TRASH " Remove from editor")) {
+                removeNodesFromView([](const UsdPrimNode &n) { return n.selected; });
+            }
+            ImGui::EndPopup();
+        }
     }
 }
 
@@ -1320,9 +1404,64 @@ void AddPrimsToCurrentSession(const std::vector<UsdPrim> &prims) {
         // Assuming all the prims are coming from the same stage
         StageSheets *sbb = editorData.GetSheets(all[0].GetStage());
         if (sbb) {
-            ConnectionsSheet &bbs = sbb->GetSelectedSheet();
-            bbs.AddNodes(all);
+            sbb->GetSelectedSheet().AddNodes(all);
         }
+    }
+}
+
+
+void AddConnectedPrimsToCurrentSession(const std::vector<UsdPrim> &seeds) {
+    if (seeds.empty()) return;
+    // Assuming all the seeds are coming from the same stage.
+    UsdStageWeakPtr stage = seeds[0].GetStage();
+    if (!stage) return;
+
+    // Build an undirected, prim-level adjacency from every authored attribute
+    // connection on the stage. A connection links two attributes; we project it
+    // onto the prims that own them so a node can be reached through any of its
+    // properties (a shader bridges its inputs and outputs). This is a one-shot
+    // scan on a button press, not a per-frame cost.
+    std::unordered_map<SdfPath, std::vector<SdfPath>, SdfPath::Hash> adjacency;
+    for (const UsdPrim &prim : stage->TraverseAll()) {
+        const SdfPath consumerPrim = prim.GetPath();
+        for (const UsdAttribute &attr : prim.GetAttributes()) {
+            if (!attr.HasAuthoredConnections()) continue;
+            SdfPathVector sources;
+            attr.GetConnections(&sources);
+            for (const SdfPath &source : sources) {
+                const SdfPath sourcePrim = source.GetPrimPath();
+                if (consumerPrim == sourcePrim) continue; // skip self-loops
+                adjacency[consumerPrim].push_back(sourcePrim);
+                adjacency[sourcePrim].push_back(consumerPrim);
+            }
+        }
+    }
+
+    // Breadth-first walk from the seeds, collecting every reachable prim.
+    std::unordered_set<SdfPath, SdfPath::Hash> visited;
+    std::queue<SdfPath> toVisit;
+    for (const UsdPrim &seed : seeds) {
+        if (seed && visited.insert(seed.GetPath()).second)
+            toVisit.push(seed.GetPath());
+    }
+
+    std::vector<UsdPrim> connected;
+    while (!toVisit.empty()) {
+        const SdfPath path = toVisit.front();
+        toVisit.pop();
+        if (UsdPrim prim = stage->GetPrimAtPath(path))
+            connected.push_back(prim);
+        const auto it = adjacency.find(path);
+        if (it == adjacency.end()) continue;
+        for (const SdfPath &neighbour : it->second) {
+            if (visited.insert(neighbour).second)
+                toVisit.push(neighbour);
+        }
+    }
+
+    StageSheets *sbb = editorData.GetSheets(stage);
+    if (sbb) {
+        sbb->GetSelectedSheet().AddNodes(connected);
     }
 }
 

@@ -999,8 +999,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(ContentBrowserWindowTitle, nullptr, &_settings._showContentBrowser);
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
-            if (_enableConnectionEditor)
-                ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
+            ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
@@ -1036,7 +1035,6 @@ void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
 
-bool Editor::_enableConnectionEditor = false;
 bool Editor::_enableMouseCapture = false;
 
 static bool gMouseCaptured = false;
@@ -1238,13 +1236,14 @@ void Editor::Draw() {
         ImGui::End();
     }
 
-    if (_enableConnectionEditor && _settings._showUsdConnectionEditor) {
-        ImGui::Begin(UsdConnectionEditorWindowTitle, &_settings._showUsdConnectionEditor);
+    if (_settings._showUsdConnectionEditor) {
+        // NoScrollWithMouse: the canvas handles the mouse wheel itself (zoom), so the
+        // window must not also scroll its content when the wheel is used over the canvas.
+        ImGui::Begin(UsdConnectionEditorWindowTitle, &_settings._showUsdConnectionEditor,
+                     ImGuiWindowFlags_NoScrollWithMouse);
         TRACE_SCOPE(UsdConnectionEditorWindowTitle);
         if (GetCurrentStage()) {
-            DrawConnectionEditor(GetCurrentStage());
-            // auto prim = GetCurrentStage()->GetPrimAtPath(_selection.GetAnchorPrimPath(GetCurrentStage()));
-            // DrawConnectionEditor(prim);
+            DrawConnectionEditor(GetCurrentStage(), _selection);
         }
         ImGui::End();
     }

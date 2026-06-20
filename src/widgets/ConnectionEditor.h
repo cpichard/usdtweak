@@ -6,8 +6,14 @@
 //
 PXR_NAMESPACE_USING_DIRECTIVE
 
-void DrawConnectionEditor(const UsdStageRefPtr& prim);
+struct Selection;
+
+void DrawConnectionEditor(const UsdStageRefPtr& stage, const Selection &selection);
 
 // Experimental; testing several ways to bring prims in the connection editor
 void CreateSession(const UsdPrim &prim, const std::vector<UsdPrim> &prims);
 void AddPrimsToCurrentSession(const std::vector<UsdPrim> &prims);
+
+// Add the given prims and every prim transitively reachable from them through
+// authored attribute connections to the current connection editor sheet.
+void AddConnectedPrimsToCurrentSession(const std::vector<UsdPrim> &seeds);
