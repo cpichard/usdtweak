@@ -90,8 +90,6 @@ void EditorSettings::ParseLine(const char *line) {
         _showUsdConnectionEditor = static_cast<bool>(value);
     } else if (sscanf(line, "ShowSearch=%i", &value) == 1) {
         _showSearch = static_cast<bool>(value);
-    } else if (sscanf(line, "ShowTextEditorV2=%i", &value) == 1) {
-        _showTextEditorV2 = static_cast<bool>(value);
     } else if (sscanf(line, "ShowSplashScreen=%i", &value) == 1) {
         _showSplashScreen = static_cast<bool>(value);
     } else if (sscanf(line, "LastFileBrowserDirectory=%s", strBuffer) == 1) {
@@ -140,7 +138,6 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowValidator=%d\n", _showValidator);
     buf->appendf("ShowConnectionEditor=%d\n", _showUsdConnectionEditor);
     buf->appendf("ShowSearch=%d\n", _showSearch);
-    buf->appendf("ShowTextEditorV2=%d\n", _showTextEditorV2);
     buf->appendf("ShowSplashScreen=%d\n", _showSplashScreen);
     if (!_lastFileBrowserDirectory.empty()) {
         buf->appendf("LastFileBrowserDirectory=%s\n", _lastFileBrowserDirectory.c_str());

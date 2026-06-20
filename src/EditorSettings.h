@@ -28,7 +28,6 @@ struct EditorSettings {
     bool _showStatusBar = true;
     bool _showValidator = false;
     bool _textEditor = false;
-    bool _showTextEditorV2 = false;
     bool _showSdfAttributeEditor = false;
     bool _showUsdConnectionEditor = false;
     bool _showHydraBrowser = false;

@@ -1006,7 +1006,6 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
             ImGui::MenuItem(SdfLayerAsciiEditorWindowTitle, nullptr, &_settings._textEditor);
-            ImGui::MenuItem(TextEditorV2WindowTitle, nullptr, &_settings._showTextEditorV2);
             ImGui::MenuItem(SdfAttributeWindowTitle, nullptr, &_settings._showSdfAttributeEditor);
             ImGui::MenuItem(HydraBrowserWindowTitle, nullptr, &_settings._showHydraBrowser);
             ImGui::MenuItem(HydraNoticeLoggerWindowTitle, nullptr, &_settings._showHydraNoticeLogger);
@@ -1253,14 +1252,7 @@ void Editor::Draw() {
 
     if (_settings._textEditor) {
         TRACE_SCOPE(SdfLayerAsciiEditorWindowTitle);
-        ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor);
-        DrawTextEditor(GetCurrentLayer());
-        ImGui::End();
-    }
-
-    if (_settings._showTextEditorV2) {
-        TRACE_SCOPE(TextEditorV2WindowTitle);
-        ImGui::Begin(TextEditorV2WindowTitle, &_settings._showTextEditorV2, ImGuiWindowFlags_MenuBar);
+        ImGui::Begin(SdfLayerAsciiEditorWindowTitle, &_settings._textEditor, ImGuiWindowFlags_MenuBar);
         SdfPath textEditorSelection = GetSelection().GetAnchorPropertyPath(GetCurrentLayer());
         if (textEditorSelection.IsEmpty()) {
             textEditorSelection = GetSelection().GetAnchorPrimPath(GetCurrentLayer());
