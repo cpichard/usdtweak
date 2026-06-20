@@ -389,6 +389,36 @@ void ApplyPrimBody(const ParsedPrim &parsed, const SdfPrimSpecHandle &spec, Appl
         }
     }
 
+    // Match the stored child order to the order the prims appear in the text.
+    // SdfPrimSpec::New always appends, so a newly written prim would otherwise
+    // land after its siblings instead of where it was typed; this also lets a
+    // text edit reorder existing prims.
+    if (!state.dryRun) {
+        const auto nameChildren = spec->GetNameChildren();
+        std::vector<TfToken> desiredOrder;
+        desiredOrder.reserve(nameChildren.size());
+        std::set<TfToken> placed;
+        for (const auto &parsedChild : parsed.children) {
+            const TfToken childName(parsedChild->name);
+            if (nameChildren.get(childName) && placed.insert(childName).second) {
+                desiredOrder.push_back(childName);
+            }
+        }
+        // Keep any existing child the text did not mention (e.g. on error) so the
+        // order list always stays a permutation of the actual children.
+        for (const SdfPrimSpecHandle &childSpec : nameChildren) {
+            const TfToken childName = childSpec->GetNameToken();
+            if (placed.insert(childName).second) {
+                desiredOrder.push_back(childName);
+            }
+        }
+        const std::vector<TfToken> currentOrder =
+            spec->GetFieldAs<std::vector<TfToken>>(SdfChildrenKeys->PrimChildren);
+        if (currentOrder != desiredOrder) {
+            spec->SetField(SdfChildrenKeys->PrimChildren, VtValue(desiredOrder));
+        }
+    }
+
     // Variant sets: edit inside, add and remove variants/sets
     const SdfVariantSetsProxy variantSets = spec->GetVariantSets();
     std::set<std::string> parsedSetNames;
