@@ -119,12 +119,9 @@ class Editor {
     void SetUIScale(float scaleValue);
     float GetUIScale() const;
     bool &GetShowSplashScreen() { return _settings._showSplashScreen; }
-    bool &GetEnableConnectionEditor() { return _enableConnectionEditor; }
     bool &GetEnableMouseCapture() { return _enableMouseCapture; }
-    static bool IsConnectionEditorEnabled() { return _enableConnectionEditor; }
     static bool IsMouseCaptureEnabled() { return _enableMouseCapture; }
 
-    static bool _enableConnectionEditor;
     static bool _enableMouseCapture;
 
     static void SetMouseCaptured(bool captured);
