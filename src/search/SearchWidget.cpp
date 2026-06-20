@@ -1,10 +1,17 @@
 #include "SearchWidget.h"
 #include "StringSearchIndex.h"
+#include "UtqlEngine.h"
 
 #include "Commands.h"
+#include "Constants.h"
 #include "Gui.h"
 
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/stage.h>
+
+#include <cctype>
+#include <cfloat>
+#include <string>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -60,10 +67,10 @@ static std::string LayerDisplayName(const std::string &identifier) {
 }
 
 // ---------------------------------------------------------------------------
-// DrawSearchWidget
+// Simple substring search (the legacy StringSearchIndex front-end)
 // ---------------------------------------------------------------------------
 
-void DrawSearchWidget() {
+static void DrawSimpleSearchWidget() {
     static char     queryBuf[256] = {};
     static uint32_t categoryMask  = SearchCategoryMask(SearchCategory::All);
     static bool     colVisible[4] = {true, true, true, true}; // Type, Name, Path, Source
@@ -311,4 +318,187 @@ void DrawSearchWidget() {
     }
 
     ImGui::EndTable();
+}
+
+// ---------------------------------------------------------------------------
+// UTQL query front-end (the structured search; default mode)
+// ---------------------------------------------------------------------------
+
+using utql::UtqlResult;
+using utql::UtqlRow;
+using utql::UtqlStatus;
+using utql::UtqlWorld;
+
+static ImVec4 UtqlStatusColor(UtqlStatus s) {
+    switch (s) {
+        case UtqlStatus::Ok:           return ImVec4(0.55f, 0.95f, 0.55f, 1.f); // green
+        case UtqlStatus::OkEmpty:      return ImVec4(0.70f, 0.70f, 0.70f, 1.f); // grey
+        case UtqlStatus::OkDegraded:   return ImVec4(0.95f, 0.75f, 0.35f, 1.f); // amber
+        case UtqlStatus::CompileError: return ImVec4(1.00f, 0.45f, 0.45f, 1.f); // red
+        case UtqlStatus::Running:      return ImVec4(0.55f, 0.75f, 0.95f, 1.f); // blue
+    }
+    return ImVec4(1.f, 1.f, 1.f, 1.f);
+}
+
+static const char *UtqlStatusLabel(UtqlStatus s) {
+    switch (s) {
+        case UtqlStatus::Ok:           return "Ok";
+        case UtqlStatus::OkEmpty:      return "OkEmpty";
+        case UtqlStatus::OkDegraded:   return "OkDegraded";
+        case UtqlStatus::CompileError: return "CompileError";
+        case UtqlStatus::Running:      return "Running";
+    }
+    return "?";
+}
+
+/// Resolve a Stage-world row's source identifier back to a live UsdStage that
+/// the result is keeping alive.
+static UsdStageRefPtr UtqlFindStage(const UtqlResult &res, const std::string &source) {
+    for (const auto &s : res.stages)
+        if (s && s->GetRootLayer() && s->GetRootLayer()->GetIdentifier() == source)
+            return s;
+    return UsdStageRefPtr{};
+}
+
+/// Strip comment lines (those whose first non-blank character is '#') from a
+/// UTQL query. Comment lines stay in the editor but are not sent to the engine.
+static std::string StripUtqlComments(const std::string &src) {
+    std::string out;
+    out.reserve(src.size());
+    size_t pos = 0;
+    while (pos < src.size()) {
+        size_t eol = src.find('\n', pos);
+        size_t end = (eol == std::string::npos) ? src.size() : eol + 1;
+        size_t b   = pos;
+        while (b < end && std::isspace((unsigned char)src[b])) ++b;
+        if (b >= end || src[b] != '#')
+            out.append(src, pos, end - pos);
+        pos = end;
+    }
+    return out;
+}
+
+static void DrawUtqlSearchWidget() {
+    static std::string queryStr =
+        "FIND USDPRIM WHERE TYPE = \"Mesh\"";
+
+    UtqlEngine &engine = UtqlEngine::GetInstance();
+
+    // --- Query editor ---
+    const ImVec2 inputSize(-FLT_MIN,
+                           ImGui::GetTextLineHeight() * 3.f +
+                               ImGui::GetStyle().FramePadding.y * 2.f);
+    ImGui::InputTextMultiline("##utqlQuery", &queryStr, inputSize,
+                              ImGuiInputTextFlags_AllowTabInput);
+    bool run = ImGui::IsItemFocused() && ImGui::GetIO().KeyCtrl &&
+               ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+
+    if (ImGui::Button(ICON_FA_PLAY " Run"))
+        run = true;
+    ImGui::SameLine();
+    if (engine.IsRunning())
+        ImGui::TextDisabled("running" ICON_FA_ELLIPSIS_H);
+    else
+        ImGui::TextDisabled("Ctrl+Enter to run");
+
+    if (run) {
+        // Lines starting with '#' are comments: kept in the editor, not run.
+        const std::string effectiveQuery = StripUtqlComments(queryStr);
+        if (effectiveQuery.find_first_not_of(" \t\r\n") != std::string::npos)
+            engine.Submit(effectiveQuery);
+    }
+
+    ImGui::Separator();
+
+    const UtqlResult &res = engine.GetActiveResult();
+
+    // --- Status line ---
+    ImGui::TextColored(UtqlStatusColor(res.status), "%s", UtqlStatusLabel(res.status));
+    if (res.status != UtqlStatus::CompileError && res.status != UtqlStatus::Running) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("· %llu matched / %llu scanned",
+                            (unsigned long long)res.matched,
+                            (unsigned long long)res.scanned);
+    }
+    if (!res.message.empty())
+        ImGui::TextWrapped("%s", res.message.c_str());
+    for (const std::string &w : res.warnings)
+        ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.35f, 1.f), ICON_FA_EXCLAMATION_TRIANGLE " %s",
+                           w.c_str());
+    if (engine.IsActiveStale() && !engine.IsRunning())
+        ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.f),
+                           ICON_FA_EXCLAMATION_TRIANGLE " Scene changed — re-run to refresh.");
+
+    if (res.status == UtqlStatus::CompileError || res.columnNames.empty())
+        return;
+    if (res.rows.empty()) {
+        ImGui::TextDisabled("No results.");
+        return;
+    }
+
+    // --- Results table ---
+    const int ncol = static_cast<int>(res.columnNames.size());
+    constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
+                                       ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable;
+    if (!ImGui::BeginTable("##utqlResults", ncol, kFlags))
+        return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    for (int c = 0; c < ncol; ++c)
+        ImGui::TableSetupColumn(res.columnNames[c].c_str(), ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableHeadersRow();
+
+    auto selectRow = [&](const UtqlRow &row) {
+        const SdfPath target = row.path.IsPropertyPath() ? row.path.GetPrimPath() : row.path;
+        if (res.world == UtqlWorld::Stage) {
+            if (UsdStageRefPtr stage = UtqlFindStage(res, row.source))
+                ExecuteAfterDraw<EditorSetSelection>(stage, target);
+        } else if (SdfLayerRefPtr layer = SdfLayer::Find(row.source)) {
+            ExecuteAfterDraw<EditorSetSelection>(layer, target);
+        }
+    };
+
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(res.rows.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            const UtqlRow &row = res.rows[i];
+            ImGui::PushID(i);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            // Invisible selectable spanning all columns for click-to-select; the
+            // value text is drawn on top via SameLine so it never enters the ID hash.
+            if (ImGui::Selectable("##sel", false,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+                selectRow(row);
+            ImGui::SameLine();
+            if (!row.columns.empty())
+                ImGui::TextUnformatted(row.columns[0].ToDisplay().c_str());
+            for (int c = 1; c < ncol && c < (int)row.columns.size(); ++c) {
+                ImGui::TableSetColumnIndex(c);
+                ImGui::TextUnformatted(row.columns[c].ToDisplay().c_str());
+            }
+            ImGui::PopID();
+        }
+    }
+    clipper.End();
+    ImGui::EndTable();
+}
+
+// ---------------------------------------------------------------------------
+// DrawSearchWidget — tabbed switch between string search and query language
+// ---------------------------------------------------------------------------
+
+void DrawSearchWidget() {
+    if (ImGui::BeginTabBar("##searchMode")) {
+        if (ImGui::BeginTabItem("String search")) {
+            DrawSimpleSearchWidget();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Query language")) {
+            DrawUtqlSearchWidget();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 }

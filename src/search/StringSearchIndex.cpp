@@ -7,6 +7,8 @@
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/relationshipSpec.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/usd/attribute.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/relationship.h>
@@ -370,6 +372,13 @@ void StringSearchIndex::BuildShardEntries(const SearchSource &source,
         // Recurse into child prim specs
         for (const SdfPrimSpecHandle &child : prim->GetNameChildren())
             visitPrim(child);
+        for (const auto &vsEntry : prim->GetVariantSets()) {
+            const SdfVariantSetSpecHandle vss = vsEntry.second;
+            if (!vss) continue;
+            for (const SdfVariantSpecHandle &vs : vss->GetVariants()) {
+                if (vs) visitPrim(vs->GetPrimSpec());
+            }
+        }
     };
 
     visitPrim(layer->GetPseudoRoot());

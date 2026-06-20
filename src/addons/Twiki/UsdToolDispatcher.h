@@ -6,6 +6,8 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
 
+#include "utql/UtqlTypes.h" // utql::UtqlResult, for the run_query RESULTSET cache
+
 #include <functional>
 #include <map>
 #include <mutex>
@@ -89,6 +91,13 @@ private:
     std::string GetLayerStack       (const JsObject& args) const;
     std::string ListChildren        (const JsObject& args) const;
     std::string FindPrims           (const JsObject& args) const;
+
+    // UTQL query tool — compiles and runs a UTQL query string against the
+    // active stage (Stage-world only for v1) and formats the result table.
+    // Read-only; shares the named-list store via store_as so a query result
+    // composes with the batched edit tools (list_id). See UsdTools.cpp for the
+    // grammar cheatsheet advertised to the model.
+    std::string RunQuery            (const JsObject& args) const;
     std::string GetNameVocabulary   (const JsObject& args) const;
     std::string FindUsdFiles        (const JsObject& args) const;
 
@@ -156,6 +165,17 @@ private:
     // store outlives a single turn (the dispatcher is owned by the panel).
     mutable std::map<std::string, std::vector<SdfPath>> _lists;
     mutable std::mutex                                  _listsMutex;
+
+    // ----- run_query RESULTSET cache -----------------------------------------
+    // Session-scoped cache of UTQL results named by an `AS "name"` clause, so a
+    // later run_query can reference a prior one via `IN RESULTSET "name"` /
+    // `PATH UNDER RESULTSET "name"` — the query→query composition path. Passed
+    // to the executor as UtqlContext::named on every run and populated after a
+    // successful run (mirrors UtqlEngine::Update). Only run_query touches it (no
+    // UI reader), and Dispatch runs one tool at a time, so no mutex is needed.
+    // Each cached UtqlResult retains the stages it traversed, keeping referenced
+    // paths resolvable for the lifetime of the session.
+    mutable std::map<std::string, utql::UtqlResult> _namedResults;
 
     // Store `paths` under `name` (normalized to sorted-unique). Overwrites.
     void _StoreList(const std::string& name, std::vector<SdfPath> paths) const;

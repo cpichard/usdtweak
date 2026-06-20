@@ -103,6 +103,13 @@ set(_twiki_agent_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdToolDispatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdTools.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AgentOrchestrator.cpp
+    # UTQL core (synchronous compile+execute path used by the run_query tool).
+    # NOT UtqlEngine.cpp — that pulls in addons/Api.h / the Editor and is the
+    # UI-thread async wrapper the dispatcher deliberately bypasses.
+    ${CMAKE_SOURCE_DIR}/src/utql/Lexer.cpp
+    ${CMAKE_SOURCE_DIR}/src/utql/Parser.cpp
+    ${CMAKE_SOURCE_DIR}/src/utql/Binder.cpp
+    ${CMAKE_SOURCE_DIR}/src/utql/Executor.cpp
 )
 
 set(_twiki_command_sources_for_tests

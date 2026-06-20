@@ -3,6 +3,7 @@
 #include "Blueprints.h"
 #include "StringSearchIndex.h"
 #include "SearchWidget.h"
+#include "UtqlEngine.h"
 #include "Commands.h"
 #include "ConnectionEditor.h"
 #include "ContentBrowser.h"
@@ -1268,8 +1269,9 @@ void Editor::Draw() {
     }
 
     if (_settings._showSearch) {
-        // Update the index only when the search window is visible ("pay for what you see").
+        // Update the index/engine only when the search window is visible ("pay for what you see").
         StringSearchIndex::GetInstance().Update();
+        UtqlEngine::GetInstance().Update();
         TRACE_SCOPE(FindWindowTitle);
         ImGui::Begin(FindWindowTitle, &_settings._showSearch);
         DrawSearchWidget();
