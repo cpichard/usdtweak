@@ -22,6 +22,7 @@ enum class UtqlStatus {
     Ok,           ///< ran, at least one row
     OkEmpty,      ///< ran, nothing matched (report "none found", do NOT retry)
     OkDegraded,   ///< ran but was cut short (cancelled by a scene edit, limited, …)
+    Running,      ///< compiled OK, async execution in flight (no rows yet)
 };
 
 /// The two worlds; fixed by the FIND entity (design §1).

@@ -990,17 +990,24 @@ std::vector<Arc> BuildSdfArcs(const SdfPrimSpecHandle &spec, Family fam) {
 
     if (fam == Family::Reference || fam == Family::Payload) {
         // SdfReference and SdfPayload share GetAssetPath/GetPrimPath/GetLayerOffset.
+        const SdfLayerHandle anchor = spec->GetLayer();
         auto addItems = [&](const auto &items, const char *op) {
             for (const auto &r : items) {
                 Arc a;
+                const std::string asset = r.GetAssetPath();
                 a.fields[prefix + ".ASSET"] =
-                    r.GetAssetPath().empty() ? UtqlValue::Null() : UtqlValue::String_(r.GetAssetPath());
+                    asset.empty() ? UtqlValue::Null() : UtqlValue::String_(asset);
                 a.fields[prefix + ".PRIM_PATH"] =
                     r.GetPrimPath().IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(r.GetPrimPath().GetString());
                 a.fields[prefix + ".LAYER_OFFSET"] = UtqlValue::Number_(r.GetLayerOffset().GetOffset());
                 a.fields[prefix + ".LAYER_SCALE"] = UtqlValue::Number_(r.GetLayerOffset().GetScale());
                 a.fields[prefix + ".OP"] = UtqlValue::String_(op);
-                a.fields[prefix + ".IS_MISSING"] = UtqlValue::Bool(false); // authored, not resolved
+                // Resolve the authored asset path against the spec's layer (mirrors
+                // BuildUsdArcs): a same-layer / asset-less arc never misses.
+                bool missing = false;
+                if (!asset.empty() && anchor)
+                    missing = !SdfLayer::FindOrOpenRelativeToLayer(anchor, asset);
+                a.fields[prefix + ".IS_MISSING"] = UtqlValue::Bool(missing);
                 arcs.push_back(std::move(a));
             }
         };

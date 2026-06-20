@@ -335,6 +335,7 @@ static ImVec4 UtqlStatusColor(UtqlStatus s) {
         case UtqlStatus::OkEmpty:      return ImVec4(0.70f, 0.70f, 0.70f, 1.f); // grey
         case UtqlStatus::OkDegraded:   return ImVec4(0.95f, 0.75f, 0.35f, 1.f); // amber
         case UtqlStatus::CompileError: return ImVec4(1.00f, 0.45f, 0.45f, 1.f); // red
+        case UtqlStatus::Running:      return ImVec4(0.55f, 0.75f, 0.95f, 1.f); // blue
     }
     return ImVec4(1.f, 1.f, 1.f, 1.f);
 }
@@ -345,6 +346,7 @@ static const char *UtqlStatusLabel(UtqlStatus s) {
         case UtqlStatus::OkEmpty:      return "OkEmpty";
         case UtqlStatus::OkDegraded:   return "OkDegraded";
         case UtqlStatus::CompileError: return "CompileError";
+        case UtqlStatus::Running:      return "Running";
     }
     return "?";
 }
@@ -412,7 +414,7 @@ static void DrawUtqlSearchWidget() {
 
     // --- Status line ---
     ImGui::TextColored(UtqlStatusColor(res.status), "%s", UtqlStatusLabel(res.status));
-    if (res.status != UtqlStatus::CompileError) {
+    if (res.status != UtqlStatus::CompileError && res.status != UtqlStatus::Running) {
         ImGui::SameLine();
         ImGui::TextDisabled("· %llu matched / %llu scanned",
                             (unsigned long long)res.matched,

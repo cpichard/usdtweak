@@ -81,6 +81,15 @@ void UtqlEngine::Submit(const std::string &query) {
     _pendingQuery = query;
     _pendingAsName = _bound->asName;
 
+    // The compile succeeded, so the previous _active (which may be a CompileError
+    // or a result for the prior query) must not keep showing while this run is in
+    // flight. Reset to a Running placeholder bound to the new query so consumers
+    // never read a result belonging to a different query.
+    _active = UtqlResult{};
+    _active.status = UtqlStatus::Running;
+    _activeQuery = query;
+    ++_generation;
+
     _cancel.store(false);
     _ready.store(false);
     _running.store(true);

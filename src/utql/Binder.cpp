@@ -107,11 +107,18 @@ FieldInfo LookupPrimField(const std::string &f) {
     return FieldInfo{}; // unknown
 }
 
-const char *kPrimFieldList =
+// Prim fields valid in BOTH worlds (USDPRIM and SDFPRIM).
+const char *kPrimFieldListCommon =
     "NAME, PATH, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
     "CHILD_COUNT, ATTRIBUTE_COUNT, SPEC_COUNT, HAS_REFERENCE, HAS_PAYLOAD, "
-    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, IS_INSTANCE, IS_PROTOTYPE, IS_IN_PROTOTYPE, "
-    "IS_INSTANCE_PROXY, INSTANCEABLE, IS_LOADED, HAS_RELATIONSHIP, RELATIONSHIPS";
+    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, INSTANCEABLE, "
+    "HAS_RELATIONSHIP, RELATIONSHIPS";
+
+// Composed-stage facts — valid only on USDPRIM (Stage world). The binder rejects
+// these on SDFPRIM (see ValidateLeaf), so they must not appear in the Layer-world
+// "Valid:" hint.
+const char *kPrimFieldListStageOnly =
+    "IS_INSTANCE, IS_PROTOTYPE, IS_IN_PROTOTYPE, IS_INSTANCE_PROXY, IS_LOADED";
 
 FieldInfo LookupAttrField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
@@ -201,7 +208,7 @@ FieldInfo LookupLayerField(const std::string &f) {
 }
 
 const char *kLayerFieldList =
-    "IDENTIFIER, DISPLAY_NAME, REAL_PATH, FILE_FORMAT, "
+    "PATH, IDENTIFIER, DISPLAY_NAME, REAL_PATH, FILE_FORMAT, "
     "DIRTY, ANONYMOUS, MUTED, EMPTY, IS_ROOT_LAYER, "
     "IS_SESSION_LAYER, DEFAULT_PRIM, UP_AXIS, METERS_PER_UNIT, "
     "ROOT_PRIM_COUNT, START_TIME, END_TIME, TIMECODES_PER_SECOND, "
@@ -219,7 +226,7 @@ FieldInfo LookupField(Category c, const std::string &f) {
 
 const char *FieldListFor(Category c) {
     switch (c) {
-        case Category::Prim:         return kPrimFieldList;
+        case Category::Prim:         return kPrimFieldListCommon;
         case Category::Attribute:    return kAttrFieldList;
         case Category::Relationship: return kRelFieldList;
         case Category::Layer:        return kLayerFieldList;
@@ -229,13 +236,19 @@ const char *FieldListFor(Category c) {
 
 /// The "Valid: …" hint for a not-a-field error. On prims it also names the
 /// composition/API family fields (REFERENCE.ASSET, VARIANT.SET, …) so they show
-/// up as valid options, not just the HAS_* gates.
-std::string ValidFieldsFor(Category c) {
-    if (c == Category::Prim)
-        return std::string(kPrimFieldList) +
+/// up as valid options, not just the HAS_* gates. World-aware: the composed-stage
+/// prim facts (IS_INSTANCE, IS_LOADED, …) are listed only for the Stage world
+/// (USDPRIM), since the binder rejects them on SDFPRIM.
+std::string ValidFieldsFor(Category c, UtqlWorld world) {
+    if (c == Category::Prim) {
+        std::string s = kPrimFieldListCommon;
+        if (world == UtqlWorld::Stage)
+            s += std::string(", ") + kPrimFieldListStageOnly;
+        return s +
                ", and composition/API families: REFERENCE.{ASSET,PRIM_PATH,IS_MISSING,"
                "LAYER_OFFSET,LAYER_SCALE,OP} PAYLOAD.{…} INHERIT.PRIM_PATH SPECIALIZE.PRIM_PATH "
                "VARIANT.SET VARIANT.SELECTION API(CONTAINS) API.COUNT";
+    }
     return FieldListFor(c);
 }
 
@@ -761,7 +774,7 @@ class Binder {
         const FieldInfo fi = LookupField(_cat, f);
         if (!fi.known) {
             Fail("Field " + f + " not valid for " + EntityName(_entity) +
-                 ". Valid: " + ValidFieldsFor(_cat) + ".");
+                 ". Valid: " + ValidFieldsFor(_cat, world) + ".");
             return false;
         }
         if (!fi.supported) {
@@ -848,7 +861,7 @@ class Binder {
             Fail(std::string(clause) + " field " + f + " not valid for " +
                  EntityName(_entity) + ". Valid: PATH, " +
                  std::string(world == UtqlWorld::Stage ? "STAGE, " : "LAYER, ") +
-                 ValidFieldsFor(_cat) + ".");
+                 ValidFieldsFor(_cat, world) + ".");
             return false;
         }
         return true;
