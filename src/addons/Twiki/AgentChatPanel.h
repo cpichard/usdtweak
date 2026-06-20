@@ -27,6 +27,17 @@ struct TraceSink {
         out.swap(lines);
         return out;
     }
+    // Non-destructive copy, for showing an in-flight turn's progress live.
+    std::vector<std::string> peek() {
+        std::lock_guard<std::mutex> g(mu);
+        return lines;
+    }
+};
+
+// One completed turn's trace, tagged with the user prompt that produced it.
+struct TurnTrace {
+    std::string              prompt;
+    std::vector<std::string> lines;
 };
 
 // ImGui chat panel that talks to the agent on a background thread.
@@ -66,6 +77,7 @@ private:
     // _DrawListsTab is a read-only viewer over the dispatcher's named prim
     // lists — the agent curates a set, the user clicks it, the prims select.
     void _DrawChatTab();
+    void _DrawTracesTab();
     void _DrawListsTab(const std::vector<std::string>& names);
     void _DrawListMembers(const std::string& name,
                           const std::vector<SdfPath>& paths,
@@ -87,14 +99,18 @@ private:
     std::future<AgentOrchestrator::RunResult> _pending;
 
     // Trace sink shared with the in-flight worker. Outlives the submit call so
-    // the poll block can drain it into _trace once _pending resolves.
+    // the poll block can drain it into _traces once _pending resolves.
     std::shared_ptr<TraceSink> _pendingSink;
+
+    // Prompt of the in-flight turn, paired with its trace once it resolves.
+    std::string _pendingQuestion;
 
     // Last error to display in the UI (network failure, missing API key, …).
     std::string _lastError;
 
-    // Optional trace lines from the most recent run.
-    std::vector<std::string> _trace;
+    // Tool-call trace for every turn this session, oldest first. Shown in the
+    // Traces tab; the in-flight turn (if any) is read live from _pendingSink.
+    std::vector<TurnTrace> _traces;
 
     // Token-usage display state. _lastUsage is the most recent turn's spend;
     // _sessionUsage accumulates across all turns since the panel was opened

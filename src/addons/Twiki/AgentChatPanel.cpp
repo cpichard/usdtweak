@@ -9,7 +9,9 @@
 #include "UsdTools.h"
 #include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <mutex>
 #include <utility>
@@ -126,7 +128,14 @@ struct _TableBlock {
     std::vector<std::string>              headers;
     std::vector<std::vector<std::string>> rows;
 };
-using _Block = std::variant<_TextBlock, _TableBlock>;
+struct _CodeBlock  { std::string language; std::string text; };
+using _Block = std::variant<_TextBlock, _TableBlock, _CodeBlock>;
+
+// A fenced code block opens/closes on a line whose trimmed form starts with
+// three backticks. The opener may carry a language tag (```python).
+static bool _IsCodeFence(const std::string& line) {
+    return _Trim(line).rfind("```", 0) == 0;
+}
 
 static std::vector<_Block> _SplitBlocks(const std::string& md) {
     std::vector<std::string> lines;
@@ -142,14 +151,37 @@ static std::vector<_Block> _SplitBlocks(const std::string& md) {
     std::vector<_Block> blocks;
     std::string textAcc;
 
+    auto flushText = [&]() {
+        if (!textAcc.empty()) {
+            blocks.push_back(_TextBlock{std::move(textAcc)});
+            textAcc.clear();
+        }
+    };
+
     size_t i = 0;
     while (i < lines.size()) {
+        // Fenced code block — captured verbatim so its contents (e.g. a
+        // leading '#' Python comment) are never interpreted as markdown.
+        if (_IsCodeFence(lines[i])) {
+            flushText();
+            _CodeBlock code;
+            code.language = _Trim(_Trim(lines[i]).substr(3));
+            ++i;  // past the opening fence
+            std::string body;
+            while (i < lines.size() && !_IsCodeFence(lines[i])) {
+                body += lines[i];
+                body += '\n';
+                ++i;
+            }
+            if (i < lines.size()) ++i;            // consume the closing fence
+            if (!body.empty() && body.back() == '\n') body.pop_back();
+            code.text = std::move(body);
+            blocks.push_back(std::move(code));
+            continue;
+        }
         if (_IsTableRow(lines[i]) &&
             i + 1 < lines.size() && _IsTableSeparator(lines[i+1])) {
-            if (!textAcc.empty()) {
-                blocks.push_back(_TextBlock{std::move(textAcc)});
-                textAcc.clear();
-            }
+            flushText();
             _TableBlock tbl;
             tbl.headers = _SplitTableRow(lines[i]);
             i += 2;
@@ -163,18 +195,51 @@ static std::vector<_Block> _SplitBlocks(const std::string& md) {
             ++i;
         }
     }
-    if (!textAcc.empty())
-        blocks.push_back(_TextBlock{std::move(textAcc)});
+    flushText();
     return blocks;
+}
+
+// Count '\n'-terminated lines, used to size the code region.
+static int _CountLines(const std::string& s) {
+    int n = 1;
+    for (char c : s) if (c == '\n') ++n;
+    return n;
 }
 
 static void _RenderMarkdownWithTables(const std::string& md,
                                       const ImGui::MarkdownConfig& cfg) {
     int tableIdx = 0;
+    int codeIdx  = 0;
     for (const _Block& blk : _SplitBlocks(md)) {
         if (const auto* tb = std::get_if<_TextBlock>(&blk)) {
             if (!tb->text.empty())
                 ImGui::Markdown(tb->text.c_str(), tb->text.size(), cfg);
+        } else if (const auto* code = std::get_if<_CodeBlock>(&blk)) {
+            ImGui::PushID(codeIdx++);
+            // Header row: a copy button (like the message-level one) plus the
+            // optional language tag.
+            if (ImGui::SmallButton("copy"))
+                ImGui::SetClipboardText(code->text.c_str());
+            if (!code->language.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", code->language.c_str());
+            }
+            // Verbatim, monospace, no markdown styling. A bordered child gives
+            // a horizontal scrollbar for long lines and caps tall scripts.
+            const float lineH = ImGui::GetTextLineHeightWithSpacing();
+            const int   lines = _CountLines(code->text);
+            const float pad   = ImGui::GetStyle().FramePadding.y * 2.0f;
+            const float h = std::min(lines, 20) * lineH + pad;
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.14f, 1.0f));
+            if (ImGui::BeginChild("##code", ImVec2(0, h), ImGuiChildFlags_Borders,
+                                  ImGuiWindowFlags_HorizontalScrollbar)) {
+                ResourcesLoader::PushFontMono();
+                ImGui::TextUnformatted(code->text.c_str());
+                ImGui::PopFont();
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::PopID();
         } else if (const auto* tbl = std::get_if<_TableBlock>(&blk)) {
             const int cols = static_cast<int>(tbl->headers.size());
             if (cols <= 0) continue;
@@ -199,6 +264,105 @@ static void _RenderMarkdownWithTables(const std::string& md,
             }
         }
     }
+}
+
+// Re-encode a kept codepoint back to UTF-8.
+static void _AppendUtf8(std::string& out, uint32_t cp) {
+    if (cp < 0x80) {
+        out.push_back((char)cp);
+    } else if (cp < 0x800) {
+        out.push_back((char)(0xC0 | (cp >> 6)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        out.push_back((char)(0xE0 | (cp >> 12)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back((char)(0xF0 | (cp >> 18)));
+        out.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    }
+}
+
+// LLM responses often contain emoji, dingbats, and symbols that the IBM Plex
+// body font does not have. Under ImGui 1.92 glyphs load on demand, so a glyph
+// the font lacks renders as a "tofu" box rather than falling out of range.
+// Rather than ship a symbol/emoji font just for the chat, map the few useful
+// symbols to ASCII the font already has and drop the rest. Typographic
+// punctuation (dashes, smart quotes, ellipsis) is in the font, so it is left
+// untouched. The original text is preserved for the copy button — this runs
+// only at render time. The mapping table below is easy to extend.
+static std::string _SanitizeForFont(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    size_t i = 0, n = in.size();
+    while (i < n) {
+        unsigned char c = (unsigned char)in[i];
+        if (c < 0x80) { out.push_back((char)c); ++i; continue; } // ASCII fast path
+
+        // Decode one UTF-8 codepoint.
+        uint32_t cp; int len;
+        if      ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+        else { ++i; continue; } // invalid lead byte
+        if (i + (size_t)len > n) break;
+        bool ok = true;
+        for (int k = 1; k < len; ++k) {
+            unsigned char cc = (unsigned char)in[i + k];
+            if ((cc & 0xC0) != 0x80) { ok = false; break; }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        i += len;
+        if (!ok) continue;
+
+        // High-value symbols -> ASCII the font has.
+        const char* repl = nullptr;
+        switch (cp) {
+            case 0x2192: repl = "->";  break;                 // →
+            case 0x2190: repl = "<-";  break;                 // ←
+            case 0x2194: repl = "<->"; break;                 // ↔
+            case 0x21D2: repl = "=>";  break;                 // ⇒
+            case 0x2713: case 0x2714: case 0x2705:
+                         repl = "[x]"; break;                 // ✓ ✔ ✅
+            case 0x2717: case 0x2718: case 0x2716: case 0x274C:
+                         repl = "[ ]"; break;                 // ✗ ✘ ✖ ❌
+            case 0x26A0: repl = "(!)"; break;                 // ⚠
+            case 0x25CF: case 0x25AA: case 0x25E6: case 0x2023:
+            case 0x2043: case 0x25B8: case 0x2219:
+                         repl = "-";   break;                 // ● ▪ ◦ ‣ ⁃ ▸ ∙
+            case 0x00A0: repl = " ";   break;                 // non-breaking space
+            case 0xFE0F: case 0x200B: case 0x200C: case 0x200D:
+            case 0x200E: case 0x200F:
+                         repl = "";    break;                 // VS / zero-width
+            default: break;
+        }
+        if (repl) { out += repl; continue; }
+
+        // Drop symbol/emoji blocks the font won't have; keep everything else
+        // (Latin punctuation, accents, CJK the user may have pasted).
+        const bool drop =
+            (cp >= 0x2190 && cp <= 0x21FF) ||  // arrows (the unmapped ones)
+            (cp >= 0x2300 && cp <= 0x27BF) ||  // technical, geometric, dingbats
+            (cp >= 0x2B00 && cp <= 0x2BFF) ||  // misc symbols & arrows
+            (cp >= 0x1F000);                   // emoji & supplementary symbols
+        if (drop) continue;
+
+        _AppendUtf8(out, cp);
+    }
+    return out;
+}
+
+// Condense a (possibly multi-line) user prompt into a single-line collapsing-
+// header title. Drops '#' (ImGui label markup) and clamps the length.
+static std::string _TraceHeaderText(const std::string& prompt) {
+    std::string s = prompt.substr(0, prompt.find('\n'));
+    s.erase(std::remove(s.begin(), s.end(), '#'), s.end());
+    const size_t kMax = 60;
+    if (s.size() > kMax) s = s.substr(0, kMax) + "...";
+    if (s.empty()) s = "(empty prompt)";
+    return s;
 }
 
 } // namespace
@@ -297,9 +461,11 @@ void AgentChatPanel::Draw() {
         _lastUsage = result.usage;
         _hasLastUsage = true;
         _AccumulateUsage(_sessionUsage, result.usage);
-        // Drain the worker's trace now that the turn is complete.
+        // Drain the worker's trace now that the turn is complete and file it
+        // under the prompt that produced it for the Traces tab.
         if (_pendingSink) {
-            _trace = _pendingSink->drain();
+            _traces.push_back(TurnTrace{std::move(_pendingQuestion),
+                                        _pendingSink->drain()});
             _pendingSink.reset();
         }
         _scrollToBottom = true;
@@ -324,6 +490,17 @@ void AgentChatPanel::Draw() {
             _DrawListsTab(listNames);
             ImGui::EndTabItem();
         }
+        char tracesLabel[64];
+        const size_t traceCount = _traces.size() + (_pendingSink ? 1u : 0u);
+        if (traceCount == 0)
+            snprintf(tracesLabel, sizeof(tracesLabel), "Traces###twiki_traces");
+        else
+            snprintf(tracesLabel, sizeof(tracesLabel),
+                     "Traces (%zu)###twiki_traces", traceCount);
+        if (ImGui::BeginTabItem(tracesLabel)) {
+            _DrawTracesTab();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
 }
@@ -339,7 +516,6 @@ void AgentChatPanel::_DrawChatTab() {
     const float fhs = ImGui::GetFrameHeightWithSpacing();
     float footerH = fhs * 4.5f;
     if (_hasLastUsage)       footerH += fhs;        // token count line
-    if (!_trace.empty())     footerH += fhs;        // trace collapsing header
     if (!_lastError.empty()) footerH += fhs * 2.0f; // error banner (rough 2-line est.)
 
     if (ImGui::BeginChild("##history", ImVec2(0, -footerH), true)) {
@@ -361,10 +537,10 @@ void AgentChatPanel::_DrawChatTab() {
                 if (ImGui::SmallButton("copy")) {
                     ImGui::SetClipboardText(m.content.c_str());
                 }
-                _RenderMarkdownWithTables(m.content, mdConfig);
+                _RenderMarkdownWithTables(_SanitizeForFont(m.content), mdConfig);
                 ImGui::PopID();
             } else {
-                ImGui::TextWrapped("%s", m.content.c_str());
+                ImGui::TextWrapped("%s", _SanitizeForFont(m.content).c_str());
             }
             ImGui::Separator();
         }
@@ -382,13 +558,7 @@ void AgentChatPanel::_DrawChatTab() {
         ImGui::PopStyleColor();
     }
 
-    // ----- trace (collapsible) -------------------------------------------
-    if (!_trace.empty() &&
-        ImGui::CollapsingHeader("Last turn trace")) {
-        for (const std::string& line : _trace) {
-            ImGui::TextUnformatted(line.c_str());
-        }
-    }
+    // The per-turn trace now lives in its own Traces tab (see _DrawTracesTab).
 
     // ----- token-usage status line ---------------------------------------
     if (_hasLastUsage) {
@@ -437,7 +607,7 @@ void AgentChatPanel::_DrawChatTab() {
     ImGui::SameLine();
     if (ImGui::Button("Clear history")) {
         _history.clear();
-        _trace.clear();
+        _traces.clear();
         _lastError.clear();
         _lastUsage = LLMUsage{};
         _sessionUsage = LLMUsage{};
@@ -459,7 +629,7 @@ void AgentChatPanel::_DrawChatTab() {
             // as a member; the poll block drains it once _pending resolves.
             auto sink = std::make_shared<TraceSink>();
             _pendingSink = sink;
-            _trace.clear();  // hide the previous turn's trace while this runs
+            _pendingQuestion = question;  // paired with the trace on resolve
             const std::string sysPrompt = _BuildSystemPrompt();
 
             // Snapshot history (without the brand-new user msg — the
@@ -477,6 +647,53 @@ void AgentChatPanel::_DrawChatTab() {
             _scrollToBottom = true;
         }
     }
+}
+
+// ----- Traces tab -----------------------------------------------------------
+// Full session history of each turn's tool-call trace (the ReAct steps). Each
+// completed turn is a collapsing header titled with the user prompt; the
+// in-flight turn, if any, is read live from the pending sink at the bottom.
+
+void AgentChatPanel::_DrawTracesTab() {
+    if (_traces.empty() && !_pendingSink) {
+        ImGui::TextDisabled("No traces yet. Tool-call steps from each turn "
+                            "will appear here.");
+        return;
+    }
+
+    if (ImGui::BeginChild("##traces", ImVec2(0, 0), false)) {
+        int turnNo = 0;
+        for (const TurnTrace& t : _traces) {
+            ++turnNo;
+            char header[160];
+            snprintf(header, sizeof(header), "%d. %s###trace%d",
+                     turnNo, _TraceHeaderText(t.prompt).c_str(), turnNo);
+            if (ImGui::CollapsingHeader(header)) {
+                if (t.lines.empty()) {
+                    ImGui::TextDisabled("    (no tool calls)");
+                } else {
+                    for (const std::string& line : t.lines)
+                        ImGui::TextUnformatted(line.c_str());
+                }
+            }
+        }
+
+        // In-flight turn: live, expanded by default so the user can watch it.
+        if (_pendingSink) {
+            char header[160];
+            snprintf(header, sizeof(header), "%d. %s  (running...)###traceLive",
+                     turnNo + 1, _TraceHeaderText(_pendingQuestion).c_str());
+            ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+            if (ImGui::CollapsingHeader(header)) {
+                const std::vector<std::string> live = _pendingSink->peek();
+                if (live.empty())
+                    ImGui::TextDisabled("    thinking...");
+                for (const std::string& line : live)
+                    ImGui::TextUnformatted(line.c_str());
+            }
+        }
+    }
+    ImGui::EndChild();
 }
 
 // ----- Lists tab ------------------------------------------------------------
