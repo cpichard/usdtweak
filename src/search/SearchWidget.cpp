@@ -9,6 +9,7 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
 
+#include <cctype>
 #include <cfloat>
 #include <string>
 
@@ -357,9 +358,27 @@ static UsdStageRefPtr UtqlFindStage(const UtqlResult &res, const std::string &so
     return UsdStageRefPtr{};
 }
 
+/// Strip comment lines (those whose first non-blank character is '#') from a
+/// UTQL query. Comment lines stay in the editor but are not sent to the engine.
+static std::string StripUtqlComments(const std::string &src) {
+    std::string out;
+    out.reserve(src.size());
+    size_t pos = 0;
+    while (pos < src.size()) {
+        size_t eol = src.find('\n', pos);
+        size_t end = (eol == std::string::npos) ? src.size() : eol + 1;
+        size_t b   = pos;
+        while (b < end && std::isspace((unsigned char)src[b])) ++b;
+        if (b >= end || src[b] != '#')
+            out.append(src, pos, end - pos);
+        pos = end;
+    }
+    return out;
+}
+
 static void DrawUtqlSearchWidget() {
     static std::string queryStr =
-        "FIND USDPRIM WHERE PRIMTYPE = \"Mesh\"";
+        "FIND USDPRIM WHERE TYPE = \"Mesh\"";
 
     UtqlEngine &engine = UtqlEngine::GetInstance();
 
@@ -380,8 +399,12 @@ static void DrawUtqlSearchWidget() {
     else
         ImGui::TextDisabled("Ctrl+Enter to run");
 
-    if (run && !queryStr.empty())
-        engine.Submit(queryStr);
+    if (run) {
+        // Lines starting with '#' are comments: kept in the editor, not run.
+        const std::string effectiveQuery = StripUtqlComments(queryStr);
+        if (effectiveQuery.find_first_not_of(" \t\r\n") != std::string::npos)
+            engine.Submit(effectiveQuery);
+    }
 
     ImGui::Separator();
 
@@ -461,20 +484,19 @@ static void DrawUtqlSearchWidget() {
 }
 
 // ---------------------------------------------------------------------------
-// DrawSearchWidget — mode switch between UTQL (default) and legacy substring
+// DrawSearchWidget — tabbed switch between string search and query language
 // ---------------------------------------------------------------------------
 
 void DrawSearchWidget() {
-    static bool utqlMode = true;
-    if (ImGui::RadioButton("UTQL", utqlMode))
-        utqlMode = true;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Simple substring", !utqlMode))
-        utqlMode = false;
-    ImGui::Separator();
-
-    if (utqlMode)
-        DrawUtqlSearchWidget();
-    else
-        DrawSimpleSearchWidget();
+    if (ImGui::BeginTabBar("##searchMode")) {
+        if (ImGui::BeginTabItem("String search")) {
+            DrawSimpleSearchWidget();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Query language")) {
+            DrawUtqlSearchWidget();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 }
