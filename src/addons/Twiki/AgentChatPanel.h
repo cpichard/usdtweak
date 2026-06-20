@@ -7,6 +7,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -78,7 +79,17 @@ private:
     // lists — the agent curates a set, the user clicks it, the prims select.
     void _DrawChatTab();
     void _DrawTracesTab();
+    void _DrawToolsTab();
     void _DrawListsTab(const std::vector<std::string>& names);
+
+    // Tool activation. _allTools is the full advertised set (built once);
+    // _disabledTools is the user's deselection. _ActiveToolDefs() filters the
+    // full set, and is what gets pushed to the orchestrator at submit time.
+    void     _InitToolState();      // build _allTools / _readOnlyNames, load prefs
+    ToolDefs _ActiveToolDefs() const;
+    std::string _ToolSignature(const ToolDefs& tools) const;  // for the cache note
+    void     _LoadToolPrefs();
+    void     _SaveToolPrefs() const;
     void _DrawListMembers(const std::string& name,
                           const std::vector<SdfPath>& paths,
                           const UsdStageRefPtr& stage);
@@ -118,6 +129,16 @@ private:
     LLMUsage _lastUsage;
     LLMUsage _sessionUsage;
     bool     _hasLastUsage = false;
+
+    // Tool activation state (see _DrawToolsTab). _allTools is built once;
+    // _disabledTools holds the user's deselection (storing the disabled set,
+    // not the enabled one, means tools added in future builds default to on).
+    ToolDefs                  _allTools;
+    std::set<std::string>     _readOnlyNames;   // for the Inspection/Editing split
+    std::set<std::string>     _disabledTools;
+    std::string               _selectedTool;    // shown in the details pane
+    std::string               _lastSentToolSig; // active set last pushed to backend
+    bool                      _toolStateReady = false;
 
     UsdToolDispatcher                _dispatcher;
     std::unique_ptr<AgentOrchestrator> _orchestrator;  // lazy

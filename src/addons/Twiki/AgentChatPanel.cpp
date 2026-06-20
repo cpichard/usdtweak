@@ -5,9 +5,10 @@
 #include <imgui_stdlib.h>
 
 #include "AnthropicBackend.h"
+#include "JsHelpers.h"
 #include "ResourcesLoader.h"
 #include "UsdTools.h"
-#include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection
+#include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection, {Get,Set}AddonString
 
 #include <algorithm>
 #include <chrono>
@@ -354,6 +355,53 @@ static std::string _SanitizeForFont(const std::string& in) {
     return out;
 }
 
+// Render a JSON-Schema "properties" map as a parameter list for the Tools tab
+// details pane. Recurses one level into an array's `items` / a nested object
+// so the batched edit tools (items: [{path, value, ...}]) are legible.
+static void _DrawToolParams(const JsObject& props,
+                            const std::set<std::string>& required,
+                            int depth) {
+    for (const auto& kv : props) {
+        const std::string& pname = kv.first;
+        const JsObject p = kv.second.IsObject() ? kv.second.GetJsObject() : JsObject{};
+        const std::string type  = JsGetString(p, "type");
+        const std::string pdesc = JsGetString(p, "description");
+        const bool req = required.count(pname) > 0;
+
+        ResourcesLoader::PushFontBold();
+        ImGui::TextUnformatted(pname.c_str());
+        ImGui::PopFont();
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s%s", type.empty() ? "?" : type.c_str(),
+                            req ? "  *required" : "");
+        if (!pdesc.empty())
+            ImGui::TextWrapped("%s", pdesc.c_str());
+
+        // One level deeper: array-of-objects items, or a nested object.
+        if (depth == 0) {
+            JsObject sub;
+            std::set<std::string> subReq;
+            if (type == "array") {
+                const JsObject items = JsGetObject(p, "items");
+                sub = JsGetObject(items, "properties");
+                for (const JsValue& r : JsGetArray(items, "required"))
+                    if (r.IsString()) subReq.insert(r.GetString());
+            } else if (type == "object") {
+                sub = JsGetObject(p, "properties");
+                for (const JsValue& r : JsGetArray(p, "required"))
+                    if (r.IsString()) subReq.insert(r.GetString());
+            }
+            if (!sub.empty()) {
+                ImGui::Indent();
+                ImGui::TextDisabled("each item:");
+                _DrawToolParams(sub, subReq, depth + 1);
+                ImGui::Unindent();
+            }
+        }
+        ImGui::Spacing();
+    }
+}
+
 // Condense a (possibly multi-line) user prompt into a single-line collapsing-
 // header title. Drops '#' (ImGui label markup) and clamps the length.
 static std::string _TraceHeaderText(const std::string& prompt) {
@@ -396,11 +444,74 @@ bool AgentChatPanel::_LazyInit(std::string* errOut) {
     const char* modelEnv = std::getenv("ANTHROPIC_MODEL");
     std::string model = (modelEnv && *modelEnv) ? modelEnv : "claude-sonnet-4-6";
 
+    _InitToolState();  // ensure _allTools/prefs exist before we build the set
     auto backend = std::make_unique<AnthropicBackend>(keyEnv, model);
     _orchestrator = std::make_unique<AgentOrchestrator>(
-        std::move(backend), _dispatcher, BuildAllToolDefinitions());
+        std::move(backend), _dispatcher, _ActiveToolDefs());
     _initialized = true;
     return true;
+}
+
+// ----- tool activation ------------------------------------------------------
+
+void AgentChatPanel::_InitToolState() {
+    if (_toolStateReady) return;
+    _allTools = BuildAllToolDefinitions();
+    _readOnlyNames.clear();
+    for (const JsValue& t : BuildReadOnlyToolDefinitions())
+        if (t.IsObject())
+            _readOnlyNames.insert(JsGetString(t.GetJsObject(), "name"));
+    _LoadToolPrefs();  // filters out names no longer present in _allTools
+    if (_selectedTool.empty() && !_allTools.empty() && _allTools.front().IsObject())
+        _selectedTool = JsGetString(_allTools.front().GetJsObject(), "name");
+    _toolStateReady = true;
+}
+
+ToolDefs AgentChatPanel::_ActiveToolDefs() const {
+    ToolDefs active;
+    active.reserve(_allTools.size());
+    for (const JsValue& t : _allTools) {
+        if (!t.IsObject()) continue;
+        const std::string name = JsGetString(t.GetJsObject(), "name");
+        if (_disabledTools.find(name) == _disabledTools.end())
+            active.push_back(t);
+    }
+    return active;
+}
+
+std::string AgentChatPanel::_ToolSignature(const ToolDefs& tools) const {
+    // Names are unique and the active set preserves _allTools order, so a plain
+    // join is a stable "did the advertised set change" signature.
+    std::string sig;
+    for (const JsValue& t : tools)
+        if (t.IsObject()) { sig += JsGetString(t.GetJsObject(), "name"); sig += ','; }
+    return sig;
+}
+
+void AgentChatPanel::_LoadToolPrefs() {
+    _disabledTools.clear();
+    // Set of valid names, so stale entries (tools removed in a later build) are
+    // dropped on load — keeps the Tools (N/M) count from underflowing.
+    std::set<std::string> known;
+    for (const JsValue& t : _allTools)
+        if (t.IsObject()) known.insert(JsGetString(t.GetJsObject(), "name"));
+
+    const std::string csv = usdtweak::GetAddonString("Twiki", "disabled_tools", "");
+    size_t pos = 0;
+    while (pos <= csv.size()) {
+        const size_t comma = csv.find(',', pos);
+        const size_t end   = (comma == std::string::npos) ? csv.size() : comma;
+        const std::string name = csv.substr(pos, end - pos);
+        if (!name.empty() && known.count(name)) _disabledTools.insert(name);
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+}
+
+void AgentChatPanel::_SaveToolPrefs() const {
+    std::string csv;
+    for (const std::string& n : _disabledTools) { csv += n; csv += ','; }
+    usdtweak::SetAddonString("Twiki", "disabled_tools", csv);
 }
 
 std::string AgentChatPanel::_BuildSystemPrompt() const {
@@ -453,6 +564,8 @@ void AgentChatPanel::Draw() {
     // The host (addon registry) wraps this in ImGui::Begin/End, so we only
     // emit the contents.
 
+    _InitToolState();  // build the tool list + load activation prefs (once)
+
     // ----- poll background turn ------------------------------------------
     if (_pending.valid() &&
         _pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -499,6 +612,13 @@ void AgentChatPanel::Draw() {
                      "Traces (%zu)###twiki_traces", traceCount);
         if (ImGui::BeginTabItem(tracesLabel)) {
             _DrawTracesTab();
+            ImGui::EndTabItem();
+        }
+        char toolsLabel[64];
+        snprintf(toolsLabel, sizeof(toolsLabel), "Tools (%zu/%zu)###twiki_tools",
+                 _allTools.size() - _disabledTools.size(), _allTools.size());
+        if (ImGui::BeginTabItem(toolsLabel)) {
+            _DrawToolsTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -630,6 +750,14 @@ void AgentChatPanel::_DrawChatTab() {
             auto sink = std::make_shared<TraceSink>();
             _pendingSink = sink;
             _pendingQuestion = question;  // paired with the trace on resolve
+
+            // Push the user-selected tool set for this turn. Applied here (not
+            // mid-turn) so the in-flight Run() is never disturbed; identical
+            // content keeps the backend's prompt cache warm.
+            ToolDefs activeTools = _ActiveToolDefs();
+            _lastSentToolSig = _ToolSignature(activeTools);
+            _orchestrator->SetTools(std::move(activeTools));
+
             const std::string sysPrompt = _BuildSystemPrompt();
 
             // Snapshot history (without the brand-new user msg — the
@@ -691,6 +819,103 @@ void AgentChatPanel::_DrawTracesTab() {
                 for (const std::string& line : live)
                     ImGui::TextUnformatted(line.c_str());
             }
+        }
+    }
+    ImGui::EndChild();
+}
+
+// ----- Tools tab ------------------------------------------------------------
+// Master-detail: a checkbox list of every advertised tool on the left; the
+// selected tool's description + parameter schema on the right. Toggling a
+// checkbox edits the disabled set (persisted immediately); the new set is
+// pushed to the orchestrator at the next Submit.
+
+void AgentChatPanel::_DrawToolsTab() {
+    // Cache note when the active set differs from what the backend last saw.
+    if (!_lastSentToolSig.empty() &&
+        _ToolSignature(_ActiveToolDefs()) != _lastSentToolSig) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.55f, 1.0f));
+        ImGui::TextWrapped("Tool set changed - your next message rebuilds the "
+                           "prompt cache (one-time extra input cost).");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
+
+    // ---- left: the tool list ----
+    const float leftW = ImGui::GetContentRegionAvail().x * 0.4f;
+    if (ImGui::BeginChild("##toollist", ImVec2(leftW, 0), ImGuiChildFlags_Borders)) {
+        bool wroteInspection = false, wroteEditing = false;
+        for (const JsValue& tv : _allTools) {
+            if (!tv.IsObject()) continue;
+            const std::string name = JsGetString(tv.GetJsObject(), "name");
+            const bool readOnly = _readOnlyNames.count(name) > 0;
+            if (readOnly && !wroteInspection) {
+                ImGui::SeparatorText("Inspection"); wroteInspection = true;
+            } else if (!readOnly && !wroteEditing) {
+                ImGui::SeparatorText("Editing");     wroteEditing = true;
+            }
+
+            ImGui::PushID(name.c_str());
+            bool enabled = _disabledTools.count(name) == 0;
+            if (ImGui::Checkbox("##en", &enabled)) {
+                if (enabled) _disabledTools.erase(name);
+                else         _disabledTools.insert(name);
+                _SaveToolPrefs();
+            }
+            ImGui::SameLine();
+            const bool dim = !enabled;
+            if (dim)
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            if (ImGui::Selectable(name.c_str(), _selectedTool == name))
+                _selectedTool = name;
+            if (dim) ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // ---- right: details for the selected tool ----
+    if (ImGui::BeginChild("##tooldetails", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
+        const JsObject* found = nullptr;
+        JsObject selObj;
+        for (const JsValue& tv : _allTools) {
+            if (tv.IsObject() &&
+                JsGetString(tv.GetJsObject(), "name") == _selectedTool) {
+                selObj = tv.GetJsObject();
+                found  = &selObj;
+                break;
+            }
+        }
+        if (!found) {
+            ImGui::TextDisabled("Select a tool on the left to see its details.");
+        } else {
+            ResourcesLoader::PushFontBold();
+            ImGui::TextUnformatted(_selectedTool.c_str());
+            ImGui::PopFont();
+            ImGui::SameLine();
+            const bool enabled = _disabledTools.count(_selectedTool) == 0;
+            ImGui::TextDisabled(enabled ? "(enabled)" : "(disabled)");
+            ImGui::Separator();
+
+            const std::string desc = JsGetString(*found, "description");
+            if (!desc.empty())
+                ImGui::TextWrapped("%s", desc.c_str());
+
+            const JsObject params = JsGetObject(*found, "parameters");
+            const JsObject props  = JsGetObject(params, "properties");
+            std::set<std::string> required;
+            for (const JsValue& r : JsGetArray(params, "required"))
+                if (r.IsString()) required.insert(r.GetString());
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Parameters");
+            if (props.empty())
+                ImGui::TextDisabled("None.");
+            else
+                _DrawToolParams(props, required, 0);
         }
     }
     ImGui::EndChild();
