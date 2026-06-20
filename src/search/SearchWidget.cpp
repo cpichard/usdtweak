@@ -433,25 +433,30 @@ static void DrawUtqlSearchWidget() {
         }
     };
 
-    for (int i = 0; i < (int)res.rows.size(); ++i) {
-        const UtqlRow &row = res.rows[i];
-        ImGui::PushID(i);
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        // Invisible selectable spanning all columns for click-to-select; the
-        // value text is drawn on top via SameLine so it never enters the ID hash.
-        if (ImGui::Selectable("##sel", false,
-                              ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
-            selectRow(row);
-        ImGui::SameLine();
-        if (!row.columns.empty())
-            ImGui::TextUnformatted(row.columns[0].ToDisplay().c_str());
-        for (int c = 1; c < ncol && c < (int)row.columns.size(); ++c) {
-            ImGui::TableSetColumnIndex(c);
-            ImGui::TextUnformatted(row.columns[c].ToDisplay().c_str());
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(res.rows.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            const UtqlRow &row = res.rows[i];
+            ImGui::PushID(i);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            // Invisible selectable spanning all columns for click-to-select; the
+            // value text is drawn on top via SameLine so it never enters the ID hash.
+            if (ImGui::Selectable("##sel", false,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+                selectRow(row);
+            ImGui::SameLine();
+            if (!row.columns.empty())
+                ImGui::TextUnformatted(row.columns[0].ToDisplay().c_str());
+            for (int c = 1; c < ncol && c < (int)row.columns.size(); ++c) {
+                ImGui::TableSetColumnIndex(c);
+                ImGui::TextUnformatted(row.columns[c].ToDisplay().c_str());
+            }
+            ImGui::PopID();
         }
-        ImGui::PopID();
     }
+    clipper.End();
     ImGui::EndTable();
 }
 
