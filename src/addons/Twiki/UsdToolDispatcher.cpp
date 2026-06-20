@@ -954,8 +954,8 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
 // 7b. run_query — compile + execute a UTQL query against the active stage.
 //
 // This is the expressive complement to find_prims: it reaches features find_prims
-// structurally cannot (VALUE.SCALAR, CONNECTED TO, ISINSTANCE, RELATIONSHIPS,
-// HAS_TIMESAMPLES, asset-missing, …). It runs the SYNCHRONOUS utql path on the
+// structurally cannot (VALUE.SCALAR, CONNECTED TO, IS_INSTANCE, RELATIONSHIPS,
+// HAS_TIME_SAMPLES, asset-missing, …). It runs the SYNCHRONOUS utql path on the
 // dispatcher's own worker thread — Parse → Bind → Execute — never UtqlEngine
 // (which exists only to marshal async results back to the ImGui frame loop).
 //

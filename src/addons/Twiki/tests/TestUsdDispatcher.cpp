@@ -1029,7 +1029,7 @@ void TestRunQuery(UsdToolDispatcher& d) {
     // Basic Stage-world prim query.
     std::string out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND USDPRIM WHERE PRIMTYPE = \"Camera\""))}}));
+            "FIND USDPRIM WHERE TYPE = \"Camera\""))}}));
     std::fprintf(stdout, "%s\n", out.c_str());
     CHECK_CONTAINS(out, "/World/Camera");
     CHECK_CONTAINS(out, "1 matched");
@@ -1037,7 +1037,7 @@ void TestRunQuery(UsdToolDispatcher& d) {
     // Authored per-spec SDF* entity is still rejected with a clear message.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND SDFPRIM WHERE PRIMTYPE = \"Camera\""))}}));
+            "FIND SDFPRIM WHERE TYPE = \"Camera\""))}}));
     CHECK_CONTAINS(out, "[error]");
     CHECK_CONTAINS(out, "Stage-world");
 
@@ -1049,23 +1049,23 @@ void TestRunQuery(UsdToolDispatcher& d) {
     CHECK_CONTAINS(out, "matched");
     CHECK(out.find("[error]") == std::string::npos);
 
-    // LAYER.ISROOTLAYER recovers the per-stage view: exactly the stage root.
+    // IS_ROOT_LAYER recovers the per-stage view: exactly the stage root.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND LAYER WHERE LAYER.ISROOTLAYER"))}}));
+            "FIND LAYER WHERE IS_ROOT_LAYER"))}}));
     std::fprintf(stdout, "%s\n", out.c_str());
     CHECK_CONTAINS(out, "1 matched");
 
-    // ISLOADED runs (composed payload load state): active non-payloaded prims are
+    // IS_LOADED runs (composed payload load state): active non-payloaded prims are
     // loaded, so this matches the scene and is not a compile error.
     out = d.Dispatch("run_query",
-        Args({{"query", JsValue(std::string("FIND USDPRIM WHERE ISLOADED"))}}));
+        Args({{"query", JsValue(std::string("FIND USDPRIM WHERE IS_LOADED"))}}));
     CHECK_CONTAINS(out, "matched");
     CHECK(out.find("[error]") == std::string::npos);
 
-    // ISLOADED is a composed-stage fact — a binder error in Layer world (SDFPRIM).
+    // IS_LOADED is a composed-stage fact — a binder error in Layer world (SDFPRIM).
     out = d.Dispatch("run_query",
-        Args({{"query", JsValue(std::string("FIND SDFPRIM WHERE ISLOADED"))}}));
+        Args({{"query", JsValue(std::string("FIND SDFPRIM WHERE IS_LOADED"))}}));
     CHECK_CONTAINS(out, "[error]");
 
     // Compile error is recoverable and labelled as such.
@@ -1076,7 +1076,7 @@ void TestRunQuery(UsdToolDispatcher& d) {
     // A valid query that matches nothing reports 'none found', not an error.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND USDPRIM WHERE PRIMNAME = \"DoesNotExist\""))}}));
+            "FIND USDPRIM WHERE NAME = \"DoesNotExist\""))}}));
     CHECK_CONTAINS(out, "no rows matched");
 }
 
@@ -1109,7 +1109,7 @@ void TestRunQueryChaining(UsdToolDispatcher& d) {
     CHECK_CONTAINS(g, "cached as RESULTSET \"groups\"");
     std::string c = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND USDPRIM IN RESULTSET \"groups\" WHERE PRIMNAME = \"Lights\""))}}));
+            "FIND USDPRIM IN RESULTSET \"groups\" WHERE NAME = \"Lights\""))}}));
     std::fprintf(stdout, "%s\n", c.c_str());
     CHECK_CONTAINS(c, "/World/Lights");
 }
@@ -1132,7 +1132,7 @@ void TestRunQueryComposedFrom(UsdToolDispatcher& d) {
     // WHERE filters the composed rows (Hero is an Xform, not a Camera).
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
-            "FIND USDPRIM COMPOSED FROM \"/World/Hero\" WHERE PRIMTYPE = \"Camera\""))}}));
+            "FIND USDPRIM COMPOSED FROM \"/World/Hero\" WHERE TYPE = \"Camera\""))}}));
     CHECK_CONTAINS(out, "no rows matched");
 
     // A layer / non-stage scope is a CompileError — the inverse walks composed prims.

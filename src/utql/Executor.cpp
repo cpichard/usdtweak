@@ -334,7 +334,7 @@ bool CompileUnder(const WhereExpr &e, const UtqlContext &ctx,
 // --------------------------------------------------------------- value sizes
 
 /// Best-effort per-element byte size for the common USD scalar types, used by
-/// VALUE.BYTESIZE. Returns 0 for variable-length/unknown types (e.g. string).
+/// VALUE.BYTE_SIZE. Returns 0 for variable-length/unknown types (e.g. string).
 size_t ScalarByteSize(const SdfValueTypeName &tn) {
     const std::string s = tn.GetScalarType().GetAsToken().GetString();
     if (s == "bool" || s == "uchar")                                   return 1;
@@ -435,7 +435,7 @@ SdfPathVector SdfAttrConnectionSources(const SdfAttributeSpecHandle &spec) {
 // ----------------------------------------------- asset resolution (design AS1)
 
 /// True iff an attribute's value type is `asset` / `asset[]` — the only types for
-/// which VALUE.ASSETMISSING is meaningful (otherwise a per-row non-match).
+/// which VALUE.IS_ASSET_MISSING is meaningful (otherwise a per-row non-match).
 bool IsAssetTypeName(const SdfValueTypeName &tn) {
     static const TfToken kAsset("asset");
     static const TfToken kAssetArray("asset[]");
@@ -494,7 +494,7 @@ bool AnyAssetMissing(const VtValue &v, const MissingFn &missing) {
 // ------------------------------------------------------------ prim accessors
 
 /// True iff the composed prim carries at least one attribute with authored time
-/// samples — the prim-level animation gate (design A2, HAS_TIMESAMPLES). Tests
+/// samples — the prim-level animation gate (design A2, HAS_TIME_SAMPLES). Tests
 /// the composed attributes, symmetric with the other Stage-world prim gates.
 bool UsdPrimHasTimeSamples(const UsdPrim &prim) {
     for (const UsdAttribute &attr : prim.GetAttributes())
@@ -516,9 +516,9 @@ bool SdfPrimHasTimeSamples(const SdfPrimSpecHandle &spec) {
 }
 
 UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
-    if (f == "PRIMNAME") return UtqlValue::String_(prim.GetName().GetString());
+    if (f == "NAME") return UtqlValue::String_(prim.GetName().GetString());
     if (f == "PATH")     return UtqlValue::String_(prim.GetPath().GetString());
-    if (f == "PRIMTYPE") {
+    if (f == "TYPE") {
         const TfToken &t = prim.GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
     }
@@ -532,22 +532,22 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "ACTIVE")         return UtqlValue::Bool(prim.IsActive());
     if (f == "ABSTRACT")       return UtqlValue::Bool(prim.IsAbstract());
     if (f == "DEPTH")          return UtqlValue::Number_(static_cast<double>(prim.GetPath().GetPathElementCount()));
-    if (f == "CHILDCOUNT")     return UtqlValue::Number_(static_cast<double>(prim.GetAllChildrenNames().size()));
-    if (f == "ATTRIBUTECOUNT") return UtqlValue::Number_(static_cast<double>(prim.GetAttributes().size()));
-    if (f == "SPECCOUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetPrimStack().size()));
+    if (f == "CHILD_COUNT")     return UtqlValue::Number_(static_cast<double>(prim.GetAllChildrenNames().size()));
+    if (f == "ATTRIBUTE_COUNT") return UtqlValue::Number_(static_cast<double>(prim.GetAttributes().size()));
+    if (f == "SPEC_COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetPrimStack().size()));
     if (f == "API.COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetAppliedSchemas().size()));
-    if (f == "HAS_TIMESAMPLES") return UtqlValue::Bool(UsdPrimHasTimeSamples(prim));
+    if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(UsdPrimHasTimeSamples(prim));
     // Native-instancing classification (design I1). Composed facts.
-    if (f == "ISINSTANCE")     return UtqlValue::Bool(prim.IsInstance());
-    if (f == "ISPROTOTYPE")    return UtqlValue::Bool(prim.IsPrototype());
-    if (f == "ISINPROTOTYPE")  return UtqlValue::Bool(prim.IsInPrototype());
-    if (f == "ISINSTANCEPROXY") return UtqlValue::Bool(prim.IsInstanceProxy());
+    if (f == "IS_INSTANCE")     return UtqlValue::Bool(prim.IsInstance());
+    if (f == "IS_PROTOTYPE")    return UtqlValue::Bool(prim.IsPrototype());
+    if (f == "IS_IN_PROTOTYPE")  return UtqlValue::Bool(prim.IsInPrototype());
+    if (f == "IS_INSTANCE_PROXY") return UtqlValue::Bool(prim.IsInstanceProxy());
     if (f == "INSTANCEABLE")   return UtqlValue::Bool(prim.IsInstanceable());
     // Payload load state (composed/runtime stage fact). Almost always true unless
     // paired with HAS_PAYLOAD: a prim with no loadable ancestor reports loaded. An
     // unloaded payloaded prim is still on the stage (only its subtree is absent),
     // so the all-prims scan reaches it as a row.
-    if (f == "ISLOADED")       return UtqlValue::Bool(prim.IsLoaded());
+    if (f == "IS_LOADED")       return UtqlValue::Bool(prim.IsLoaded());
     // Relationship existence (design I2). RELATIONSHIPS is a set field — the scalar
     // form here is its display join; membership goes through getSet.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!prim.GetRelationships().empty());
@@ -568,9 +568,9 @@ double SdfApiCount(const SdfPrimSpecHandle &spec) {
 }
 
 UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
-    if (f == "PRIMNAME") return UtqlValue::String_(spec->GetName());
+    if (f == "NAME") return UtqlValue::String_(spec->GetName());
     if (f == "PATH")     return UtqlValue::String_(spec->GetPath().GetString());
-    if (f == "PRIMTYPE") {
+    if (f == "TYPE") {
         const TfToken t = spec->GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
     }
@@ -582,13 +582,13 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     if (f == "ACTIVE")         return UtqlValue::Bool(spec->HasActive() ? spec->GetActive() : true);
     if (f == "ABSTRACT")       return UtqlValue::Bool(spec->GetSpecifier() == SdfSpecifierClass);
     if (f == "DEPTH")          return UtqlValue::Number_(static_cast<double>(spec->GetPath().GetPathElementCount()));
-    if (f == "CHILDCOUNT")     return UtqlValue::Number_(static_cast<double>(spec->GetNameChildren().size()));
-    if (f == "ATTRIBUTECOUNT") return UtqlValue::Number_(static_cast<double>(spec->GetAttributes().size()));
-    if (f == "SPECCOUNT")      return UtqlValue::Number_(1.0);
+    if (f == "CHILD_COUNT")     return UtqlValue::Number_(static_cast<double>(spec->GetNameChildren().size()));
+    if (f == "ATTRIBUTE_COUNT") return UtqlValue::Number_(static_cast<double>(spec->GetAttributes().size()));
+    if (f == "SPEC_COUNT")      return UtqlValue::Number_(1.0);
     if (f == "API.COUNT")      return UtqlValue::Number_(SdfApiCount(spec));
-    if (f == "HAS_TIMESAMPLES") return UtqlValue::Bool(SdfPrimHasTimeSamples(spec));
-    // Authored instanceable metadata (design I1). Unauthored ⇒ false. ISINSTANCE /
-    // ISPROTOTYPE are composed-only and rejected by the binder in Layer world.
+    if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(SdfPrimHasTimeSamples(spec));
+    // Authored instanceable metadata (design I1). Unauthored ⇒ false. IS_INSTANCE /
+    // IS_PROTOTYPE are composed-only and rejected by the binder in Layer world.
     if (f == "INSTANCEABLE")   return UtqlValue::Bool(spec->GetInstanceable());
     // Relationship existence (design I2). Authored relationship specs on this prim.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!spec->GetRelationships().empty());
@@ -624,44 +624,44 @@ UtqlValue RootMetadataField(const SdfLayerHandle &layer, const TfToken &key) {
 
 /// LAYER entity field reader (design §5 + A3). `roots`/`sessions` are the identifiers
 /// of layers currently serving as a root / session layer of some open stage, used by
-/// the ISROOTLAYER / ISSESSIONLAYER flags (layer-relative, never "is a stage").
+/// the IS_ROOT_LAYER / IS_SESSION_LAYER flags (layer-relative, never "is a stage").
 UtqlValue GetLayerField(const SdfLayerHandle &layer,
                         const std::unordered_set<std::string> &roots,
                         const std::unordered_set<std::string> &sessions,
                         const std::string &f) {
-    if (f == "LAYER.IDENTIFIER")  return UtqlValue::String_(layer->GetIdentifier());
-    if (f == "LAYER.DISPLAYNAME") return UtqlValue::String_(layer->GetDisplayName());
-    if (f == "PATH" || f == "LAYER.REALPATH") {
+    if (f == "IDENTIFIER")  return UtqlValue::String_(layer->GetIdentifier());
+    if (f == "DISPLAY_NAME") return UtqlValue::String_(layer->GetDisplayName());
+    if (f == "PATH" || f == "REAL_PATH") {
         const std::string rp = layer->GetRealPath();
         return rp.empty() ? UtqlValue::Null() : UtqlValue::String_(rp);
     }
-    if (f == "LAYER.FILEFORMAT") {
+    if (f == "FILE_FORMAT") {
         if (const SdfFileFormatConstPtr ff = layer->GetFileFormat())
             return UtqlValue::String_(ff->GetFormatId().GetString());
         return UtqlValue::Null();
     }
-    if (f == "LAYER.DIRTY")          return UtqlValue::Bool(layer->IsDirty());
-    if (f == "LAYER.ANONYMOUS")      return UtqlValue::Bool(layer->IsAnonymous());
-    if (f == "LAYER.MUTED")          return UtqlValue::Bool(layer->IsMuted());
-    if (f == "LAYER.EMPTY")          return UtqlValue::Bool(layer->IsEmpty());
-    if (f == "LAYER.ISROOTLAYER")    return UtqlValue::Bool(roots.count(layer->GetIdentifier()) != 0);
-    if (f == "LAYER.ISSESSIONLAYER") return UtqlValue::Bool(sessions.count(layer->GetIdentifier()) != 0);
-    if (f == "LAYER.DEFAULTPRIM") {
+    if (f == "DIRTY")          return UtqlValue::Bool(layer->IsDirty());
+    if (f == "ANONYMOUS")      return UtqlValue::Bool(layer->IsAnonymous());
+    if (f == "MUTED")          return UtqlValue::Bool(layer->IsMuted());
+    if (f == "EMPTY")          return UtqlValue::Bool(layer->IsEmpty());
+    if (f == "IS_ROOT_LAYER")    return UtqlValue::Bool(roots.count(layer->GetIdentifier()) != 0);
+    if (f == "IS_SESSION_LAYER") return UtqlValue::Bool(sessions.count(layer->GetIdentifier()) != 0);
+    if (f == "DEFAULT_PRIM") {
         const TfToken dp = layer->GetDefaultPrim();
         return dp.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(dp.GetString());
     }
-    if (f == "LAYER.ROOTPRIMCOUNT")  return UtqlValue::Number_(static_cast<double>(layer->GetRootPrims().size()));
+    if (f == "ROOT_PRIM_COUNT")  return UtqlValue::Number_(static_cast<double>(layer->GetRootPrims().size()));
     if (f == "SUBLAYER.COUNT")       return UtqlValue::Number_(static_cast<double>(layer->GetNumSubLayerPaths()));
     if (f == "HAS_SUBLAYER")         return UtqlValue::Bool(layer->GetNumSubLayerPaths() > 0);
     if (f == "SUBLAYERS")            return UtqlValue::String_(JoinStrings(LayerSublayerPaths(layer)));
-    if (f == "LAYER.STARTTIME")
+    if (f == "START_TIME")
         return layer->HasStartTimeCode() ? UtqlValue::Number_(layer->GetStartTimeCode()) : UtqlValue::Null();
-    if (f == "LAYER.ENDTIME")
+    if (f == "END_TIME")
         return layer->HasEndTimeCode() ? UtqlValue::Number_(layer->GetEndTimeCode()) : UtqlValue::Null();
-    if (f == "LAYER.TIMECODESPERSECOND") return UtqlValue::Number_(layer->GetTimeCodesPerSecond());
-    if (f == "LAYER.FRAMESPERSECOND")    return UtqlValue::Number_(layer->GetFramesPerSecond());
-    if (f == "LAYER.UPAXIS")             return RootMetadataField(layer, TfToken("upAxis"));
-    if (f == "LAYER.METERSPERUNIT")      return RootMetadataField(layer, TfToken("metersPerUnit"));
+    if (f == "TIMECODES_PER_SECOND") return UtqlValue::Number_(layer->GetTimeCodesPerSecond());
+    if (f == "FRAMES_PER_SECOND")    return UtqlValue::Number_(layer->GetFramesPerSecond());
+    if (f == "UP_AXIS")             return RootMetadataField(layer, TfToken("upAxis"));
+    if (f == "METERS_PER_UNIT")      return RootMetadataField(layer, TfToken("metersPerUnit"));
     return UtqlValue::Null();
 }
 
@@ -677,7 +677,7 @@ struct ValueCache {
 /// Convert a resolved/authored *scalar* value into a comparable UtqlValue for the
 /// VALUE.SCALAR predicate (design A1). Arrays, value blocks, empties, and
 /// non-scalar holdings (vectors, matrices, …) yield Null — gate arrays out with
-/// NOT VALUE.ISARRAY. Bool is tested before the numeric cast because bool casts to
+/// NOT VALUE.IS_ARRAY. Bool is tested before the numeric cast because bool casts to
 /// double; tokens / asset paths read as their string form.
 UtqlValue ScalarFromVtValue(const VtValue &v) {
     if (v.IsEmpty() || v.IsArrayValued() || v.IsHolding<SdfValueBlock>())
@@ -706,10 +706,10 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
             vc.fetched = true;
         }
     };
-    if (f == "ATTRIBUTE.NAME")      return UtqlValue::String_(attr.GetName().GetString());
+    if (f == "NAME")      return UtqlValue::String_(attr.GetName().GetString());
     if (f == "PATH")                return UtqlValue::String_(attr.GetPath().GetString());
-    if (f == "ATTRIBUTE.NAMESPACE") return NamespaceOf(attr.GetName().GetString());
-    if (f == "ATTRIBUTE.TYPENAME") {
+    if (f == "NAMESPACE") return NamespaceOf(attr.GetName().GetString());
+    if (f == "TYPE_NAME") {
         const SdfValueTypeName tn = attr.GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
                                          : UtqlValue::String_(tn.GetAsToken().GetString());
@@ -723,10 +723,10 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
             return UtqlValue::String_(iv.Get<TfToken>().GetString());
         return UtqlValue::Null();
     }
-    if (f == "VALUE.ISARRAY")        return UtqlValue::Bool(attr.GetTypeName().IsArray());
-    if (f == "VALUE.HASTIMESAMPLES") return UtqlValue::Bool(attr.GetNumTimeSamples() > 0);
-    if (f == "VALUE.SAMPLECOUNT")    return UtqlValue::Number_(static_cast<double>(attr.GetNumTimeSamples()));
-    if (f == "VALUE.ARRAYSIZE") {
+    if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(attr.GetTypeName().IsArray());
+    if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(attr.GetNumTimeSamples() > 0);
+    if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(attr.GetNumTimeSamples()));
+    if (f == "VALUE.ARRAY_SIZE") {
         if (!attr.GetTypeName().IsArray())
             return UtqlValue::Number_(-1.0); // scalar sentinel (design §6)
         ensure();
@@ -734,23 +734,23 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.ISNONE") {
+    if (f == "VALUE.IS_NONE") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
-    if (f == "VALUE.BYTESIZE") {
+    if (f == "VALUE.BYTE_SIZE") {
         ensure();
         return UtqlValue::Number_(ComputeByteSize(attr.GetTypeName(), vc.got, vc.value));
     }
     if (f == "VALUE.SCALAR") {
         if (attr.GetTypeName().IsArray())
-            return UtqlValue::Null(); // arrays out of scope — gate with NOT VALUE.ISARRAY
+            return UtqlValue::Null(); // arrays out of scope — gate with NOT VALUE.IS_ARRAY
         ensure();
         return vc.got ? ScalarFromVtValue(vc.value) : UtqlValue::Null();
     }
     // Asset resolution (design AS1). Only asset/asset[] attrs can be "missing";
     // anything else is a non-match. Reuses the cached value (AT-aware via `time`).
-    if (f == "VALUE.ASSETMISSING") {
+    if (f == "VALUE.IS_ASSET_MISSING") {
         if (!IsAssetTypeName(attr.GetTypeName()))
             return UtqlValue::Bool(false);
         ensure();
@@ -790,10 +790,10 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
             vc.fetched = true;
         }
     };
-    if (f == "ATTRIBUTE.NAME")      return UtqlValue::String_(spec->GetName());
+    if (f == "NAME")      return UtqlValue::String_(spec->GetName());
     if (f == "PATH")                return UtqlValue::String_(spec->GetPath().GetString());
-    if (f == "ATTRIBUTE.NAMESPACE") return NamespaceOf(spec->GetName());
-    if (f == "ATTRIBUTE.TYPENAME") {
+    if (f == "NAMESPACE") return NamespaceOf(spec->GetName());
+    if (f == "TYPE_NAME") {
         const SdfValueTypeName tn = spec->GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
                                          : UtqlValue::String_(tn.GetAsToken().GetString());
@@ -809,10 +809,10 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
         }
         return UtqlValue::Null();
     }
-    if (f == "VALUE.ISARRAY")        return UtqlValue::Bool(spec->GetTypeName().IsArray());
-    if (f == "VALUE.HASTIMESAMPLES") return UtqlValue::Bool(layer->GetNumTimeSamplesForPath(spec->GetPath()) > 0);
-    if (f == "VALUE.SAMPLECOUNT")    return UtqlValue::Number_(static_cast<double>(layer->GetNumTimeSamplesForPath(spec->GetPath())));
-    if (f == "VALUE.ARRAYSIZE") {
+    if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(spec->GetTypeName().IsArray());
+    if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(layer->GetNumTimeSamplesForPath(spec->GetPath()) > 0);
+    if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(layer->GetNumTimeSamplesForPath(spec->GetPath())));
+    if (f == "VALUE.ARRAY_SIZE") {
         if (!spec->GetTypeName().IsArray())
             return UtqlValue::Number_(-1.0);
         ensure();
@@ -820,23 +820,23 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.ISNONE") {
+    if (f == "VALUE.IS_NONE") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
-    if (f == "VALUE.BYTESIZE") {
+    if (f == "VALUE.BYTE_SIZE") {
         ensure();
         return UtqlValue::Number_(ComputeByteSize(spec->GetTypeName(), vc.got, vc.value));
     }
     if (f == "VALUE.SCALAR") {
         if (spec->GetTypeName().IsArray())
-            return UtqlValue::Null(); // arrays out of scope — gate with NOT VALUE.ISARRAY
+            return UtqlValue::Null(); // arrays out of scope — gate with NOT VALUE.IS_ARRAY
         ensure();
         return vc.got ? ScalarFromVtValue(vc.value) : UtqlValue::Null();
     }
     // Asset resolution (design AS1) — authored value, anchored+resolved against the
     // owning layer (relative paths anchor to it). Only asset/asset[] attrs.
-    if (f == "VALUE.ASSETMISSING") {
+    if (f == "VALUE.IS_ASSET_MISSING") {
         if (!IsAssetTypeName(spec->GetTypeName()))
             return UtqlValue::Bool(false);
         ensure();
@@ -856,11 +856,11 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
 
 UtqlValue GetRelScalarField(const std::string &name, const SdfPathVector &targets,
                             const SdfPath &path, const std::string &f) {
-    if (f == "RELATIONSHIP.NAME")        return UtqlValue::String_(name);
-    if (f == "PATH")                     return UtqlValue::String_(path.GetString());
-    if (f == "RELATIONSHIP.NAMESPACE")   return NamespaceOf(name);
-    if (f == "RELATIONSHIP.TARGETCOUNT") return UtqlValue::Number_(static_cast<double>(targets.size()));
-    if (f == "RELATIONSHIP.TARGET" || f == "RELATIONSHIP")
+    if (f == "NAME")         return UtqlValue::String_(name);
+    if (f == "PATH")         return UtqlValue::String_(path.GetString());
+    if (f == "NAMESPACE")    return NamespaceOf(name);
+    if (f == "TARGET_COUNT") return UtqlValue::Number_(static_cast<double>(targets.size()));
+    if (f == "TARGET")
         return UtqlValue::String_(JoinPaths(targets)); // display form of the set
     return UtqlValue::Null();
 }
@@ -919,21 +919,21 @@ std::vector<Arc> BuildUsdArcs(const UsdPrim &prim, Family fam) {
     // Reference / Payload: read the authored arcs off the prim's spec stack and
     // resolve each asset. A broken reference produces NO composed arc, so the
     // composition query can't see it — but its authoring spec is still on the
-    // stack, so resolving the authored asset path is the reliable ISMISSING test.
+    // stack, so resolving the authored asset path is the reliable IS_MISSING test.
     if (fam == Family::Reference || fam == Family::Payload) {
         auto makeArc = [&](const std::string &asset, const SdfPath &primPath,
                            const SdfLayerOffset &off, const SdfLayerHandle &anchor) {
             Arc a;
             a.fields[prefix + ".ASSET"] =
                 asset.empty() ? UtqlValue::Null() : UtqlValue::String_(asset);
-            a.fields[prefix + ".PRIMPATH"] =
+            a.fields[prefix + ".PRIM_PATH"] =
                 primPath.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(primPath.GetString());
-            a.fields[prefix + ".LAYEROFFSET"] = UtqlValue::Number_(off.GetOffset());
-            a.fields[prefix + ".LAYERSCALE"] = UtqlValue::Number_(off.GetScale());
+            a.fields[prefix + ".LAYER_OFFSET"] = UtqlValue::Number_(off.GetOffset());
+            a.fields[prefix + ".LAYER_SCALE"] = UtqlValue::Number_(off.GetScale());
             bool missing = false; // a same-layer (asset-less) arc never "misses"
             if (!asset.empty() && anchor)
                 missing = !SdfLayer::FindOrOpenRelativeToLayer(anchor, asset);
-            a.fields[prefix + ".ISMISSING"] = UtqlValue::Bool(missing);
+            a.fields[prefix + ".IS_MISSING"] = UtqlValue::Bool(missing);
             arcs.push_back(std::move(a));
         };
         for (const SdfPrimSpecHandle &spec : prim.GetPrimStack()) {
@@ -965,7 +965,7 @@ std::vector<Arc> BuildUsdArcs(const UsdPrim &prim, Family fam) {
         return arcs;
     }
 
-    // Inherit / Specialize: internal arcs, always resolve — read PRIMPATH from
+    // Inherit / Specialize: internal arcs, always resolve — read PRIM_PATH from
     // the direct composed arcs.
     UsdPrimCompositionQuery::Filter filter;
     filter.dependencyTypeFilter = UsdPrimCompositionQuery::DependencyTypeFilter::Direct;
@@ -976,7 +976,7 @@ std::vector<Arc> BuildUsdArcs(const UsdPrim &prim, Family fam) {
         if (ArcTypeFamily(arc.GetArcType(), ok) != fam || !ok)
             continue;
         Arc a;
-        a.fields[prefix + ".PRIMPATH"] = UtqlValue::String_(arc.GetTargetPrimPath().GetString());
+        a.fields[prefix + ".PRIM_PATH"] = UtqlValue::String_(arc.GetTargetPrimPath().GetString());
         arcs.push_back(std::move(a));
     }
     return arcs;
@@ -995,12 +995,12 @@ std::vector<Arc> BuildSdfArcs(const SdfPrimSpecHandle &spec, Family fam) {
                 Arc a;
                 a.fields[prefix + ".ASSET"] =
                     r.GetAssetPath().empty() ? UtqlValue::Null() : UtqlValue::String_(r.GetAssetPath());
-                a.fields[prefix + ".PRIMPATH"] =
+                a.fields[prefix + ".PRIM_PATH"] =
                     r.GetPrimPath().IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(r.GetPrimPath().GetString());
-                a.fields[prefix + ".LAYEROFFSET"] = UtqlValue::Number_(r.GetLayerOffset().GetOffset());
-                a.fields[prefix + ".LAYERSCALE"] = UtqlValue::Number_(r.GetLayerOffset().GetScale());
+                a.fields[prefix + ".LAYER_OFFSET"] = UtqlValue::Number_(r.GetLayerOffset().GetOffset());
+                a.fields[prefix + ".LAYER_SCALE"] = UtqlValue::Number_(r.GetLayerOffset().GetScale());
                 a.fields[prefix + ".OP"] = UtqlValue::String_(op);
-                a.fields[prefix + ".ISMISSING"] = UtqlValue::Bool(false); // authored, not resolved
+                a.fields[prefix + ".IS_MISSING"] = UtqlValue::Bool(false); // authored, not resolved
                 arcs.push_back(std::move(a));
             }
         };
@@ -1025,7 +1025,7 @@ std::vector<Arc> BuildSdfArcs(const SdfPrimSpecHandle &spec, Family fam) {
         auto addPaths = [&](const auto &items, const char *op) {
             for (const SdfPath &p : items) {
                 Arc a;
-                a.fields[prefix + ".PRIMPATH"] = UtqlValue::String_(p.GetString());
+                a.fields[prefix + ".PRIM_PATH"] = UtqlValue::String_(p.GetString());
                 a.fields[prefix + ".OP"] = UtqlValue::String_(op);
                 arcs.push_back(std::move(a));
             }
@@ -1126,7 +1126,7 @@ std::string ArcTypeName(PcpArcType t) {
 }
 
 /// Map each layer feeding a prim to the arc type it composes through, so a
-/// composing spec can be tagged with COMPOSITION.ARCTYPE. Strongest arc wins.
+/// composing spec can be tagged with COMPOSITION.ARC_TYPE. Strongest arc wins.
 std::map<std::string, std::string> BuildArcTypeByLayer(const UsdPrim &prim) {
     std::map<std::string, std::string> m;
     UsdPrimCompositionQuery query(prim);
@@ -1263,7 +1263,7 @@ std::vector<std::string> BuildColumns(const BoundQuery &q) {
         return q.returnFields;
     // LAYER rows have no prim path; identify them by their layer identifier.
     if (q.entity == UtqlEntity::Layer)
-        return {"LAYER.IDENTIFIER"};
+        return {"IDENTIFIER"};
     return {"PATH", q.world == UtqlWorld::Stage ? "STAGE" : "LAYER"};
 }
 
@@ -1300,7 +1300,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     // Set-valued fields for relationship entities (CONTAINS / existential).
     std::unordered_set<std::string> setFields;
     if (q.entity == UtqlEntity::UsdRelationship || q.entity == UtqlEntity::SdfRelationship)
-        setFields = {"RELATIONSHIP", "RELATIONSHIP.TARGET"};
+        setFields = {"TARGET"};
     // Prim-level relationship-name set field (design I2, RELATIONSHIPS CONTAINS …).
     else if (q.entity == UtqlEntity::UsdPrim || q.entity == UtqlEntity::SdfPrim)
         setFields = {"RELATIONSHIPS"};
@@ -1477,7 +1477,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 auto get = [&specGet, strength, arctype, targetPath](const std::string &fld) -> UtqlValue {
                     if (fld == "COMPOSITION.TARGET")   return UtqlValue::String_(targetPath.GetString());
                     if (fld == "COMPOSITION.STRENGTH") return UtqlValue::Number_(strength);
-                    if (fld == "COMPOSITION.ARCTYPE")  return UtqlValue::String_(arctype);
+                    if (fld == "COMPOSITION.ARC_TYPE")  return UtqlValue::String_(arctype);
                     return specGet(fld);
                 };
                 emit(layerId, specPath, get, specGetSet, noArcs);
@@ -1891,7 +1891,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             if (!stage) continue;
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
-            // Descend into instances (design I1 / ISINSTANCEPROXY).
+            // Descend into instances (design I1 / IS_INSTANCE_PROXY).
             for (UsdPrim p : UsdPrimRange(stage->GetPseudoRoot(),
                                           UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate)))
                 primItems.push_back({source, p});
@@ -2014,7 +2014,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         result.stages = ctx.allStages; // keep stages alive for click resolution
 
         // Identifiers of layers currently serving as a root / session layer of some
-        // open stage — backs LAYER.ISROOTLAYER / .ISSESSIONLAYER (design §5).
+        // open stage — backs IS_ROOT_LAYER / IS_SESSION_LAYER (design §5).
         std::unordered_set<std::string> rootLayerIds, sessionLayerIds;
         if (q.entity == UtqlEntity::Layer) {
             for (const auto &s : ctx.allStages) {

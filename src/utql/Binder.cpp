@@ -30,7 +30,7 @@ struct FieldInfo {
     FieldType  type = FieldType::String;
     bool       nullable = false;
     bool       supported = true; ///< false = recognised but not in this build yet
-    bool       isSet = false;    ///< set-valued (CONTAINS / existential), e.g. RELATIONSHIP
+    bool       isSet = false;    ///< set-valued (CONTAINS / existential), e.g. TARGET
 };
 
 Category CategoryOf(UtqlEntity e) {
@@ -67,36 +67,36 @@ FieldInfo LookupPrimField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable, bool supported = true) {
         return FieldInfo{true, t, nullable, supported};
     };
-    if (f == "PRIMNAME")       return mk(FieldType::String, false);
+    if (f == "NAME")       return mk(FieldType::String, false);
     if (f == "PATH")           return mk(FieldType::String, false);
-    if (f == "PRIMTYPE")       return mk(FieldType::String, true);
+    if (f == "TYPE")       return mk(FieldType::String, true);
     if (f == "KIND")           return mk(FieldType::String, true);
     if (f == "SPECIFIER")      return mk(FieldType::String, false);
     if (f == "ACTIVE")         return mk(FieldType::Bool, false);
     if (f == "ABSTRACT")       return mk(FieldType::Bool, false);
     if (f == "DEPTH")          return mk(FieldType::Number, false);
-    if (f == "CHILDCOUNT")     return mk(FieldType::Number, false);
-    if (f == "ATTRIBUTECOUNT") return mk(FieldType::Number, false);
-    if (f == "SPECCOUNT")      return mk(FieldType::Number, false);
+    if (f == "CHILD_COUNT")     return mk(FieldType::Number, false);
+    if (f == "ATTRIBUTE_COUNT") return mk(FieldType::Number, false);
+    if (f == "SPEC_COUNT")      return mk(FieldType::Number, false);
     if (f == "API.COUNT")      return mk(FieldType::Number, false); // aggregate scalar
     // Composition / API existence gates.
     if (f == "HAS_REFERENCE" || f == "HAS_PAYLOAD" || f == "HAS_VARIANT" || f == "HAS_API")
         return mk(FieldType::Bool, false);
     // Prim-level animation gate (design A2). Not a composition family — a plain
     // bool leaf: true iff the prim has any attribute with authored time samples.
-    if (f == "HAS_TIMESAMPLES") return mk(FieldType::Bool, false);
+    if (f == "HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
     // Native-instancing classification gates (design I1). Plain bool leaves.
-    // ISINSTANCE / ISPROTOTYPE / ISINPROTOTYPE are composed facts (Stage world only —
+    // IS_INSTANCE / IS_PROTOTYPE / IS_IN_PROTOTYPE are composed facts (Stage world only —
     // enforced in ValidateLeaf); INSTANCEABLE is authored metadata, valid in both
-    // worlds. ISINPROTOTYPE is true for a prototype root or any prim under it (so it
-    // is a superset of ISPROTOTYPE, which matches the root only).
-    if (f == "ISINSTANCE" || f == "ISPROTOTYPE" || f == "ISINPROTOTYPE" ||
-        f == "ISINSTANCEPROXY" || f == "INSTANCEABLE")
+    // worlds. IS_IN_PROTOTYPE is true for a prototype root or any prim under it (so it
+    // is a superset of IS_PROTOTYPE, which matches the root only).
+    if (f == "IS_INSTANCE" || f == "IS_PROTOTYPE" || f == "IS_IN_PROTOTYPE" ||
+        f == "IS_INSTANCE_PROXY" || f == "INSTANCEABLE")
         return mk(FieldType::Bool, false);
     // Payload load state (composed/runtime stage fact — Stage world only, enforced
     // in ValidateLeaf). UsdPrim::IsLoaded(); pair with HAS_PAYLOAD for "loaded /
     // unloaded payloads" since a prim with no loadable ancestor reports loaded.
-    if (f == "ISLOADED") return mk(FieldType::Bool, false);
+    if (f == "IS_LOADED") return mk(FieldType::Bool, false);
     // Relationship-existence predicates (design I2). HAS_RELATIONSHIP is a nullary
     // bool gate (the prim has ≥1 relationship), mirroring HAS_API. RELATIONSHIPS is
     // a set field of the prim's relationship names, queried with CONTAINS / existential
@@ -108,26 +108,26 @@ FieldInfo LookupPrimField(const std::string &f) {
 }
 
 const char *kPrimFieldList =
-    "PRIMNAME, PATH, PRIMTYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
-    "CHILDCOUNT, ATTRIBUTECOUNT, SPECCOUNT, HAS_REFERENCE, HAS_PAYLOAD, "
-    "HAS_VARIANT, HAS_API, HAS_TIMESAMPLES, ISINSTANCE, ISPROTOTYPE, ISINPROTOTYPE, "
-    "ISINSTANCEPROXY, INSTANCEABLE, ISLOADED, HAS_RELATIONSHIP, RELATIONSHIPS";
+    "NAME, PATH, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
+    "CHILD_COUNT, ATTRIBUTE_COUNT, SPEC_COUNT, HAS_REFERENCE, HAS_PAYLOAD, "
+    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, IS_INSTANCE, IS_PROTOTYPE, IS_IN_PROTOTYPE, "
+    "IS_INSTANCE_PROXY, INSTANCEABLE, IS_LOADED, HAS_RELATIONSHIP, RELATIONSHIPS";
 
 FieldInfo LookupAttrField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
-    if (f == "ATTRIBUTE.NAME")       return mk(FieldType::String, false);
-    if (f == "ATTRIBUTE.TYPENAME")   return mk(FieldType::String, true);
-    if (f == "ATTRIBUTE.NAMESPACE")  return mk(FieldType::String, true);
-    if (f == "VALUE.ARRAYSIZE")      return mk(FieldType::Number, false);
-    if (f == "VALUE.BYTESIZE")       return mk(FieldType::Number, false);
-    if (f == "VALUE.ISARRAY")        return mk(FieldType::Bool, false);
-    if (f == "VALUE.HASTIMESAMPLES") return mk(FieldType::Bool, false);
-    if (f == "VALUE.SAMPLECOUNT")    return mk(FieldType::Number, false);
-    if (f == "VALUE.ISNONE")         return mk(FieldType::Bool, false);
+    if (f == "NAME")       return mk(FieldType::String, false);
+    if (f == "TYPE_NAME")   return mk(FieldType::String, true);
+    if (f == "NAMESPACE")  return mk(FieldType::String, true);
+    if (f == "VALUE.ARRAY_SIZE")      return mk(FieldType::Number, false);
+    if (f == "VALUE.BYTE_SIZE")       return mk(FieldType::Number, false);
+    if (f == "VALUE.IS_ARRAY")        return mk(FieldType::Bool, false);
+    if (f == "VALUE.HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
+    if (f == "VALUE.SAMPLE_COUNT")    return mk(FieldType::Number, false);
+    if (f == "VALUE.IS_NONE")         return mk(FieldType::Bool, false);
     // Asset-resolution gate (design AS1). Bool flag — true when an asset/asset[]
     // attribute's value does not resolve (existential over array elements). Both
     // worlds; non-asset attrs are a per-row non-match, not an error.
-    if (f == "VALUE.ASSETMISSING")   return mk(FieldType::Bool, false);
+    if (f == "VALUE.IS_ASSET_MISSING")   return mk(FieldType::Bool, false);
     // VALUE.SCALAR (design A1) is type-polymorphic; its operator validity is decided
     // by ValidateScalarLeaf (the runtime value type is unknown at bind). Listed here
     // as nullable String so it is recognised, displayable in RETURN, and null-testable.
@@ -139,7 +139,7 @@ FieldInfo LookupAttrField(const std::string &f) {
     // set field (source attribute paths this attr is connected from), queried with
     // CONTAINS / existential =; HAS_CONNECTION is the bool gate; CONNECTION.COUNT the
     // source count. Composed connections on USDATTRIBUTE, authored connectionPaths on
-    // SDFATTRIBUTE. CONNECTION.OP (list-op) is deferred, like RELATIONSHIP.OP.
+    // SDFATTRIBUTE. CONNECTION.OP (list-op) is deferred, like the relationship OP.
     if (f == "CONNECTION.SOURCE")    return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     if (f == "HAS_CONNECTION")       return mk(FieldType::Bool, false);
     if (f == "CONNECTION.COUNT")     return mk(FieldType::Number, false);
@@ -147,54 +147,53 @@ FieldInfo LookupAttrField(const std::string &f) {
 }
 
 const char *kAttrFieldList =
-    "ATTRIBUTE.NAME, ATTRIBUTE.TYPENAME, ATTRIBUTE.NAMESPACE, VALUE.ARRAYSIZE, "
-    "VALUE.BYTESIZE, VALUE.ISARRAY, VALUE.HASTIMESAMPLES, VALUE.SAMPLECOUNT, "
-    "VALUE.ISNONE, VALUE.ASSETMISSING, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
+    "NAME, TYPE_NAME, NAMESPACE, VALUE.ARRAY_SIZE, "
+    "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
+    "VALUE.IS_NONE, VALUE.IS_ASSET_MISSING, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
     "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT";
 
 FieldInfo LookupRelField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable, bool set = false) {
         return FieldInfo{true, t, nullable, true, set};
     };
-    if (f == "RELATIONSHIP.NAME")        return mk(FieldType::String, false);
-    if (f == "RELATIONSHIP.NAMESPACE")   return mk(FieldType::String, true);
-    if (f == "RELATIONSHIP.TARGET")      return mk(FieldType::String, false, /*set*/ true);
-    if (f == "RELATIONSHIP")             return mk(FieldType::String, false, /*set*/ true);
-    if (f == "RELATIONSHIP.TARGETCOUNT") return mk(FieldType::Number, false);
-    if (f == "PATH")                     return mk(FieldType::String, false);
+    if (f == "NAME")         return mk(FieldType::String, false);
+    if (f == "NAMESPACE")    return mk(FieldType::String, true);
+    if (f == "TARGET")       return mk(FieldType::String, false, /*set*/ true);
+    if (f == "TARGET_COUNT") return mk(FieldType::Number, false);
+    if (f == "PATH")         return mk(FieldType::String, false);
     return FieldInfo{};
 }
 
 const char *kRelFieldList =
-    "RELATIONSHIP.NAME, RELATIONSHIP.NAMESPACE, RELATIONSHIP.TARGET, "
-    "RELATIONSHIP.TARGETCOUNT, PATH";
+    "NAME, NAMESPACE, TARGET, "
+    "TARGET_COUNT, PATH";
 
 /// LAYER entity fields (design §5) plus the sublayer predicate (design A3). The
-/// stage-root metadata (UPAXIS/METERSPERUNIT/time codes/DEFAULTPRIM) is read off the
-/// layer; ISROOTLAYER / ISSESSIONLAYER recover the per-stage view. SUBLAYERS is a set
+/// stage-root metadata (UP_AXIS/METERS_PER_UNIT/time codes/DEFAULT_PRIM) is read off the
+/// layer; IS_ROOT_LAYER / IS_SESSION_LAYER recover the per-stage view. SUBLAYERS is a set
 /// field (sublayer asset paths) queried with CONTAINS / LIKE; HAS_SUBLAYER is the
 /// bool gate, SUBLAYER.COUNT the count.
 FieldInfo LookupLayerField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
     if (f == "PATH")                     return mk(FieldType::String, true);
-    if (f == "LAYER.IDENTIFIER")         return mk(FieldType::String, false);
-    if (f == "LAYER.DISPLAYNAME")        return mk(FieldType::String, false);
-    if (f == "LAYER.REALPATH")           return mk(FieldType::String, true);
-    if (f == "LAYER.FILEFORMAT")         return mk(FieldType::String, true);
-    if (f == "LAYER.DIRTY")              return mk(FieldType::Bool, false);
-    if (f == "LAYER.ANONYMOUS")          return mk(FieldType::Bool, false);
-    if (f == "LAYER.MUTED")              return mk(FieldType::Bool, false);
-    if (f == "LAYER.EMPTY")              return mk(FieldType::Bool, false);
-    if (f == "LAYER.ISROOTLAYER")        return mk(FieldType::Bool, false);
-    if (f == "LAYER.ISSESSIONLAYER")     return mk(FieldType::Bool, false);
-    if (f == "LAYER.DEFAULTPRIM")        return mk(FieldType::String, true);
-    if (f == "LAYER.UPAXIS")             return mk(FieldType::String, true);
-    if (f == "LAYER.METERSPERUNIT")      return mk(FieldType::Number, true);
-    if (f == "LAYER.ROOTPRIMCOUNT")      return mk(FieldType::Number, false);
-    if (f == "LAYER.STARTTIME")          return mk(FieldType::Number, true);
-    if (f == "LAYER.ENDTIME")            return mk(FieldType::Number, true);
-    if (f == "LAYER.TIMECODESPERSECOND") return mk(FieldType::Number, false);
-    if (f == "LAYER.FRAMESPERSECOND")    return mk(FieldType::Number, false);
+    if (f == "IDENTIFIER")         return mk(FieldType::String, false);
+    if (f == "DISPLAY_NAME")        return mk(FieldType::String, false);
+    if (f == "REAL_PATH")           return mk(FieldType::String, true);
+    if (f == "FILE_FORMAT")         return mk(FieldType::String, true);
+    if (f == "DIRTY")              return mk(FieldType::Bool, false);
+    if (f == "ANONYMOUS")          return mk(FieldType::Bool, false);
+    if (f == "MUTED")              return mk(FieldType::Bool, false);
+    if (f == "EMPTY")              return mk(FieldType::Bool, false);
+    if (f == "IS_ROOT_LAYER")        return mk(FieldType::Bool, false);
+    if (f == "IS_SESSION_LAYER")     return mk(FieldType::Bool, false);
+    if (f == "DEFAULT_PRIM")        return mk(FieldType::String, true);
+    if (f == "UP_AXIS")             return mk(FieldType::String, true);
+    if (f == "METERS_PER_UNIT")      return mk(FieldType::Number, true);
+    if (f == "ROOT_PRIM_COUNT")      return mk(FieldType::Number, false);
+    if (f == "START_TIME")          return mk(FieldType::Number, true);
+    if (f == "END_TIME")            return mk(FieldType::Number, true);
+    if (f == "TIMECODES_PER_SECOND") return mk(FieldType::Number, false);
+    if (f == "FRAMES_PER_SECOND")    return mk(FieldType::Number, false);
     if (f == "HAS_SUBLAYER")             return mk(FieldType::Bool, false);
     if (f == "SUBLAYER.COUNT")           return mk(FieldType::Number, false);
     if (f == "SUBLAYERS")                return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
@@ -202,11 +201,11 @@ FieldInfo LookupLayerField(const std::string &f) {
 }
 
 const char *kLayerFieldList =
-    "LAYER.IDENTIFIER, LAYER.DISPLAYNAME, LAYER.REALPATH, LAYER.FILEFORMAT, "
-    "LAYER.DIRTY, LAYER.ANONYMOUS, LAYER.MUTED, LAYER.EMPTY, LAYER.ISROOTLAYER, "
-    "LAYER.ISSESSIONLAYER, LAYER.DEFAULTPRIM, LAYER.UPAXIS, LAYER.METERSPERUNIT, "
-    "LAYER.ROOTPRIMCOUNT, LAYER.STARTTIME, LAYER.ENDTIME, LAYER.TIMECODESPERSECOND, "
-    "LAYER.FRAMESPERSECOND, HAS_SUBLAYER, SUBLAYER.COUNT, SUBLAYERS";
+    "IDENTIFIER, DISPLAY_NAME, REAL_PATH, FILE_FORMAT, "
+    "DIRTY, ANONYMOUS, MUTED, EMPTY, IS_ROOT_LAYER, "
+    "IS_SESSION_LAYER, DEFAULT_PRIM, UP_AXIS, METERS_PER_UNIT, "
+    "ROOT_PRIM_COUNT, START_TIME, END_TIME, TIMECODES_PER_SECOND, "
+    "FRAMES_PER_SECOND, HAS_SUBLAYER, SUBLAYER.COUNT, SUBLAYERS";
 
 FieldInfo LookupField(Category c, const std::string &f) {
     switch (c) {
@@ -234,8 +233,8 @@ const char *FieldListFor(Category c) {
 std::string ValidFieldsFor(Category c) {
     if (c == Category::Prim)
         return std::string(kPrimFieldList) +
-               ", and composition/API families: REFERENCE.{ASSET,PRIMPATH,ISMISSING,"
-               "LAYEROFFSET,LAYERSCALE,OP} PAYLOAD.{…} INHERIT.PRIMPATH SPECIALIZE.PRIMPATH "
+               ", and composition/API families: REFERENCE.{ASSET,PRIM_PATH,IS_MISSING,"
+               "LAYER_OFFSET,LAYER_SCALE,OP} PAYLOAD.{…} INHERIT.PRIM_PATH SPECIALIZE.PRIM_PATH "
                "VARIANT.SET VARIANT.SELECTION API(CONTAINS) API.COUNT";
     return FieldListFor(c);
 }
@@ -291,15 +290,15 @@ FamilyField LookupFamilyField(const std::string &f) {
 
     if (head == "REFERENCE" || head == "PAYLOAD") {
         const Family fam = (head == "REFERENCE") ? Family::Reference : Family::Payload;
-        if (sub == "ASSET" || sub == "PRIMPATH")    { set(fam, FieldType::String); return r; }
-        if (sub == "ISMISSING")                     { set(fam, FieldType::Bool); return r; }
-        if (sub == "LAYEROFFSET" || sub == "LAYERSCALE") { set(fam, FieldType::Number); return r; }
+        if (sub == "ASSET" || sub == "PRIM_PATH")    { set(fam, FieldType::String); return r; }
+        if (sub == "IS_MISSING")                     { set(fam, FieldType::Bool); return r; }
+        if (sub == "LAYER_OFFSET" || sub == "LAYER_SCALE") { set(fam, FieldType::Number); return r; }
         if (sub == "OP")                            { set(fam, FieldType::String); r.isOp = true; return r; }
         return r;
     }
     if (head == "INHERIT" || head == "SPECIALIZE") {
         const Family fam = (head == "INHERIT") ? Family::Inherit : Family::Specialize;
-        if (sub == "PRIMPATH") { set(fam, FieldType::String); return r; }
+        if (sub == "PRIM_PATH") { set(fam, FieldType::String); return r; }
         if (sub == "OP")       { set(fam, FieldType::String); r.isOp = true; return r; }
         return r;
     }
@@ -329,10 +328,10 @@ std::string FamilyFieldHint(const std::string &f) {
     const std::string head = (dot == std::string::npos) ? f : f.substr(0, dot);
     std::string valid;
     if (head == "REFERENCE" || head == "PAYLOAD")
-        valid = head + ".ASSET, " + head + ".PRIMPATH, " + head + ".ISMISSING, " + head +
-                ".LAYEROFFSET, " + head + ".LAYERSCALE, " + head + ".OP";
+        valid = head + ".ASSET, " + head + ".PRIM_PATH, " + head + ".IS_MISSING, " + head +
+                ".LAYER_OFFSET, " + head + ".LAYER_SCALE, " + head + ".OP";
     else if (head == "INHERIT" || head == "SPECIALIZE")
-        valid = head + ".PRIMPATH, " + head + ".OP";
+        valid = head + ".PRIM_PATH, " + head + ".OP";
     else if (head == "VARIANT")
         valid = "VARIANT.SET, VARIANT.SELECTION";
     else if (head == "API")
@@ -602,7 +601,7 @@ class Binder {
         }
     }
 
-    /// A Layer-world list-op field (e.g. RELATIONSHIP.OP) — recognised but not
+    /// A Layer-world list-op field (e.g. REFERENCE.OP) — recognised but not
     /// executed until the composition/list-op phase.
     bool IsListOpField(const std::string &f) const { return EndsWith(f, ".OP"); }
 
@@ -653,16 +652,16 @@ class Binder {
         return StartsWith(f, "COMPOSITION.");
     }
 
-    /// COMPOSITION.TARGET/STRENGTH/ARCTYPE — valid only under COMPOSING INTO … PER TARGET.
+    /// COMPOSITION.TARGET/STRENGTH/ARC_TYPE — valid only under COMPOSING INTO … PER TARGET.
     bool ValidateCompositionField(const std::string &f) {
         if (!(_composing && _perTarget)) {
-            Fail("COMPOSITION.STRENGTH/ARCTYPE/TARGET require PER TARGET.");
+            Fail("COMPOSITION.STRENGTH/ARC_TYPE/TARGET require PER TARGET.");
             return false;
         }
-        if (f == "COMPOSITION.TARGET" || f == "COMPOSITION.STRENGTH" || f == "COMPOSITION.ARCTYPE")
+        if (f == "COMPOSITION.TARGET" || f == "COMPOSITION.STRENGTH" || f == "COMPOSITION.ARC_TYPE")
             return true;
         Fail("Unknown field " + f +
-             ". Valid: COMPOSITION.TARGET, COMPOSITION.STRENGTH, COMPOSITION.ARCTYPE.");
+             ". Valid: COMPOSITION.TARGET, COMPOSITION.STRENGTH, COMPOSITION.ARC_TYPE.");
         return false;
     }
 
@@ -731,8 +730,8 @@ class Binder {
         // exists only after composition, so they are Stage world only. INSTANCEABLE
         // is authored metadata and stays valid in both worlds.
         if (_cat == Category::Prim &&
-            (f == "ISINSTANCE" || f == "ISPROTOTYPE" || f == "ISINPROTOTYPE" ||
-             f == "ISINSTANCEPROXY" || f == "ISLOADED") &&
+            (f == "IS_INSTANCE" || f == "IS_PROTOTYPE" || f == "IS_IN_PROTOTYPE" ||
+             f == "IS_INSTANCE_PROXY" || f == "IS_LOADED") &&
             world == UtqlWorld::Layer) {
             Fail(f + " is a composed-stage fact, invalid in Layer world. Query USDPRIM.");
             return false;
@@ -744,7 +743,7 @@ class Binder {
         if (_cat == Category::Prim && (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)))
             return ValidateFamilyLeaf(e, world);
 
-        // RELATIONSHIP.OP and other non-prim list-ops are still deferred.
+        // Relationship OP and other non-prim list-ops are still deferred.
         if (IsListOpField(f)) {
             Fail(f + " (list-op) is recognised but not yet supported in this build.");
             return false;
@@ -781,7 +780,7 @@ class Binder {
                 return true;
             case WhereExpr::Kind::Contains:
                 if (!fi.isSet) {
-                    Fail("CONTAINS requires a set-valued field (e.g. RELATIONSHIP); " +
+                    Fail("CONTAINS requires a set-valued field (e.g. TARGET); " +
                          f + " is scalar — use = / IN.");
                     return false;
                 }
