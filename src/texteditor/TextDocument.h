@@ -114,6 +114,12 @@ class TextDocument {
     bool UndoEdit();
     bool RedoEdit();
 
+    /// Coalesce every edit made between these calls into a single undo step
+    /// (e.g. a Replace All that touches many spans). Calls may nest; only the
+    /// outermost pair opens/closes the group.
+    void BeginUndoGroup();
+    void EndUndoGroup();
+
     /// Discard all local edits: re-serialize the dirty spans from the layer.
     void RevertEdits();
 
@@ -164,6 +170,7 @@ class TextDocument {
         TextPosition begin;
         std::string removed;
         std::string inserted;
+        uint64_t groupId = 0; ///< 0 = standalone; equal ids undo/redo together
     };
 
     /// Shared implementation of ReplaceRange/undo/redo (no undo recording).
@@ -194,6 +201,9 @@ class TextDocument {
     std::vector<TextRefreshRecord> _recentRefreshes;
     std::vector<EditRecord> _undoStack;
     std::vector<EditRecord> _redoStack;
+    uint64_t _nextGroupId = 1;  ///< next id handed out by BeginUndoGroup
+    uint64_t _currentGroupId = 0; ///< nonzero while inside an undo group
+    int _undoGroupDepth = 0;    ///< nesting depth of BeginUndoGroup calls
     std::unordered_set<SpanNode *> _dirtySpans;
     std::vector<UsdaParseError> _parseErrors;
     std::string _editWarning;

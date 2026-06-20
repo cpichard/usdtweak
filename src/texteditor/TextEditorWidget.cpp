@@ -345,6 +345,9 @@ void DrawTextEditorView(TextDocument &document, const ImVec2 &size, TextEditorVi
         if (status && ImGui::IsKeyPressed(ImGuiKey_F3)) {
             (io.KeyShift ? status->requestFindPrevious : status->requestFindNext) = true;
         }
+        if (status && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_G)) {
+            status->requestGoto = true;
+        }
         if (status && (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Enter) ||
                        ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_KeypadEnter))) {
             status->requestCommit = true;

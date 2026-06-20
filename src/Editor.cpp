@@ -1260,7 +1260,7 @@ void Editor::Draw() {
 
     if (_settings._showTextEditorV2) {
         TRACE_SCOPE(TextEditorV2WindowTitle);
-        ImGui::Begin(TextEditorV2WindowTitle, &_settings._showTextEditorV2);
+        ImGui::Begin(TextEditorV2WindowTitle, &_settings._showTextEditorV2, ImGuiWindowFlags_MenuBar);
         SdfPath textEditorSelection = GetSelection().GetAnchorPropertyPath(GetCurrentLayer());
         if (textEditorSelection.IsEmpty()) {
             textEditorSelection = GetSelection().GetAnchorPrimPath(GetCurrentLayer());

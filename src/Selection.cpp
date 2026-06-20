@@ -60,6 +60,7 @@ template <> void Selection::Clear(const SdfLayerRefPtr &layer) {
     if (!_data || !layer)
         return;
     _data->_sdfPrimSelectionDomain.clear();
+    _data->_sdfPropSelectionDomain.clear();
 }
 
 template <> void Selection::Clear(const UsdStageRefPtr &stage) {

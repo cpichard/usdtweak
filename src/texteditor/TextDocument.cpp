@@ -592,9 +592,11 @@ bool TextDocument::ReplaceRange(TextPosition begin, TextPosition end, const std:
         *endPosition = insertedEnd;
     }
 
-    // Coalesce plain typing and plain backspacing into the previous record
+    // Coalesce plain typing and plain backspacing into the previous record.
+    // Skip this inside an explicit undo group: those edits form their own
+    // record(s) and must not merge with whatever preceded the group.
     bool coalesced = false;
-    if (!_undoStack.empty()) {
+    if (_currentGroupId == 0 && !_undoStack.empty()) {
         EditRecord &top = _undoStack.back();
         const bool plainInsert = removed.empty() && !text.empty() &&
                                  text.find('\n') == std::string::npos && top.removed.empty() &&
@@ -613,7 +615,7 @@ bool TextDocument::ReplaceRange(TextPosition begin, TextPosition end, const std:
         }
     }
     if (!coalesced) {
-        _undoStack.push_back({begin, std::move(removed), text});
+        _undoStack.push_back({begin, std::move(removed), text, _currentGroupId});
         constexpr size_t kMaxUndoRecords = 1000;
         if (_undoStack.size() > kMaxUndoRecords) {
             _undoStack.erase(_undoStack.begin());
@@ -623,18 +625,36 @@ bool TextDocument::ReplaceRange(TextPosition begin, TextPosition end, const std:
     return true;
 }
 
+void TextDocument::BeginUndoGroup() {
+    if (_undoGroupDepth++ == 0) {
+        _currentGroupId = _nextGroupId++;
+    }
+}
+
+void TextDocument::EndUndoGroup() {
+    if (_undoGroupDepth > 0 && --_undoGroupDepth == 0) {
+        _currentGroupId = 0;
+    }
+}
+
 bool TextDocument::UndoEdit() {
     if (_undoStack.empty()) {
         return false;
     }
-    EditRecord record = std::move(_undoStack.back());
-    _undoStack.pop_back();
-    const TextPosition insertedEnd = AdvancePosition(record.begin, record.inserted);
-    ApplyReplace(record.begin, insertedEnd, record.removed, nullptr, nullptr);
-    caret = AdvancePosition(record.begin, record.removed);
-    selectionAnchor = caret;
-    hasSelection = false;
-    _redoStack.push_back(std::move(record));
+    // Undo the most recent record; if it belongs to a group, keep undoing
+    // records with the same id (reverse application order stays correct because
+    // each undo restores the exact state that preceded that edit).
+    const uint64_t groupId = _undoStack.back().groupId;
+    do {
+        EditRecord record = std::move(_undoStack.back());
+        _undoStack.pop_back();
+        const TextPosition insertedEnd = AdvancePosition(record.begin, record.inserted);
+        ApplyReplace(record.begin, insertedEnd, record.removed, nullptr, nullptr);
+        caret = AdvancePosition(record.begin, record.removed);
+        selectionAnchor = caret;
+        hasSelection = false;
+        _redoStack.push_back(std::move(record));
+    } while (groupId != 0 && !_undoStack.empty() && _undoStack.back().groupId == groupId);
     return true;
 }
 
@@ -642,14 +662,17 @@ bool TextDocument::RedoEdit() {
     if (_redoStack.empty()) {
         return false;
     }
-    EditRecord record = std::move(_redoStack.back());
-    _redoStack.pop_back();
-    const TextPosition removedEnd = AdvancePosition(record.begin, record.removed);
-    ApplyReplace(record.begin, removedEnd, record.inserted, nullptr, nullptr);
-    caret = AdvancePosition(record.begin, record.inserted);
-    selectionAnchor = caret;
-    hasSelection = false;
-    _undoStack.push_back(std::move(record));
+    const uint64_t groupId = _redoStack.back().groupId;
+    do {
+        EditRecord record = std::move(_redoStack.back());
+        _redoStack.pop_back();
+        const TextPosition removedEnd = AdvancePosition(record.begin, record.removed);
+        ApplyReplace(record.begin, removedEnd, record.inserted, nullptr, nullptr);
+        caret = AdvancePosition(record.begin, record.inserted);
+        selectionAnchor = caret;
+        hasSelection = false;
+        _undoStack.push_back(std::move(record));
+    } while (groupId != 0 && !_redoStack.empty() && _redoStack.back().groupId == groupId);
     return true;
 }
 

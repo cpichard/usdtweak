@@ -20,6 +20,7 @@ struct TextEditorViewStatus {
     bool requestFind = false;     ///< Ctrl+F pressed: open the find bar
     bool requestFindNext = false; ///< F3 pressed
     bool requestFindPrevious = false; ///< Shift+F3 pressed
+    bool requestGoto = false;     ///< Ctrl+G pressed: open the go-to-path bar
 };
 
 /// Optional per-frame inputs to the view (find highlights, navigation).
