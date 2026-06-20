@@ -14,6 +14,8 @@
 #include <pxr/usd/sdf/payload.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/sdf/types.h>
@@ -26,11 +28,15 @@
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usdShade/udimUtils.h>
 
+#include <pxr/base/work/loops.h>
+
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <deque>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
@@ -1306,7 +1312,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         setFields = {"SUBLAYERS"};
 
     auto makeRow = [&](const std::string &source, const SdfPath &path,
-                       const std::function<UtqlValue(const std::string &)> &get) {
+                       const std::function<UtqlValue(const std::string &)> &get) -> UtqlRow {
         UtqlRow row;
         row.source = source;
         row.path = path;
@@ -1328,7 +1334,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             else
                 row.orderKeys.push_back(get(ob.field));
         }
-        result.rows.push_back(std::move(row));
+        return row;
     };
 
     auto noSet = [](const std::string &) { return std::vector<std::string>{}; };
@@ -1345,14 +1351,16 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     // source in the cached set (rows have no usable prim path), filtered by identifier.
     std::unordered_set<std::string> filterLayerSources;
 
-    // Shared emit: evaluate WHERE then build a row. scanned/cancel stay in loops.
-    auto emit = [&](const std::string &source, const SdfPath &path,
-                    const std::function<UtqlValue(const std::string &)> &get,
-                    const std::function<std::vector<std::string>(const std::string &)> &getSet,
-                    const std::function<const std::vector<Arc> &(Family)> &getArcs) {
+    // Thread-safe WHERE evaluation + row build.  All inputs are read-only after
+    // compilation, so this is safe to call from WorkParallelForN chunks.
+    auto evalItem = [&](const std::string &source, const SdfPath &path,
+                        const std::function<UtqlValue(const std::string &)> &get,
+                        const std::function<std::vector<std::string>(const std::string &)> &getSet,
+                        const std::function<const std::vector<Arc> &(Family)> &getArcs,
+                        UtqlRow &row) -> bool {
         if (filterActive && q.entity != UtqlEntity::Layer &&
             !filterPrims.count(SourceKey(source, path.GetPrimPath().GetString())))
-            return;
+            return false;
         EvalCtx ectx;
         ectx.get = get;
         ectx.getSet = getSet;
@@ -1362,9 +1370,21 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         ectx.underData = &underMap;
         ectx.source = &source;
         if (q.where && !EvalWhere(*q.where, ectx))
-            return;
-        ++result.matched;
-        makeRow(source, path, get);
+            return false;
+        row = makeRow(source, path, get);
+        return true;
+    };
+
+    // Serial emit — used by COMPOSING INTO / COMPOSED FROM / CONNECTED TO paths.
+    auto emit = [&](const std::string &source, const SdfPath &path,
+                    const std::function<UtqlValue(const std::string &)> &get,
+                    const std::function<std::vector<std::string>(const std::string &)> &getSet,
+                    const std::function<const std::vector<Arc> &(Family)> &getArcs) {
+        UtqlRow row;
+        if (evalItem(source, path, get, getSet, getArcs, row)) {
+            ++result.matched;
+            result.rows.push_back(std::move(row));
+        }
     };
 
     // No AT ⇒ evaluate Stage-world attribute values at the UI's current time, not
@@ -1861,90 +1881,129 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         }
         result.stages = stages;
 
+        // Phase 1: collect all prims across all stages (serial, no field lookups —
+        // just pointer traversal).  Storing source alongside each prim avoids a
+        // repeated GetRootLayer call inside the hot parallel loop.
+        struct UsdPrimItem { std::string source; UsdPrim prim; };
+        std::vector<UsdPrimItem> primItems;
+        primItems.reserve(1u << 17);
         for (const auto &stage : stages) {
-            if (!stage)
-                continue;
+            if (!stage) continue;
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
-            auto scanUsdPrim = [&](const UsdPrim &prim) {
-                if (q.entity == UtqlEntity::UsdPrim) {
-                    if (checkCancel()) return;
-                    ++result.scanned;
-                    std::map<Family, std::vector<Arc>> arcCache;
-                    auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
-                        auto it = arcCache.find(fam);
-                        if (it == arcCache.end())
-                            it = arcCache.emplace(fam, BuildUsdArcs(prim, fam)).first;
-                        return it->second;
-                    };
-                    auto get = [&](const std::string &fld) -> UtqlValue {
-                        Family fam;
-                        if (FamilyDisplayField(fld, fam))
-                            return JoinArcField(getArcs(fam), fld);
-                        return GetUsdPrimField(prim, fld);
-                    };
-                    auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
-                        if (fld == "RELATIONSHIPS")
-                            return UsdPrimRelationshipNames(prim);
-                        return {};
-                    };
-                    emit(source, prim.GetPath(), get, getSet, getArcs);
-                } else if (q.entity == UtqlEntity::UsdAttribute) {
-                    for (const UsdAttribute &attr : prim.GetAttributes()) {
-                        if (checkCancel()) break;
-                        ++result.scanned;
-                        ValueCache vc;
-                        emit(source, attr.GetPath(),
-                             [&](const std::string &fld) { return GetUsdAttrField(attr, time, fld, vc); },
-                             [&](const std::string &fld) -> std::vector<std::string> {
-                                 if (fld == "CONNECTION.SOURCE")
-                                     return PathsToStrings(UsdAttrConnectionSources(attr));
-                                 return {};
-                             },
-                             noArcs);
-                    }
-                } else { // UsdRelationship
-                    for (const UsdRelationship &rel : prim.GetRelationships()) {
-                        if (checkCancel()) break;
-                        ++result.scanned;
-                        SdfPathVector targets;
-                        rel.GetTargets(&targets);
-                        const std::string name = rel.GetName().GetString();
-                        const SdfPath path = rel.GetPath();
-                        emit(source, path,
-                             [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
-                             [&](const std::string &) { return PathsToStrings(targets); }, noArcs);
-                    }
-                }
-            };
+            // Descend into instances (design I1 / ISINSTANCEPROXY).
+            for (UsdPrim p : UsdPrimRange(stage->GetPseudoRoot(),
+                                          UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate)))
+                primItems.push_back({source, p});
+            // Prototype masters hang off GetPrototypes(), not the pseudo-root.
+            for (const UsdPrim &proto : stage->GetPrototypes())
+                for (UsdPrim p : UsdPrimRange::AllPrims(proto))
+                    primItems.push_back({source, p});
+        }
 
-            // Descend into instances so the per-instance contents (instance proxies,
-            // e.g. /World/chair/seat) are queryable — "everything under this prim"
-            // then works on instanced scenes. Proxies carry ISINSTANCEPROXY = true;
-            // filter them out with NOT ISINSTANCEPROXY to get the deduplicated view.
-            for (UsdPrim prim : UsdPrimRange(stage->GetPseudoRoot(),
-                                             UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate))) {
-                if (cancelled)
-                    break;
-                scanUsdPrim(prim);
-            }
-            // design I1: prototype prims (and their subtrees) are not part of the
-            // pseudo-root tree — they hang off GetPrototypes(). Walk each prototype
-            // root so ISPROTOTYPE matches and the master geometry is queryable. (A
-            // mesh inside an instance thus appears twice: once as an instance proxy
-            // here-in-context, once as the prototype master — distinguish with
-            // ISINSTANCEPROXY / ISINPROTOTYPE.)
-            for (const UsdPrim &proto : stage->GetPrototypes()) {
-                if (cancelled)
-                    break;
-                for (UsdPrim prim : UsdPrimRange::AllPrims(proto)) {
-                    if (cancelled)
-                        break;
-                    scanUsdPrim(prim);
+        // Phase 2: parallel WHERE evaluation.  UsdStage reads are thread-safe;
+        // EvalWhere only reads regexes/underMap/filterPrims (all read-only here).
+        // Per-chunk local row vectors avoid lock contention on the hot path.
+        {
+            std::atomic<uint64_t> atomicScanned{0}, atomicMatched{0};
+            std::atomic<bool>     atomicCancelled{false};
+            std::mutex            rowsMu;
+
+            WorkParallelForN(primItems.size(), [&](size_t begin, size_t end) {
+                std::vector<UtqlRow> localRows;
+                for (size_t idx = begin; idx < end; idx++) {
+                    if (atomicCancelled.load(std::memory_order_relaxed)) return;
+                    const UsdPrimItem &item = primItems[idx];
+                    const UsdPrim     &prim = item.prim;
+
+                    // Mirrors the serial checkCancel: count every scanned unit
+                    // and sample cancel every kCancelCheckStride units.
+                    auto cancelCheck = [&]() -> bool {
+                        const uint64_t sc =
+                            atomicScanned.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if ((sc % kCancelCheckStride) == 0 && cancel.load()) {
+                            atomicCancelled.store(true, std::memory_order_relaxed);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    if (q.entity == UtqlEntity::UsdPrim) {
+                        if (cancelCheck()) return;
+                        std::map<Family, std::vector<Arc>> arcCache;
+                        auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
+                            auto it = arcCache.find(fam);
+                            if (it == arcCache.end())
+                                it = arcCache.emplace(fam, BuildUsdArcs(prim, fam)).first;
+                            return it->second;
+                        };
+                        auto get = [&](const std::string &fld) -> UtqlValue {
+                            Family fam;
+                            if (FamilyDisplayField(fld, fam))
+                                return JoinArcField(getArcs(fam), fld);
+                            return GetUsdPrimField(prim, fld);
+                        };
+                        auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
+                            if (fld == "RELATIONSHIPS")
+                                return UsdPrimRelationshipNames(prim);
+                            return {};
+                        };
+                        UtqlRow row;
+                        if (evalItem(item.source, prim.GetPath(), get, getSet, getArcs, row)) {
+                            atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                            localRows.push_back(std::move(row));
+                        }
+                    } else if (q.entity == UtqlEntity::UsdAttribute) {
+                        for (const UsdAttribute &attr : prim.GetAttributes()) {
+                            if (cancelCheck()) return;
+                            ValueCache vc;
+                            UtqlRow row;
+                            if (evalItem(item.source, attr.GetPath(),
+                                         [&](const std::string &fld) {
+                                             return GetUsdAttrField(attr, time, fld, vc);
+                                         },
+                                         [&](const std::string &fld) -> std::vector<std::string> {
+                                             if (fld == "CONNECTION.SOURCE")
+                                                 return PathsToStrings(UsdAttrConnectionSources(attr));
+                                             return {};
+                                         },
+                                         noArcs, row)) {
+                                atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                                localRows.push_back(std::move(row));
+                            }
+                        }
+                    } else { // UsdRelationship
+                        for (const UsdRelationship &rel : prim.GetRelationships()) {
+                            if (cancelCheck()) return;
+                            SdfPathVector targets;
+                            rel.GetTargets(&targets);
+                            const std::string name = rel.GetName().GetString();
+                            const SdfPath     path = rel.GetPath();
+                            UtqlRow row;
+                            if (evalItem(item.source, path,
+                                         [&](const std::string &fld) {
+                                             return GetRelScalarField(name, targets, path, fld);
+                                         },
+                                         [&](const std::string &) { return PathsToStrings(targets); },
+                                         noArcs, row)) {
+                                atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                                localRows.push_back(std::move(row));
+                            }
+                        }
+                    }
                 }
-            }
-            if (cancelled)
-                break;
+                if (!localRows.empty()) {
+                    std::lock_guard<std::mutex> lock(rowsMu);
+                    result.rows.insert(result.rows.end(),
+                                       std::make_move_iterator(localRows.begin()),
+                                       std::make_move_iterator(localRows.end()));
+                }
+            }, 512);
+
+            result.scanned += atomicScanned.load();
+            result.matched += atomicMatched.load();
+            if (atomicCancelled.load())
+                cancelled = true;
         }
     } else { // Layer world
         std::vector<SdfLayerRefPtr> layers;
@@ -1970,17 +2029,15 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         // Recurse prim specs explicitly — SdfLayer::Traverse does not emit
         // property spec paths, so attributes/relationships are read off each
         // prim spec directly (mirrors StringSearchIndex::BuildShardEntries).
-        for (const auto &layer : layers) {
-            if (!layer)
-                continue;
-            hadSources = true;
-            const SdfLayerHandle layerH(layer);
-            const std::string source = layer->GetIdentifier();
 
-            // FIND LAYER: one row per resolved layer (design §5). No prim recursion.
-            if (q.entity == UtqlEntity::Layer) {
-                if (filterActive && !filterLayerSources.count(source))
-                    continue;
+        // FIND LAYER: one row per resolved layer (serial, no prim recursion).
+        if (q.entity == UtqlEntity::Layer) {
+            for (const auto &layer : layers) {
+                if (!layer) continue;
+                hadSources = true;
+                const SdfLayerHandle layerH(layer);
+                const std::string    source = layer->GetIdentifier();
+                if (filterActive && !filterLayerSources.count(source)) continue;
                 if (checkCancel()) break;
                 ++result.scanned;
                 emit(source, SdfPath::AbsoluteRootPath(),
@@ -1988,23 +2045,77 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                          return GetLayerField(layerH, rootLayerIds, sessionLayerIds, fld);
                      },
                      [&](const std::string &fld) -> std::vector<std::string> {
-                         if (fld == "SUBLAYERS")
-                             return LayerSublayerPaths(layerH);
+                         if (fld == "SUBLAYERS") return LayerSublayerPaths(layerH);
                          return {};
                      },
                      noArcs);
-                continue;
+            }
+        } else {
+            // FIND SDFPRIM / SDFATTRIBUTE / SDFRELATIONSHIP: two-phase parallel.
+            //
+            // Phase 1: DFS collect of all prim specs from every layer into a flat
+            // vector (serial, cheap — just pointer hops, no field evaluation).
+            // Collecting across ALL layers before dispatching gives TBB's work-
+            // stealing scheduler visibility over the full workload, so threads
+            // that finish small layers automatically steal chunks from large ones.
+            struct SdfSpecItem {
+                std::string        source;
+                SdfLayerHandle     layerH;
+                SdfPrimSpecHandle  spec;
+            };
+            std::vector<SdfSpecItem> specItems;
+            specItems.reserve(1u << 17);
+
+            for (const auto &layer : layers) {
+                if (!layer) continue;
+                hadSources = true;
+                const std::string   source  = layer->GetIdentifier();
+                const SdfLayerHandle layerH(layer);
+
+                std::function<void(const SdfPrimSpecHandle &)> collectSpec =
+                    [&](const SdfPrimSpecHandle &prim) {
+                        if (!prim) return;
+                        if (prim->GetPath() != SdfPath::AbsoluteRootPath())
+                            specItems.push_back({source, layerH, prim});
+                        for (const SdfPrimSpecHandle &child : prim->GetNameChildren())
+                            collectSpec(child);
+                        for (const auto &vsEntry : prim->GetVariantSets()) {
+                            const SdfVariantSetSpecHandle vss = vsEntry.second;
+                            if (!vss) continue;
+                            for (const SdfVariantSpecHandle &vs : vss->GetVariants())
+                                if (vs) collectSpec(vs->GetPrimSpec());
+                        }
+                    };
+                collectSpec(layer->GetPseudoRoot());
             }
 
-            std::function<void(const SdfPrimSpecHandle &)> visit =
-                [&](const SdfPrimSpecHandle &prim) {
-                    if (cancelled || !prim)
-                        return;
-                    const bool isPseudoRoot = (prim->GetPath() == SdfPath::AbsoluteRootPath());
-                    if (!isPseudoRoot) {
+            // Phase 2: parallel WHERE evaluation.  SdfLayer reads are thread-safe;
+            // each chunk accumulates matches locally and merges under a mutex only
+            // when it has results — keeping lock contention low.
+            {
+                std::atomic<uint64_t> atomicScanned{0}, atomicMatched{0};
+                std::atomic<bool>     atomicCancelled{false};
+                std::mutex            rowsMu;
+
+                WorkParallelForN(specItems.size(), [&](size_t begin, size_t end) {
+                    std::vector<UtqlRow> localRows;
+                    for (size_t idx = begin; idx < end; idx++) {
+                        if (atomicCancelled.load(std::memory_order_relaxed)) return;
+                        const SdfSpecItem    &item = specItems[idx];
+                        const SdfPrimSpecHandle &prim = item.spec;
+
+                        auto cancelCheck = [&]() -> bool {
+                            const uint64_t sc =
+                                atomicScanned.fetch_add(1, std::memory_order_relaxed) + 1;
+                            if ((sc % kCancelCheckStride) == 0 && cancel.load()) {
+                                atomicCancelled.store(true, std::memory_order_relaxed);
+                                return true;
+                            }
+                            return false;
+                        };
+
                         if (q.entity == UtqlEntity::SdfPrim) {
-                            if (checkCancel()) return;
-                            ++result.scanned;
+                            if (cancelCheck()) return;
                             std::map<Family, std::vector<Arc>> arcCache;
                             auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
                                 auto it = arcCache.find(fam);
@@ -2023,47 +2134,66 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                     return SdfPrimRelationshipNames(prim);
                                 return {};
                             };
-                            emit(source, prim->GetPath(), get, getSet, getArcs);
+                            UtqlRow row;
+                            if (evalItem(item.source, prim->GetPath(), get, getSet, getArcs, row)) {
+                                atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                                localRows.push_back(std::move(row));
+                            }
                         } else if (q.entity == UtqlEntity::SdfAttribute) {
                             for (const SdfAttributeSpecHandle &spec : prim->GetAttributes()) {
                                 if (!spec) continue;
-                                if (checkCancel()) return;
-                                ++result.scanned;
+                                if (cancelCheck()) return;
                                 ValueCache vc;
-                                emit(source, spec->GetPath(),
-                                     [&](const std::string &fld) {
-                                         return GetSdfAttrField(spec, layerH, q.hasAt, q.atTime, fld, vc);
-                                     },
-                                     [&](const std::string &fld) -> std::vector<std::string> {
-                                         if (fld == "CONNECTION.SOURCE")
-                                             return PathsToStrings(SdfAttrConnectionSources(spec));
-                                         return {};
-                                     },
-                                     noArcs);
+                                UtqlRow row;
+                                if (evalItem(item.source, spec->GetPath(),
+                                             [&](const std::string &fld) {
+                                                 return GetSdfAttrField(spec, item.layerH,
+                                                                        q.hasAt, q.atTime, fld, vc);
+                                             },
+                                             [&](const std::string &fld) -> std::vector<std::string> {
+                                                 if (fld == "CONNECTION.SOURCE")
+                                                     return PathsToStrings(SdfAttrConnectionSources(spec));
+                                                 return {};
+                                             },
+                                             noArcs, row)) {
+                                    atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                                    localRows.push_back(std::move(row));
+                                }
                             }
                         } else { // SdfRelationship
                             for (const SdfRelationshipSpecHandle &spec : prim->GetRelationships()) {
                                 if (!spec) continue;
-                                if (checkCancel()) return;
-                                ++result.scanned;
+                                if (cancelCheck()) return;
                                 SdfPathVector targets;
                                 spec->GetTargetPathList().ApplyEditsToList(&targets);
                                 const std::string name = spec->GetName();
-                                const SdfPath path = spec->GetPath();
-                                emit(source, path,
-                                     [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
-                                     [&](const std::string &) { return PathsToStrings(targets); }, noArcs);
+                                const SdfPath     path = spec->GetPath();
+                                UtqlRow row;
+                                if (evalItem(item.source, path,
+                                             [&](const std::string &fld) {
+                                                 return GetRelScalarField(name, targets, path, fld);
+                                             },
+                                             [&](const std::string &) { return PathsToStrings(targets); },
+                                             noArcs, row)) {
+                                    atomicMatched.fetch_add(1, std::memory_order_relaxed);
+                                    localRows.push_back(std::move(row));
+                                }
                             }
                         }
                     }
-                    for (const SdfPrimSpecHandle &child : prim->GetNameChildren()) {
-                        if (cancelled) return;
-                        visit(child);
+                    if (!localRows.empty()) {
+                        std::lock_guard<std::mutex> lock(rowsMu);
+                        result.rows.insert(result.rows.end(),
+                                           std::make_move_iterator(localRows.begin()),
+                                           std::make_move_iterator(localRows.end()));
                     }
-                };
-            visit(layer->GetPseudoRoot());
-            if (cancelled)
-                break;
+                }, 512);
+
+                result.scanned += atomicScanned.load();
+                result.matched += atomicMatched.load();
+                if (atomicCancelled.load())
+                    cancelled = true;
+            }
         }
     }
 
