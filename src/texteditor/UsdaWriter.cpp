@@ -34,6 +34,21 @@ std::string UsdaFoldedPlaceholder(size_t elementCount) {
     return TfStringPrintf("[\xe2\x80\xa6 %zu values \xe2\x80\xa6]", elementCount);
 }
 
+// SdfValueTypeNames->GetSerializationName() is declared without SDF_API, so it is
+// not exported from the Sdf DLL on Windows. Replicate it here with public API.
+// (Mirrors Sdf_ValueTypeNamesType::GetSerializationName in sdf/types.cpp.)
+TfToken UsdaGetSerializationName(const SdfValueTypeName &typeName) {
+    const std::vector<TfToken> aliases = typeName.GetAliasesAsTokens();
+    if (!aliases.empty() && !aliases.front().IsEmpty()) {
+        return aliases.front();
+    }
+    return typeName.GetAsToken();
+}
+
+TfToken UsdaGetSerializationName(const VtValue &value) {
+    return UsdaGetSerializationName(SdfSchema::GetInstance().FindType(value));
+}
+
 namespace {
 
 static const char *_IndentString = "    ";
@@ -588,7 +603,7 @@ void WriteDictionaryImpl(Out &out, size_t indent, bool multiLine, OrderedDiction
                 WriteDictionaryImpl(out, indent + 1, multiLine, newDictionary,
                                     /* stringValuesOnly = */ false);
             } else {
-                const TfToken &typeName = SdfValueTypeNames->GetSerializationName(value);
+                const TfToken typeName = UsdaGetSerializationName(value);
                 Write(out, multiLine ? indent + 1 : 0, "%s %s = ", typeName.GetText(), keyName.c_str());
                 WriteValueMaybeFolded(out, value);
                 if (multiLine) {
@@ -1205,7 +1220,7 @@ bool WriteAttribute(const SdfAttributeSpec &attr, Out &out, size_t indent) {
     bool hasTimeSamples = attr.HasField(SdfFieldKeys->TimeSamples);
     bool hasSpline = attr.HasSpline();
 
-    std::string typeName = SdfValueTypeNames->GetSerializationName(attr.GetTypeName()).GetString();
+    std::string typeName = UsdaGetSerializationName(attr.GetTypeName()).GetString();
 
     TfTokenVector fields = attr.ListFields();
     TfTokenVector::iterator metadataFieldsEnd =

@@ -52,3 +52,10 @@ DocumentFragment UsdaWritePropertyFragment(const SdfPropertySpecHandle &property
 /// The ellipsis (U+2026) is illegal in USDA, making the placeholder
 /// unambiguous for the lexer and the (future) parser.
 std::string UsdaFoldedPlaceholder(size_t elementCount);
+
+/// The token used to serialize a value type in USDA (the type's preferred
+/// alias, e.g. "float3" / "color3f"). Replicates the private, non-exported
+/// Sdf_ValueTypeNamesType::GetSerializationName using public API so it links
+/// on Windows (where the Sdf symbols are not SDF_API-exported).
+TfToken UsdaGetSerializationName(const SdfValueTypeName &typeName);
+TfToken UsdaGetSerializationName(const VtValue &value);

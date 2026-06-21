@@ -11,6 +11,8 @@
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/variantSpec.h>
 
+#include "UsdaWriter.h"
+
 namespace {
 
 /// Mirror of the writer's metadata-section predicates (fileIO_Common.h):
@@ -272,7 +274,7 @@ void ApplyProperty(const ParsedProperty &parsed, const SdfPropertySpecHandle &ha
     if (!isRelationship) {
         const SdfAttributeSpecHandle attribute = SdfSpecStatic_cast<SdfAttributeSpecHandle>(handle);
         const std::string currentTypeName =
-            SdfValueTypeNames->GetSerializationName(attribute->GetTypeName()).GetString();
+            UsdaGetSerializationName(attribute->GetTypeName()).GetString();
         if (parsed.typeName != currentTypeName) {
             if (parsed.foldedDefault || !parsed.foldedSampleTimes.empty()) {
                 state.Error(path, "cannot retype a property whose values are folded");
