@@ -28,7 +28,7 @@ jobs:
 
       - name: Cache USD
         id: cache-usd
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ steps.cache-key.outputs.value }}
@@ -46,7 +46,7 @@ jobs:
 
       - name: Checkout OpenUSD ${{ env.USD_VERSION }}
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: PixarAnimationStudios/OpenUSD
           ref: v${{ env.USD_VERSION }}
@@ -55,6 +55,11 @@ jobs:
 
       - name: Build USD
         if: steps.cache-usd.outputs.cache-hit != 'true'
+        env:
+          # CMake 4 dropped support for cmake_minimum_required < 3.5, which OpenUSD's
+          # bundled dependencies (e.g. zlib 1.2.13) still declare. build_usd.py passes
+          # this env var down to every nested dependency configure.
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: |
           python3 OpenUSD/build_scripts/build_usd.py \
             --embree \
@@ -72,10 +77,10 @@ jobs:
     needs: build-usd
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Restore USD cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ needs.build-usd.outputs.cache-key }}
@@ -100,7 +105,7 @@ jobs:
         run: cd build && cpack
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: usdtweak-macos-dmg
           path: build/usdtweak-*.dmg
@@ -111,7 +116,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-prealpha')) || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download DMG artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: usdtweak-macos-dmg
 
