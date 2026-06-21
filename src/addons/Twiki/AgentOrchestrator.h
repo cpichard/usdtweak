@@ -52,7 +52,20 @@ public:
                   TraceFn             trace       = {},
                   int                 maxSteps    = kDefaultMaxToolSteps);
 
+    // Replace the advertised tool set. _tools is re-read at the start of each
+    // Run(), so callers must only invoke this BETWEEN turns (never while a
+    // Run() is in flight). The Anthropic backend caches the tool array by
+    // content, so pushing an identical set keeps the cache warm; a real change
+    // costs one cache write on the next turn.
+    void SetTools(ToolDefs tools) { _tools = std::move(tools); }
+
 private:
+    // True if `name` is in the currently-advertised tool set. The model can
+    // emit a tool_use for a name that is NOT in _tools (e.g. one named only in
+    // the system prompt, or a tool the user has just disabled); we refuse to
+    // dispatch those so deactivation is actually enforced.
+    bool _ToolEnabled(const std::string& name) const;
+
     std::unique_ptr<LLMBackend> _backend;
     UsdToolDispatcher&          _dispatcher;
     ToolDefs                    _tools;

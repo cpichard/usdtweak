@@ -32,6 +32,13 @@ void _AccumulateUsage(LLMUsage& total, const LLMUsage& step) {
 
 } // namespace
 
+bool AgentOrchestrator::_ToolEnabled(const std::string& name) const {
+    for (const JsValue& t : _tools)
+        if (t.IsObject() && JsGetString(t.GetJsObject(), "name") == name)
+            return true;
+    return false;
+}
+
 AgentOrchestrator::RunResult
 AgentOrchestrator::Run(const std::string&  systemPrompt,
                        const std::string&  userMessage,
@@ -69,9 +76,19 @@ AgentOrchestrator::Run(const std::string&  systemPrompt,
         conv.push_back(Message::AssistantToolCall(
             r.toolCallId, r.toolName, r.toolArguments, r.content));
 
-        std::string toolResult = _dispatcher.Dispatch(r.toolName, r.toolArguments);
-        _Trace(trace, "[tool_result " + std::to_string(toolResult.size())
-                      + " bytes]");
+        std::string toolResult;
+        if (_ToolEnabled(r.toolName)) {
+            toolResult = _dispatcher.Dispatch(r.toolName, r.toolArguments);
+            _Trace(trace, "[tool_result " + std::to_string(toolResult.size())
+                          + " bytes]");
+        } else {
+            // The user disabled this tool (or it was never advertised). Refuse
+            // to run it and tell the model so it picks an available tool.
+            toolResult = "[error] The tool '" + r.toolName + "' is not "
+                "available in this session. Do not call it again; use only the "
+                "tools provided in this request.";
+            _Trace(trace, "[tool_blocked " + r.toolName + " - not in active set]");
+        }
 
         conv.push_back(Message::ToolResult(r.toolCallId, r.toolName, toolResult));
     }

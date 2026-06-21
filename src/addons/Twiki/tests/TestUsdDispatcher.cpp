@@ -1034,12 +1034,14 @@ void TestRunQuery(UsdToolDispatcher& d) {
     CHECK_CONTAINS(out, "/World/Camera");
     CHECK_CONTAINS(out, "1 matched");
 
-    // Authored per-spec SDF* entity is still rejected with a clear message.
+    // Authored per-spec SDF* entities now run (Layer world, scanned against the
+    // stage's used-layer set). /World/Camera is a def Camera spec in asset.usda.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string(
             "FIND SDFPRIM WHERE TYPE = \"Camera\""))}}));
-    CHECK_CONTAINS(out, "[error]");
-    CHECK_CONTAINS(out, "Stage-world");
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK(out.find("[error]") == std::string::npos);
 
     // FIND LAYER runs against the stage's used-layer set (Layer-world, but the one
     // Layer entity this tool supports). The stage's root layer is one such row.
@@ -1160,6 +1162,70 @@ void TestRunQueryComposedFrom(UsdToolDispatcher& d) {
     CHECK_CONTAINS(out, "Layer-world");
 }
 
+// run_query: authored per-spec entities (SDFPRIM / SDFATTRIBUTE). Unlike USD*,
+// these read raw opinions per layer, so the same prim/attr appears once per layer
+// that authors it. The fixture authors /World/Hero in BOTH asset.usda (def) and
+// shot.usda (over), and the `greeting` attribute in both.
+void TestRunQuerySdf(UsdToolDispatcher& d) {
+    Section("run_query: SDFPRIM / SDFATTRIBUTE (authored specs)");
+
+    // SPECIFIER is per-spec: the two `over` specs live only in the shot layer
+    // (/World and /World/Hero), so exactly two authored override opinions match.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE SPECIFIER = \"over\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "/World/Hero");
+    CHECK_CONTAINS(out, "2 matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // The same prim appears once per layer that authors it: /World/Hero is a def
+    // in asset.usda and an over in shot.usda → two SDFPRIM rows for that path.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE NAME = \"Hero\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "2 matched");
+
+    // SDFATTRIBUTE reads authored attribute specs. `greeting` is authored on Hero
+    // in both layers (asset default + shot override) → two rows.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFATTRIBUTE WHERE NAME = \"greeting\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "greeting");
+    CHECK_CONTAINS(out, "2 matched");
+
+    // IN LAYERSTACK narrows to the local layer stack (shot + its sublayer asset),
+    // which here is all layers, but the scope clause must still compile and run.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFATTRIBUTE IN LAYERSTACK WHERE NAME = \"focalLength\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "focalLength");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // COMPOSING INTO (composition inversion) now runs: it inverts a composed prim
+    // path to the authored specs in its prim stack. /World/Hero is built from the
+    // asset def + the shot over → two contributing SDFPRIM specs.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM COMPOSING INTO \"/World/Hero\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "/World/Hero");
+    CHECK_CONTAINS(out, "2 matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // PER TARGET exposes the per-spec composition columns (TARGET/STRENGTH/ARC_TYPE).
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM COMPOSING INTO \"/World/Hero\" PER TARGET "
+            "RETURN COMPOSITION.ARC_TYPE"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "local");
+    CHECK(out.find("[error]") == std::string::npos);
+}
+
 int main() {
     SdfLayerRefPtr asset, shot;
     UsdStageRefPtr stage = BuildFixture(&asset, &shot);
@@ -1183,6 +1249,7 @@ int main() {
     TestRunQuery          (dispatcher);
     TestRunQueryChaining  (dispatcher);
     TestRunQueryComposedFrom(dispatcher);
+    TestRunQuerySdf       (dispatcher);
     TestFindPrimsNamePattern(dispatcher);
     TestFindPrimsNameTokens(dispatcher);
     TestGetNameVocabulary (dispatcher);

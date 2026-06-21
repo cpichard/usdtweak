@@ -959,12 +959,13 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
 // dispatcher's own worker thread — Parse → Bind → Execute — never UtqlEngine
 // (which exists only to marshal async results back to the ImGui frame loop).
 //
-// Scope: composed Stage entities (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP) plus
-// FIND LAYER, which scans the active stage's used-layer set (sublayers +
-// referenced/payload layers). The authored per-spec SDF* entities and
-// COMPOSING INTO are still rejected — they need per-layer authoring context this
-// single-stage tool doesn't expose. A CompileError is recoverable — the model
-// reads the message, fixes the query, and retries.
+// Scope: the full UTQL surface runs here — composed Stage entities
+// (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP), authored per-spec entities
+// (SDFPRIM/SDFATTRIBUTE/SDFRELATIONSHIP), FIND LAYER, and both composition
+// directions COMPOSED FROM / COMPOSING INTO. Authored scans walk the active
+// stage's used-layer set (sublayers + referenced/payload layers); the
+// composition clauses invert/forward against the active stage. A CompileError is
+// recoverable — the model reads the message, fixes the query, and retries.
 // --------------------------------------------------------------------------
 std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     const std::string query   = JsGetString(args, "query");
@@ -988,18 +989,10 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     if (!utql::Bind(std::move(ast), bound, err))
         return "[error] compile: " + err + " — fix the query and retry";
 
-    // Scope guard: composed Stage entities plus FIND LAYER. The authored
-    // per-spec SDF* entities (SDFPRIM/SDFATTRIBUTE/SDFRELATIONSHIP) and
-    // COMPOSING INTO are still out of scope — they need per-layer authoring
-    // context this tool doesn't expose. LAYER is Layer-world but reads only layer
-    // metadata, so it runs against the stage's used-layer set below.
-    if (bound.world == utql::UtqlWorld::Layer &&
-        bound.entity != utql::UtqlEntity::Layer)
-        return "[error] this tool runs Stage-world queries (FIND USDPRIM / "
-               "USDATTRIBUTE / USDRELATIONSHIP) plus FIND LAYER. The authored "
-               "per-spec entities (SDFPRIM, SDFATTRIBUTE, SDFRELATIONSHIP) and "
-               "COMPOSING INTO are not supported here — use find_prims / the "
-               "get_* tools instead.";
+    // No scope guard: every bound query runs. COMPOSING INTO (composition
+    // inversion) and COMPOSED FROM both resolve against the active stage set
+    // below (ctx.currentStage / allStages / named), so neither needs special
+    // handling here.
 
     // Stage context: the active stage, plus its used-layer set so FIND LAYER has
     // layers to scan (sublayers + referenced/payload layers). The named-results
