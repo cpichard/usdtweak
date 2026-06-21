@@ -131,10 +131,6 @@ FieldInfo LookupAttrField(const std::string &f) {
     if (f == "VALUE.HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
     if (f == "VALUE.SAMPLE_COUNT")    return mk(FieldType::Number, false);
     if (f == "VALUE.IS_NONE")         return mk(FieldType::Bool, false);
-    // Asset-resolution gate (design AS1). Bool flag — true when an asset/asset[]
-    // attribute's value does not resolve (existential over array elements). Both
-    // worlds; non-asset attrs are a per-row non-match, not an error.
-    if (f == "VALUE.IS_ASSET_MISSING")   return mk(FieldType::Bool, false);
     // VALUE.SCALAR (design A1) is type-polymorphic; its operator validity is decided
     // by ValidateScalarLeaf (the runtime value type is unknown at bind). Listed here
     // as nullable String so it is recognised, displayable in RETURN, and null-testable.
@@ -150,14 +146,19 @@ FieldInfo LookupAttrField(const std::string &f) {
     if (f == "CONNECTION.SOURCE")    return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     if (f == "HAS_CONNECTION")       return mk(FieldType::Bool, false);
     if (f == "CONNECTION.COUNT")     return mk(FieldType::Number, false);
+    // Asset-resolution aspect (design AS1). ASSET.* is a top-level attribute namespace
+    // (peer of VALUE.* / CONNECTION.*), applying to asset/asset[] attributes. IS_MISSING
+    // is true when the value's asset path does not resolve (existential over array
+    // elements). Both worlds; non-asset attrs are a per-row non-match, not an error.
+    if (f == "ASSET.IS_MISSING")     return mk(FieldType::Bool, false);
     return FieldInfo{};
 }
 
 const char *kAttrFieldList =
     "NAME, TYPE_NAME, NAMESPACE, VALUE.ARRAY_SIZE, "
     "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
-    "VALUE.IS_NONE, VALUE.IS_ASSET_MISSING, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
-    "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT";
+    "VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
+    "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT, ASSET.IS_MISSING";
 
 FieldInfo LookupRelField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable, bool set = false) {

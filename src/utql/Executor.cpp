@@ -435,7 +435,7 @@ SdfPathVector SdfAttrConnectionSources(const SdfAttributeSpecHandle &spec) {
 // ----------------------------------------------- asset resolution (design AS1)
 
 /// True iff an attribute's value type is `asset` / `asset[]` — the only types for
-/// which VALUE.IS_ASSET_MISSING is meaningful (otherwise a per-row non-match).
+/// which ASSET.IS_MISSING is meaningful (otherwise a per-row non-match).
 bool IsAssetTypeName(const SdfValueTypeName &tn) {
     static const TfToken kAsset("asset");
     static const TfToken kAssetArray("asset[]");
@@ -750,7 +750,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     }
     // Asset resolution (design AS1). Only asset/asset[] attrs can be "missing";
     // anything else is a non-match. Reuses the cached value (AT-aware via `time`).
-    if (f == "VALUE.IS_ASSET_MISSING") {
+    if (f == "ASSET.IS_MISSING") {
         if (!IsAssetTypeName(attr.GetTypeName()))
             return UtqlValue::Bool(false);
         ensure();
@@ -836,7 +836,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     }
     // Asset resolution (design AS1) — authored value, anchored+resolved against the
     // owning layer (relative paths anchor to it). Only asset/asset[] attrs.
-    if (f == "VALUE.IS_ASSET_MISSING") {
+    if (f == "ASSET.IS_MISSING") {
         if (!IsAssetTypeName(spec->GetTypeName()))
             return UtqlValue::Bool(false);
         ensure();
