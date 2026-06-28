@@ -6,47 +6,30 @@ The project is almost self contained and only needs:
 
 - [cmake](https://cmake.org/) installed (version > 3.14)
 - a C++17 compiler installed: MSVC 19 or 17, g++ or clang++.
-- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v26.03) version >= 20.11. In theory the OpenUSD libraries provided with mayausd should work but they are not tested, let me know if you manage to compile with them.
+- a build of [Universal Scene Description](https://github.com/PixarAnimationStudios/USD/releases/tag/v26.05) version >= 20.11. In theory the OpenUSD libraries provided with mayausd should work but they are not tested, let me know if you manage to compile with them.
 
 To compile usdtweak you normally need to provide cmake with only 1 required variables:
 
 - __pxr_DIR__ pointing to the OpenUSD installation directory containing the file pxrConfig.cmake
 
-Unfortunately if you have compiled a vanilla OpenUSD >= 22.08, depending on the version you might also need to provide:
+Unfortunately if you have compiled a vanilla OpenUSD >= 22.08, depending on the OpenUSD version you might also need to provide:
 
 - __MaterialX_DIR__ pointing to the MaterialX installation directory containing the file MaterialXConfig.cmake.
 - __OpenSubdiv_DIR__ pointing to the OpenSubdiv installation directory containing the file OpenSubdivConfig.cmake.
 
-Since the OpenUSD config doesn't always add them as dependencies.
+OpenUSD config doesn't always add them as dependencies.
 
-## Compiling on linux
+## Compiling on Linux or macOS
 
-On linux the latest version should compile with:
-
-    git clone https://github.com/cpichard/usdtweak
-    cd usdtweak
-    git checkout develop
-    mkdir build
-    cd build
-    cmake -Dpxr_DIR=/path/to/usd-26.03 -DOpenSubdiv_DIR=/path/to/usd-26.03/lib/cmake/OpenSubdiv ..
-    make
-
-
-## Compiling on MacOs
-
-It compiles on MacOS Monterey. The viewport is now enabled for versions of OpenUSD superior or equal to 22.08, otherwise it is deactivated as the OpenGL version is not supported on MacOS for those versions.
+On linux the latest version should compile with the vanilla OpenUSD 26.05:
 
     git clone https://github.com/cpichard/usdtweak
     cd usdtweak
     git checkout develop
     mkdir build
     cd build
-    cmake -Dpxr_DIR=/path/to/usd-24.08 ..
+    cmake -Dpxr_DIR=/path/to/usd-26.05 -DOpenSubdiv_DIR=/path/to/usd-26.05/lib/cmake/OpenSubdiv ..
     make
-
-If you have OpenUSD >= 22.08 compiled with MaterialX, cmake becomes:
-
-    cmake -Dpxr_DIR=/path/to/usd-24.08 -DMaterialX_DIR=/path/to/usd-24.08/lib/cmake/MaterialX ..
 
 ## Compiling on Windows
 
@@ -57,12 +40,12 @@ It should compile successfully on Windows 10 with MSVC 19 or 17 using the RelWit
     git checkout develop
     mkdir build
     cd build
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-24.08 ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-26.05 ..
     cmake --build . --config RelWithDebInfo
 
 If you have OpenUSD >= 22.08 compiled with MaterialX, you have to add an additional MaterialX_DIR variable to the cmake command, pointing to the MaterialX directory:
 
-    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.08 -DMaterialX_DIR=C:\path\to\usd-22.08\lib\cmake\MaterialX ..
+    cmake  -G "Visual Studio 16 2019" -A x64 -Dpxr_DIR=C:\path\to\usd-22.08 -DOpenSubdiv_DIR=/path/to/usd-26.05/lib/cmake/OpenSubdiv ..
 
 ### Using NVidia's OpenUSD build (experimental)
 
