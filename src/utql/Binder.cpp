@@ -59,7 +59,18 @@ bool StartsWith(const std::string &s, const char *prefix) {
 bool IsFamilyField(const std::string &f) {
     return StartsWith(f, "REFERENCE.") || StartsWith(f, "PAYLOAD.") ||
            StartsWith(f, "INHERIT.") || StartsWith(f, "SPECIALIZE.") ||
-           StartsWith(f, "VARIANT.") || f == "API" || StartsWith(f, "API.");
+           StartsWith(f, "VARIANT.") || f == "API" || StartsWith(f, "API.") ||
+           StartsWith(f, "SUBLAYER.");
+}
+
+/// Which entity category hosts a composition/family field. The SUBLAYER family
+/// lives on the LAYER entity (A3-followup); every other family (REFERENCE /
+/// PAYLOAD / … / API) lives on prim entities (design §3). A query is single-entity,
+/// so the two never collide — this just routes each family to its host.
+Category FamilyHostCategory(const std::string &f) {
+    if (f == "HAS_SUBLAYER" || f == "SUBLAYER" || StartsWith(f, "SUBLAYER."))
+        return Category::Layer;
+    return Category::Prim;
 }
 
 /// Phase-1 scalar prim fields shared by USDPRIM and SDFPRIM.
@@ -104,6 +115,13 @@ FieldInfo LookupPrimField(const std::string &f) {
     // SDFPRIM.
     if (f == "HAS_RELATIONSHIP") return mk(FieldType::Bool, false);
     if (f == "RELATIONSHIPS")    return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // Variant nesting — Layer world only (rejected on USDPRIM in ValidateLeaf, since a
+    // composed-stage path has no variant components). IS_IN_VARIANT is a plain bool
+    // gate; VARIANT_SELECTIONS is a set field of the "{set=value}" variant scopes the
+    // spec is nested under (queried with CONTAINS / LIKE). Distinct from the VARIANT.*
+    // family (variant sets defined *on* a prim).
+    if (f == "IS_IN_VARIANT")      return mk(FieldType::Bool, false);
+    if (f == "VARIANT_SELECTIONS") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     return FieldInfo{}; // unknown
 }
 
@@ -120,10 +138,15 @@ const char *kPrimFieldListCommon =
 const char *kPrimFieldListStageOnly =
     "IS_INSTANCE, IS_PROTOTYPE, IS_IN_PROTOTYPE, IS_INSTANCE_PROXY, IS_LOADED";
 
+// Authored variant-nesting facts — valid only on SDFPRIM (Layer world). Rejected on
+// USDPRIM in ValidateLeaf, so they appear only in the Layer-world "Valid:" hint.
+const char *kPrimFieldListLayerOnly =
+    "IS_IN_VARIANT, VARIANT_SELECTIONS";
+
 FieldInfo LookupAttrField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
     if (f == "NAME")       return mk(FieldType::String, false);
-    if (f == "TYPE_NAME")   return mk(FieldType::String, true);
+    if (f == "TYPE")        return mk(FieldType::String, true);
     if (f == "NAMESPACE")  return mk(FieldType::String, true);
     if (f == "VALUE.ARRAY_SIZE")      return mk(FieldType::Number, false);
     if (f == "VALUE.BYTE_SIZE")       return mk(FieldType::Number, false);
@@ -151,14 +174,23 @@ FieldInfo LookupAttrField(const std::string &f) {
     // is true when the value's asset path does not resolve (existential over array
     // elements). Both worlds; non-asset attrs are a per-row non-match, not an error.
     if (f == "ASSET.IS_MISSING")     return mk(FieldType::Bool, false);
+    // Variant nesting — Layer world only (rejected on USDATTRIBUTE in ValidateLeaf),
+    // mirroring the prim fields. IS_IN_VARIANT bool gate + VARIANT_SELECTIONS set field.
+    if (f == "IS_IN_VARIANT")        return mk(FieldType::Bool, false);
+    if (f == "VARIANT_SELECTIONS")   return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     return FieldInfo{};
 }
 
 const char *kAttrFieldList =
-    "NAME, TYPE_NAME, NAMESPACE, VALUE.ARRAY_SIZE, "
+    "NAME, TYPE, NAMESPACE, VALUE.ARRAY_SIZE, "
     "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
     "VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
     "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT, ASSET.IS_MISSING";
+
+// Authored variant-nesting facts — valid only on SDFATTRIBUTE (Layer world), like
+// the prim form. Shown only in the Layer-world "Valid:" hint.
+const char *kAttrFieldListLayerOnly =
+    "IS_IN_VARIANT, VARIANT_SELECTIONS";
 
 FieldInfo LookupRelField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable, bool set = false) {
@@ -176,11 +208,11 @@ const char *kRelFieldList =
     "NAME, NAMESPACE, TARGET, "
     "TARGET_COUNT, PATH";
 
-/// LAYER entity fields (design §5) plus the sublayer predicate (design A3). The
-/// stage-root metadata (UP_AXIS/METERS_PER_UNIT/time codes/DEFAULT_PRIM) is read off the
-/// layer; IS_ROOT_LAYER / IS_SESSION_LAYER recover the per-stage view. SUBLAYERS is a set
-/// field (sublayer asset paths) queried with CONTAINS / LIKE; HAS_SUBLAYER is the
-/// bool gate, SUBLAYER.COUNT the count.
+/// LAYER entity scalar fields (design §5). The stage-root metadata
+/// (UP_AXIS/METERS_PER_UNIT/time codes/DEFAULT_PRIM) is read off the layer;
+/// IS_ROOT_LAYER / IS_SESSION_LAYER recover the per-stage view. The sublayer
+/// predicate is the SUBLAYER family (A3-followup), recognised via the family path
+/// (HAS_SUBLAYER gate, SUBLAYER.{ASSET,IS_MISSING,LAYER_OFFSET} arcs, SUBLAYER.COUNT).
 FieldInfo LookupLayerField(const std::string &f) {
     auto mk = [](FieldType t, bool nullable) { return FieldInfo{true, t, nullable, true, false}; };
     if (f == "PATH")                     return mk(FieldType::String, true);
@@ -202,9 +234,8 @@ FieldInfo LookupLayerField(const std::string &f) {
     if (f == "END_TIME")            return mk(FieldType::Number, true);
     if (f == "TIMECODES_PER_SECOND") return mk(FieldType::Number, false);
     if (f == "FRAMES_PER_SECOND")    return mk(FieldType::Number, false);
-    if (f == "HAS_SUBLAYER")             return mk(FieldType::Bool, false);
-    if (f == "SUBLAYER.COUNT")           return mk(FieldType::Number, false);
-    if (f == "SUBLAYERS")                return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // HAS_SUBLAYER / SUBLAYER.* are the SUBLAYER family (A3-followup) — recognised
+    // via the family path, not as plain layer fields.
     return FieldInfo{};
 }
 
@@ -213,7 +244,7 @@ const char *kLayerFieldList =
     "DIRTY, ANONYMOUS, MUTED, EMPTY, IS_ROOT_LAYER, "
     "IS_SESSION_LAYER, DEFAULT_PRIM, UP_AXIS, METERS_PER_UNIT, "
     "ROOT_PRIM_COUNT, START_TIME, END_TIME, TIMECODES_PER_SECOND, "
-    "FRAMES_PER_SECOND, HAS_SUBLAYER, SUBLAYER.COUNT, SUBLAYERS";
+    "FRAMES_PER_SECOND";
 
 FieldInfo LookupField(Category c, const std::string &f) {
     switch (c) {
@@ -245,24 +276,38 @@ std::string ValidFieldsFor(Category c, UtqlWorld world) {
         std::string s = kPrimFieldListCommon;
         if (world == UtqlWorld::Stage)
             s += std::string(", ") + kPrimFieldListStageOnly;
+        else
+            s += std::string(", ") + kPrimFieldListLayerOnly;
         return s +
                ", and composition/API families: REFERENCE.{ASSET,PRIM_PATH,IS_MISSING,"
                "LAYER_OFFSET,LAYER_SCALE,OP} PAYLOAD.{…} INHERIT.PRIM_PATH SPECIALIZE.PRIM_PATH "
                "VARIANT.SET VARIANT.SELECTION API(CONTAINS) API.COUNT";
     }
+    if (c == Category::Attribute) {
+        std::string s = kAttrFieldList;
+        if (world == UtqlWorld::Layer)
+            s += std::string(", ") + kAttrFieldListLayerOnly;
+        return s;
+    }
+    if (c == Category::Layer)
+        return std::string(kLayerFieldList) +
+               ", and the sublayer family: HAS_SUBLAYER SUBLAYER.{ASSET,IS_MISSING,"
+               "LAYER_OFFSET} SUBLAYER.COUNT";
     return FieldListFor(c);
 }
 
 // ---------------------------------------------------- composition families
 
 bool IsHasGate(const std::string &f) {
-    return f == "HAS_REFERENCE" || f == "HAS_PAYLOAD" || f == "HAS_VARIANT" || f == "HAS_API";
+    return f == "HAS_REFERENCE" || f == "HAS_PAYLOAD" || f == "HAS_VARIANT" ||
+           f == "HAS_API" || f == "HAS_SUBLAYER";
 }
 
 Family GateFamily(const std::string &f) {
-    if (f == "HAS_PAYLOAD") return Family::Payload;
-    if (f == "HAS_VARIANT") return Family::Variant;
-    if (f == "HAS_API")     return Family::Api;
+    if (f == "HAS_PAYLOAD")  return Family::Payload;
+    if (f == "HAS_VARIANT")  return Family::Variant;
+    if (f == "HAS_API")      return Family::Api;
+    if (f == "HAS_SUBLAYER") return Family::Sublayer;
     return Family::Reference;
 }
 
@@ -274,6 +319,7 @@ const char *FamilyName(Family fam) {
         case Family::Specialize: return "SPECIALIZE";
         case Family::Variant:    return "VARIANT";
         case Family::Api:        return "API";
+        case Family::Sublayer:   return "SUBLAYER";
     }
     return "?";
 }
@@ -295,6 +341,8 @@ FamilyField LookupFamilyField(const std::string &f) {
     if (f == "API")       { set(Family::Api, FieldType::String); r.isApiSet = true; return r; }
     if (f == "API.COUNT") { set(Family::Api, FieldType::Number); r.isArc = false; return r; }
     if (f == "API.OP")    { set(Family::Api, FieldType::String); r.isOp = true; return r; }
+    // SUBLAYER.COUNT is the arc-less scalar (mirrors API.COUNT), read off the layer.
+    if (f == "SUBLAYER.COUNT") { set(Family::Sublayer, FieldType::Number); r.isArc = false; return r; }
 
     const auto dot = f.find('.');
     if (dot == std::string::npos)
@@ -320,6 +368,15 @@ FamilyField LookupFamilyField(const std::string &f) {
         if (sub == "SET" || sub == "SELECTION") { set(Family::Variant, FieldType::String); return r; }
         return r;
     }
+    // SUBLAYER family (A3-followup) on the LAYER entity: per-arc sublayer facts,
+    // mirroring REFERENCE/PAYLOAD. No PRIM_PATH (whole-layer compose) and no OP
+    // (sublayers are a plain ordered list, not a list-op).
+    if (head == "SUBLAYER") {
+        if (sub == "ASSET")        { set(Family::Sublayer, FieldType::String); return r; }
+        if (sub == "IS_MISSING")   { set(Family::Sublayer, FieldType::Bool); return r; }
+        if (sub == "LAYER_OFFSET") { set(Family::Sublayer, FieldType::Number); return r; }
+        return r;
+    }
     return r;
 }
 
@@ -332,7 +389,7 @@ bool IsArcLeaf(const std::string &f) {
 /// API which is itself a valid set field.
 bool IsFamilyHead(const std::string &f) {
     return f == "REFERENCE" || f == "PAYLOAD" || f == "INHERIT" || f == "SPECIALIZE" ||
-           f == "VARIANT";
+           f == "VARIANT" || f == "SUBLAYER";
 }
 
 /// Message listing the valid fields of the family `f` belongs to, used when a
@@ -348,6 +405,8 @@ std::string FamilyFieldHint(const std::string &f) {
         valid = head + ".PRIM_PATH, " + head + ".OP";
     else if (head == "VARIANT")
         valid = "VARIANT.SET, VARIANT.SELECTION";
+    else if (head == "SUBLAYER")
+        valid = "SUBLAYER.ASSET, SUBLAYER.IS_MISSING, SUBLAYER.LAYER_OFFSET, SUBLAYER.COUNT";
     else if (head == "API")
         valid = "API CONTAINS \"Name\", API.COUNT, API.OP";
     else
@@ -751,19 +810,35 @@ class Binder {
             return false;
         }
 
-        // Composition / API predicate families — prim entities only (design §3).
-        // Route every family-prefixed field (and bare head) here so an invalid
-        // sub-field gets a family-specific message, not a misleading one.
-        if (_cat == Category::Prim && (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)))
-            return ValidateFamilyLeaf(e, world);
+        // Variant nesting (IS_IN_VARIANT / VARIANT_SELECTIONS) — the inverse: an
+        // authored (Layer) fact. A composed-stage path carries no variant components,
+        // so reject these in Stage world. Valid on SDFPRIM and SDFATTRIBUTE.
+        if ((_cat == Category::Prim || _cat == Category::Attribute) &&
+            (f == "IS_IN_VARIANT" || f == "VARIANT_SELECTIONS") &&
+            world == UtqlWorld::Stage) {
+            Fail(f + " is an authored (Layer) fact, invalid in Stage world. "
+                     "Query SDFPRIM / SDFATTRIBUTE.");
+            return false;
+        }
+
+        // Composition / family predicates. Each family is hosted by one entity
+        // category — SUBLAYER on LAYER, every other family (REFERENCE/PAYLOAD/…/API)
+        // on prims (design §3 + A3-followup). Route to ValidateFamilyLeaf when the
+        // host matches so an invalid sub-field gets a family-specific message;
+        // otherwise report the wrong-entity error.
+        if (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)) {
+            if (_cat == FamilyHostCategory(f))
+                return ValidateFamilyLeaf(e, world);
+            if (FamilyHostCategory(f) == Category::Layer)
+                Fail("SUBLAYER predicates (" + f + ") are only valid on the LAYER entity.");
+            else
+                Fail("Composition/API predicates (" + f + ") are only valid on prim entities.");
+            return false;
+        }
 
         // Relationship OP and other non-prim list-ops are still deferred.
         if (IsListOpField(f)) {
             Fail(f + " (list-op) is recognised but not yet supported in this build.");
-            return false;
-        }
-        if (IsFamilyField(f) || IsHasGate(f) || IsFamilyHead(f)) {
-            Fail("Composition/API predicates (" + f + ") are only valid on prim entities.");
             return false;
         }
 
@@ -838,8 +913,15 @@ class Binder {
             Fail(std::string(clause) + " field LAYER is only valid in Layer world.");
             return false;
         }
-        // Composition/API families and gates are displayable on prim entities.
-        if (_cat == Category::Prim && (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f))) {
+        // Composition/family fields and gates are displayable on their host entity
+        // (SUBLAYER on LAYER, the rest on prims — design §3 + A3-followup).
+        if (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)) {
+            if (_cat != FamilyHostCategory(f)) {
+                Fail(std::string(clause) + " field " + f + " is only valid on " +
+                     (FamilyHostCategory(f) == Category::Layer ? "the LAYER entity."
+                                                               : "prim entities."));
+                return false;
+            }
             if (IsHasGate(f))
                 return true;
             const FamilyField ff = LookupFamilyField(f);
@@ -853,7 +935,7 @@ class Binder {
             }
             return true;
         }
-        if (IsListOpField(f) || IsFamilyField(f) || IsHasGate(f) || IsFamilyHead(f)) {
+        if (IsListOpField(f)) {
             Fail(std::string(clause) + " field " + f + " is only valid on prim entities.");
             return false;
         }

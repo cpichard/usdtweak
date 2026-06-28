@@ -29,7 +29,7 @@ enum class CompareOp { Eq, Ne, Lt, Le, Gt, Ge };
 
 /// Composition / API predicate families (design §3). Each owns a set of
 /// per-arc fields (REFERENCE.ASSET, VARIANT.SET, …) evaluated existentially.
-enum class Family { Reference, Payload, Inherit, Specialize, Variant, Api };
+enum class Family { Reference, Payload, Inherit, Specialize, Variant, Api, Sublayer };
 
 /// A node in the WHERE expression tree. Precedence NOT > AND > OR is resolved by
 /// the parser; And/Or are flattened n-ary nodes, Not is unary.
