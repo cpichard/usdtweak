@@ -25,7 +25,9 @@ As of today usdtweak allows
  
 **Text editing**: edit any layer with a text editor, navigate layers like a web browser.
 
-**Experimental features**: visualize and edit connection graphs, useful for shader/materials graphs. A natural language agent name twiki, that can help you find issues in the scene or do bulk modifications.
+**Experimental features**:
+ - Connection editor - visualize and edit connection graphs, useful for shader/materials graphs. 
+ - A natural language agent named [Twiki](doc/Twiki.md), that can help you find issues in the scene or do bulk modifications.
 
 If you want to try usdtweak without the burden of compiling it, you can download the latest installer here https://github.com/cpichard/usdtweak/releases. Feel free to [reach out](#contact) if you have any issue with it (or success).
 
