@@ -151,6 +151,37 @@ struct EvalCtx {
     bool IsSet(const std::string &f) const { return setFields && setFields->count(f); }
 };
 
+bool EvalWhere(const WhereExpr &e, const EvalCtx &ctx); // fwd (mutual recursion)
+
+/// Does a single arc satisfy every inner predicate of a FamilyMatch? (the §3.2
+/// correlation test). Shared by the FamilyMatch evaluator and witness collection.
+bool ArcSatisfiesInners(const Arc &arc,
+                        const std::vector<std::unique_ptr<WhereExpr>> &inners,
+                        const RegexCache *regexes) {
+    static const std::unordered_set<std::string> kApiSet = {"API"};
+    EvalCtx ac;
+    ac.get = [&arc](const std::string &fld) {
+        auto it = arc.fields.find(fld);
+        return it != arc.fields.end() ? it->second : UtqlValue::Null();
+    };
+    ac.getSet = [&arc](const std::string &fld) -> std::vector<std::string> {
+        if (arc.isApi && fld == "API")
+            return arc.apiMembers;
+        // Treat any arc field as a one-member set so CONTAINS works as
+        // existential equality on family fields (VARIANT.SET CONTAINS …).
+        auto it = arc.fields.find(fld);
+        if (it != arc.fields.end() && !it->second.IsNull())
+            return {it->second.ToDisplay()};
+        return {};
+    };
+    ac.setFields = &kApiSet;
+    ac.regexes = regexes;
+    for (const auto &inner : inners)
+        if (!EvalWhere(*inner, ac))
+            return false;
+    return true;
+}
+
 bool EvalWhere(const WhereExpr &e, const EvalCtx &ctx) {
     switch (e.kind) {
         case WhereExpr::Kind::Or:
@@ -246,39 +277,67 @@ bool EvalWhere(const WhereExpr &e, const EvalCtx &ctx) {
             const std::vector<Arc> &arcs = ctx.getArcs(e.family);
             if (e.familyExistsOnly)
                 return !arcs.empty();
-            static const std::unordered_set<std::string> kApiSet = {"API"};
-            for (const Arc &arc : arcs) {
-                EvalCtx ac;
-                ac.get = [&arc](const std::string &fld) {
-                    auto it = arc.fields.find(fld);
-                    return it != arc.fields.end() ? it->second : UtqlValue::Null();
-                };
-                ac.getSet = [&arc](const std::string &fld) -> std::vector<std::string> {
-                    if (arc.isApi && fld == "API")
-                        return arc.apiMembers;
-                    // Treat any arc field as a one-member set so CONTAINS works as
-                    // existential equality on family fields (VARIANT.SET CONTAINS …).
-                    auto it = arc.fields.find(fld);
-                    if (it != arc.fields.end() && !it->second.IsNull())
-                        return {it->second.ToDisplay()};
-                    return {};
-                };
-                ac.setFields = &kApiSet;
-                ac.regexes = ctx.regexes;
-                // A single arc must satisfy every inner predicate (correlation §3.2).
-                bool all = true;
-                for (const auto &inner : e.children)
-                    if (!EvalWhere(*inner, ac)) {
-                        all = false;
-                        break;
-                    }
-                if (all)
+            // A single arc must satisfy every inner predicate (correlation §3.2).
+            for (const Arc &arc : arcs)
+                if (ArcSatisfiesInners(arc, e.children, ctx.regexes))
                     return true;
-            }
             return false;
         }
     }
     return false;
+}
+
+/// Per-family set of the arcs that POSITIVELY matched the WHERE clause — the
+/// "witness". RETURN narrows an arc display field to these instead of joining all
+/// of a row's arcs, so `WHERE REFERENCE.IS_MISSING RETURN REFERENCE.ASSET` shows
+/// only the missing reference rather than every reference of the prim.
+using WitnessMap = std::map<Family, std::vector<Arc>>;
+
+/// Walk a matched row's WHERE tree and collect, per family, the arcs that
+/// positively explain the match. Truth-gated: at each connective only the
+/// children that actually account for the node's truth value are descended
+/// (`AND true`→all, `AND false`→the false ones, and the De Morgan mirror for OR),
+/// so a predicate filtered out by a sibling contributes nothing. Polarity-tracked:
+/// a family predicate under an odd number of NOTs is negative and yields no
+/// witness, and an existential gate (HAS_REFERENCE) is skipped — both leave the
+/// bucket empty, so display falls back to all arcs. Precondition: the row matched.
+void CollectWitnesses(const WhereExpr &e, const EvalCtx &ctx, bool positive,
+                      WitnessMap &out) {
+    using K = WhereExpr::Kind;
+    switch (e.kind) {
+        case K::FamilyMatch:
+            if (!positive || e.familyExistsOnly)
+                return;
+            for (const Arc &arc : ctx.getArcs(e.family))
+                if (ArcSatisfiesInners(arc, e.children, ctx.regexes))
+                    out[e.family].push_back(arc);
+            return;
+        case K::Not:
+            CollectWitnesses(*e.children[0], ctx, !positive, out);
+            return;
+        case K::And:
+            if (EvalWhere(e, ctx)) {
+                for (const auto &c : e.children)
+                    CollectWitnesses(*c, ctx, positive, out);
+            } else {
+                for (const auto &c : e.children)
+                    if (!EvalWhere(*c, ctx))
+                        CollectWitnesses(*c, ctx, positive, out);
+            }
+            return;
+        case K::Or:
+            if (EvalWhere(e, ctx)) {
+                for (const auto &c : e.children)
+                    if (EvalWhere(*c, ctx))
+                        CollectWitnesses(*c, ctx, positive, out);
+            } else {
+                for (const auto &c : e.children)
+                    CollectWitnesses(*c, ctx, positive, out);
+            }
+            return;
+        default:
+            return; // scalar leaves carry no arc witness
+    }
 }
 
 /// Compile every /regex/ in the tree once; on a malformed pattern report it.
@@ -414,6 +473,22 @@ std::vector<std::string> SdfPrimRelationshipNames(const SdfPrimSpecHandle &spec)
     for (const SdfRelationshipSpecHandle &rel : spec->GetRelationships())
         if (rel)
             out.push_back(rel->GetName());
+    return out;
+}
+
+/// Variant selections a spec is nested *under* — the VARIANT_SELECTIONS set field
+/// (Layer world). Each authored variant scope on the path contributes one
+/// "{set=value}" token; a spec can sit inside several (e.g.
+/// /Foo{look=red}Bar{lod=high}Baz). Ordered outermost→innermost. Distinct from the
+/// VARIANT.* family, which is the variant sets defined *on* a prim.
+std::vector<std::string> VariantSelectionsOfPath(const SdfPath &path) {
+    std::vector<std::string> out;
+    for (SdfPath p = path; !p.IsEmpty(); p = p.GetParentPath())
+        if (p.IsPrimVariantSelectionPath()) {
+            const std::pair<std::string, std::string> sel = p.GetVariantSelection();
+            out.push_back("{" + sel.first + "=" + sel.second + "}");
+        }
+    std::reverse(out.begin(), out.end()); // outermost → innermost
     return out;
 }
 
@@ -593,19 +668,41 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     // Relationship existence (design I2). Authored relationship specs on this prim.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!spec->GetRelationships().empty());
     if (f == "RELATIONSHIPS")    return UtqlValue::String_(JoinStrings(SdfPrimRelationshipNames(spec)));
+    // Variant nesting (Layer world). IS_IN_VARIANT iff the spec path sits inside any
+    // authored variant scope; VARIANT_SELECTIONS lists those "{set=value}" scopes.
+    // Composed-stage paths carry no variant components, so the binder rejects both in
+    // Stage world (USDPRIM).
+    if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
+    if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
     return UtqlValue::Null();
 }
 
 // ------------------------------------------------------------ layer accessors
 
-/// The layer's authored sublayer asset paths — the SUBLAYERS set field (design
-/// A3). Existential membership via CONTAINS / LIKE answers "where is X used as a
-/// sublayer", the composition path that WHERE could never reach before.
-std::vector<std::string> LayerSublayerPaths(const SdfLayerHandle &layer) {
-    std::vector<std::string> out;
-    for (const std::string &p : layer->GetSubLayerPaths())
-        out.push_back(p);
-    return out;
+/// One Arc per authored sublayer of a layer — the SUBLAYER family (A3-followup),
+/// the LAYER-entity analogue of BuildUsdArcs for REFERENCE/PAYLOAD. Each arc
+/// carries SUBLAYER.ASSET (the authored path), SUBLAYER.IS_MISSING (does it resolve
+/// relative to the owning layer — the same test as REFERENCE.IS_MISSING), and
+/// SUBLAYER.LAYER_OFFSET. Existential / correlated matching falls out of the shared
+/// FamilyMatch machinery for free. An anonymous / asset-less entry never "misses".
+std::vector<Arc> BuildLayerSublayerArcs(const SdfLayerHandle &layer) {
+    std::vector<Arc> arcs;
+    const SdfLayerOffsetVector offsets = layer->GetSubLayerOffsets();
+    size_t i = 0;
+    for (const std::string &asset : layer->GetSubLayerPaths()) {
+        Arc a;
+        a.fields["SUBLAYER.ASSET"] =
+            asset.empty() ? UtqlValue::Null() : UtqlValue::String_(asset);
+        bool missing = false;
+        if (!asset.empty())
+            missing = !SdfLayer::FindOrOpenRelativeToLayer(layer, asset);
+        a.fields["SUBLAYER.IS_MISSING"] = UtqlValue::Bool(missing);
+        const double off = (i < offsets.size()) ? offsets[i].GetOffset() : 0.0;
+        a.fields["SUBLAYER.LAYER_OFFSET"] = UtqlValue::Number_(off);
+        arcs.push_back(std::move(a));
+        ++i;
+    }
+    return arcs;
 }
 
 /// Read a root-layer metadata field (upAxis / metersPerUnit) authored as pseudo-root
@@ -653,7 +750,6 @@ UtqlValue GetLayerField(const SdfLayerHandle &layer,
     if (f == "ROOT_PRIM_COUNT")  return UtqlValue::Number_(static_cast<double>(layer->GetRootPrims().size()));
     if (f == "SUBLAYER.COUNT")       return UtqlValue::Number_(static_cast<double>(layer->GetNumSubLayerPaths()));
     if (f == "HAS_SUBLAYER")         return UtqlValue::Bool(layer->GetNumSubLayerPaths() > 0);
-    if (f == "SUBLAYERS")            return UtqlValue::String_(JoinStrings(LayerSublayerPaths(layer)));
     if (f == "START_TIME")
         return layer->HasStartTimeCode() ? UtqlValue::Number_(layer->GetStartTimeCode()) : UtqlValue::Null();
     if (f == "END_TIME")
@@ -709,7 +805,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     if (f == "NAME")      return UtqlValue::String_(attr.GetName().GetString());
     if (f == "PATH")                return UtqlValue::String_(attr.GetPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(attr.GetName().GetString());
-    if (f == "TYPE_NAME") {
+    if (f == "TYPE") {
         const SdfValueTypeName tn = attr.GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
                                          : UtqlValue::String_(tn.GetAsToken().GetString());
@@ -793,7 +889,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     if (f == "NAME")      return UtqlValue::String_(spec->GetName());
     if (f == "PATH")                return UtqlValue::String_(spec->GetPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(spec->GetName());
-    if (f == "TYPE_NAME") {
+    if (f == "TYPE") {
         const SdfValueTypeName tn = spec->GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
                                          : UtqlValue::String_(tn.GetAsToken().GetString());
@@ -849,6 +945,9 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     if (f == "HAS_CONNECTION")    return UtqlValue::Bool(!SdfAttrConnectionSources(spec).empty());
     if (f == "CONNECTION.COUNT")  return UtqlValue::Number_(static_cast<double>(SdfAttrConnectionSources(spec).size()));
     if (f == "CONNECTION.SOURCE") return UtqlValue::String_(JoinPaths(SdfAttrConnectionSources(spec)));
+    // Variant nesting (Layer world) — mirrors GetSdfPrimField.
+    if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
+    if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
     return UtqlValue::Null();
 }
 
@@ -875,6 +974,7 @@ const char *FamilyPrefix(Family f) {
         case Family::Specialize: return "SPECIALIZE";
         case Family::Variant:    return "VARIANT";
         case Family::Api:        return "API";
+        case Family::Sublayer:   return "SUBLAYER";
     }
     return "";
 }
@@ -1086,8 +1186,8 @@ std::vector<Arc> BuildSdfArcs(const SdfPrimSpecHandle &spec, Family fam) {
 /// API.OP, …) — i.e. displayed by joining values across the prim's arcs.
 /// API.COUNT is a scalar and excluded.
 bool FamilyDisplayField(const std::string &f, Family &fam) {
-    if (f == "API.COUNT")
-        return false;
+    if (f == "API.COUNT" || f == "SUBLAYER.COUNT")
+        return false; // arc-less scalars, read off the prim / layer
     if (f == "API") { fam = Family::Api; return true; }
     const auto dot = f.find('.');
     if (dot == std::string::npos)
@@ -1099,6 +1199,7 @@ bool FamilyDisplayField(const std::string &f, Family &fam) {
     if (head == "SPECIALIZE") { fam = Family::Specialize; return true; }
     if (head == "VARIANT")    { fam = Family::Variant;    return true; }
     if (head == "API")        { fam = Family::Api;        return true; } // API.OP
+    if (head == "SUBLAYER")   { fam = Family::Sublayer;   return true; }
     return false;
 }
 
@@ -1314,9 +1415,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     // Attribute connection-source set field (design C1, CONNECTION.SOURCE CONTAINS …).
     else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
         setFields = {"CONNECTION.SOURCE"};
-    // Layer sublayer-asset set field (design A3, SUBLAYERS CONTAINS / LIKE …).
-    else if (q.entity == UtqlEntity::Layer)
-        setFields = {"SUBLAYERS"};
+    // LAYER has no top-level set field: sublayers are the SUBLAYER family (A3-followup),
+    // matched per-arc through the FamilyMatch machinery (SUBLAYER.ASSET CONTAINS …).
 
     auto makeRow = [&](const std::string &source, const SdfPath &path,
                        const std::function<UtqlValue(const std::string &)> &get) -> UtqlRow {
@@ -1364,7 +1464,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         const std::function<UtqlValue(const std::string &)> &get,
                         const std::function<std::vector<std::string>(const std::string &)> &getSet,
                         const std::function<const std::vector<Arc> &(Family)> &getArcs,
-                        UtqlRow &row) -> bool {
+                        WitnessMap *witness, UtqlRow &row) -> bool {
         if (filterActive && q.entity != UtqlEntity::Layer &&
             !filterPrims.count(SourceKey(source, path.GetPrimPath().GetString())))
             return false;
@@ -1378,6 +1478,13 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         ectx.source = &source;
         if (q.where && !EvalWhere(*q.where, ectx))
             return false;
+        // Narrow arc display fields to the arcs that matched (§ witness): fill the
+        // per-row witness the caller's `get` consults before makeRow reads it.
+        if (witness) {
+            witness->clear();
+            if (q.where)
+                CollectWitnesses(*q.where, ectx, true, *witness);
+        }
         row = makeRow(source, path, get);
         return true;
     };
@@ -1386,9 +1493,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     auto emit = [&](const std::string &source, const SdfPath &path,
                     const std::function<UtqlValue(const std::string &)> &get,
                     const std::function<std::vector<std::string>(const std::string &)> &getSet,
-                    const std::function<const std::vector<Arc> &(Family)> &getArcs) {
+                    const std::function<const std::vector<Arc> &(Family)> &getArcs,
+                    WitnessMap *witness) {
         UtqlRow row;
-        if (evalItem(source, path, get, getSet, getArcs, row)) {
+        if (evalItem(source, path, get, getSet, getArcs, witness, row)) {
             ++result.matched;
             result.rows.push_back(std::move(row));
         }
@@ -1487,7 +1595,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     if (fld == "COMPOSITION.ARC_TYPE")  return UtqlValue::String_(arctype);
                     return specGet(fld);
                 };
-                emit(layerId, specPath, get, specGetSet, noArcs);
+                emit(layerId, specPath, get, specGetSet, noArcs, nullptr);
             };
 
         for (const auto &tp : targets) {
@@ -1532,6 +1640,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                      [s](const std::string &f) { return GetSdfPrimField(s, f); },
                                      [s](const std::string &f) -> std::vector<std::string> {
                                          if (f == "RELATIONSHIPS") return SdfPrimRelationshipNames(s);
+                                         if (f == "VARIANT_SELECTIONS") return VariantSelectionsOfPath(s->GetPath());
                                          return {};
                                      });
                 }
@@ -1555,6 +1664,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                      [s](const std::string &f) -> std::vector<std::string> {
                                          if (f == "CONNECTION.SOURCE")
                                              return PathsToStrings(SdfAttrConnectionSources(s));
+                                         if (f == "VARIANT_SELECTIONS") return VariantSelectionsOfPath(s->GetPath());
                                          return {};
                                      });
                 }
@@ -1708,6 +1818,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 if (!prim)
                     continue;
                 std::map<Family, std::vector<Arc>> arcCache;
+                WitnessMap witness;
                 auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
                     auto ait = arcCache.find(fam);
                     if (ait == arcCache.end())
@@ -1716,8 +1827,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 };
                 auto get = [&](const std::string &fld) -> UtqlValue {
                     Family fam;
-                    if (FamilyDisplayField(fld, fam))
-                        return JoinArcField(getArcs(fam), fld);
+                    if (FamilyDisplayField(fld, fam)) {
+                        auto w = witness.find(fam);
+                        return JoinArcField(
+                            w != witness.end() ? w->second : getArcs(fam), fld);
+                    }
                     return GetUsdPrimField(prim, fld);
                 };
                 auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
@@ -1725,7 +1839,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         return UsdPrimRelationshipNames(prim);
                     return {};
                 };
-                emit(source, prim.GetPath(), get, getSet, getArcs);
+                emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
             }
             if (cancelled) break;
         }
@@ -1811,6 +1925,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     if (!primComposedFrom(prim))
                         return;
                     std::map<Family, std::vector<Arc>> arcCache;
+                    WitnessMap witness;
                     auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
                         auto it = arcCache.find(fam);
                         if (it == arcCache.end())
@@ -1819,8 +1934,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     };
                     auto get = [&](const std::string &fld) -> UtqlValue {
                         Family fam;
-                        if (FamilyDisplayField(fld, fam))
-                            return JoinArcField(getArcs(fam), fld);
+                        if (FamilyDisplayField(fld, fam)) {
+                            auto w = witness.find(fam);
+                            return JoinArcField(
+                                w != witness.end() ? w->second : getArcs(fam), fld);
+                        }
                         return GetUsdPrimField(prim, fld);
                     };
                     auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
@@ -1828,7 +1946,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                             return UsdPrimRelationshipNames(prim);
                         return {};
                     };
-                    emit(source, prim.GetPath(), get, getSet, getArcs);
+                    emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
                 } else if (q.entity == UtqlEntity::UsdAttribute) {
                     for (const UsdAttribute &attr : prim.GetAttributes()) {
                         if (checkCancel()) break;
@@ -1843,7 +1961,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                      return PathsToStrings(UsdAttrConnectionSources(attr));
                                  return {};
                              },
-                             noArcs);
+                             noArcs, nullptr);
                     }
                 } else { // UsdRelationship
                     for (const UsdRelationship &rel : prim.GetRelationships()) {
@@ -1857,7 +1975,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         const SdfPath path = rel.GetPath();
                         emit(source, path,
                              [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
-                             [&](const std::string &) { return PathsToStrings(targets); }, noArcs);
+                             [&](const std::string &) { return PathsToStrings(targets); }, noArcs, nullptr);
                     }
                 }
             };
@@ -1938,6 +2056,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     if (q.entity == UtqlEntity::UsdPrim) {
                         if (cancelCheck()) return;
                         std::map<Family, std::vector<Arc>> arcCache;
+                        WitnessMap witness;
                         auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
                             auto it = arcCache.find(fam);
                             if (it == arcCache.end())
@@ -1946,8 +2065,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         };
                         auto get = [&](const std::string &fld) -> UtqlValue {
                             Family fam;
-                            if (FamilyDisplayField(fld, fam))
-                                return JoinArcField(getArcs(fam), fld);
+                            if (FamilyDisplayField(fld, fam)) {
+                                auto w = witness.find(fam);
+                                return JoinArcField(
+                                    w != witness.end() ? w->second : getArcs(fam), fld);
+                            }
                             return GetUsdPrimField(prim, fld);
                         };
                         auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
@@ -1956,7 +2078,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                             return {};
                         };
                         UtqlRow row;
-                        if (evalItem(item.source, prim.GetPath(), get, getSet, getArcs, row)) {
+                        if (evalItem(item.source, prim.GetPath(), get, getSet, getArcs, &witness, row)) {
                             atomicMatched.fetch_add(1, std::memory_order_relaxed);
                             localRows.push_back(std::move(row));
                         }
@@ -1974,7 +2096,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                                  return PathsToStrings(UsdAttrConnectionSources(attr));
                                              return {};
                                          },
-                                         noArcs, row)) {
+                                         noArcs, nullptr, row)) {
                                 atomicMatched.fetch_add(1, std::memory_order_relaxed);
                                 localRows.push_back(std::move(row));
                             }
@@ -1992,7 +2114,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                              return GetRelScalarField(name, targets, path, fld);
                                          },
                                          [&](const std::string &) { return PathsToStrings(targets); },
-                                         noArcs, row)) {
+                                         noArcs, nullptr, row)) {
                                 atomicMatched.fetch_add(1, std::memory_order_relaxed);
                                 localRows.push_back(std::move(row));
                             }
@@ -2047,15 +2169,29 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 if (filterActive && !filterLayerSources.count(source)) continue;
                 if (checkCancel()) break;
                 ++result.scanned;
+                // SUBLAYER family arcs (A3-followup) — built once per layer, lazily,
+                // keyed like the prim arc cache. Sublayer is the only LAYER family,
+                // so the requested family is always Family::Sublayer.
+                std::map<Family, std::vector<Arc>> arcCache;
+                WitnessMap witness;
+                auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
+                    auto it = arcCache.find(fam);
+                    if (it == arcCache.end())
+                        it = arcCache.emplace(fam, BuildLayerSublayerArcs(layerH)).first;
+                    return it->second;
+                };
                 emit(source, SdfPath::AbsoluteRootPath(),
-                     [&](const std::string &fld) {
+                     [&](const std::string &fld) -> UtqlValue {
+                         Family fam;
+                         if (FamilyDisplayField(fld, fam)) {
+                             auto w = witness.find(fam);
+                             return JoinArcField(
+                                 w != witness.end() ? w->second : getArcs(fam), fld);
+                         }
                          return GetLayerField(layerH, rootLayerIds, sessionLayerIds, fld);
                      },
-                     [&](const std::string &fld) -> std::vector<std::string> {
-                         if (fld == "SUBLAYERS") return LayerSublayerPaths(layerH);
-                         return {};
-                     },
-                     noArcs);
+                     [&](const std::string &) -> std::vector<std::string> { return {}; },
+                     getArcs, &witness);
             }
         } else {
             // FIND SDFPRIM / SDFATTRIBUTE / SDFRELATIONSHIP: two-phase parallel.
@@ -2124,6 +2260,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         if (q.entity == UtqlEntity::SdfPrim) {
                             if (cancelCheck()) return;
                             std::map<Family, std::vector<Arc>> arcCache;
+                            WitnessMap witness;
                             auto getArcs = [&](Family fam) -> const std::vector<Arc> & {
                                 auto it = arcCache.find(fam);
                                 if (it == arcCache.end())
@@ -2132,17 +2269,22 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                             };
                             auto get = [&](const std::string &fld) -> UtqlValue {
                                 Family fam;
-                                if (FamilyDisplayField(fld, fam))
-                                    return JoinArcField(getArcs(fam), fld);
+                                if (FamilyDisplayField(fld, fam)) {
+                                    auto w = witness.find(fam);
+                                    return JoinArcField(
+                                        w != witness.end() ? w->second : getArcs(fam), fld);
+                                }
                                 return GetSdfPrimField(prim, fld);
                             };
                             auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                                 if (fld == "RELATIONSHIPS")
                                     return SdfPrimRelationshipNames(prim);
+                                if (fld == "VARIANT_SELECTIONS")
+                                    return VariantSelectionsOfPath(prim->GetPath());
                                 return {};
                             };
                             UtqlRow row;
-                            if (evalItem(item.source, prim->GetPath(), get, getSet, getArcs, row)) {
+                            if (evalItem(item.source, prim->GetPath(), get, getSet, getArcs, &witness, row)) {
                                 atomicMatched.fetch_add(1, std::memory_order_relaxed);
                                 localRows.push_back(std::move(row));
                             }
@@ -2160,9 +2302,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                              [&](const std::string &fld) -> std::vector<std::string> {
                                                  if (fld == "CONNECTION.SOURCE")
                                                      return PathsToStrings(SdfAttrConnectionSources(spec));
+                                                 if (fld == "VARIANT_SELECTIONS")
+                                                     return VariantSelectionsOfPath(spec->GetPath());
                                                  return {};
                                              },
-                                             noArcs, row)) {
+                                             noArcs, nullptr, row)) {
                                     atomicMatched.fetch_add(1, std::memory_order_relaxed);
                                     localRows.push_back(std::move(row));
                                 }
@@ -2181,7 +2325,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                                  return GetRelScalarField(name, targets, path, fld);
                                              },
                                              [&](const std::string &) { return PathsToStrings(targets); },
-                                             noArcs, row)) {
+                                             noArcs, nullptr, row)) {
                                     atomicMatched.fetch_add(1, std::memory_order_relaxed);
                                     localRows.push_back(std::move(row));
                                 }
