@@ -1041,7 +1041,11 @@ bool Editor::_enableMouseCapture = false;
 
 static bool gMouseCaptured = false;
 
-// workaround for GLFW bug that reports wrong mouse delta after mouse capture
+// The patched GLFW (patches/glfw-3.4) reports the post-transition cursor
+// position through the cursor-pos callback during glfwSetInputMode, so ImGui
+// stays in sync across capture/release. That resync event is a teleport, not
+// motion: it reaches io.MouseDelta at the next NewFrame and must be absorbed
+// for exactly one frame.
 static int gSkipCapturedMouseDelta = 0;
 
 bool Editor::GetMouseCaptured() {
@@ -1055,14 +1059,14 @@ void Editor::SetMouseCaptured(bool captured) {
         if (auto window = glfwGetCurrentContext()) {
             ImGuiIO &io = ImGui::GetIO();
             if (captured) {
-                gSkipCapturedMouseDelta = 2;
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
-                io.MouseDelta = {0, 0};
             } else {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
             }
+            gSkipCapturedMouseDelta = 1;
+            io.MouseDelta = {0, 0};
         }
     }
 }

@@ -1,0 +1,48 @@
+Fire the cursor-pos callback on cursor-mode transitions
+
+glfwSetInputMode(GLFW_CURSOR, ...) re-reads the OS cursor position into
+window->virtualCursorPos before the platform performs its enter/exit
+warps, and without firing the cursor position callback. Applications
+that track the cursor position from callbacks (ImGui among them) desync
+by the drift accumulated during GLFW_CURSOR_DISABLED and observe it
+replayed as one giant delta on the next motion event — the long-standing
+"cursor jump" of glfw/glfw#2523 / #1523.
+
+Apply the platform mode change first (it warps to the window center on
+capture and back to the restore position on release), then report the
+settled position through _glfwInputCursorPos so the callback fires and
+consumers resync. Ordering matters: firing the callback before the
+platform warp still leaves the restore-warp discontinuity at release.
+
+Contract change: a cursor-pos callback may now arrive synchronously
+inside glfwSetInputMode; apps should treat it as a resync, not motion.
+Verified with repro/cursor_jump_repro.c (repo usdtweak-jumpingcursorv2).
+
+--- a/src/input.c	2026-07-01 21:59:35
++++ b/src/input.c	2026-07-01 22:00:00
+@@ -609,10 +609,22 @@
+ 
+             window->cursorMode = value;
+ 
+-            _glfw.platform.getCursorPos(window,
+-                                        &window->virtualCursorPosX,
+-                                        &window->virtualCursorPosY);
++            // usdtweak patch: apply the mode first (the platform performs its
++            // enter/exit cursor warps), then report the settled position
++            // through _glfwInputCursorPos so the cursor position callback
++            // fires and event-driven consumers (e.g. ImGui) stay in sync.
++            // Upstream re-reads the OS cursor position into virtualCursorPos
++            // before the warps and without firing the callback; apps tracking
++            // the position from callbacks desync by the accumulated capture
++            // drift and see it replayed as one giant delta on the next motion
++            // event (glfw/glfw#2523).
+             _glfw.platform.setCursorMode(window, value);
++
++            {
++                double xpos, ypos;
++                _glfw.platform.getCursorPos(window, &xpos, &ypos);
++                _glfwInputCursorPos(window, xpos, ypos);
++            }
+             return;
+         }
+ 

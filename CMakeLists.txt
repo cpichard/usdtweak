@@ -25,9 +25,13 @@ else ()
         set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
     endif()
     include(FetchContent)
+    # GLFW patches fixing the cursor jump on GLFW_CURSOR_DISABLED transitions
+    # (see patches/glfw-3.4/ and repro/)
+    set(GLFW_PATCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/patches/glfw-3.4)
     FetchContent_Declare(
         glfw
         URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
+        PATCH_COMMAND sh ${GLFW_PATCH_DIR}/apply.sh ${GLFW_PATCH_DIR}
     )
     set(GLFW_BUILD_EXAMPLES OFF)
     set(GLFW_BUILD_TESTS OFF)
