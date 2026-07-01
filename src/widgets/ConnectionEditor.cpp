@@ -343,7 +343,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // While a popup (e.g. the node context menu) is open, the canvas must ignore
         // clicks — otherwise clicking a menu item also starts a region selection.
         const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
-        if (!popupOpen && (widgetBoundingBox.Contains(ImGui::GetMousePos()) || _isCapturing)) {
+        if (!popupOpen && (widgetBoundingBox.Contains(ImGui::GetMousePos()))) {
             // Click on the canvas TODO test bounding box
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
@@ -890,11 +890,9 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 selectionOrigin = ImGui::GetMousePos();
             } else if (event == CANVAS_CLICKED_PANNING) {
                 state = CANVAS_PANING;
-                _isCapturing = Editor::IsMouseCaptureEnabled();
                 Editor::SetMouseCaptured(true);
             } else if (event == CANVAS_CLICKED_ZOOMING) {
                 state = CANVAS_ZOOMING;
-                _isCapturing = Editor::IsMouseCaptureEnabled();
                 Editor::SetMouseCaptured(true);
             } else if (event == CLICK_RELEASED) {
                 state = HOVERING_CANVAS;
@@ -919,7 +917,6 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_PANING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
-                _isCapturing = false;
                 Editor::SetMouseCaptured(false);
             }
             // Update scrolling
@@ -929,7 +926,6 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         } else if (state == CANVAS_ZOOMING) {
             if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
                 state = HOVERING_CANVAS;
-                _isCapturing = false;
                 Editor::SetMouseCaptured(false);
             }
             else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.f)) {
@@ -981,7 +977,6 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     float zooming = 1.f; // TODO: make sure zooming is never 0
     ImVec2 zoomClick = ImVec2(0.0f, 0.0f); // Zoom origin
     ImVec2 selectionOrigin; // TODO this could be union with zoom click (origin)
-    bool _isCapturing = false;
     ImVec2 widgetOrigin = ImVec2(0.0f, 0.0f);  // canvasOrigin, canvasSize in screen coordinates
     ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
     ImRect widgetBoundingBox;

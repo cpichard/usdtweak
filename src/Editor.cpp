@@ -1037,8 +1037,6 @@ void Editor::SetUIScale(float scaleValue) { _settings._uiScale = scaleValue; }
 
 float Editor::GetUIScale() const { return _settings._uiScale; }
 
-bool Editor::_enableMouseCapture = false;
-
 static bool gMouseCaptured = false;
 
 bool Editor::GetMouseCaptured() {
@@ -1051,7 +1049,6 @@ bool Editor::GetMouseCaptured() {
 // misinterprets a capture transition as mouse motion — no app-side delta
 // absorption is needed.
 void Editor::SetMouseCaptured(bool captured) {
-    if (!_enableMouseCapture) return;
     if (gMouseCaptured != captured) {
         gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
