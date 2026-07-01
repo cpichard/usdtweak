@@ -1041,17 +1041,15 @@ bool Editor::_enableMouseCapture = false;
 
 static bool gMouseCaptured = false;
 
-// The patched GLFW (patches/glfw-3.4) reports the post-transition cursor
-// position through the cursor-pos callback during glfwSetInputMode, so ImGui
-// stays in sync across capture/release. That resync event is a teleport, not
-// motion: it reaches io.MouseDelta at the next NewFrame and must be absorbed
-// for exactly one frame.
-static int gSkipCapturedMouseDelta = 0;
-
 bool Editor::GetMouseCaptured() {
     return gMouseCaptured;
 }
 
+// The patched GLFW (patches/glfw-3.4) keeps the virtual cursor continuous
+// when entering GLFW_CURSOR_DISABLED and reports the restored position
+// through the cursor-pos callback when leaving it, so ImGui never
+// misinterprets a capture transition as mouse motion — no app-side delta
+// absorption is needed.
 void Editor::SetMouseCaptured(bool captured) {
     if (!_enableMouseCapture) return;
     if (gMouseCaptured != captured) {
@@ -1065,18 +1063,11 @@ void Editor::SetMouseCaptured(bool captured) {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
             }
-            gSkipCapturedMouseDelta = 1;
-            io.MouseDelta = {0, 0};
         }
     }
 }
 
 void Editor::Draw() {
-    if (gSkipCapturedMouseDelta > 0) {
-        ImGuiIO &io = ImGui::GetIO();
-        gSkipCapturedMouseDelta--;
-        io.MouseDelta = {0, 0};
-    }
     ResourcesLoader::PushFontRegular();
     // Main Menu bar
     DrawMainMenuBar();
