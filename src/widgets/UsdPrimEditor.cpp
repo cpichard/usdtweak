@@ -841,7 +841,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::PushID("Schemas");
         ImGui::TableSetColumnIndex(0);
-        if (DrawPropertyMiniButton(ICON_FA_PEN)) {
+        if (DrawPropertyMiniButton(ICON_FA_EDIT)) {
             editSchemas = !editSchemas;
         }
         ImGui::TableSetColumnIndex(1);

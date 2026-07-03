@@ -399,8 +399,10 @@ double Viewport::ComputeScaleFactor(const GfVec3d &objectPos, const double multi
 inline bool IsModifierDown() { return ImGui::GetIO().KeyMods != 0; }
 
 void Viewport::HandleKeyboardShortcut() {
-    if (_currentEditingState == GetManipulator<OrbitCameraManipulator>()) {
-        // ignore keyboard shortcuts while manipulating the camera
+    if (_currentEditingState == GetManipulator<OrbitCameraManipulator>() ||
+        _currentEditingState == GetManipulator<FlyCameraManipulator>()) {
+        // ignore keyboard shortcuts while manipulating the camera: the fly camera uses
+        // W/A/S/D/Q/E for movement, which would otherwise switch the object manipulator
         return;
     }
 
