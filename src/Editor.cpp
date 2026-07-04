@@ -1326,3 +1326,8 @@ void Editor::Draw() {
 void Editor::LoadSettings() { _settings = ResourcesLoader::GetEditorSettings(); }
 
 void Editor::SaveSettings() const { ResourcesLoader::GetEditorSettings() = _settings; }
+
+void Editor::PersistSettings() const {
+    SaveSettings();                  // sync the working copy into the shared store
+    ResourcesLoader::SaveSettings(); // write the shared store to the config file
+}

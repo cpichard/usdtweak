@@ -105,5 +105,8 @@ std::string GetAddonString(const std::string &addonId, const std::string &key, c
 void SetAddonString(const std::string &addonId, const std::string &key, const std::string &value) {
     if (auto *s = _Settings()) s->SetAddonString(addonId, key, value);
 }
+void PersistSettings() {
+    if (gEditor) gEditor->PersistSettings();
+}
 
 } // namespace usdtweak
