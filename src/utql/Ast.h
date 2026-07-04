@@ -24,6 +24,7 @@ struct Literal {
     Kind        kind = Kind::String;
     std::string str;          ///< String literals
     double      number = 0.0; ///< Number literals
+    bool        intLike = false; ///< number written without '.', e.g. `3` — CUSTOMDATA writes author int64
     bool        boolean = false;
     std::vector<double> tuple;        ///< Tuple literals (SET rvalues only)
     std::vector<Literal> arrayElems;  ///< Array literals (SET rvalues only)
@@ -52,6 +53,7 @@ struct WhereExpr {
         IsNotNull, ///< field IS NOT NULL
         BoolFlag,  ///< bare unary boolean field (ACTIVE, HAS_API, …)
         Under,     ///< PATH UNDER "/path" | PATH UNDER RESULTSET "n" (at-or-under)
+        IsA,       ///< TYPE IS_A "SchemaType" — schema-registry inheritance test (target in likeText)
         FamilyMatch, ///< existential / correlated composition-family match (binder-built)
     };
 

@@ -1077,6 +1077,75 @@ void TestRunQuery(UsdToolDispatcher& d) {
         Args({{"query", JsValue(std::string("FIND SDFPRIM WHERE IS_LOADED"))}}));
     CHECK_CONTAINS(out, "[error]");
 
+    // TYPE IS_A runs (schema-inheritance test, A7): the fixture Camera is a
+    // Xformable/Imageable but not a Gprim.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE TYPE IS_A \"Xformable\""))}}));
+    CHECK_CONTAINS(out, "/World/Camera");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // …and an unknown schema type is a compile error, not an empty result.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE TYPE IS_A \"NoSuchSchema\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+
+    // TARGET.IS_MISSING runs (dangling-target gate, Stage world)…
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDRELATIONSHIP WHERE TARGET.IS_MISSING"))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // …and is a composed-stage fact — a binder error in Layer world.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFRELATIONSHIP WHERE TARGET.IS_MISSING"))}}));
+    CHECK_CONTAINS(out, "[error]");
+
+    // ASSETINFO.* fields run (metadata-M1): both worlds, no fixture prim carries
+    // assetInfo so the gate matches nothing — but it must compile and run clean.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE HAS_ASSETINFO RETURN PATH, ASSETINFO.VERSION"))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE ASSETINFO.DEPENDENCIES CONTAINS \"dep.usd\""))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // customData fields run (metadata-M2): the keyed field, the presence gate
+    // and the KEYS set field compile in both worlds; no fixture prim authors
+    // customData (schema fallbacks must not count), so nothing matches.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE CUSTOMDATA[\"pipeline:reviewState\"] = "
+            "\"approved\" RETURN PATH, CUSTOMDATA.KEYS"))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE HAS_CUSTOMDATA"))}}));
+    CHECK_CONTAINS(out, "no rows matched");
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE CUSTOMDATA.KEYS CONTAINS \"pipeline:priority\""))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // Spline / clips gates run (animation A8): no fixture prim carries splines
+    // or clips, but the gates must compile in both worlds and on attributes.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE HAS_SPLINE OR HAS_CLIPS"))}}));
+    CHECK_CONTAINS(out, "no rows matched");
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDATTRIBUTE WHERE VALUE.HAS_SPLINE"))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE HAS_CLIPS"))}}));
+    CHECK(out.find("[error]") == std::string::npos);
+
     // Compile error is recoverable and labelled as such.
     out = d.Dispatch("run_query",
         Args({{"query", JsValue(std::string("FIND NOSUCHENTITY"))}}));
@@ -1211,6 +1280,20 @@ void TestRunMutation() {
     CHECK(!asset->GetAttributeAtPath(SdfPath("/World/Hero.greeting")));
     CHECK(!stage->GetPrimAtPath(SdfPath("/World/Hero"))
                .HasAttribute(TfToken("greeting")));
+
+    // SET CUSTOMDATA["key"] round-trips through the command pump (metadata-M2):
+    // colon-nested write, then the keyed read finds it.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Hero\" SET "
+            "CUSTOMDATA[\"pipeline:reviewState\"] = \"approved\""))}}));
+    CHECK_CONTAINS(out, "1 changed");
+    pump();
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE CUSTOMDATA[\"pipeline:reviewState\"] = "
+            "\"approved\""))}}));
+    CHECK_CONTAINS(out, "/World/Hero");
 
     // Find-then-mutate: a resultset cached by run_query is a mutation target.
     out = d.Dispatch("run_query",

@@ -1,6 +1,8 @@
 #include "Binder.h"
 
+#include <pxr/base/tf/type.h>
 #include <pxr/usd/sdf/schema.h>
+#include <pxr/usd/usd/schemaRegistry.h>
 
 #include <map>
 
@@ -98,6 +100,11 @@ FieldInfo LookupPrimField(const std::string &f) {
     // Prim-level animation gate (design A2). Not a composition family — a plain
     // bool leaf: true iff the prim has any attribute with authored time samples.
     if (f == "HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
+    // Prim-level spline gate (USD 26 animation curves, design A8): any attribute
+    // with an authored spline. Value clips gate: authored `clips` metadata on the
+    // prim. Both authored facts — valid in both worlds, like HAS_TIME_SAMPLES.
+    if (f == "HAS_SPLINE") return mk(FieldType::Bool, false);
+    if (f == "HAS_CLIPS")  return mk(FieldType::Bool, false);
     // Native-instancing classification gates (design I1). Plain bool leaves.
     // IS_INSTANCE / IS_PROTOTYPE / IS_IN_PROTOTYPE are composed facts (Stage world only —
     // enforced in ValidateLeaf); INSTANCEABLE is authored metadata, valid in both
@@ -117,6 +124,18 @@ FieldInfo LookupPrimField(const std::string &f) {
     // SDFPRIM.
     if (f == "HAS_RELATIONSHIP") return mk(FieldType::Bool, false);
     if (f == "RELATIONSHIPS")    return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // assetInfo metadata (design metadata-M1). The registered VtDictionary keys
+    // surface as a dotted group of plain fields — NOT an arc family (no per-arc
+    // correlation; FamilyDisplayField ignores the ASSETINFO head). Both worlds,
+    // like INSTANCEABLE: composed dict on USDPRIM, this spec's authored dict on
+    // SDFPRIM. HAS_ASSETINFO is the presence gate; DEPENDENCIES
+    // (assetInfo:payloadAssetDependencies) is a set field queried with CONTAINS.
+    // IDENTIFIER is the authored asset-path string, not resolved.
+    if (f == "HAS_ASSETINFO")          return mk(FieldType::Bool, false);
+    if (f == "ASSETINFO.IDENTIFIER")   return mk(FieldType::String, true);
+    if (f == "ASSETINFO.NAME")         return mk(FieldType::String, true);
+    if (f == "ASSETINFO.VERSION")      return mk(FieldType::String, true);
+    if (f == "ASSETINFO.DEPENDENCIES") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     // Variant nesting — Layer world only (rejected on USDPRIM in ValidateLeaf, since a
     // composed-stage path has no variant components). IS_IN_VARIANT is a plain bool
     // gate; VARIANT_SELECTIONS is a set field of the "{set=value}" variant scopes the
@@ -124,6 +143,15 @@ FieldInfo LookupPrimField(const std::string &f) {
     // family (variant sets defined *on* a prim).
     if (f == "IS_IN_VARIANT")      return mk(FieldType::Bool, false);
     if (f == "VARIANT_SELECTIONS") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // customData metadata (metadata M2). HAS_CUSTOMDATA is the presence gate;
+    // CUSTOMDATA.KEYS is a set field of the dict's flattened colon-joined leaf
+    // key paths (CONTAINS / LIKE). CUSTOMDATA["key:path"] addresses one entry —
+    // type-polymorphic like VALUE.SCALAR (the value type is unknown at bind),
+    // nullable (missing key = NULL, so IS NOT NULL is the existence test).
+    // Both worlds: composed dict on USDPRIM, this spec's authored dict on SDFPRIM.
+    if (f == "HAS_CUSTOMDATA")  return mk(FieldType::Bool, false);
+    if (f == "CUSTOMDATA.KEYS") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    if (IsCustomDataField(f))   return mk(FieldType::String, true);
     return FieldInfo{}; // unknown
 }
 
@@ -131,8 +159,10 @@ FieldInfo LookupPrimField(const std::string &f) {
 const char *kPrimFieldListCommon =
     "NAME, PATH, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
     "CHILD_COUNT, ATTRIBUTE_COUNT, SPEC_COUNT, HAS_REFERENCE, HAS_PAYLOAD, "
-    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, INSTANCEABLE, "
-    "HAS_RELATIONSHIP, RELATIONSHIPS";
+    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, HAS_SPLINE, HAS_CLIPS, INSTANCEABLE, "
+    "HAS_RELATIONSHIP, RELATIONSHIPS, HAS_ASSETINFO, ASSETINFO.IDENTIFIER, "
+    "ASSETINFO.NAME, ASSETINFO.VERSION, ASSETINFO.DEPENDENCIES, "
+    "HAS_CUSTOMDATA, CUSTOMDATA.KEYS, CUSTOMDATA[\"key\"]";
 
 // Composed-stage facts — valid only on USDPRIM (Stage world). The binder rejects
 // these on SDFPRIM (see ValidateLeaf), so they must not appear in the Layer-world
@@ -155,6 +185,10 @@ FieldInfo LookupAttrField(const std::string &f) {
     if (f == "VALUE.IS_ARRAY")        return mk(FieldType::Bool, false);
     if (f == "VALUE.HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
     if (f == "VALUE.SAMPLE_COUNT")    return mk(FieldType::Number, false);
+    // Spline gate (USD 26 animation curves, design A8). Splines are a separate
+    // authored value source from timeSamples, so this does NOT overlap
+    // VALUE.HAS_TIME_SAMPLES. Both worlds (authored fact, like the samples gate).
+    if (f == "VALUE.HAS_SPLINE")      return mk(FieldType::Bool, false);
     if (f == "VALUE.IS_NONE")         return mk(FieldType::Bool, false);
     // VALUE.SCALAR (design A1) is type-polymorphic; its operator validity is decided
     // by ValidateScalarLeaf (the runtime value type is unknown at bind). Listed here
@@ -186,7 +220,7 @@ FieldInfo LookupAttrField(const std::string &f) {
 const char *kAttrFieldList =
     "NAME, TYPE, NAMESPACE, VALUE.ARRAY_SIZE, "
     "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
-    "VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
+    "VALUE.HAS_SPLINE, VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
     "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT, ASSET.IS_MISSING";
 
 // Authored variant-nesting facts — valid only on SDFATTRIBUTE (Layer world), like
@@ -202,6 +236,12 @@ FieldInfo LookupRelField(const std::string &f) {
     if (f == "NAMESPACE")    return mk(FieldType::String, true);
     if (f == "TARGET")       return mk(FieldType::String, false, /*set*/ true);
     if (f == "TARGET_COUNT") return mk(FieldType::Number, false);
+    // Dangling-target gate: true iff some composed target path resolves to no
+    // object on the stage. Composed fact — USDRELATIONSHIP only (rejected on
+    // SDFRELATIONSHIP in ValidateLeaf: authored targets legitimately resolve
+    // only after composition, so a per-layer existence test would flag healthy
+    // cross-layer targets).
+    if (f == "TARGET.IS_MISSING") return mk(FieldType::Bool, false);
     if (f == "PATH")         return mk(FieldType::String, false);
     return FieldInfo{};
 }
@@ -209,6 +249,9 @@ FieldInfo LookupRelField(const std::string &f) {
 const char *kRelFieldList =
     "NAME, NAMESPACE, TARGET, "
     "TARGET_COUNT, PATH";
+
+// Composed-stage facts — valid only on USDRELATIONSHIP (see LookupRelField).
+const char *kRelFieldListStageOnly = "TARGET.IS_MISSING";
 
 /// LAYER entity scalar fields (design §5). The stage-root metadata
 /// (UP_AXIS/METERS_PER_UNIT/time codes/DEFAULT_PRIM) is read off the layer;
@@ -291,6 +334,12 @@ std::string ValidFieldsFor(Category c, UtqlWorld world) {
             s += std::string(", ") + kAttrFieldListLayerOnly;
         return s;
     }
+    if (c == Category::Relationship) {
+        std::string s = kRelFieldList;
+        if (world == UtqlWorld::Stage)
+            s += std::string(", ") + kRelFieldListStageOnly;
+        return s;
+    }
     if (c == Category::Layer)
         return std::string(kLayerFieldList) +
                ", and the sublayer family: HAS_SUBLAYER SUBLAYER.{ASSET,IS_MISSING,"
@@ -350,9 +399,10 @@ std::string WritableListFor(Category c, UtqlWorld world) {
     switch (c) {
         case Category::Prim:
             return world == UtqlWorld::Stage
-                       ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"]"
+                       ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"], "
+                         "CUSTOMDATA[\"key\"]"
                        : "ACTIVE, INSTANCEABLE, KIND, TYPE, SPECIFIER, "
-                         "VARIANT[\"set\"]";
+                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"]";
         case Category::Attribute:
             return world == UtqlWorld::Stage ? "VALUE, INTERPOLATION"
                                              : "VALUE, INTERPOLATION, VARIABILITY";
@@ -366,6 +416,17 @@ std::string WritableListFor(Category c, UtqlWorld world) {
 }
 
 // ---------------------------------------------------- composition families
+
+/// TYPE IS_A support (design A7). Resolve a user-supplied schema type name to a
+/// TfType: the schema registry covers schema type names ("Mesh", "Gprim",
+/// "Imageable" — concrete and abstract IsA schemas alike), with a TfType-name
+/// fallback ("UsdGeomGprim") for robustness. Unknown ⇒ empty TfType.
+TfType ResolveSchemaType(const std::string &name) {
+    TfType t = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(name));
+    if (t.IsUnknown())
+        t = TfType::FindByName(name);
+    return t;
+}
 
 bool IsHasGate(const std::string &f) {
     return f == "HAS_REFERENCE" || f == "HAS_PAYLOAD" || f == "HAS_VARIANT" ||
@@ -857,7 +918,7 @@ class Binder {
     /// bind time. Numeric literal → all ordering operators; string/token → = / != /
     /// LIKE; bool → = / != or the bare flag form. A mismatched ordering operator on
     /// a non-numeric literal is a CompileError, not a silent miss.
-    bool ValidateScalarLeaf(const WhereExpr &e) {
+    bool ValidateScalarLeaf(const WhereExpr &e, const std::string &what = "VALUE.SCALAR") {
         switch (e.kind) {
             case WhereExpr::Kind::Like:      // string/token pattern match
             case WhereExpr::Kind::IsNull:
@@ -866,7 +927,7 @@ class Binder {
             case WhereExpr::Kind::In:        // set of equality comparisons
                 return true;
             case WhereExpr::Kind::Contains:
-                Fail("VALUE.SCALAR is a single value; use =, !=, <, >, LIKE or the "
+                Fail(what + " is a single value; use =, !=, <, >, LIKE or the "
                      "bare flag form, not CONTAINS.");
                 return false;
             case WhereExpr::Kind::Compare: {
@@ -877,13 +938,13 @@ class Binder {
                 if (lk == Literal::Kind::Bool) {
                     if (eqOnly)
                         return true;
-                    Fail("VALUE.SCALAR vs a boolean compares only with = / != (or the "
+                    Fail(what + " vs a boolean compares only with = / != (or the "
                          "bare flag form); ordering operators need a numeric literal.");
                     return false;
                 }
                 if (eqOnly)
                     return true; // string / token equality
-                Fail("VALUE.SCALAR vs a string compares only with = / != / LIKE; "
+                Fail(what + " vs a string compares only with = / != / LIKE; "
                      "<, <=, >, >= need a numeric literal.");
                 return false;
             }
@@ -924,6 +985,19 @@ class Binder {
             return false;
         }
 
+        // Dangling-target gate — resolves composed targets against the stage, so
+        // Stage world only. There is deliberately no Layer form: authored targets
+        // legitimately resolve only after composition (an over's target lands in
+        // another layer), so a per-layer existence test would flag healthy scenes.
+        // The "which layer authors the dangling target" question is the two-step:
+        // find on USDRELATIONSHIP, then COMPOSING INTO.
+        if (_cat == Category::Relationship && f == "TARGET.IS_MISSING" &&
+            world == UtqlWorld::Layer) {
+            Fail(f + " is a composed-stage fact, invalid in Layer world. Query "
+                     "USDRELATIONSHIP (then COMPOSING INTO for the authoring layer).");
+            return false;
+        }
+
         // Variant nesting (IS_IN_VARIANT / VARIANT_SELECTIONS) — the inverse: an
         // authored (Layer) fact. A composed-stage path carries no variant components,
         // so reject these in Stage world. Valid on SDFPRIM and SDFATTRIBUTE.
@@ -957,9 +1031,12 @@ class Binder {
         }
 
         // VALUE.SCALAR has type-polymorphic operator rules (design A1) — validate it
-        // before the generic single-FieldType path.
+        // before the generic single-FieldType path. CUSTOMDATA["key"] (metadata M2)
+        // shares the rules: the entry's value type is equally unknown at bind time.
         if (_cat == Category::Attribute && f == "VALUE.SCALAR")
             return ValidateScalarLeaf(e);
+        if (_cat == Category::Prim && IsCustomDataField(f))
+            return ValidateScalarLeaf(e, f);
 
         const FieldInfo fi = LookupField(_cat, f);
         if (!fi.known) {
@@ -1002,6 +1079,23 @@ class Binder {
             case WhereExpr::Kind::IsNull:
             case WhereExpr::Kind::IsNotNull:
                 return true; // null test valid on any field
+            case WhereExpr::Kind::IsA:
+                // Schema-inheritance test (design A7): prim TYPE only — the
+                // attribute TYPE is a value type name ("float3[]"), not a schema —
+                // and the target must resolve in the schema registry at bind time
+                // so typos fail the compile, not silently match nothing.
+                if (_cat != Category::Prim || f != "TYPE") {
+                    Fail("IS_A tests typed-schema inheritance and applies only to "
+                         "the prim TYPE field (TYPE IS_A \"Gprim\").");
+                    return false;
+                }
+                if (ResolveSchemaType(e.likeText).IsUnknown()) {
+                    Fail("Unknown schema type \"" + e.likeText + "\" — not in the "
+                         "schema registry. Use the schema type name, e.g. \"Mesh\", "
+                         "\"Gprim\", \"Xformable\", \"Imageable\", \"Boundable\".");
+                    return false;
+                }
+                return true;
             case WhereExpr::Kind::Compare:
             case WhereExpr::Kind::In:
                 return true; // executor coerces literal types / does set-existential
@@ -1319,6 +1413,35 @@ class Binder {
             Fail("VARIANT[\"" + sa.variantSet + "\"] expects a quoted variant "
                  "name, or NULL to clear the selection.");
             return false;
+        }
+        // CUSTOMDATA["key"] (metadata M2) — per-key scalar writes, batchable with
+        // commas; NULL erases the entry (colon key paths nest; intermediates are
+        // auto-created on write). Checked before LookupWritable since the keyed
+        // spelling is per-query, not a catalog entry.
+        if (f == "CUSTOMDATA" || f == "CUSTOMDATA.KEYS" || f == "HAS_CUSTOMDATA") {
+            Fail("SET CUSTOMDATA writes per key: SET CUSTOMDATA[\"key\"] = value "
+                 "(colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]; NULL "
+                 "erases the entry).");
+            return false;
+        }
+        if (IsCustomDataField(f)) {
+            if (_cat != Category::Prim) {
+                Fail("CUSTOMDATA[\"…\"] applies to prim entities (USDPRIM / "
+                     "SDFPRIM).");
+                return false;
+            }
+            switch (sa.value.kind) {
+                case Literal::Kind::String:
+                case Literal::Kind::Number:
+                case Literal::Kind::Bool:
+                case Literal::Kind::Null: // erase the entry
+                    return true;
+                default:
+                    Fail(f + " expects a scalar literal (string, number, bool) "
+                         "or NULL to erase the entry; dict/array values are not "
+                         "supported yet.");
+                    return false;
+            }
         }
         if (_cat == Category::Prim && f == "SPECIFIER" && world == UtqlWorld::Stage) {
             Fail("SPECIFIER is authored-only. UPDATE SDFPRIM IN LAYER \"…\" "

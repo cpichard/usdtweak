@@ -17,7 +17,9 @@
 #include <pxr/base/gf/vec4h.h>
 #include <pxr/base/gf/vec4i.h>
 #include <pxr/base/tf/stringUtils.h>
+#include <pxr/base/tf/type.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/base/vt/dictionary.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/pcp/node.h>
@@ -50,6 +52,7 @@
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/relationship.h>
+#include <pxr/usd/usd/schemaRegistry.h>
 #include <pxr/usd/usd/specializes.h>
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usdShade/udimUtils.h>
@@ -172,6 +175,24 @@ struct UnderData {
     const std::unordered_set<std::string> *set = nullptr;
 };
 
+/// TYPE IS_A support (design A7): does typed schema `typeName` inherit from (or
+/// equal) `target`, per the schema registry? Both names resolve through
+/// UsdSchemaRegistry schema type names ("Mesh", "Gprim", "Imageable" — concrete
+/// and abstract alike), with a TfType-name fallback ("UsdGeomGprim"). Typeless
+/// prims and unregistered names don't match. Pure registry lookups — no
+/// composition, so the same test serves both worlds.
+bool SchemaTypeIsA(const std::string &typeName, const std::string &target) {
+    TfType t = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(typeName));
+    if (t.IsUnknown())
+        t = TfType::FindByName(typeName);
+    if (t.IsUnknown())
+        return false;
+    TfType tgt = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(target));
+    if (tgt.IsUnknown())
+        tgt = TfType::FindByName(target);
+    return !tgt.IsUnknown() && t.IsA(tgt);
+}
+
 /// Per-row evaluation context. `get` reads scalar fields; `getSet` reads the
 /// members of a set-valued field (relationship targets / API). `setFields` names
 /// the set-valued fields. `getArcs` lazily yields a prim's arcs of a family.
@@ -285,6 +306,14 @@ bool EvalWhere(const WhereExpr &e, const EvalCtx &ctx) {
         case WhereExpr::Kind::BoolFlag: {
             const UtqlValue v = ctx.get(e.field);
             return v.type == UtqlValue::Type::Bool && v.boolean;
+        }
+        case WhereExpr::Kind::IsA: {
+            // TYPE IS_A "SchemaType" (design A7): the row's typed schema (composed
+            // on USDPRIM, authored on SDFPRIM) IsA the target, equality included.
+            const UtqlValue v = ctx.get(e.field);
+            if (v.type != UtqlValue::Type::String || v.str.empty())
+                return false; // typeless prim (bare def/over) never matches
+            return SchemaTypeIsA(v.str, e.likeText);
         }
         case WhereExpr::Kind::Under: {
             if (!ctx.underData)
@@ -418,6 +447,17 @@ void CollectMemberWitnesses(const WhereExpr &e, const EvalCtx &ctx, bool positiv
                 return;
             for (const std::string &m : ctx.getSet(field))
                 if (MemberMatchesLeaf(m, e, ctx))
+                    out.push_back(m);
+            return;
+        case K::BoolFlag:
+            // A bool gate can carry per-member evidence: TARGET.IS_MISSING
+            // explains its match by the *missing* members, which the evaluator
+            // exposes through getSet under the gate's own name (only the USD
+            // relationship mutation site answers it; elsewhere getSet yields {}).
+            // Positive polarity only, like the other leaves — NOT TARGET.IS_MISSING
+            // names no member. A false gate yields an empty subset naturally.
+            if (positive && e.field == field + ".IS_MISSING")
+                for (const std::string &m : ctx.getSet(e.field))
                     out.push_back(m);
             return;
         case K::Not:
@@ -584,6 +624,124 @@ std::vector<std::string> SdfPrimRelationshipNames(const SdfPrimSpecHandle &spec)
     return out;
 }
 
+/// assetInfo metadata (design metadata-M1) — the ASSETINFO.* fields +
+/// HAS_ASSETINFO gate. Composed dict on USDPRIM (UsdObject::GetAssetInfo),
+/// the spec's own authored dict on SDFPRIM. In-memory metadata reads: no
+/// resolver I/O, IDENTIFIER stays the authored asset-path string.
+VtDictionary UsdPrimAssetInfoDict(const UsdPrim &prim) { return prim.GetAssetInfo(); }
+
+VtDictionary SdfPrimAssetInfoDict(const SdfPrimSpecHandle &spec) {
+    const VtValue v = spec->GetInfo(SdfFieldKeys->AssetInfo);
+    return v.IsHolding<VtDictionary>() ? v.UncheckedGet<VtDictionary>() : VtDictionary();
+}
+
+/// One scalar assetInfo entry as a UtqlValue. `identifier` is an SdfAssetPath —
+/// projected to its authored path string; `name`/`version` are strings. Absent
+/// key or unexpected type ⇒ Null.
+UtqlValue AssetInfoField(const VtDictionary &d, const std::string &key) {
+    const auto it = d.find(key);
+    if (it == d.end())
+        return UtqlValue::Null();
+    const VtValue &v = it->second;
+    if (v.IsHolding<SdfAssetPath>())
+        return UtqlValue::String_(v.UncheckedGet<SdfAssetPath>().GetAssetPath());
+    if (v.IsHolding<std::string>())
+        return UtqlValue::String_(v.UncheckedGet<std::string>());
+    if (v.IsHolding<TfToken>())
+        return UtqlValue::String_(v.UncheckedGet<TfToken>().GetString());
+    return UtqlValue::Null();
+}
+
+/// assetInfo:payloadAssetDependencies as member strings — the
+/// ASSETINFO.DEPENDENCIES set field.
+std::vector<std::string> AssetInfoDependencies(const VtDictionary &d) {
+    std::vector<std::string> out;
+    const auto it = d.find("payloadAssetDependencies");
+    if (it == d.end() || !it->second.IsHolding<VtArray<SdfAssetPath>>())
+        return out;
+    for (const SdfAssetPath &p : it->second.UncheckedGet<VtArray<SdfAssetPath>>())
+        out.push_back(p.GetAssetPath());
+    return out;
+}
+
+/// customData metadata (metadata M2) — HAS_CUSTOMDATA, CUSTOMDATA.KEYS and the
+/// keyed CUSTOMDATA["key:path"] field. Composed dict on USDPRIM
+/// (UsdObject::GetCustomData*), the spec's own authored dict on SDFPRIM. Colon
+/// key paths follow USD's customData convention (VtDictionary path APIs).
+VtDictionary SdfPrimCustomDataDict(const SdfPrimSpecHandle &spec) {
+    const VtValue v = spec->GetInfo(SdfFieldKeys->CustomData);
+    return v.IsHolding<VtDictionary>() ? v.UncheckedGet<VtDictionary>() : VtDictionary();
+}
+
+/// Composed *authored* customData for a Stage-world prim. UsdObject::GetCustomData
+/// merges in schema-fallback entries (USD 26 stamps userDocBrief on every typed
+/// prim definition), which would make HAS_CUSTOMDATA vacuously true — so the
+/// Stage-world fields read authored opinions only (still composed across layers).
+VtDictionary UsdPrimAuthoredCustomDataDict(const UsdPrim &prim) {
+    if (!prim.HasAuthoredCustomData())
+        return VtDictionary();
+    const UsdMetadataValueMap m = prim.GetAllAuthoredMetadata();
+    const auto it = m.find(SdfFieldKeys->CustomData);
+    return (it != m.end() && it->second.IsHolding<VtDictionary>())
+               ? it->second.UncheckedGet<VtDictionary>()
+               : VtDictionary();
+}
+
+/// One customData entry as a UtqlValue. Scalars go through ScalarFromVtValue
+/// (declared below); dicts / arrays project to a truncated TfStringify string —
+/// lossy for comparison, but non-null so IS NOT NULL works as the existence
+/// test on any entry.
+UtqlValue ScalarFromVtValue(const VtValue &v); // defined with the VALUE.* helpers
+UtqlValue CustomDataValue(const VtValue &v) {
+    if (v.IsEmpty())
+        return UtqlValue::Null();
+    UtqlValue s = ScalarFromVtValue(v);
+    if (!s.IsNull())
+        return s;
+    std::string disp = TfStringify(v);
+    if (disp.size() > 64)
+        disp = disp.substr(0, 61) + "...";
+    return UtqlValue::String_(disp);
+}
+
+/// Flattened colon-joined leaf key paths of a customData dict — the
+/// CUSTOMDATA.KEYS set field. Nested dicts recurse ("a:b:c"); an empty nested
+/// dict contributes its own path so it is still discoverable.
+void CustomDataLeafKeysRec(const VtDictionary &d, const std::string &prefix,
+                           std::vector<std::string> &out) {
+    for (const auto &kv : d) {
+        const std::string path = prefix.empty() ? kv.first : prefix + ":" + kv.first;
+        if (kv.second.IsHolding<VtDictionary>()) {
+            const VtDictionary &sub = kv.second.UncheckedGet<VtDictionary>();
+            if (sub.empty())
+                out.push_back(path);
+            else
+                CustomDataLeafKeysRec(sub, path, out);
+        } else {
+            out.push_back(path);
+        }
+    }
+}
+
+std::vector<std::string> CustomDataLeafKeys(const VtDictionary &d) {
+    std::vector<std::string> out;
+    CustomDataLeafKeysRec(d, std::string(), out);
+    return out;
+}
+
+/// SET CUSTOMDATA["k"] rvalue → the VtValue to author. A number written without
+/// a decimal point authors int64 (USD's default for bare ints in usda);
+/// otherwise double. Strings stay std::string, bools bool.
+VtValue LiteralToCustomDataValue(const Literal &lit) {
+    switch (lit.kind) {
+        case Literal::Kind::Bool:   return VtValue(lit.boolean);
+        case Literal::Kind::Number:
+            return lit.intLike ? VtValue(static_cast<int64_t>(lit.number))
+                               : VtValue(lit.number);
+        default:                    return VtValue(lit.str);
+    }
+}
+
 /// Variant selections a spec is nested *under* — the VARIANT_SELECTIONS set field
 /// (Layer world). Each authored variant scope on the path contributes one
 /// "{set=value}" token; a spec can sit inside several (e.g.
@@ -698,6 +856,32 @@ bool SdfPrimHasTimeSamples(const SdfPrimSpecHandle &spec) {
     return false;
 }
 
+/// Spline gates (USD 26 animation curves, design A8) — the HAS_TIME_SAMPLES
+/// shape for the other authored value source. HasSpline is a metadata check,
+/// no value resolution.
+bool UsdPrimHasSpline(const UsdPrim &prim) {
+    for (const UsdAttribute &attr : prim.GetAttributes())
+        if (attr.HasSpline())
+            return true;
+    return false;
+}
+
+bool SdfPrimHasSpline(const SdfPrimSpecHandle &spec) {
+    for (const SdfAttributeSpecHandle &attr : spec->GetAttributes())
+        if (attr && attr->HasSpline())
+            return true;
+    return false;
+}
+
+/// Value-clips gate (design A8): authored `clips` metadata on the prim — the
+/// UsdClipsAPI dictionary. An authored fact (any layer for USDPRIM via
+/// HasAuthoredMetadata, this spec's own opinion for SDFPRIM), deliberately not
+/// "some attribute resolves through a clip".
+const TfToken &ClipsToken() {
+    static const TfToken kClips("clips");
+    return kClips;
+}
+
 UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "NAME") return UtqlValue::String_(prim.GetName().GetString());
     if (f == "PATH")     return UtqlValue::String_(prim.GetPath().GetString());
@@ -720,6 +904,8 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "SPEC_COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetPrimStack().size()));
     if (f == "API.COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetAppliedSchemas().size()));
     if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(UsdPrimHasTimeSamples(prim));
+    if (f == "HAS_SPLINE")       return UtqlValue::Bool(UsdPrimHasSpline(prim));
+    if (f == "HAS_CLIPS")        return UtqlValue::Bool(prim.HasAuthoredMetadata(ClipsToken()));
     // Native-instancing classification (design I1). Composed facts.
     if (f == "IS_INSTANCE")     return UtqlValue::Bool(prim.IsInstance());
     if (f == "IS_PROTOTYPE")    return UtqlValue::Bool(prim.IsPrototype());
@@ -735,6 +921,25 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     // form here is its display join; membership goes through getSet.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!prim.GetRelationships().empty());
     if (f == "RELATIONSHIPS")    return UtqlValue::String_(JoinStrings(UsdPrimRelationshipNames(prim)));
+    // assetInfo metadata (design metadata-M1). Composed dict; DEPENDENCIES scalar
+    // form is its display join — membership goes through getSet.
+    if (f == "HAS_ASSETINFO")          return UtqlValue::Bool(!UsdPrimAssetInfoDict(prim).empty());
+    if (f == "ASSETINFO.IDENTIFIER")   return AssetInfoField(UsdPrimAssetInfoDict(prim), "identifier");
+    if (f == "ASSETINFO.NAME")         return AssetInfoField(UsdPrimAssetInfoDict(prim), "name");
+    if (f == "ASSETINFO.VERSION")      return AssetInfoField(UsdPrimAssetInfoDict(prim), "version");
+    if (f == "ASSETINFO.DEPENDENCIES")
+        return UtqlValue::String_(JoinStrings(AssetInfoDependencies(UsdPrimAssetInfoDict(prim))));
+    // customData metadata (metadata M2). Composed authored dict (schema fallbacks
+    // excluded — see UsdPrimAuthoredCustomDataDict); KEYS scalar form is its
+    // display join — membership goes through getSet. The keyed field walks colon
+    // key paths via GetCustomDataByKey, gated on an authored opinion.
+    if (f == "HAS_CUSTOMDATA")  return UtqlValue::Bool(prim.HasAuthoredCustomData());
+    if (f == "CUSTOMDATA.KEYS") return UtqlValue::String_(JoinStrings(CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim))));
+    if (IsCustomDataField(f)) {
+        const TfToken key(CustomDataKeyPath(f));
+        return prim.HasAuthoredCustomDataKey(key) ? CustomDataValue(prim.GetCustomDataByKey(key))
+                                                  : UtqlValue::Null();
+    }
     return UtqlValue::Null();
 }
 
@@ -770,6 +975,8 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     if (f == "SPEC_COUNT")      return UtqlValue::Number_(1.0);
     if (f == "API.COUNT")      return UtqlValue::Number_(SdfApiCount(spec));
     if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(SdfPrimHasTimeSamples(spec));
+    if (f == "HAS_SPLINE")       return UtqlValue::Bool(SdfPrimHasSpline(spec));
+    if (f == "HAS_CLIPS")        return UtqlValue::Bool(spec->HasInfo(ClipsToken()));
     // Authored instanceable metadata (design I1). Unauthored ⇒ false. IS_INSTANCE /
     // IS_PROTOTYPE are composed-only and rejected by the binder in Layer world.
     if (f == "INSTANCEABLE")   return UtqlValue::Bool(spec->GetInstanceable());
@@ -782,6 +989,22 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     // Stage world (USDPRIM).
     if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
     if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
+    // assetInfo metadata (design metadata-M1). This spec's authored dict only —
+    // "which layer stamped the assetInfo".
+    if (f == "HAS_ASSETINFO")          return UtqlValue::Bool(!SdfPrimAssetInfoDict(spec).empty());
+    if (f == "ASSETINFO.IDENTIFIER")   return AssetInfoField(SdfPrimAssetInfoDict(spec), "identifier");
+    if (f == "ASSETINFO.NAME")         return AssetInfoField(SdfPrimAssetInfoDict(spec), "name");
+    if (f == "ASSETINFO.VERSION")      return AssetInfoField(SdfPrimAssetInfoDict(spec), "version");
+    if (f == "ASSETINFO.DEPENDENCIES")
+        return UtqlValue::String_(JoinStrings(AssetInfoDependencies(SdfPrimAssetInfoDict(spec))));
+    // customData metadata (metadata M2). This spec's authored dict only.
+    if (f == "HAS_CUSTOMDATA")  return UtqlValue::Bool(!SdfPrimCustomDataDict(spec).empty());
+    if (f == "CUSTOMDATA.KEYS") return UtqlValue::String_(JoinStrings(CustomDataLeafKeys(SdfPrimCustomDataDict(spec))));
+    if (IsCustomDataField(f)) {
+        const VtDictionary d = SdfPrimCustomDataDict(spec);
+        const VtValue *v = d.GetValueAtPath(CustomDataKeyPath(f));
+        return v ? CustomDataValue(*v) : UtqlValue::Null();
+    }
     return UtqlValue::Null();
 }
 
@@ -929,6 +1152,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(attr.GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(attr.GetNumTimeSamples() > 0);
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(attr.HasSpline());
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(attr.GetNumTimeSamples()));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!attr.GetTypeName().IsArray())
@@ -1015,6 +1239,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(spec->GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(layer->GetNumTimeSamplesForPath(spec->GetPath()) > 0);
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(spec->HasSpline());
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(layer->GetNumTimeSamplesForPath(spec->GetPath())));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!spec->GetTypeName().IsArray())
@@ -1070,6 +1295,38 @@ UtqlValue GetRelScalarField(const std::string &name, const SdfPathVector &target
     if (f == "TARGET")
         return UtqlValue::String_(JoinPaths(targets)); // display form of the set
     return UtqlValue::Null();
+}
+
+/// TARGET.IS_MISSING — true iff some composed target path resolves to no object
+/// on the relationship's stage (Stage world only; the binder rejects the Layer
+/// form). Prim and property targets both count; paths into instances resolve as
+/// instance proxies via GetObjectAtPath. An empty target list is not missing.
+/// The USD emit sites answer this before delegating to GetRelScalarField, which
+/// stays stage-less for the shared Sdf paths.
+bool UsdRelTargetsMissing(const UsdRelationship &rel, const SdfPathVector &targets) {
+    const UsdStageWeakPtr stage = rel.GetStage();
+    if (!stage)
+        return false;
+    for (const SdfPath &p : targets)
+        if (!stage->GetObjectAtPath(p))
+            return true;
+    return false;
+}
+
+/// The missing subset of a relationship's targets, as path strings — the
+/// per-member evidence behind TARGET.IS_MISSING. The mutation evaluator
+/// exposes this through getSet("TARGET.IS_MISSING") so CollectMemberWitnesses
+/// can gate a bare REMOVE TARGET to exactly the dangling targets.
+std::vector<std::string> UsdRelMissingTargets(const UsdRelationship &rel,
+                                              const SdfPathVector &targets) {
+    std::vector<std::string> out;
+    const UsdStageWeakPtr stage = rel.GetStage();
+    if (!stage)
+        return out;
+    for (const SdfPath &p : targets)
+        if (!stage->GetObjectAtPath(p))
+            out.push_back(p.GetString());
+    return out;
 }
 
 // ------------------------------------------------- composition/API arcs (§3)
@@ -1531,7 +1788,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         setFields = {"TARGET"};
     // Prim-level relationship-name set field (design I2, RELATIONSHIPS CONTAINS …).
     else if (q.entity == UtqlEntity::UsdPrim || q.entity == UtqlEntity::SdfPrim)
-        setFields = {"RELATIONSHIPS"};
+        setFields = {"RELATIONSHIPS", "ASSETINFO.DEPENDENCIES", "CUSTOMDATA.KEYS"};
     // Attribute connection-source set field (design C1, CONNECTION.SOURCE CONTAINS …).
     else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
         setFields = {"CONNECTION.SOURCE"};
@@ -1760,6 +2017,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                      [s](const std::string &f) { return GetSdfPrimField(s, f); },
                                      [s](const std::string &f) -> std::vector<std::string> {
                                          if (f == "RELATIONSHIPS") return SdfPrimRelationshipNames(s);
+                                         if (f == "ASSETINFO.DEPENDENCIES") return AssetInfoDependencies(SdfPrimAssetInfoDict(s));
+                                         if (f == "CUSTOMDATA.KEYS") return CustomDataLeafKeys(SdfPrimCustomDataDict(s));
                                          if (f == "VARIANT_SELECTIONS") return VariantSelectionsOfPath(s->GetPath());
                                          return {};
                                      });
@@ -1957,6 +2216,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                     if (fld == "RELATIONSHIPS")
                         return UsdPrimRelationshipNames(prim);
+                    if (fld == "ASSETINFO.DEPENDENCIES")
+                        return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                    if (fld == "CUSTOMDATA.KEYS")
+                        return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                     return {};
                 };
                 emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
@@ -2039,6 +2302,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
             auto scanUsdPrim = [&](const UsdPrim &prim) {
+                // The range starts at the pseudo-root to enable instance descent,
+                // but "/" is not a queryable prim row (the Layer scan skips its
+                // AbsoluteRootPath spec the same way).
+                if (prim.IsPseudoRoot())
+                    return;
                 if (q.entity == UtqlEntity::UsdPrim) {
                     if (checkCancel()) return;
                     ++result.scanned;
@@ -2064,6 +2332,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                         if (fld == "RELATIONSHIPS")
                             return UsdPrimRelationshipNames(prim);
+                        if (fld == "ASSETINFO.DEPENDENCIES")
+                            return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                        if (fld == "CUSTOMDATA.KEYS")
+                            return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                         return {};
                     };
                     emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
@@ -2094,7 +2366,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         const std::string name = rel.GetName().GetString();
                         const SdfPath path = rel.GetPath();
                         emit(source, path,
-                             [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
+                             [&](const std::string &fld) {
+                                 if (fld == "TARGET.IS_MISSING")
+                                     return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
+                                 return GetRelScalarField(name, targets, path, fld);
+                             },
                              [&](const std::string &) { return PathsToStrings(targets); }, noArcs, nullptr);
                     }
                 }
@@ -2136,10 +2412,14 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             if (!stage) continue;
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
-            // Descend into instances (design I1 / IS_INSTANCE_PROXY).
+            // Descend into instances (design I1 / IS_INSTANCE_PROXY). The range
+            // starts at the pseudo-root to reach everything, but "/" itself is
+            // not a queryable prim row — it matched every negated predicate
+            // (e.g. NOT TYPE IS_A "…") as a typeless phantom row.
             for (UsdPrim p : UsdPrimRange(stage->GetPseudoRoot(),
                                           UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate)))
-                primItems.push_back({source, p});
+                if (!p.IsPseudoRoot())
+                    primItems.push_back({source, p});
             // Prototype masters hang off GetPrototypes(), not the pseudo-root.
             for (const UsdPrim &proto : stage->GetPrototypes())
                 for (UsdPrim p : UsdPrimRange::AllPrims(proto))
@@ -2195,6 +2475,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                             if (fld == "RELATIONSHIPS")
                                 return UsdPrimRelationshipNames(prim);
+                            if (fld == "ASSETINFO.DEPENDENCIES")
+                                return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                            if (fld == "CUSTOMDATA.KEYS")
+                                return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                             return {};
                         };
                         UtqlRow row;
@@ -2231,6 +2515,9 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                             UtqlRow row;
                             if (evalItem(item.source, path,
                                          [&](const std::string &fld) {
+                                             if (fld == "TARGET.IS_MISSING")
+                                                 return UtqlValue::Bool(
+                                                     UsdRelTargetsMissing(rel, targets));
                                              return GetRelScalarField(name, targets, path, fld);
                                          },
                                          [&](const std::string &) { return PathsToStrings(targets); },
@@ -2401,6 +2688,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                     return SdfPrimRelationshipNames(prim);
                                 if (fld == "VARIANT_SELECTIONS")
                                     return VariantSelectionsOfPath(prim->GetPath());
+                                if (fld == "ASSETINFO.DEPENDENCIES")
+                                    return AssetInfoDependencies(SdfPrimAssetInfoDict(prim));
+                                if (fld == "CUSTOMDATA.KEYS")
+                                    return CustomDataLeafKeys(SdfPrimCustomDataDict(prim));
                                 return {};
                             };
                             UtqlRow row;
@@ -2740,6 +3031,15 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 return isNull ? vs.ClearVariantSelection()
                               : vs.SetVariantSelection(lit.str);
             }
+            if (IsCustomDataField(f)) {
+                const TfToken key(CustomDataKeyPath(f));
+                if (isNull) {
+                    p.ClearCustomDataByKey(key);
+                    return true;
+                }
+                p.SetCustomDataByKey(key, LiteralToCustomDataValue(lit));
+                return true;
+            }
             return false;
         }
         case UtqlEntity::SdfPrim: {
@@ -2773,6 +3073,24 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 // An empty selection removes the authored opinion (the Sdf
                 // convention), which is exactly what NULL means here.
                 s->SetVariantSelection(sa.variantSet, isNull ? "" : lit.str);
+                return true;
+            }
+            if (IsCustomDataField(f)) {
+                // Round-trip the whole authored dict: VtDictionary's path APIs
+                // nest/erase along the colon key path, then one SetInfo authors
+                // the result (ClearInfo when the last entry goes away).
+                const std::string keyPath = CustomDataKeyPath(f);
+                VtDictionary d = SdfPrimCustomDataDict(s);
+                if (isNull)
+                    d.EraseValueAtPath(keyPath);
+                else
+                    d.SetValueAtPath(keyPath, LiteralToCustomDataValue(lit));
+                if (d.empty()) {
+                    if (s->HasInfo(SdfFieldKeys->CustomData))
+                        s->ClearInfo(SdfFieldKeys->CustomData);
+                } else {
+                    s->SetInfo(SdfFieldKeys->CustomData, VtValue(d));
+                }
                 return true;
             }
             return false;
@@ -3295,7 +3613,7 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
 
     std::unordered_set<std::string> setFields;
     if (q.entity == UtqlEntity::UsdPrim || q.entity == UtqlEntity::SdfPrim)
-        setFields = {"RELATIONSHIPS"};
+        setFields = {"RELATIONSHIPS", "ASSETINFO.DEPENDENCIES", "CUSTOMDATA.KEYS"};
     else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
         setFields = {"CONNECTION.SOURCE"};
     else if (q.entity == UtqlEntity::UsdRelationship || q.entity == UtqlEntity::SdfRelationship)
@@ -3468,6 +3786,10 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
         e.getSet = [&](const std::string &fld) -> std::vector<std::string> {
             if (fld == "RELATIONSHIPS")
                 return UsdPrimRelationshipNames(prim);
+            if (fld == "ASSETINFO.DEPENDENCIES")
+                return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+            if (fld == "CUSTOMDATA.KEYS")
+                return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
             return {};
         };
         e.getArcs = getArcs;
@@ -3506,6 +3828,10 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
                 return SdfPrimRelationshipNames(spec);
             if (fld == "VARIANT_SELECTIONS")
                 return VariantSelectionsOfPath(spec->GetPath());
+            if (fld == "ASSETINFO.DEPENDENCIES")
+                return AssetInfoDependencies(SdfPrimAssetInfoDict(spec));
+            if (fld == "CUSTOMDATA.KEYS")
+                return CustomDataLeafKeys(SdfPrimCustomDataDict(spec));
             return {};
         };
         e.getArcs = getArcs;
@@ -3587,9 +3913,16 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
         const SdfPath path = rel.GetPath();
         EvalCtx e;
         e.get = [&](const std::string &fld) {
+            if (fld == "TARGET.IS_MISSING")
+                return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
             return GetRelScalarField(name, targets, path, fld);
         };
-        e.getSet = [&](const std::string &) { return PathsToStrings(targets); };
+        e.getSet = [&](const std::string &fld) {
+            // The gate's per-member evidence for witness-gated REMOVE TARGET.
+            if (fld == "TARGET.IS_MISSING")
+                return UsdRelMissingTargets(rel, targets);
+            return PathsToStrings(targets);
+        };
         e.getArcs = noArcsFn;
         e.setFields = &setFields;
         e.regexes = &regexes;

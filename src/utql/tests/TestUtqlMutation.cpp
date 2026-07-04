@@ -16,12 +16,17 @@
 #include "Parser.h"
 
 #include <pxr/base/gf/vec3f.h>
+#include <pxr/base/tf/type.h>
+#include <pxr/base/ts/knot.h>
+#include <pxr/base/ts/spline.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/usd/attribute.h>
+#include <pxr/usd/usd/clipsAPI.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/relationship.h>
@@ -1238,6 +1243,420 @@ static void TestComposingIntoDelete() {
     CHECK(!f.stage->GetPrimAtPath(SdfPath("/World/hero")));
 }
 
+// ------------------------------------------- assetInfo read fields (metadata-M1)
+
+/// Compile and run a FIND through the read path (Execute).
+static utql::UtqlResult RunFind(const std::string &query, const utql::UtqlContext &ctx) {
+    utql::BoundQuery bound;
+    std::string error;
+    if (!Compile(query, bound, error)) {
+        CHECK_MSG(false, query + " → " + error);
+        utql::UtqlResult r;
+        r.status = utql::UtqlStatus::CompileError;
+        r.message = error;
+        return r;
+    }
+    std::atomic<bool> cancel{false};
+    return utql::Execute(bound, ctx, cancel);
+}
+
+static void TestAssetInfoFields() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("assetinfo_test.usda");
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    UsdPrim chair = stage->DefinePrim(SdfPath("/World/chair"), TfToken("Xform"));
+    chair.SetAssetInfoByKey(TfToken("identifier"), VtValue(SdfAssetPath("assets/chair.usd")));
+    chair.SetAssetInfoByKey(TfToken("name"), VtValue(std::string("chair")));
+    chair.SetAssetInfoByKey(TfToken("version"), VtValue(std::string("2")));
+    VtArray<SdfAssetPath> deps;
+    deps.push_back(SdfAssetPath("shaders/wood.usd"));
+    deps.push_back(SdfAssetPath("textures/oak.usd"));
+    chair.SetAssetInfoByKey(TfToken("payloadAssetDependencies"), VtValue(deps));
+    UsdPrim table = stage->DefinePrim(SdfPath("/World/table"), TfToken("Xform"));
+    table.SetAssetInfoByKey(TfToken("version"), VtValue(std::string("1")));
+    stage->DefinePrim(SdfPath("/World/plain"), TfToken("Xform"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Presence gate (bare bool flag).
+    utql::UtqlResult r = RunFind("FIND USDPRIM WHERE HAS_ASSETINFO", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+
+    // Scalar sub-field compare + RETURN columns (identifier projected to its
+    // authored asset-path string).
+    r = RunFind("FIND USDPRIM WHERE ASSETINFO.VERSION = \"2\" "
+                "RETURN PATH, ASSETINFO.IDENTIFIER, ASSETINFO.NAME",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1 && r.rows[0].columns.size() == 3) {
+        CHECK(r.rows[0].columns[0].ToDisplay() == "/World/chair");
+        CHECK(r.rows[0].columns[1].ToDisplay() == "assets/chair.usd");
+        CHECK(r.rows[0].columns[2].ToDisplay() == "chair");
+    }
+
+    // Absent sub-key ⇒ NULL (table has a version but no name).
+    r = RunFind("FIND USDPRIM WHERE HAS_ASSETINFO AND ASSETINFO.NAME IS NULL", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/table"));
+
+    // DEPENDENCIES set field: CONTAINS (exact member) and LIKE (existential).
+    r = RunFind("FIND USDPRIM WHERE ASSETINFO.DEPENDENCIES CONTAINS \"shaders/wood.usd\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND USDPRIM WHERE ASSETINFO.DEPENDENCIES LIKE \"oak\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND USDPRIM WHERE ASSETINFO.DEPENDENCIES CONTAINS \"nope.usd\"", ctx);
+    CHECK(r.rows.empty());
+
+    // Layer world: the spec's own authored dict.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE HAS_ASSETINFO", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE ASSETINFO.VERSION = \"2\" "
+                "RETURN PATH, ASSETINFO.DEPENDENCIES",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1 && r.rows[0].columns.size() == 2)
+        CHECK(r.rows[0].columns[1].ToDisplay() == "shaders/wood.usd, textures/oak.usd");
+
+    // M1 is read-only: ASSETINFO.* refuses SET.
+    ExpectCompileError("UPDATE USDPRIM WHERE HAS_ASSETINFO SET ASSETINFO.VERSION = \"3\"",
+                       "not writable");
+}
+
+// -------------------------------------- TARGET.IS_MISSING (dangling targets)
+
+static void TestTargetIsMissing() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("target_missing_test.usda");
+    stage->DefinePrim(SdfPath("/Looks"), TfToken("Scope"));
+    UsdPrim metal = stage->DefinePrim(SdfPath("/Looks/Metal"), TfToken("Material"));
+    metal.CreateAttribute(TfToken("outputs:surface"), SdfValueTypeNames->Token);
+    UsdPrim mesh = stage->DefinePrim(SdfPath("/World/mesh"), TfToken("Mesh"));
+    mesh.CreateRelationship(TfToken("binding_ok")).AddTarget(SdfPath("/Looks/Metal"));
+    mesh.CreateRelationship(TfToken("binding_bad")).AddTarget(SdfPath("/Looks/Gone"));
+    UsdRelationship mixed = mesh.CreateRelationship(TfToken("mixed"));
+    mixed.AddTarget(SdfPath("/Looks/Metal"));
+    mixed.AddTarget(SdfPath("/Nowhere"));
+    mesh.CreateRelationship(TfToken("empty_rel"));
+    mesh.CreateRelationship(TfToken("prop_target"))
+        .AddTarget(SdfPath("/Looks/Metal.outputs:surface"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Existential over targets: one dangling target flags the relationship
+    // (schema builtins like proxyPrim also produce rows, so assert by name).
+    utql::UtqlResult r =
+        RunFind("FIND USDRELATIONSHIP WHERE TARGET.IS_MISSING RETURN PATH", ctx);
+    CHECK_MSG(r.status == utql::UtqlStatus::Ok, r.message);
+    bool sawBad = false, sawMixed = false, sawOk = false, sawProp = false;
+    for (const utql::UtqlRow &row : r.rows) {
+        const std::string p = row.path.GetString();
+        sawBad |= p == "/World/mesh.binding_bad";
+        sawMixed |= p == "/World/mesh.mixed";
+        sawOk |= p == "/World/mesh.binding_ok";
+        sawProp |= p == "/World/mesh.prop_target";
+    }
+    CHECK(sawBad && sawMixed);
+    CHECK(!sawOk && !sawProp); // resolving prim + property targets don't match
+
+    // Empty target list is not missing.
+    r = RunFind("FIND USDRELATIONSHIP WHERE NAME = \"empty_rel\" AND TARGET.IS_MISSING",
+                ctx);
+    CHECK_MSG(r.rows.empty(), r.message);
+
+    // Pairs with the TARGET set field: name the dangling relationship and see
+    // where it points.
+    r = RunFind("FIND USDRELATIONSHIP WHERE NAME = \"binding_bad\" AND "
+                "TARGET.IS_MISSING RETURN PATH, TARGET",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1 && r.rows[0].columns.size() == 2)
+        CHECK(r.rows[0].columns[1].ToDisplay() == "/Looks/Gone");
+
+    // Composed fact — Layer world is a binder error.
+    ExpectCompileError("FIND SDFRELATIONSHIP WHERE TARGET.IS_MISSING",
+                       "composed-stage fact");
+
+    // Witness-gated cleanup: a bare REMOVE TARGET gated by TARGET.IS_MISSING
+    // strips only the dangling targets — the resolving ones survive.
+    const utql::UtqlResult m = RunUpdate(
+        "UPDATE USDRELATIONSHIP WHERE TARGET.IS_MISSING REMOVE TARGET", ctx);
+    CHECK_MSG(m.status == utql::UtqlStatus::Ok, m.message);
+    CHECK_MSG(m.matched == 2, "matched=" + std::to_string(m.matched));
+    SdfPathVector after;
+    mixed.GetTargets(&after);
+    CHECK_MSG(after.size() == 1, "mixed kept " + std::to_string(after.size()));
+    CHECK(after.size() == 1 && after[0] == SdfPath("/Looks/Metal"));
+    mesh.GetRelationship(TfToken("binding_bad")).GetTargets(&after);
+    CHECK(after.empty());
+    mesh.GetRelationship(TfToken("binding_ok")).GetTargets(&after);
+    CHECK(after.size() == 1 && after[0] == SdfPath("/Looks/Metal"));
+}
+
+// ------------------------------------------ TYPE IS_A (schema inheritance, A7)
+
+static void TestTypeIsA() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("isa_test.usda");
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/World/mesh"), TfToken("Mesh"));
+    stage->DefinePrim(SdfPath("/World/ball"), TfToken("Sphere"));
+    stage->DefinePrim(SdfPath("/World/group"), TfToken("Scope"));
+    stage->DefinePrim(SdfPath("/World/untyped"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Abstract base: Gprim covers Mesh + Sphere, not Xform/Scope/typeless.
+    utql::UtqlResult r =
+        RunFind("FIND USDPRIM WHERE TYPE IS_A \"Gprim\" RETURN PATH", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+    bool sawMesh = false, sawBall = false;
+    for (const utql::UtqlRow &row : r.rows) {
+        sawMesh |= row.path == SdfPath("/World/mesh");
+        sawBall |= row.path == SdfPath("/World/ball");
+    }
+    CHECK(sawMesh && sawBall);
+
+    // Equality is included: IS_A "Mesh" matches the Mesh itself.
+    r = RunFind("FIND USDPRIM WHERE TYPE IS_A \"Mesh\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+
+    // Everything typed is Imageable here; the typeless prim never matches.
+    r = RunFind("FIND USDPRIM WHERE TYPE IS_A \"Imageable\"", ctx);
+    CHECK_MSG(r.rows.size() == 4, r.message);
+    r = RunFind("FIND USDPRIM WHERE NOT TYPE IS_A \"Imageable\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/untyped"));
+
+    // Layer world: authored typeName through the same registry test.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE TYPE IS_A \"Gprim\"",
+                ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+
+    // Composes with other predicates and drives mutations.
+    const utql::UtqlResult m = RunUpdate(
+        "UPDATE USDPRIM WHERE TYPE IS_A \"Gprim\" AND NAME = \"ball\" "
+        "SET ACTIVE = false",
+        ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    CHECK(!stage->GetPrimAtPath(SdfPath("/World/ball")).IsActive());
+
+    // Binder catalog: unknown target, wrong field, attribute entity.
+    ExpectCompileError("FIND USDPRIM WHERE TYPE IS_A \"NoSuchSchema\"",
+                       "Unknown schema type");
+    ExpectCompileError("FIND USDPRIM WHERE NAME IS_A \"Gprim\"",
+                       "prim TYPE field");
+    ExpectCompileError("FIND USDATTRIBUTE WHERE TYPE IS_A \"Gprim\"",
+                       "prim TYPE field");
+}
+
+// ------------------------------------------- customData (metadata M2, v0.19)
+
+static void TestCustomData() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("customdata_test.usda");
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    UsdPrim hero = stage->DefinePrim(SdfPath("/World/hero"), TfToken("Xform"));
+    hero.SetCustomDataByKey(TfToken("pipeline:reviewState"), VtValue(std::string("approved")));
+    hero.SetCustomDataByKey(TfToken("pipeline:priority"), VtValue(int64_t(3)));
+    hero.SetCustomDataByKey(TfToken("locked"), VtValue(true));
+    UsdPrim extra = stage->DefinePrim(SdfPath("/World/extra"), TfToken("Xform"));
+    extra.SetCustomDataByKey(TfToken("pipeline:reviewState"), VtValue(std::string("pending")));
+    stage->DefinePrim(SdfPath("/World/plain"), TfToken("Xform"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Presence gate — authored only: USD 26 schema fallbacks (userDocBrief)
+    // must not make every typed prim match.
+    utql::UtqlResult r = RunFind("FIND USDPRIM WHERE HAS_CUSTOMDATA", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"userDocBrief\"] IS NOT NULL", ctx);
+    CHECK_MSG(r.rows.empty(), r.message);
+
+    // Keyed read: nested colon path, string compare, RETURN column.
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"pipeline:reviewState\"] = \"approved\" "
+                "RETURN PATH, CUSTOMDATA[\"pipeline:priority\"]",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1 && r.rows[0].columns.size() == 2) {
+        CHECK(r.rows[0].columns[0].ToDisplay() == "/World/hero");
+        CHECK(r.rows[0].columns[1].ToDisplay() == "3");
+    }
+
+    // Type polymorphism: numeric ordering + bare bool flag.
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"pipeline:priority\"] >= 2", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"locked\"]", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+
+    // IS NOT NULL is the per-key existence test; missing keys are NULL.
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"pipeline:reviewState\"] IS NOT NULL", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+    r = RunFind("FIND USDPRIM WHERE HAS_CUSTOMDATA AND CUSTOMDATA[\"locked\"] IS NULL", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/extra"));
+
+    // A non-leaf key holds a dict — non-null (stringified) so IS NOT NULL works.
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA[\"pipeline\"] IS NOT NULL", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+
+    // KEYS set field: flattened colon-joined leaf paths.
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA.KEYS CONTAINS \"pipeline:priority\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND USDPRIM WHERE CUSTOMDATA.KEYS LIKE \"reviewState\"", ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+
+    // Stage-world writes: comma-batched keys, auto-created intermediate dicts,
+    // int-vs-double by literal spelling.
+    utql::UtqlResult m = RunUpdate(
+        "UPDATE USDPRIM WHERE NAME = \"plain\" SET "
+        "CUSTOMDATA[\"pipeline:reviewState\"] = \"pending\", "
+        "CUSTOMDATA[\"pipeline:priority\"] = 7, "
+        "CUSTOMDATA[\"weight\"] = 1.5",
+        ctx);
+    CHECK_MSG(m.changed == 3, m.message);
+    UsdPrim plain = stage->GetPrimAtPath(SdfPath("/World/plain"));
+    VtValue v = plain.GetCustomDataByKey(TfToken("pipeline:reviewState"));
+    CHECK(v.IsHolding<std::string>() && v.UncheckedGet<std::string>() == "pending");
+    v = plain.GetCustomDataByKey(TfToken("pipeline:priority"));
+    CHECK_MSG(v.IsHolding<int64_t>(), v.GetTypeName());
+    CHECK(v.IsHolding<int64_t>() && v.UncheckedGet<int64_t>() == 7);
+    v = plain.GetCustomDataByKey(TfToken("weight"));
+    CHECK_MSG(v.IsHolding<double>(), v.GetTypeName());
+
+    // NULL erases one entry; siblings survive.
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"hero\" "
+                  "SET CUSTOMDATA[\"pipeline:priority\"] = NULL",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    CHECK(hero.GetCustomDataByKey(TfToken("pipeline:priority")).IsEmpty());
+    CHECK(!hero.GetCustomDataByKey(TfToken("pipeline:reviewState")).IsEmpty());
+
+    // Layer world: authored dict read + write through the spec.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId +
+                "\" WHERE CUSTOMDATA[\"pipeline:reviewState\"] = \"pending\" RETURN PATH",
+                ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message); // extra + the freshly-written plain
+    m = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"extra\" SET CUSTOMDATA[\"vendor:lot\"] = 42",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    v = extra.GetCustomDataByKey(TfToken("vendor:lot"));
+    CHECK(v.IsHolding<int64_t>() && v.UncheckedGet<int64_t>() == 42);
+
+    // Erasing the last entry clears the authored customData field entirely.
+    m = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"extra\" SET "
+                  "CUSTOMDATA[\"vendor:lot\"] = NULL, "
+                  "CUSTOMDATA[\"pipeline:reviewState\"] = NULL",
+                  ctx);
+    CHECK_MSG(m.changed == 2, m.message);
+    {
+        SdfPrimSpecHandle spec =
+            stage->GetRootLayer()->GetPrimAtPath(SdfPath("/World/extra"));
+        CHECK(spec && !spec->HasInfo(SdfFieldKeys->CustomData));
+    }
+
+    // Binder catalog: bare CUSTOMDATA gets per-key guidance; prim-only lvalue;
+    // set-field operator rules still apply to KEYS.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET CUSTOMDATA = \"x\"",
+                       "writes per key");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"x\" "
+                       "SET CUSTOMDATA[\"k\"] = 1",
+                       "prim entities");
+    ExpectCompileError("FIND USDPRIM WHERE CUSTOMDATA[\"k\"] CONTAINS \"x\"",
+                       "single value");
+    ExpectCompileError("FIND USDPRIM WHERE CUSTOMDATA[\"\"] = 1", "non-empty");
+}
+
+// -------------------------------- spline / clips gates (animation, A8, v0.20)
+
+static void TestSplineClipGates() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("spline_clips_test.usda");
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+
+    // Spline-animated prim (USD 26 animation curves) — no time samples.
+    UsdPrim door = stage->DefinePrim(SdfPath("/World/door"), TfToken("Xform"));
+    UsdAttribute rot = door.CreateAttribute(TfToken("rotateY"), SdfValueTypeNames->Double);
+    {
+        TsSpline spline;
+        TsKnot k1(TfType::Find<double>());
+        k1.SetTime(1.0);
+        k1.SetValue(0.0);
+        TsKnot k2(TfType::Find<double>());
+        k2.SetTime(10.0);
+        k2.SetValue(90.0);
+        spline.SetKnot(k1);
+        spline.SetKnot(k2);
+        CHECK(rot.SetSpline(spline));
+    }
+
+    // Time-sampled prim — the other value source, for contrast.
+    UsdPrim ball = stage->DefinePrim(SdfPath("/World/ball"), TfToken("Xform"));
+    ball.CreateAttribute(TfToken("height"), SdfValueTypeNames->Double)
+        .Set(1.0, UsdTimeCode(1.0));
+
+    // Clip-driven prim: authored clips metadata (UsdClipsAPI dictionary).
+    UsdPrim sim = stage->DefinePrim(SdfPath("/World/sim"), TfToken("Xform"));
+    {
+        UsdClipsAPI clips(sim);
+        VtArray<SdfAssetPath> paths;
+        paths.push_back(SdfAssetPath("./sim.001.usd"));
+        clips.SetClipAssetPaths(paths);
+        clips.SetClipPrimPath("/Sim");
+    }
+
+    stage->DefinePrim(SdfPath("/World/still"), TfToken("Xform"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Attribute gate: the spline attr, and only it.
+    utql::UtqlResult r =
+        RunFind("FIND USDATTRIBUTE WHERE VALUE.HAS_SPLINE RETURN PATH", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/door.rotateY"));
+
+    // Splines are a separate value source from timeSamples — no overlap.
+    r = RunFind("FIND USDATTRIBUTE WHERE VALUE.HAS_SPLINE AND "
+                "VALUE.HAS_TIME_SAMPLES", ctx);
+    CHECK_MSG(r.rows.empty(), r.message);
+
+    // Prim gates partition the fixture: spline / samples / clips / none.
+    r = RunFind("FIND USDPRIM WHERE HAS_SPLINE", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/door"));
+    r = RunFind("FIND USDPRIM WHERE HAS_TIME_SAMPLES", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/ball"));
+    r = RunFind("FIND USDPRIM WHERE HAS_CLIPS", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/sim"));
+
+    // "Animated at all" is the disjunction of the three gates.
+    r = RunFind("FIND USDPRIM WHERE HAS_SPLINE OR HAS_TIME_SAMPLES OR HAS_CLIPS",
+                ctx);
+    CHECK_MSG(r.rows.size() == 3, r.message);
+
+    // Layer world: the authored specs answer the same gates.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunFind("FIND SDFATTRIBUTE IN LAYER \"" + rootId +
+                "\" WHERE VALUE.HAS_SPLINE", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE HAS_SPLINE", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE HAS_CLIPS", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/sim"));
+
+    // Gates are read-only.
+    ExpectCompileError("UPDATE USDPRIM WHERE HAS_CLIPS SET HAS_CLIPS = false",
+                       "not writable");
+    ExpectCompileError(
+        "UPDATE USDATTRIBUTE WHERE VALUE.HAS_SPLINE SET VALUE.HAS_SPLINE = false",
+        "not writable");
+}
+
 int main() {
     TestBinderErrors();
     TestExecuteRejectsWrites();
@@ -1268,6 +1687,11 @@ int main() {
     TestComposingIntoUpdate();
     TestComposingIntoAttribute();
     TestComposingIntoDelete();
+    TestAssetInfoFields();
+    TestTargetIsMissing();
+    TestTypeIsA();
+    TestCustomData();
+    TestSplineClipGates();
 
     if (gFailures == 0) {
         std::cout << "test_utql_mutation: all " << gChecks << " checks passed\n";

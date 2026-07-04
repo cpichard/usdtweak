@@ -35,7 +35,11 @@ bool IsReservedWord(const std::string &w) {
                                 // Write side (design-mutation). ADD/REMOVE reserved
                                 // ahead of M3 so fields never squat the clause names.
                                 "UPDATE", "CREATE", "DELETE", "SET", "ON", "ADD",
-                                "REMOVE", "BLOCK"};
+                                "REMOVE", "BLOCK",
+                                // Schema-inheritance operator (design A7). One
+                                // token — the lexer folds '_' into words, so this
+                                // never collides with IS NULL.
+                                "IS_A"};
     for (const char *kw : kws)
         if (IEquals(w, kw))
             return true;
@@ -455,6 +459,8 @@ class Parser {
             SetAssignment sa;
             sa.field = Upper(Cur().text);
             Advance();
+            if (!ParseKeyedFieldSuffix(sa.field))
+                return false;
             if (sa.field == "VARIANT" && Cur().kind == Token::Kind::LBracket) {
                 Advance();
                 if (Cur().kind != Token::Kind::String) {
@@ -938,8 +944,11 @@ class Parser {
                 Fail("Expected a field name in RETURN");
                 return false;
             }
-            out.returnFields.push_back(Upper(Cur().text));
+            std::string field = Upper(Cur().text);
             Advance();
+            if (!ParseKeyedFieldSuffix(field))
+                return false;
+            out.returnFields.push_back(std::move(field));
             if (Cur().kind == Token::Kind::Comma) {
                 Advance();
                 continue;
@@ -962,6 +971,8 @@ class Parser {
             OrderBy ob;
             ob.field = Upper(Cur().text);
             Advance();
+            if (!ParseKeyedFieldSuffix(ob.field))
+                return false;
             if (AcceptKeyword("DESC"))
                 ob.desc = true;
             else
@@ -1056,6 +1067,9 @@ class Parser {
             case Token::Kind::Number:
                 lit.kind = Literal::Kind::Number;
                 lit.number = Cur().number;
+                lit.intLike = Cur().text.find('.') == std::string::npos &&
+                              Cur().text.find('e') == std::string::npos &&
+                              Cur().text.find('E') == std::string::npos;
                 Advance();
                 return true;
             case Token::Kind::Word:
@@ -1079,6 +1093,32 @@ class Parser {
         }
     }
 
+    /// CUSTOMDATA["key:path"] — the keyed-field suffix (metadata M2). Called
+    /// after a field name is read anywhere a field can appear (predicate,
+    /// RETURN, ORDERED BY, SET lvalue): on CUSTOMDATA + '[' it consumes the
+    /// bracketed key and rewrites `field` to the canonical embedded spelling.
+    /// The key stays verbatim (case-sensitive; ':' nests per USD's customData
+    /// convention). Anything else passes through untouched.
+    bool ParseKeyedFieldSuffix(std::string &field) {
+        if (field != "CUSTOMDATA" || Cur().kind != Token::Kind::LBracket)
+            return true;
+        Advance();
+        if (Cur().kind != Token::Kind::String || Cur().text.empty()) {
+            Fail("Expected a non-empty quoted key in CUSTOMDATA[\"key\"] — "
+                 "colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]");
+            return false;
+        }
+        const std::string key = Cur().text;
+        Advance();
+        if (Cur().kind != Token::Kind::RBracket) {
+            Fail("Expected ']' after CUSTOMDATA[\"" + key + "\"");
+            return false;
+        }
+        Advance();
+        field = "CUSTOMDATA[\"" + key + "\"]";
+        return true;
+    }
+
     std::unique_ptr<WhereExpr> ParsePredicate() {
         // TARGET is both a clause keyword (PER TARGET, CREATE RELATIONSHIP …
         // TARGET, ADD TARGET) and the relationship-targets field (v0.12
@@ -1091,6 +1131,8 @@ class Parser {
         auto node = std::make_unique<WhereExpr>();
         node->field = Upper(Cur().text);
         Advance();
+        if (!ParseKeyedFieldSuffix(node->field))
+            return nullptr;
 
         // field OP literal
         if (Cur().kind == Token::Kind::Op && Cur().text != "*") {
@@ -1105,6 +1147,19 @@ class Parser {
             node->kind = WhereExpr::Kind::Compare;
             if (!ParseLiteral(node->literal))
                 return nullptr;
+            return node;
+        }
+        // TYPE IS_A "SchemaType" — schema-registry inheritance test (design A7).
+        // The binder restricts it to the prim TYPE field and validates the target.
+        if (AcceptKeyword("IS_A")) {
+            node->kind = WhereExpr::Kind::IsA;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted schema type after IS_A "
+                     "(e.g. TYPE IS_A \"Gprim\")");
+                return nullptr;
+            }
+            node->likeText = Cur().text;
+            Advance();
             return node;
         }
         // field LIKE "text" | /regex/

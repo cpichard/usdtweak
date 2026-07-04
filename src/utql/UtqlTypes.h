@@ -28,6 +28,22 @@ enum class UtqlStatus {
 /// The two worlds; fixed by the FIND entity (design §1).
 enum class UtqlWorld { Stage, Layer };
 
+/// CUSTOMDATA["key:path"] (metadata M2) — the keyed field rides the canonical
+/// field string with the key embedded verbatim (case-sensitive, colon-nested
+/// per USD's customData convention), e.g. CUSTOMDATA["pipeline:reviewState"].
+/// Embedding keeps every field-flow surface (RETURN columns, ORDERED BY, get
+/// lambdas, SET lvalues, manifests) working on plain strings; the parser builds
+/// this spelling, the binder/executor recognise and unpack it here.
+inline bool IsCustomDataField(const std::string &f) {
+    static const char kPrefix[] = "CUSTOMDATA[\"";
+    return f.size() > sizeof(kPrefix) + 1 && f.compare(0, sizeof(kPrefix) - 1, kPrefix) == 0 &&
+           f.compare(f.size() - 2, 2, "\"]") == 0;
+}
+
+inline std::string CustomDataKeyPath(const std::string &f) {
+    return IsCustomDataField(f) ? f.substr(12, f.size() - 14) : std::string();
+}
+
 /// The query entity. Phase 1 executes only UsdPrim / SdfPrim; the rest are
 /// declared so the binder can name them in messages and later phases fill in.
 enum class UtqlEntity {
