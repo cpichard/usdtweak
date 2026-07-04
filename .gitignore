@@ -1,5 +1,7 @@
 /build*
 /src/generated/
+# ImGui writes a default layout file into the CWD when run from the repo root
+/imgui.ini
 # pixi environments
 .pixi/*
 !.pixi/config.toml

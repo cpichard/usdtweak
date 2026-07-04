@@ -2,6 +2,7 @@
 
 #include "HttpClient.h"
 #include "JsHelpers.h"
+#include "ProviderCatalog.h"   // OpenAiEndpoint
 
 #include <pxr/base/js/json.h>
 
@@ -47,17 +48,18 @@ LLMResponse OpenAIBackend::Send(const Conversation& conv,
     JsObject reqJson = BuildRequest(conv, tools, _model);
     std::string body = JsToString(JsValue(reqJson));
 
-    std::string base = _baseUrl.empty() ? std::string("https://api.openai.com")
-                                        : _baseUrl;
-    // Trim trailing slash so we don't end up with a // in the URL.
-    if (!base.empty() && base.back() == '/') base.pop_back();
+    // Tolerates a trailing slash and a base URL that already ends in "/v1"
+    // (see ProviderCatalog::OpenAiEndpoint); shared with model discovery so
+    // both paths resolve the endpoint identically.
+    const std::string url = OpenAiEndpoint(_baseUrl, "chat/completions");
 
-    std::vector<HttpHeader> headers = {
-        {"Authorization", "Bearer " + _apiKey},
-    };
+    // Only send Authorization when we actually have a key: keyless endpoints
+    // (Ollama, some local servers) reject a literal "Bearer " with an empty
+    // token on stricter proxies.
+    std::vector<HttpHeader> headers;
+    if (!_apiKey.empty()) headers.push_back({"Authorization", "Bearer " + _apiKey});
 
-    HttpResponse http = HttpPostJson(base + "/v1/chat/completions",
-                                     headers, body);
+    HttpResponse http = HttpPostJson(url, headers, body, kChatTimeoutSeconds);
 
     if (http.status == 0) {
         LLMResponse r;
