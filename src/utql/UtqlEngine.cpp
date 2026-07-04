@@ -2,6 +2,8 @@
 #include "Parser.h"
 
 #include "addons/Api.h" // usdtweak::GetCurrentStage / GetStageCache
+#include "CommandStack.h" // ExecuteAfterDraw<MultiLayerFunctionCall> (mutations)
+#include "UsdSceneLock.h" // shared read lock around Execute + pre-write hook
 
 #include <pxr/base/tf/weakPtr.h>
 #include <pxr/usd/sdf/layer.h>
@@ -20,6 +22,10 @@ UtqlEngine &UtqlEngine::GetInstance() {
 
 UtqlEngine::UtqlEngine() {
     _noticeKey = TfNotice::Register(TfCreateWeakPtr(this), &UtqlEngine::OnLayersDidChange);
+    // Yield to writers: a thread about to take the exclusive scene lock fires
+    // this so an in-flight scan aborts (degraded result) instead of making
+    // the writer wait out the whole scan. Set-flag only — never joins.
+    UsdSceneLock::GetInstance().AddPreWriteHook([this]() { RequestCancel(); });
 }
 
 UtqlEngine::~UtqlEngine() {
@@ -36,7 +42,7 @@ void UtqlEngine::CancelRunningQuery() {
     _running.store(false);
 }
 
-void UtqlEngine::Submit(const std::string &query) {
+void UtqlEngine::Submit(const std::string &query, bool dryRun) {
     // Stop any in-flight run before touching shared state.
     CancelRunningQuery();
 
@@ -76,6 +82,53 @@ void UtqlEngine::Submit(const std::string &query) {
         if (h)
             _ctx.allLayers.push_back(SdfLayerRefPtr(h));
     _ctx.named = &_named; // stable: CancelRunningQuery joins before _named is touched
+    _ctx.dryRun = false;
+
+    // Mutation statements (UPDATE / CREATE / DELETE) never run on the worker —
+    // they *are* the edit, so they go through the command system and execute
+    // on the UI thread after this frame: PlanUpdate (read-only match pass)
+    // decides the destination layers, then ApplyUpdate authors inside one
+    // SdfChangeBlock while the command records the changes as a single undo
+    // entry (design-mutation §8).
+    if (bound->statement != StatementKind::Find) {
+        if (CommandStack::GetInstance().HasNextCommand()) {
+            setCompileError("Another edit is already queued for this frame — "
+                            "run the UPDATE again.");
+            return;
+        }
+        _ctx.dryRun = dryRun;
+        // The lambdas own their inputs: a new Submit may overwrite the engine
+        // members before/while the queued command runs.
+        std::shared_ptr<BoundQuery> boundSh(bound.release());
+        auto plan = std::make_shared<MutationPlan>();
+        const UtqlContext ctxCopy = _ctx;
+
+        _pendingQuery = query;
+        _pendingAsName.clear();
+        _active = UtqlResult{};
+        _active.status = UtqlStatus::Running;
+        _activeQuery = query;
+        ++_generation;
+        _cancel.store(false);
+        _ready.store(false);
+        _running.store(true);
+        _activeStale = false;
+
+        ExecuteAfterDraw<MultiLayerFunctionCall>(
+            std::function<SdfLayerHandleVector()>([boundSh, ctxCopy, plan]() {
+                *plan = PlanUpdate(*boundSh, ctxCopy);
+                return SdfLayerHandleVector(plan->layers);
+            }),
+            std::function<void()>([this, boundSh, ctxCopy, plan]() {
+                ApplyUpdate(*boundSh, *plan, ctxCopy);
+                {
+                    std::lock_guard<std::mutex> lock(_pendingMutex);
+                    _pending = std::move(plan->manifest);
+                }
+                _ready.store(true);
+            }));
+        return;
+    }
 
     _bound = std::move(bound);
     _pendingQuery = query;
@@ -96,7 +149,18 @@ void UtqlEngine::Submit(const std::string &query) {
     _activeStale = false;
 
     _dispatcher.Run([this]() {
-        UtqlResult r = Execute(*_bound, _ctx, _cancel);
+        // Shared scene lock for the whole read (USD: parallel reads, single
+        // writer). Cancellable acquire: CancelRunningQuery sets _cancel then
+        // joins, so the worker must be able to give up while a writer (who
+        // may hold the lock for a whole drag span) is active.
+        UtqlResult r;
+        ScopedSceneRead sceneRead(_cancel);
+        if (sceneRead.Acquired()) {
+            r = Execute(*_bound, _ctx, _cancel);
+        } else {
+            r.status = UtqlStatus::OkDegraded;
+            r.message = "cancelled before execution (scene was being edited) — run again";
+        }
         {
             std::lock_guard<std::mutex> lock(_pendingMutex);
             _pending = std::move(r);

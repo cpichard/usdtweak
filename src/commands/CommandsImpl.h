@@ -42,3 +42,21 @@ struct UsdFunctionCall : public Command {
     SdfLayerHandle _layer;
     std::function<void()> _func;
 };
+
+// The multi-layer sibling of UsdFunctionCall, for edits whose destination
+// layers are only known after a planning step (e.g. a UTQL UPDATE spanning
+// several layers): `prepare` runs first (read-only) and returns the layers to
+// record, then `apply` runs with undo recording active on all of them. The
+// recorded edits are stored as a single SdfUndoRedoCommand; nothing is pushed
+// when `apply` makes no change (a dry run costs no undo entry).
+struct MultiLayerFunctionCall : public Command {
+    MultiLayerFunctionCall(std::function<SdfLayerHandleVector()> prepare, std::function<void()> apply)
+        : _prepare(std::move(prepare)), _apply(std::move(apply)) {}
+    ~MultiLayerFunctionCall() override {}
+
+    bool DoIt() override;
+    bool UndoIt() override { return false; }
+
+    std::function<SdfLayerHandleVector()> _prepare;
+    std::function<void()> _apply;
+};

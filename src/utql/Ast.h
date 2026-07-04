@@ -14,13 +14,19 @@ namespace utql {
 
 // -------------------------------------------------------------------- literals
 
-/// A literal value as written in the query.
+/// A literal value as written in the query. Tuple, Block and Array exist only
+/// on the write side (SET rvalues, design-mutation §3.1): `(1, 0, 0)` for
+/// vec/color/quat types, BLOCK for an SdfValueBlock, and `[e1, e2, …]` for
+/// array-typed attributes (whole-array assignment, M1.5 — elements are
+/// scalars or tuples, no nesting); the binder rejects them anywhere else.
 struct Literal {
-    enum class Kind { String, Number, Bool, Null };
+    enum class Kind { String, Number, Bool, Null, Tuple, Block, Array };
     Kind        kind = Kind::String;
     std::string str;          ///< String literals
     double      number = 0.0; ///< Number literals
     bool        boolean = false;
+    std::vector<double> tuple;        ///< Tuple literals (SET rvalues only)
+    std::vector<Literal> arrayElems;  ///< Array literals (SET rvalues only)
 };
 
 // ---------------------------------------------------------------- WHERE clause
@@ -140,9 +146,55 @@ struct OrderBy {
     bool        desc = false;
 };
 
+// ------------------------------------------------------- mutation (write side)
+
+/// Statement kind — fixed by the first token. FIND stays pure (design-mutation
+/// principle 1); UPDATE embeds the FIND targeting core plus mutation clauses.
+/// CREATE names a new prim path; DELETE removes authored specs (Layer world).
+enum class StatementKind { Find, Update, Create, Delete };
+
+/// One `SET <field> = <literal>` assignment of an UPDATE statement (M1).
+/// `SET VARIANT["set"] = "selection"` (M2) stores field == "VARIANT" plus the
+/// bracketed set name in `variantSet`.
+struct SetAssignment {
+    std::string field; ///< lvalue, upper-cased (ACTIVE, VALUE, DEFAULT_PRIM, …)
+    std::string variantSet; ///< VARIANT["set"] lvalue only (raw, case kept)
+    Literal     value;
+};
+
+/// One `CREATE ATTRIBUTE "name" TYPE "t" [VALUE lit] [INTERPOLATION "i"]` or
+/// `CREATE RELATIONSHIP "name" [TARGET "/p"]` clause of an UPDATE statement —
+/// the match-shaped creation form (design-mutation §5): add the property to
+/// every matched prim.
+struct CreateProperty {
+    bool        isRelationship = false;
+    std::string name;          ///< property name (raw, case kept)
+    std::string typeName;      ///< attribute value type (Sdf type name; required)
+    bool        hasValue = false;
+    Literal     value;         ///< initial default / AT-time sample (attributes)
+    std::string interpolation; ///< optional interpolation metadata (attributes)
+    std::string target;        ///< optional initial target path (relationships)
+};
+
+/// One `ADD <family> "value" [PRIM_PATH "/p"]` or `REMOVE <family> ["value"
+/// [PRIM_PATH "/p"]]` clause of an UPDATE statement — arc & list-op mutation
+/// (design-mutation §4, M3). Families: REFERENCE, PAYLOAD, INHERIT, SPECIALIZE,
+/// API (prim entities), SUBLAYER (LAYER), TARGET (relationships), CONNECTION
+/// (attributes). A REMOVE without a value removes the arcs matched by a
+/// positive same-family WHERE predicate (the §3.4 witness), or all of the
+/// row's arcs when there is none.
+struct ArcMutation {
+    bool        isRemove = false;
+    std::string family;   ///< upper-cased family name (REFERENCE, API, TARGET, …)
+    bool        hasValue = false;
+    std::string value;    ///< asset path / target path / schema name
+    std::string primPath; ///< optional PRIM_PATH (REFERENCE/PAYLOAD only)
+};
+
 // ----------------------------------------------------------------- the query
 
 struct Query {
+    StatementKind   statement = StatementKind::Find;
     std::string     entityName;     ///< raw entity token, upper-cased
     ComposingInto  composingInto;   ///< present only if .targetKind != None
     ComposedFrom   composedFrom;  ///< present only if .kind != None (design A4)
@@ -157,6 +209,23 @@ struct Query {
     bool            hasLimit = false;
     int             limit = 0;
     std::string     asName;
+
+    // UPDATE only (design-mutation §1/§3/§5). ON LAYER retargets a Stage-world
+    // write away from the stage's edit target; sets holds the SET assignments;
+    // createProps the per-row CREATE ATTRIBUTE/RELATIONSHIP clauses (M2);
+    // arcMutations the ADD/REMOVE arc clauses (M3), applied in clause order.
+    std::vector<SetAssignment>  sets;
+    std::vector<CreateProperty> createProps;
+    std::vector<ArcMutation>    arcMutations;
+    bool            hasOnLayer = false;
+    std::string     onLayer;
+
+    // CREATE statement only (design-mutation §6): the new prim's path plus the
+    // optional TYPE / SPECIFIER clauses (SPECIFIER is SDFPRIM-only, checked by
+    // the binder; empty = "def").
+    std::string     createPath;
+    std::string     createType;
+    std::string     createSpecifier;
 };
 
 } // namespace utql

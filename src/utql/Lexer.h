@@ -18,6 +18,8 @@ struct Token {
         Op,      ///< = != < <= > >=  (text holds the operator)
         LParen,  ///< (
         RParen,  ///< )
+        LBracket,///< [  (array literals, SET rvalues)
+        RBracket,///< ]
         Comma,   ///< ,
         End,     ///< end of input
     };

@@ -4,6 +4,7 @@
 #include "SdfCommandGroupRecorder.h"
 #include "SdfUndoRedoRecorder.h"
 #include "UndoLayerStateDelegate.h"
+#include "UsdSceneLock.h"
 #include <functional>
 #include <vector>
 
@@ -27,7 +28,14 @@ SdfUndoRedoRecorder *undoRedoRecorder = nullptr;
 
 void BeginEdition(SdfLayerRefPtr layer) {
     if (layer) {
-        // TODO: check there is no undoRedoRecorder alive
+        if (undoRedoRecorder) // already recording — keep lock/recorder pairing exact
+            return;
+        // The Begin/End span is the direct UI-thread write path (manipulator
+        // drags and widget sliders author every frame, outside the command
+        // queue). Hold the exclusive scene lock for the whole span so
+        // background readers never observe the scene mid-drag. The lock is
+        // reentrant: commands executed during the span still work.
+        UsdSceneLock::GetInstance().LockWrite();
         undoRedoRecorder = new SdfUndoRedoRecorder(layer);
         undoRedoRecorder->StartRecording();
     }
@@ -45,6 +53,7 @@ void EndEdition() {
         undoRedoRecorder->StopRecording();
         delete undoRedoRecorder;
         undoRedoRecorder = nullptr;
+        UsdSceneLock::GetInstance().UnlockWrite();
     }
 }
 

@@ -157,6 +157,8 @@ bool Lex(const std::string &src, std::vector<Token> &out, std::string &error, si
         // Punctuation
         if (c == '(') { push(Token::Kind::LParen, i); ++i; continue; }
         if (c == ')') { push(Token::Kind::RParen, i); ++i; continue; }
+        if (c == '[') { push(Token::Kind::LBracket, i); ++i; continue; }
+        if (c == ']') { push(Token::Kind::RBracket, i); ++i; continue; }
         if (c == ',') { push(Token::Kind::Comma, i);  ++i; continue; }
 
         // Word

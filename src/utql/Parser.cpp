@@ -31,7 +31,11 @@ bool IsReservedWord(const std::string &w) {
                                 "IN",     "AT",           "WHERE",   "RETURN", "ORDERED",
                                 "BY",     "LIMIT",        "AS",      "AND",    "OR",
                                 "CONNECTED", "UPSTREAM",   "DOWNSTREAM", "OF",  "WITHIN",
-                                "COMPOSED",  "INTO",       "FROM"};
+                                "COMPOSED",  "INTO",       "FROM",
+                                // Write side (design-mutation). ADD/REMOVE reserved
+                                // ahead of M3 so fields never squat the clause names.
+                                "UPDATE", "CREATE", "DELETE", "SET", "ON", "ADD",
+                                "REMOVE", "BLOCK"};
     for (const char *kw : kws)
         if (IEquals(w, kw))
             return true;
@@ -43,6 +47,12 @@ class Parser {
     Parser(const std::vector<Token> &toks) : _toks(toks) {}
 
     bool ParseQuery(Query &out) {
+        if (CurIsKeyword("UPDATE"))
+            return ParseUpdate(out);
+        if (CurIsKeyword("CREATE"))
+            return ParseCreate(out);
+        if (CurIsKeyword("DELETE"))
+            return ParseDelete(out);
         if (!ExpectKeyword("FIND"))
             return false;
         if (Cur().kind != Token::Kind::Word) {
@@ -275,6 +285,476 @@ class Parser {
         } else {
             Fail("Expected RESULTSET \"name\", LAYER \"id\" PATH \"p\", a quoted "
                  "path, or (\"a\",\"b\") after COMPOSED FROM");
+            return false;
+        }
+        return true;
+    }
+
+    // ---------------------------------------------------------------- UPDATE
+    // UPDATE <entity> [IN <scope>] [AT <time>] [WHERE <cond>] [ON LAYER "id"]
+    //        <mutation>+ [RETURN <fields>] [LIMIT n]
+    //   <mutation> = SET f = lit [, f = lit …]
+    //              | CREATE ATTRIBUTE "name" TYPE "t" [VALUE lit] [INTERPOLATION "i"]
+    //              | CREATE RELATIONSHIP "name" [TARGET "/p"]
+    //              | ADD <family> "value" [PRIM_PATH "/p"]
+    //              | REMOVE <family> ["value" [PRIM_PATH "/p"]]
+    // (design-mutation §1/§3/§4/§5.)
+    bool ParseUpdate(Query &out) {
+        out.statement = StatementKind::Update;
+        Advance(); // UPDATE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (USDPRIM, SDFPRIM, …) after UPDATE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+
+        if (CurIsKeyword("COMPOSING")) { // cross-world targeting (§2.1, M3)
+            if (!ParseComposingInto(out.composingInto))
+                return false;
+        }
+        if (CurIsKeyword("IN")) {
+            if (!ParseScope(out.scope))
+                return false;
+        }
+        if (CurIsKeyword("AT")) {
+            if (!ParseAt(out))
+                return false;
+        }
+        if (CurIsKeyword("WHERE")) {
+            Advance();
+            out.where = ParseOr();
+            if (_failed)
+                return false;
+            if (!out.where) {
+                Fail("Expected a condition after WHERE");
+                return false;
+            }
+        }
+        if (CurIsKeyword("ON")) {
+            Advance();
+            if (!ExpectKeyword("LAYER"))
+                return false;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted layer identifier after ON LAYER");
+                return false;
+            }
+            out.hasOnLayer = true;
+            out.onLayer = Cur().text;
+            Advance();
+        }
+        bool sawMutation = false;
+        while (true) {
+            if (CurIsKeyword("SET")) {
+                if (!ParseSet(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            if (CurIsKeyword("CREATE")) {
+                if (!ParseCreateProperty(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            if (CurIsKeyword("ADD") || CurIsKeyword("REMOVE")) {
+                if (!ParseArcMutation(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            break;
+        }
+        if (!sawMutation) {
+            Fail("Expected a mutation clause — SET f = …, CREATE ATTRIBUTE "
+                 "\"name\" TYPE \"…\", CREATE RELATIONSHIP \"name\", ADD "
+                 "<family> \"…\", or REMOVE <family>");
+            return false;
+        }
+        if (CurIsKeyword("RETURN")) {
+            if (!ParseReturn(out))
+                return false;
+        }
+        if (CurIsKeyword("LIMIT")) {
+            Advance();
+            if (Cur().kind != Token::Kind::Number) {
+                Fail("Expected an integer after LIMIT");
+                return false;
+            }
+            out.hasLimit = true;
+            out.limit = static_cast<int>(Cur().number);
+            Advance();
+        }
+        if (CurIsKeyword("AS")) { // parsed so the binder can give the §9 message
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted name after AS");
+                return false;
+            }
+            out.asName = Cur().text;
+            Advance();
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. Clauses must appear in order: UPDATE … [COMPOSING INTO] "
+                 "[IN] [AT] [WHERE] [ON LAYER] SET …/CREATE ATTRIBUTE …/ADD …/"
+                 "REMOVE … [RETURN] [LIMIT]");
+            return false;
+        }
+        return true;
+    }
+
+    // --------------------------------------------------- ADD / REMOVE (arcs)
+    // The arc & list-op mutation clauses of an UPDATE (design-mutation §4):
+    //   ADD <family> "value" [PRIM_PATH "/p"]
+    //   REMOVE <family> ["value" [PRIM_PATH "/p"]]
+    // The family set and its entity gating live in the binder.
+    bool ParseArcMutation(Query &out) {
+        ArcMutation am;
+        am.isRemove = CurIsKeyword("REMOVE");
+        Advance(); // ADD / REMOVE
+        const char *verb = am.isRemove ? "REMOVE" : "ADD";
+        if (Cur().kind != Token::Kind::Word) {
+            Fail(std::string("Expected an arc family after ") + verb +
+                 " — REFERENCE, PAYLOAD, INHERIT, SPECIALIZE, API, SUBLAYER, "
+                 "TARGET, or CONNECTION");
+            return false;
+        }
+        am.family = Upper(Cur().text);
+        Advance();
+        if (Cur().kind == Token::Kind::String) {
+            am.hasValue = true;
+            am.value = Cur().text;
+            Advance();
+        } else if (!am.isRemove) {
+            Fail("Expected a quoted value after ADD " + am.family +
+                 " (e.g. ADD " + am.family + " \"…\")");
+            return false;
+        }
+        if (CurIsKeyword("PRIM_PATH")) {
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted prim path after PRIM_PATH");
+                return false;
+            }
+            am.primPath = Cur().text;
+            Advance();
+        }
+        out.arcMutations.push_back(std::move(am));
+        return true;
+    }
+
+    // SET f = lit [, f = lit …]  — the lvalue may be VARIANT["set"] (M2).
+    bool ParseSet(Query &out) {
+        Advance(); // SET
+        while (true) {
+            if (Cur().kind != Token::Kind::Word || IsReservedWord(Cur().text)) {
+                Fail("Expected a field name after SET");
+                return false;
+            }
+            SetAssignment sa;
+            sa.field = Upper(Cur().text);
+            Advance();
+            if (sa.field == "VARIANT" && Cur().kind == Token::Kind::LBracket) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted set name in VARIANT[\"set\"]");
+                    return false;
+                }
+                sa.variantSet = Cur().text;
+                Advance();
+                if (Cur().kind != Token::Kind::RBracket) {
+                    Fail("Expected ']' after VARIANT[\"" + sa.variantSet + "\"");
+                    return false;
+                }
+                Advance();
+            }
+            if (Cur().kind != Token::Kind::Op || Cur().text != "=") {
+                Fail("Expected '=' in SET " + sa.field + " = …");
+                return false;
+            }
+            Advance();
+            if (!ParseSetLiteral(sa.value))
+                return false;
+            out.sets.push_back(std::move(sa));
+            if (Cur().kind == Token::Kind::Comma) {
+                Advance();
+                continue;
+            }
+            break;
+        }
+        return true;
+    }
+
+    // A SET rvalue: the WHERE literals plus BLOCK, tuple `(x, y, z)`, and
+    // array `[e1, e2, …]` (whole-array assignment, M1.5 — elements are
+    // scalars or tuples; `[]` authors an empty array).
+    bool ParseSetLiteral(Literal &lit) {
+        if (CurIsKeyword("BLOCK")) {
+            lit.kind = Literal::Kind::Block;
+            Advance();
+            return true;
+        }
+        if (Cur().kind == Token::Kind::LBracket) {
+            Advance();
+            lit.kind = Literal::Kind::Array;
+            if (Cur().kind == Token::Kind::RBracket) { // [] = empty array
+                Advance();
+                return true;
+            }
+            while (true) {
+                if (Cur().kind == Token::Kind::LBracket) {
+                    Fail("Nested arrays are not supported");
+                    return false;
+                }
+                if (CurIsKeyword("NULL") || CurIsKeyword("BLOCK")) {
+                    Fail("Array elements must be numbers, strings, booleans, "
+                         "or tuples");
+                    return false;
+                }
+                Literal elem;
+                if (!ParseSetLiteral(elem))
+                    return false;
+                lit.arrayElems.push_back(std::move(elem));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBracket) {
+                Fail("Expected ']'");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        if (Cur().kind == Token::Kind::LParen) {
+            Advance();
+            lit.kind = Literal::Kind::Tuple;
+            while (true) {
+                if (Cur().kind != Token::Kind::Number) {
+                    Fail("Expected a number inside a tuple literal (x, y, z)");
+                    return false;
+                }
+                lit.tuple.push_back(Cur().number);
+                Advance();
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RParen) {
+                Fail("Expected ')'");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        return ParseLiteral(lit);
+    }
+
+    // ------------------------------------------- CREATE ATTRIBUTE/RELATIONSHIP
+    // The per-row property-creation clause of an UPDATE (design-mutation §5):
+    //   CREATE ATTRIBUTE "name" TYPE "t" [VALUE <lit>] [INTERPOLATION "i"]
+    //   CREATE RELATIONSHIP "name" [TARGET "/p"]
+    bool ParseCreateProperty(Query &out) {
+        Advance(); // CREATE
+        CreateProperty cp;
+        if (AcceptKeyword("RELATIONSHIP")) {
+            cp.isRelationship = true;
+        } else if (!AcceptKeyword("ATTRIBUTE")) {
+            Fail("Expected ATTRIBUTE or RELATIONSHIP after CREATE in an UPDATE "
+                 "(new prims use the CREATE USDPRIM/SDFPRIM statement)");
+            return false;
+        }
+        if (Cur().kind != Token::Kind::String) {
+            Fail(std::string("Expected a quoted property name after CREATE ") +
+                 (cp.isRelationship ? "RELATIONSHIP" : "ATTRIBUTE"));
+            return false;
+        }
+        cp.name = Cur().text;
+        Advance();
+        if (cp.isRelationship) {
+            if (AcceptKeyword("TARGET")) {
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted path after TARGET");
+                    return false;
+                }
+                cp.target = Cur().text;
+                Advance();
+            }
+        } else {
+            while (true) {
+                if (CurIsKeyword("TYPE")) {
+                    Advance();
+                    if (Cur().kind != Token::Kind::String) {
+                        Fail("Expected a quoted type name after TYPE "
+                             "(e.g. TYPE \"float\")");
+                        return false;
+                    }
+                    cp.typeName = Cur().text;
+                    Advance();
+                    continue;
+                }
+                if (CurIsKeyword("VALUE")) {
+                    Advance();
+                    if (!ParseSetLiteral(cp.value))
+                        return false;
+                    cp.hasValue = true;
+                    continue;
+                }
+                if (CurIsKeyword("INTERPOLATION")) {
+                    Advance();
+                    if (Cur().kind != Token::Kind::String) {
+                        Fail("Expected a quoted value after INTERPOLATION");
+                        return false;
+                    }
+                    cp.interpolation = Cur().text;
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (cp.typeName.empty()) {
+                Fail("CREATE ATTRIBUTE \"" + cp.name +
+                     "\" requires TYPE \"…\" (e.g. TYPE \"float\")");
+                return false;
+            }
+        }
+        out.createProps.push_back(std::move(cp));
+        return true;
+    }
+
+    // ---------------------------------------------------------------- CREATE
+    // CREATE USDPRIM "/path" [TYPE "Mesh"] [ON LAYER "id"]
+    // CREATE SDFPRIM "/path" IN LAYER "id" [SPECIFIER "def"] [TYPE "Mesh"]
+    // (design-mutation §6 — the clauses after the path may come in any order.)
+    bool ParseCreate(Query &out) {
+        out.statement = StatementKind::Create;
+        Advance(); // CREATE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (USDPRIM or SDFPRIM) after CREATE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+        if (Cur().kind != Token::Kind::String) {
+            Fail("Expected a quoted prim path after CREATE " + out.entityName);
+            return false;
+        }
+        out.createPath = Cur().text;
+        Advance();
+        while (true) {
+            if (CurIsKeyword("TYPE")) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted type name after TYPE");
+                    return false;
+                }
+                out.createType = Cur().text;
+                Advance();
+                continue;
+            }
+            if (CurIsKeyword("SPECIFIER")) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected \"def\", \"over\" or \"class\" after SPECIFIER");
+                    return false;
+                }
+                out.createSpecifier = Cur().text;
+                Advance();
+                continue;
+            }
+            if (CurIsKeyword("IN")) {
+                if (!ParseScope(out.scope))
+                    return false;
+                continue;
+            }
+            if (CurIsKeyword("ON")) {
+                Advance();
+                if (!ExpectKeyword("LAYER"))
+                    return false;
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted layer identifier after ON LAYER");
+                    return false;
+                }
+                out.hasOnLayer = true;
+                out.onLayer = Cur().text;
+                Advance();
+                continue;
+            }
+            break;
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. CREATE takes: CREATE USDPRIM \"/path\" [TYPE \"t\"] "
+                 "[ON LAYER \"id\"] | CREATE SDFPRIM \"/path\" IN LAYER \"id\" "
+                 "[SPECIFIER \"def\"] [TYPE \"t\"]");
+            return false;
+        }
+        return true;
+    }
+
+    // ---------------------------------------------------------------- DELETE
+    // DELETE <entity> [IN <scope>] [WHERE <cond>] [RETURN <fields>] [LIMIT n]
+    // (design-mutation §7 — Layer world only, enforced by the binder.)
+    bool ParseDelete(Query &out) {
+        out.statement = StatementKind::Delete;
+        Advance(); // DELETE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (SDFPRIM, SDFATTRIBUTE, SDFRELATIONSHIP) "
+                 "after DELETE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+        if (CurIsKeyword("COMPOSING")) { // cross-world targeting (§2.1, M3)
+            if (!ParseComposingInto(out.composingInto))
+                return false;
+        }
+        if (CurIsKeyword("IN")) {
+            if (!ParseScope(out.scope))
+                return false;
+        }
+        if (CurIsKeyword("WHERE")) {
+            Advance();
+            out.where = ParseOr();
+            if (_failed)
+                return false;
+            if (!out.where) {
+                Fail("Expected a condition after WHERE");
+                return false;
+            }
+        }
+        if (CurIsKeyword("RETURN")) {
+            if (!ParseReturn(out))
+                return false;
+        }
+        if (CurIsKeyword("LIMIT")) {
+            Advance();
+            if (Cur().kind != Token::Kind::Number) {
+                Fail("Expected an integer after LIMIT");
+                return false;
+            }
+            out.hasLimit = true;
+            out.limit = static_cast<int>(Cur().number);
+            Advance();
+        }
+        if (CurIsKeyword("AS")) { // parsed so the binder can give the §9 message
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted name after AS");
+                return false;
+            }
+            out.asName = Cur().text;
+            Advance();
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. Clauses must appear in order: DELETE … [COMPOSING INTO] "
+                 "[IN] [WHERE] [RETURN] [LIMIT]");
             return false;
         }
         return true;
@@ -600,7 +1080,11 @@ class Parser {
     }
 
     std::unique_ptr<WhereExpr> ParsePredicate() {
-        if (Cur().kind != Token::Kind::Word || IsReservedWord(Cur().text)) {
+        // TARGET is both a clause keyword (PER TARGET, CREATE RELATIONSHIP …
+        // TARGET, ADD TARGET) and the relationship-targets field (v0.12
+        // rename) — in a predicate position it can only be the field.
+        if (Cur().kind != Token::Kind::Word ||
+            (IsReservedWord(Cur().text) && !IEquals(Cur().text, "TARGET"))) {
             Fail("Expected a condition");
             return nullptr;
         }

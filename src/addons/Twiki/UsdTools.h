@@ -23,7 +23,8 @@ ToolDefs BuildReadOnlyToolDefinitions();
 // `path`. (Indicative list — see UsdTools.cpp for the full, current set.)
 //   set_attributes, set_actives, set_variant, set_visibilities, set_xforms,
 //   create_prims, delete_prims, add_references/payloads/inherits/specializes,
-//   add_sublayer, set_relationship, select_prims, set_edit_target
+//   add_sublayer, set_relationship, select_prims, set_edit_target,
+//   run_mutation (UTQL UPDATE/CREATE/DELETE — the write side of run_query)
 ToolDefs BuildEditToolDefinitions();
 
 // All v1 tools (read-only + edit), in the order above. Use this for the

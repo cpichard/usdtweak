@@ -1,5 +1,7 @@
 #include "Binder.h"
 
+#include <pxr/usd/sdf/schema.h>
+
 #include <map>
 
 namespace utql {
@@ -296,6 +298,73 @@ std::string ValidFieldsFor(Category c, UtqlWorld world) {
     return FieldListFor(c);
 }
 
+// ------------------------------------------------- writable fields (mutation M1)
+
+/// What a SET assignment accepts (design-mutation §3). `Value` is the
+/// type-polymorphic attribute VALUE lvalue (scalar/tuple/NULL/BLOCK, coerced to
+/// the attribute's declared type per row).
+struct WritableField {
+    bool known = false;
+    enum class Accepts { Bool, String, Number, Value } accepts = Accepts::Bool;
+    bool nullable = true;           ///< SET f = NULL clears the authored opinion
+    const char *enumVals = nullptr; ///< restricted string values, for the error hint
+};
+
+WritableField LookupWritable(Category c, const std::string &f) {
+    using A = WritableField::Accepts;
+    auto mk = [](A a, bool nullable, const char *ev = nullptr) {
+        return WritableField{true, a, nullable, ev};
+    };
+    switch (c) {
+        case Category::Prim:
+            if (f == "ACTIVE")       return mk(A::Bool, true);
+            if (f == "INSTANCEABLE") return mk(A::Bool, true);
+            if (f == "KIND")         return mk(A::String, true);
+            if (f == "TYPE")         return mk(A::String, true);
+            if (f == "SPECIFIER")    return mk(A::String, false, "def, over, class");
+            break;
+        case Category::Attribute:
+            if (f == "VALUE")         return mk(A::Value, true);
+            if (f == "INTERPOLATION") return mk(A::String, true);
+            if (f == "VARIABILITY")   return mk(A::String, false, "varying, uniform");
+            break;
+        case Category::Relationship:
+            break; // nothing writable in M1 (ADD/REMOVE TARGET is M3)
+        case Category::Layer:
+            if (f == "DEFAULT_PRIM")          return mk(A::String, true);
+            if (f == "UP_AXIS")               return mk(A::String, true, "Y, Z");
+            if (f == "START_TIME")            return mk(A::Number, true);
+            if (f == "END_TIME")              return mk(A::Number, true);
+            if (f == "TIMECODES_PER_SECOND")  return mk(A::Number, true);
+            if (f == "FRAMES_PER_SECOND")     return mk(A::Number, true);
+            if (f == "METERS_PER_UNIT")       return mk(A::Number, true);
+            if (f == "MUTED")                 return mk(A::Bool, false);
+            break;
+    }
+    return WritableField{};
+}
+
+/// The "Writable: …" hint per entity category and world (SPECIFIER and
+/// VARIABILITY are authored-only, so they appear only in the Layer-world list).
+std::string WritableListFor(Category c, UtqlWorld world) {
+    switch (c) {
+        case Category::Prim:
+            return world == UtqlWorld::Stage
+                       ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"]"
+                       : "ACTIVE, INSTANCEABLE, KIND, TYPE, SPECIFIER, "
+                         "VARIANT[\"set\"]";
+        case Category::Attribute:
+            return world == UtqlWorld::Stage ? "VALUE, INTERPOLATION"
+                                             : "VALUE, INTERPOLATION, VARIABILITY";
+        case Category::Relationship:
+            return "(none — edit targets with ADD TARGET \"/p\" / REMOVE TARGET)";
+        case Category::Layer:
+            return "DEFAULT_PRIM, UP_AXIS, START_TIME, END_TIME, "
+                   "TIMECODES_PER_SECOND, FRAMES_PER_SECOND, METERS_PER_UNIT, MUTED";
+    }
+    return "";
+}
+
 // ---------------------------------------------------- composition families
 
 bool IsHasGate(const std::string &f) {
@@ -493,11 +562,28 @@ void CountFamilyMatches(const WhereExpr &e, std::map<Family, int> &counts) {
 class Binder {
   public:
     bool Run(Query &&q, BoundQuery &out) {
-        // 1. Entity → world.
+        // 1. Entity → world. A common CREATE mistake gets guidance before the
+        //    generic unknown-entity message: properties are an UPDATE clause.
+        if (q.statement == StatementKind::Create &&
+            (q.entityName == "ATTRIBUTE" || q.entityName == "RELATIONSHIP")) {
+            Fail("CREATE " + q.entityName + " is an UPDATE clause — properties "
+                 "are created per matched prim: UPDATE USDPRIM|SDFPRIM WHERE … "
+                 "CREATE " + q.entityName + " \"name\" ….");
+            return false;
+        }
         if (!ResolveEntity(q.entityName, out.entity, out.world))
             return false;
         _entity = out.entity;
         _cat = CategoryOf(out.entity);
+        _isUpdate = (q.statement == StatementKind::Update);
+        out.statement = q.statement;
+
+        // 1b. Statement-level checks that fix the world/scope rules before the
+        //     generic scope validation can give a misleading message.
+        if (q.statement == StatementKind::Create && !ValidateCreate(q))
+            return false;
+        if (q.statement == StatementKind::Delete && !ValidateDelete(q))
+            return false;
 
         // 2. COMPOSING INTO — composition inversion (design §4). Layer-world
         //    SDF entities only; mutually exclusive with IN.
@@ -510,6 +596,13 @@ class Binder {
             }
             if (q.scope.kind != ScopeSpec::Kind::Default) {
                 Fail("COMPOSING INTO replaces IN; remove the IN clause.");
+                return false;
+            }
+            // PER TARGET is a read-side display fan-out (one row per
+            // (spec, target) pair); a mutation writes each spec once.
+            if (q.statement != StatementKind::Find && q.composingInto.perTarget) {
+                Fail("PER TARGET is a display fan-out; a mutation statement "
+                     "writes each authored spec once. Remove PER TARGET.");
                 return false;
             }
         }
@@ -562,8 +655,11 @@ class Binder {
             }
         }
 
-        // 3. Scope.
-        if (!ValidateScope(q.scope, out.world))
+        // 3. Scope. CREATE owns its scope rules (ValidateCreate above): the
+        //    generic world/scope matrix would reject CREATE SDFPRIM IN LAYER's
+        //    Stage-vs-Layer wording before the §6 messages could apply.
+        if (q.statement != StatementKind::Create &&
+            !ValidateScope(q.scope, out.world))
             return false;
 
         // 4. AT — attribute entities only (design §2).
@@ -579,13 +675,21 @@ class Binder {
         if (q.where && !ValidateExpr(*q.where, out.world))
             return false;
 
-        // 6. RETURN / 7. ORDERED BY display fields.
-        for (const auto &f : q.returnFields)
-            if (!ValidateDisplayField(f, out.world, "RETURN"))
-                return false;
-        for (const auto &ob : q.orderBy)
-            if (!ValidateDisplayField(ob.field, out.world, "ORDERED BY"))
-                return false;
+        // 6. RETURN / 7. ORDERED BY display fields. A mutation statement's
+        //    RETURN selects manifest columns instead (design-mutation §8),
+        //    checked in ValidateUpdate / ValidateDelete.
+        if (q.statement == StatementKind::Find) {
+            for (const auto &f : q.returnFields)
+                if (!ValidateDisplayField(f, out.world, "RETURN"))
+                    return false;
+            for (const auto &ob : q.orderBy)
+                if (!ValidateDisplayField(ob.field, out.world, "ORDERED BY"))
+                    return false;
+        }
+
+        // 5b. UPDATE-specific checks (design-mutation §1/§2/§3/§9).
+        if (_isUpdate && !ValidateUpdate(q, out.world))
+            return false;
 
         if (q.hasLimit && q.limit < 0) {
             Fail("LIMIT must be non-negative.");
@@ -612,6 +716,8 @@ class Binder {
         out.composedFrom = std::move(q.composedFrom);
         out.connected = std::move(q.connected);
         out.scope = std::move(q.scope);
+        out.hasAt = q.hasAt;
+        out.atTime = q.atTime;
         out.where = std::move(q.where);
         out.returnAll = q.returnAll;
         out.returnFields = std::move(q.returnFields);
@@ -619,6 +725,14 @@ class Binder {
         out.hasLimit = q.hasLimit;
         out.limit = q.limit;
         out.asName = std::move(q.asName);
+        out.sets = std::move(q.sets);
+        out.createProps = std::move(q.createProps);
+        out.arcMutations = std::move(q.arcMutations);
+        out.hasOnLayer = q.hasOnLayer;
+        out.onLayer = std::move(q.onLayer);
+        out.createPath = std::move(q.createPath);
+        out.createType = std::move(q.createType);
+        out.createSpecifier = std::move(q.createSpecifier);
         out.warnings = std::move(_warnings);
         return true;
     }
@@ -896,6 +1010,422 @@ class Binder {
         }
     }
 
+    // ---------------------------------------------- CREATE / DELETE (mutation M2)
+
+    /// Validate a CREATE statement (design-mutation §6): prim entities only,
+    /// an absolute prim path, and the per-world destination rules — USDPRIM
+    /// targets the current stage (ON LAYER optional), SDFPRIM requires the
+    /// IN LAYER destination.
+    bool ValidateCreate(const Query &q) {
+        if (_entity == UtqlEntity::UsdAttribute || _entity == UtqlEntity::SdfAttribute ||
+            _entity == UtqlEntity::UsdRelationship || _entity == UtqlEntity::SdfRelationship) {
+            Fail(std::string("CREATE ") + EntityName(_entity) + " is not a "
+                 "statement — properties are created per matched prim: UPDATE "
+                 "USDPRIM|SDFPRIM WHERE … CREATE ATTRIBUTE \"name\" TYPE \"…\".");
+            return false;
+        }
+        if (_entity == UtqlEntity::Layer) {
+            Fail("CREATE LAYER is not supported — create new files from the "
+                 "Content Browser.");
+            return false;
+        }
+        std::string perr;
+        if (!SdfPath::IsValidPathString(q.createPath, &perr)) {
+            Fail("CREATE: \"" + q.createPath + "\" is not a valid path" +
+                 (perr.empty() ? "" : " (" + perr + ")") + ".");
+            return false;
+        }
+        const SdfPath path(q.createPath);
+        if (!path.IsAbsolutePath() || !path.IsPrimPath()) {
+            Fail("CREATE needs an absolute prim path, e.g. \"/World/lights/key\".");
+            return false;
+        }
+        if (_entity == UtqlEntity::UsdPrim) {
+            if (q.scope.kind != ScopeSpec::Kind::Default) {
+                Fail("CREATE USDPRIM targets the current stage (IN scopes are "
+                     "not supported yet); use ON LAYER \"id\" to pick the "
+                     "destination layer.");
+                return false;
+            }
+            if (!q.createSpecifier.empty()) {
+                Fail("SPECIFIER is authored-only; CREATE USDPRIM defines a "
+                     "\"def\" prim. Use CREATE SDFPRIM \"/path\" IN LAYER "
+                     "\"id\" SPECIFIER \"over\".");
+                return false;
+            }
+            return true;
+        }
+        // SDFPRIM — the authored form.
+        if (q.scope.kind != ScopeSpec::Kind::Layer || q.scope.ids.size() != 1) {
+            Fail("CREATE SDFPRIM requires IN LAYER \"id\" — an authored spec "
+                 "needs a destination layer.");
+            return false;
+        }
+        if (q.hasOnLayer) {
+            Fail("ON LAYER applies to Stage-world writes; the IN scope already "
+                 "names the destination layer.");
+            return false;
+        }
+        if (!q.createSpecifier.empty() && q.createSpecifier != "def" &&
+            q.createSpecifier != "over" && q.createSpecifier != "class") {
+            Fail("SPECIFIER accepts: def, over, class.");
+            return false;
+        }
+        return true;
+    }
+
+    /// Validate a DELETE statement (design-mutation §7): authored specs only
+    /// (Layer world), mandatory explicit selection (fork F2), manifest RETURN
+    /// columns, no AS.
+    bool ValidateDelete(const Query &q) {
+        if (_entity == UtqlEntity::UsdPrim || _entity == UtqlEntity::UsdAttribute ||
+            _entity == UtqlEntity::UsdRelationship) {
+            Fail("DELETE is authored-only. Deactivate instead (UPDATE USDPRIM "
+                 "… SET ACTIVE = false) or delete the authored specs (DELETE "
+                 "SDFPRIM IN LAYER … WHERE …).");
+            return false;
+        }
+        if (_entity == UtqlEntity::Layer) {
+            Fail("DELETE applies to authored specs: SDFPRIM, SDFATTRIBUTE, "
+                 "SDFRELATIONSHIP.");
+            return false;
+        }
+        using K = ScopeSpec::Kind;
+        // COMPOSING INTO qualifies as explicit selection (fork F2): its target
+        // set is a deliberate, bounded choice (§2.1's delete-everywhere).
+        const bool namedScope = (q.scope.kind == K::Resultset || q.scope.kind == K::Layer ||
+                                 q.scope.kind == K::Layers ||
+                                 q.composingInto.targetKind != ComposingInto::TargetKind::None);
+        if (!q.where && !namedScope) {
+            Fail("DELETE without WHERE removes every spec. Add WHERE (or IN "
+                 "RESULTSET \"name\" / IN LAYER \"id\"), or spell it "
+                 "explicitly: WHERE PATH UNDER \"/\".");
+            return false;
+        }
+        if (!q.asName.empty()) {
+            Fail("Mutation statements do not cache result sets. Re-run a FIND "
+                 "to verify.");
+            return false;
+        }
+        for (const auto &f : q.returnFields) {
+            if (f != "PATH" && f != "LAYER") {
+                Fail("RETURN on DELETE selects manifest columns. Valid: PATH, "
+                     "LAYER.");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ------------------------------------------------- UPDATE (mutation M1)
+
+    /// Validate the write side of an UPDATE statement: mandatory explicit
+    /// selection (fork F2), ON LAYER world rules, no AS, manifest RETURN
+    /// columns, and each SET assignment against the writable-field table.
+    bool ValidateUpdate(const Query &q, UtqlWorld world) {
+        // F2 — an unbounded UPDATE is the classic without-WHERE foot-gun. A
+        // WHERE, an IN RESULTSET, an explicitly *named* scope, or a COMPOSING
+        // INTO target qualifies; broad scopes (LAYERSTACK / SUBLAYERS /
+        // STAGES "*" / none) do not.
+        using K = ScopeSpec::Kind;
+        const bool namedScope = (q.scope.kind == K::Resultset || q.scope.kind == K::Layer ||
+                                 q.scope.kind == K::Layers ||
+                                 q.composingInto.targetKind != ComposingInto::TargetKind::None);
+        if (!q.where && !namedScope) {
+            Fail("UPDATE without WHERE writes to every row. Add WHERE (or IN "
+                 "RESULTSET \"name\" / IN LAYER \"id\"), or spell it explicitly: "
+                 "WHERE PATH UNDER \"/\".");
+            return false;
+        }
+
+        if (q.hasOnLayer && world == UtqlWorld::Layer) {
+            Fail("ON LAYER applies to Stage-world writes; the IN scope already "
+                 "names the destination layer.");
+            return false;
+        }
+
+        if (!q.asName.empty()) {
+            Fail("Mutation statements do not cache result sets. Re-run a FIND "
+                 "to verify.");
+            return false;
+        }
+
+        // RETURN on UPDATE selects manifest columns (design-mutation §8).
+        for (const auto &f : q.returnFields) {
+            if (f != "PATH" && f != "LAYER" && f != "FIELD" && f != "OLD" && f != "NEW") {
+                Fail("RETURN on UPDATE selects manifest columns. Valid: PATH, "
+                     "LAYER, FIELD, OLD, NEW.");
+                return false;
+            }
+        }
+
+        for (const SetAssignment &sa : q.sets)
+            if (!ValidateAssignment(sa, world))
+                return false;
+
+        // CREATE ATTRIBUTE/RELATIONSHIP clauses (design-mutation §5, M2) —
+        // per-row property creation, prim entities only.
+        if (!q.createProps.empty() && _cat != Category::Prim) {
+            Fail("CREATE ATTRIBUTE/RELATIONSHIP clauses apply to prim entities "
+                 "— UPDATE USDPRIM or SDFPRIM.");
+            return false;
+        }
+        for (const CreateProperty &cp : q.createProps) {
+            if (!SdfPath::IsValidNamespacedIdentifier(cp.name)) {
+                Fail("\"" + cp.name + "\" is not a valid property name.");
+                return false;
+            }
+            if (cp.isRelationship) {
+                if (!cp.target.empty() && !SdfPath::IsValidPathString(cp.target)) {
+                    Fail("TARGET \"" + cp.target + "\" is not a valid path.");
+                    return false;
+                }
+                continue;
+            }
+            if (!SdfSchema::GetInstance().FindType(cp.typeName)) {
+                Fail("Unknown attribute TYPE \"" + cp.typeName + "\" — use an "
+                     "Sdf value type name like float, double3, color3f, string, "
+                     "asset, float[].");
+                return false;
+            }
+            if (cp.hasValue && (cp.value.kind == Literal::Kind::Null ||
+                                cp.value.kind == Literal::Kind::Block)) {
+                Fail("VALUE on CREATE ATTRIBUTE authors an initial value; omit "
+                     "VALUE instead of NULL/BLOCK.");
+                return false;
+            }
+        }
+
+        // ADD/REMOVE arc clauses (design-mutation §4, M3).
+        for (const ArcMutation &am : q.arcMutations)
+            if (!ValidateArcMutation(am))
+                return false;
+        return true;
+    }
+
+    /// Validate one ADD/REMOVE clause (design-mutation §4): known family,
+    /// entity gating (arc families live on prims, SUBLAYER on LAYER, TARGET on
+    /// relationships, CONNECTION on attributes), and value shape.
+    bool ValidateArcMutation(const ArcMutation &am) {
+        const std::string &fam = am.family;
+        const char *verb = am.isRemove ? "REMOVE" : "ADD";
+
+        if (fam == "VARIANT" || fam == "VARIANT_SET") {
+            Fail("Variant authoring is not supported yet — SET VARIANT[\"set\"]"
+                 " = \"selection\" switches an existing selection.");
+            return false;
+        }
+
+        Category host;
+        const char *hostHint;
+        bool valueIsPath = false;
+        if (fam == "REFERENCE" || fam == "PAYLOAD" || fam == "INHERIT" ||
+            fam == "SPECIALIZE" || fam == "API") {
+            host = Category::Prim;
+            hostHint = "prim entities — UPDATE USDPRIM or SDFPRIM";
+            valueIsPath = (fam == "INHERIT" || fam == "SPECIALIZE");
+        } else if (fam == "SUBLAYER") {
+            host = Category::Layer;
+            hostHint = "the LAYER entity — UPDATE LAYER";
+        } else if (fam == "TARGET") {
+            host = Category::Relationship;
+            hostHint = "relationship entities — UPDATE USDRELATIONSHIP or "
+                       "SDFRELATIONSHIP";
+            valueIsPath = true;
+        } else if (fam == "CONNECTION") {
+            host = Category::Attribute;
+            hostHint = "attribute entities — UPDATE USDATTRIBUTE or "
+                       "SDFATTRIBUTE";
+            valueIsPath = true;
+        } else {
+            Fail(std::string(verb) + " " + fam + ": unknown arc family. Valid: "
+                 "REFERENCE, PAYLOAD, INHERIT, SPECIALIZE, API (prims), "
+                 "SUBLAYER (LAYER), TARGET (relationships), CONNECTION "
+                 "(attributes).");
+            return false;
+        }
+        if (_cat != host) {
+            Fail(std::string(verb) + " " + fam + " applies to " + hostHint + ".");
+            return false;
+        }
+
+        if (!am.primPath.empty()) {
+            if (fam != "REFERENCE" && fam != "PAYLOAD") {
+                Fail("PRIM_PATH applies to REFERENCE/PAYLOAD arcs.");
+                return false;
+            }
+            const SdfPath p(SdfPath::IsValidPathString(am.primPath) ? am.primPath : "");
+            if (p.IsEmpty() || !p.IsAbsolutePath() || !p.IsPrimPath()) {
+                Fail("PRIM_PATH \"" + am.primPath + "\" is not an absolute "
+                     "prim path.");
+                return false;
+            }
+        }
+
+        if (!am.isRemove && am.value.empty() &&
+            !((fam == "REFERENCE" || fam == "PAYLOAD") && !am.primPath.empty())) {
+            Fail("ADD " + fam + " needs a non-empty value" +
+                 ((fam == "REFERENCE" || fam == "PAYLOAD")
+                      ? " (or PRIM_PATH \"/p\" for an internal arc)."
+                      : "."));
+            return false;
+        }
+
+        if (valueIsPath && am.hasValue && !am.value.empty()) {
+            const SdfPath p(SdfPath::IsValidPathString(am.value) ? am.value : "");
+            const bool primOnly = (fam == "INHERIT" || fam == "SPECIALIZE");
+            if (p.IsEmpty() || !p.IsAbsolutePath() || (primOnly && !p.IsPrimPath())) {
+                Fail(std::string(verb) + " " + fam + ": \"" + am.value +
+                     "\" is not an absolute " +
+                     (primOnly ? "prim path." : "path."));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool ValidateAssignment(const SetAssignment &sa, UtqlWorld world) {
+        const std::string &f = sa.field;
+
+        // §9 catalog special cases, most specific first.
+        if (f == "NAME" || f == "PATH") {
+            Fail("Rename/reparent is not supported yet (namespace editing is "
+                 "deferred).");
+            return false;
+        }
+        if (_cat == Category::Prim && (f == "VALUE" || StartsWith(f, "VALUE."))) {
+            Fail("VALUE is an attribute field. UPDATE USDATTRIBUTE instead, or "
+                 "add one per matched prim with CREATE ATTRIBUTE \"name\" TYPE "
+                 "\"…\" VALUE ….");
+            return false;
+        }
+        // VARIANT["set"] selection (M2) — a scalar per-set assignment, unlike
+        // the VARIANT.* read family. Checked before the family gate so SET
+        // VARIANT gets selection guidance, not the arc/list error.
+        if (f == "VARIANT" || f == "VARIANT.SET" || f == "VARIANT.SELECTION") {
+            if (sa.variantSet.empty()) {
+                Fail("SET VARIANT selects per set: SET VARIANT[\"set\"] = "
+                     "\"selection\" (e.g. SET VARIANT[\"lod\"] = \"proxy\").");
+                return false;
+            }
+            if (_cat != Category::Prim) {
+                Fail("VARIANT[\"…\"] applies to prim entities (USDPRIM / "
+                     "SDFPRIM).");
+                return false;
+            }
+            if (sa.value.kind == Literal::Kind::String ||
+                sa.value.kind == Literal::Kind::Null)
+                return true;
+            Fail("VARIANT[\"" + sa.variantSet + "\"] expects a quoted variant "
+                 "name, or NULL to clear the selection.");
+            return false;
+        }
+        if (_cat == Category::Prim && f == "SPECIFIER" && world == UtqlWorld::Stage) {
+            Fail("SPECIFIER is authored-only. UPDATE SDFPRIM IN LAYER \"…\" "
+                 "instead.");
+            return false;
+        }
+        if (_cat == Category::Attribute && f == "VARIABILITY" && world == UtqlWorld::Stage) {
+            Fail("VARIABILITY is creation-time metadata; author it on the spec: "
+                 "UPDATE SDFATTRIBUTE IN LAYER \"…\".");
+            return false;
+        }
+        // Arc families are lists, not scalars — they get ADD/REMOVE verbs (§4).
+        if (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)) {
+            std::string fam =
+                f.find('.') == std::string::npos ? f : f.substr(0, f.find('.'));
+            if (StartsWith(fam, "HAS_"))
+                fam = fam.substr(4); // HAS_REFERENCE gate → the REFERENCE family
+            Fail(f + " is an arc/list field; SET assigns scalars. Use ADD " +
+                 fam + " \"…\" / REMOVE " + fam + " instead.");
+            return false;
+        }
+
+        const WritableField wf = LookupWritable(_cat, f);
+        if (!wf.known) {
+            // Distinguish a read-only known field from an unknown one.
+            const bool readable = LookupField(_cat, f).known;
+            if (readable)
+                Fail("Field " + f + " is not writable. Writable for " +
+                     EntityName(_entity) + ": " + WritableListFor(_cat, world) + ".");
+            else
+                Fail("Field " + f + " not valid for " + EntityName(_entity) +
+                     ". Writable: " + WritableListFor(_cat, world) + ".");
+            return false;
+        }
+
+        // Literal kind vs what the field accepts.
+        using A = WritableField::Accepts;
+        using LK = Literal::Kind;
+        switch (sa.value.kind) {
+            case LK::Null:
+                if (!wf.nullable) {
+                    Fail(f + " cannot be cleared with NULL; assign a value.");
+                    return false;
+                }
+                return true;
+            case LK::Block:
+                if (wf.accepts != A::Value) {
+                    Fail("BLOCK applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Tuple:
+                if (wf.accepts != A::Value) {
+                    Fail("A tuple literal applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Array:
+                if (wf.accepts != A::Value) {
+                    Fail("An array literal applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Bool:
+                if (wf.accepts == A::Bool || wf.accepts == A::Value)
+                    return true;
+                Fail(f + " expects a " +
+                     (wf.accepts == A::Number ? "number" : "string") +
+                     ", not a boolean.");
+                return false;
+            case LK::Number:
+                if (wf.accepts == A::Number || wf.accepts == A::Value)
+                    return true;
+                Fail(f + " expects a " + (wf.accepts == A::Bool ? "boolean" : "string") +
+                     ", not a number.");
+                return false;
+            case LK::String:
+                if (wf.accepts == A::String || wf.accepts == A::Value) {
+                    if (wf.enumVals) {
+                        // Restricted value set (SPECIFIER / VARIABILITY / UP_AXIS).
+                        const std::string allowed(wf.enumVals);
+                        std::string needle = sa.value.str;
+                        bool ok = false;
+                        size_t pos = 0;
+                        while (pos != std::string::npos) {
+                            size_t comma = allowed.find(", ", pos);
+                            const std::string item =
+                                allowed.substr(pos, comma == std::string::npos
+                                                        ? std::string::npos
+                                                        : comma - pos);
+                            if (item == needle) { ok = true; break; }
+                            pos = (comma == std::string::npos) ? comma : comma + 2;
+                        }
+                        if (!ok) {
+                            Fail(f + " accepts: " + allowed + ".");
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                Fail(f + " expects a " + (wf.accepts == A::Bool ? "boolean" : "number") +
+                     ", not a string.");
+                return false;
+        }
+        return true;
+    }
+
     bool ValidateDisplayField(const std::string &f, UtqlWorld world, const char *clause) {
         if (f == "PATH")
             return true;
@@ -957,6 +1487,7 @@ class Binder {
 
     UtqlEntity _entity = UtqlEntity::UsdPrim;
     Category   _cat = Category::Prim;
+    bool       _isUpdate = false;
     bool       _composing = false;
     bool       _perTarget = false;
     std::string _error;

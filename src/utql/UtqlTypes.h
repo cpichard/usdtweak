@@ -113,6 +113,16 @@ struct UtqlResult {
     uint64_t scanned = 0;
     uint64_t matched = 0;
 
+    // Mutation manifest (design-mutation §8). For a mutation statement, rows
+    // are per-change manifest entries (PATH, LAYER, FIELD, OLD, NEW — CREATE/
+    // DELETE default to PATH, LAYER) instead of match rows.
+    bool     isMutation = false;
+    bool     dryRun = false;  ///< true = manifest computed, nothing authored
+    uint64_t changed = 0;     ///< field writes applied (or would be, in a dry run)
+    uint64_t created = 0;     ///< prims/properties created (CREATE, M2)
+    uint64_t removed = 0;     ///< authored specs removed (DELETE, M2)
+    uint64_t skipped = 0;     ///< per-row soft skips (reasons in warnings)
+
     /// Stages traversed this query — kept alive so row selection can resolve a
     /// Stage-world source identifier back to its UsdStage.
     std::vector<UsdStageRefPtr> stages;

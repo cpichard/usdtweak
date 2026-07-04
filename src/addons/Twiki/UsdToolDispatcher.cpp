@@ -1,6 +1,8 @@
 #include "UsdToolDispatcher.h"
 
 #include "Commands.h"
+#include "CommandStack.h" // HasNextCommand + MultiLayerFunctionCall (run_mutation)
+#include "UsdSceneLock.h" // shared read scope around every tool call
 #include "JsHelpers.h"
 #include "Selection.h"
 
@@ -378,6 +380,16 @@ std::string _CapResult(std::string result) {
 
 std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
                                         const JsObject&    args) {
+    // Dispatch runs on the agent worker thread while the UI thread keeps
+    // drawing and executing commands. USD allows parallel READS but a single
+    // writing thread with no concurrent reader, so every tool call holds the
+    // shared side of UsdSceneLock: the UI's write paths (ExecuteCommands,
+    // BeginEdition/EndEdition drag spans) hold the exclusive side. Edits made
+    // by tools are still QUEUED (ExecuteAfterDraw / QueueOnUIThread) and run
+    // later on the UI thread under the exclusive lock — never here. If the
+    // user is mid-drag, the tool call simply waits for the drag to end.
+    ScopedSceneRead sceneRead;
+
     std::string result;
     try {
         if      (toolName == "get_stage_info")       result = GetStageInfo(args);
@@ -389,6 +401,7 @@ std::string UsdToolDispatcher::Dispatch(const std::string& toolName,
         else if (toolName == "list_children")        result = ListChildren(args);
         else if (toolName == "find_prims")           result = FindPrims(args);
         else if (toolName == "run_query")            result = RunQuery(args);
+        else if (toolName == "run_mutation")         result = RunMutation(args);
         else if (toolName == "read_list")            result = ReadList(args);
         else if (toolName == "manage_lists")         result = ManageLists(args);
         else if (toolName == "get_name_vocabulary")  result = GetNameVocabulary(args);
@@ -989,6 +1002,12 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     if (!utql::Bind(std::move(ast), bound, err))
         return "[error] compile: " + err + " — fix the query and retry";
 
+    // Write statements have their own tool (with dry-run + undo semantics);
+    // this path stays strictly read-only.
+    if (bound.statement != utql::StatementKind::Find)
+        return "[error] that statement writes (UPDATE/CREATE/DELETE) — "
+               "run_query is read-only. Use run_mutation instead.";
+
     // No scope guard: every bound query runs. COMPOSING INTO (composition
     // inversion) and COMPOSED FROM both resolve against the active stage set
     // below (ctx.currentStage / allStages / named), so neither needs special
@@ -1006,8 +1025,12 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
             ctx.allLayers.push_back(SdfLayerRefPtr(h));
     ctx.named        = &_namedResults;
 
-    std::atomic<bool> cancel{false};
-    const utql::UtqlResult res = utql::Execute(bound, ctx, cancel);
+    // Yield to a UI writer: when the user edits mid-scan, the pending-write
+    // flag aborts the scan and the result comes back OkDegraded ("treat as
+    // partial") — the model retries. Blocking the user's edit for the whole
+    // scan would be the worse trade.
+    const utql::UtqlResult res =
+        utql::Execute(bound, ctx, UsdSceneLock::GetInstance().WritePendingFlag());
 
     // Cache under the AS name so a later query can reference this set. Mirror
     // UtqlEngine::Update: cache only fully-completed runs (Ok / OkEmpty), never
@@ -1085,6 +1108,143 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
         oss << "\n";
     }
     appendCacheNote();
+    return oss.str();
+}
+
+// --------------------------------------------------------------------------
+// 7f. run_mutation — compile + execute a UTQL write statement.
+//
+// The write complement to run_query (design-mutation.md). Two phases:
+//   1. A synchronous dry-run plan on this worker thread — PlanUpdate +
+//      ApplyUpdate with ctx.dryRun, which computes the full manifest (counts,
+//      PATH|LAYER|FIELD|OLD|NEW rows, per-row skip reasons) without authoring
+//      anything. Read-only, so it is as thread-safe as run_query's Execute.
+//      That manifest is what the model gets back in the same step.
+//   2. Unless dry_run was requested (or nothing would change), the real apply
+//      is queued through ExecuteAfterDraw<MultiLayerFunctionCall>, mirroring
+//      UtqlEngine::Submit: a FRESH PlanUpdate on the UI thread (so handles are
+//      valid at apply time), then ApplyUpdate inside one SdfChangeBlock,
+//      recorded over all destination layers as ONE undoable command.
+//
+// Permission is conversational, like create_layer_file: the tool description
+// tells the model to dry-run + confirm with the user for broad/destructive
+// changes; the host has no modal gate (undo is the safety net).
+// --------------------------------------------------------------------------
+std::string UsdToolDispatcher::RunMutation(const JsObject& args) const {
+    const std::string statement = JsGetString(args, "statement");
+    if (statement.empty()) return "[error] missing 'statement' argument";
+    const bool dryRun = JsGetBool(args, "dry_run", false);
+
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    utql::Query ast;
+    std::string err;
+    size_t      errPos = 0;
+    if (!utql::Parse(statement, ast, err, errPos))
+        return "[error] compile: " + err + " (at column "
+               + std::to_string(errPos + 1) + ") — fix the statement and retry";
+    auto bound = std::make_shared<utql::BoundQuery>();
+    if (!utql::Bind(std::move(ast), *bound, err))
+        return "[error] compile: " + err + " — fix the statement and retry";
+
+    if (bound->statement == utql::StatementKind::Find)
+        return "[error] that is a FIND query — run_mutation only accepts "
+               "UPDATE / CREATE / DELETE. Use run_query for reads.";
+
+    // Same context shape as run_query: the active stage plus its used-layer
+    // set (Layer-world statements scan/author those), and the shared RESULTSET
+    // cache so `IN RESULTSET "n"` / `COMPOSING INTO RESULTSET "n"` target sets
+    // cached by earlier run_query calls.
+    utql::UtqlContext ctx;
+    ctx.currentStage = stage;
+    ctx.allStages    = {stage};
+    for (const SdfLayerHandle& h : stage->GetUsedLayers(/*includeClipLayers*/ true))
+        if (h)
+            ctx.allLayers.push_back(SdfLayerRefPtr(h));
+    ctx.named = &_namedResults;
+
+    // Phase 1 — manifest pass. Never authors (ctx.dryRun), so it is safe here
+    // on the worker thread; this is what the model reads.
+    ctx.dryRun = true;
+    utql::MutationPlan plan = utql::PlanUpdate(*bound, ctx);
+    utql::ApplyUpdate(*bound, plan, ctx);
+    const utql::UtqlResult& res = plan.manifest;
+
+    if (res.status == utql::UtqlStatus::CompileError)
+        return "[error] compile: " + res.message
+               + " — fix the statement and retry";
+
+    const uint64_t writes = res.changed + res.created + res.removed;
+
+    std::ostringstream oss;
+    oss << "run_mutation" << (dryRun ? " (dry run)" : " (plan)") << ": "
+        << res.changed << " changed";
+    if (res.created) oss << " / " << res.created << " created";
+    if (res.removed) oss << " / " << res.removed << " removed";
+    oss << " / " << res.matched << " matched / " << res.skipped << " skipped\n";
+    for (const std::string& w : res.warnings) oss << "warning: " << w << "\n";
+
+    if (!res.rows.empty()) {
+        // Manifest rows: PATH | LAYER | FIELD | OLD | NEW (CREATE/DELETE default
+        // to PATH | LAYER) — the path is a column here, unlike run_query rows.
+        oss << "columns:";
+        for (size_t c = 0; c < res.columnNames.size(); ++c)
+            oss << (c ? " | " : " ") << res.columnNames[c];
+        oss << "\n";
+        const size_t shown = std::min<size_t>(res.rows.size(), kFindPrimsLimit);
+        for (size_t i = 0; i < shown; ++i) {
+            oss << " ";
+            for (const utql::UtqlValue& v : res.rows[i].columns)
+                oss << " | " << v.ToDisplay();
+            oss << "\n";
+        }
+        if (res.rows.size() > shown)
+            oss << "... showing first " << shown << " of " << res.rows.size()
+                << " rows\n";
+    }
+
+    if (dryRun) {
+        oss << "dry run — NOTHING was changed. Repeat with dry_run=false to "
+               "apply this plan.\n";
+        return oss.str();
+    }
+
+    if (writes == 0) {
+        oss << "nothing to change — no edit was queued. Read the skip reasons "
+               "above before retrying; an empty match set means 'none found', "
+               "not a failure.\n";
+        return oss.str();
+    }
+
+    // Phase 2 — queue the real apply. One command slot per frame: if another
+    // edit is already waiting, report and let the model retry next step.
+    if (CommandStack::GetInstance().HasNextCommand())
+        return "[error] another edit is already queued for this frame — "
+               "call run_mutation again on your next step";
+
+    // The queued lambdas must own everything they read: the dispatcher's
+    // RESULTSET cache can be rewritten by a later run_query while the command
+    // waits for the frame, so snapshot it.
+    auto namedCopy = std::make_shared<std::map<std::string, utql::UtqlResult>>(
+        _namedResults);
+    utql::UtqlContext applyCtx = ctx;
+    applyCtx.dryRun = false;
+    applyCtx.named  = namedCopy.get();
+    auto applyPlan = std::make_shared<utql::MutationPlan>();
+    ExecuteAfterDraw<MultiLayerFunctionCall>(
+        std::function<SdfLayerHandleVector()>(
+            [bound, applyCtx, namedCopy, applyPlan]() {
+                *applyPlan = utql::PlanUpdate(*bound, applyCtx);
+                return SdfLayerHandleVector(applyPlan->layers);
+            }),
+        std::function<void()>([bound, applyCtx, namedCopy, applyPlan]() {
+            utql::ApplyUpdate(*bound, *applyPlan, applyCtx);
+        }));
+
+    oss << "queued: applies after this frame as ONE undoable edit. The "
+           "manifest above is the plan for it; verify with run_query on a "
+           "later step if you need proof it landed.\n";
     return oss.str();
 }
 

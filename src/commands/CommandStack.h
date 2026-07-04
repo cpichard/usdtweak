@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "CommandsImpl.h"
@@ -16,16 +17,31 @@ struct CommandStack {
     
     //
     friend struct UsdFunctionCall;
+    friend struct MultiLayerFunctionCall;
     friend class SdfUndoRedoRecorder;
     
     static CommandStack &GetInstance();
 
-    inline bool HasNextCommand() { return lastCmd != nullptr; }
-    inline void SetNextCommand(Command *command) { lastCmd = command; }
-    
+    // The one-command-per-frame slot is filled from BOTH the UI thread
+    // (widgets) and background workers (the Twiki agent's edit tools), so all
+    // access goes through _lastCmdMutex.
+    inline bool HasNextCommand() {
+        std::lock_guard<std::mutex> lock(_lastCmdMutex);
+        return lastCmd != nullptr;
+    }
+    /// Claim the slot if it is empty. Returns false (caller keeps ownership
+    /// of `command`) when another command is already queued for this frame.
+    inline bool TrySetNextCommand(Command *command) {
+        std::lock_guard<std::mutex> lock(_lastCmdMutex);
+        if (lastCmd)
+            return false;
+        lastCmd = command;
+        return true;
+    }
+
     // Execute next command and push it on the stack
     void ExecuteCommands();
-    
+
 private:
 
 
@@ -38,6 +54,7 @@ private:
 
     // Storing only one command per frame for now, easier to reason about.
     Command *lastCmd = nullptr;
+    std::mutex _lastCmdMutex; ///< guards lastCmd (UI thread vs agent worker)
 
     /// The ProcessCommands function is called after the frame is rendered and displayed and execute the
     /// last command. The command passed here now belongs to this stack
@@ -49,11 +66,14 @@ private:
     static CommandStack *instance;
 };
 
-/// Dispatching Commands.
+/// Dispatching Commands. Callable from the UI thread and from background
+/// workers (Twiki edit tools): the check-and-claim of the per-frame slot is
+/// atomic, so two threads can never both queue for the same frame.
 template <typename CommandClass, typename... ArgTypes> void ExecuteAfterDraw(ArgTypes... arguments) {
     CommandStack &commandStack = CommandStack::GetInstance();
-    if (!commandStack.HasNextCommand()) {
-        commandStack.SetNextCommand(new CommandClass(arguments...));
+    Command *command = new CommandClass(arguments...);
+    if (!commandStack.TrySetNextCommand(command)) {
+        delete command; // slot already taken this frame
     }
 }
 

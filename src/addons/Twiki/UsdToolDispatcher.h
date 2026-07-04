@@ -98,6 +98,12 @@ private:
     // composes with the batched edit tools (list_id). See UsdTools.cpp for the
     // grammar cheatsheet advertised to the model.
     std::string RunQuery            (const JsObject& args) const;
+
+    // UTQL write tool — compiles a mutation statement (UPDATE/CREATE/DELETE),
+    // computes the full manifest with a synchronous dry-run plan (read-only,
+    // safe on the worker thread), and — unless dry_run — queues the real apply
+    // through the command system so it lands as ONE undoable edit next frame.
+    std::string RunMutation         (const JsObject& args) const;
     std::string GetNameVocabulary   (const JsObject& args) const;
     std::string FindUsdFiles        (const JsObject& args) const;
 

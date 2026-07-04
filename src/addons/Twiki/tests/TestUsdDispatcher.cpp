@@ -17,11 +17,16 @@
 #include <pxr/usd/usd/stage.h>
 
 #include <CommandStack.h>
+#include <Commands.h>     // BeginEdition/EndEdition (scene-lock test)
+#include <UsdSceneLock.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 using namespace UsdAgent;
@@ -1118,6 +1123,255 @@ void TestRunQueryChaining(UsdToolDispatcher& d) {
     CHECK_CONTAINS(c, "/World/Lights");
 }
 
+// run_mutation: the UTQL write tool. Dry run returns the manifest and queues
+// nothing; a wet run queues ONE command that lands when the host pumps
+// ExecuteCommands (the test plays the UI thread); FIND is redirected to
+// run_query and vice versa; F2 (mandatory selection) surfaces as a compile
+// error. Uses its own fixture — it mutates the scene.
+void TestRunMutation() {
+    Section("run_mutation: dry run, apply, guards");
+
+    SdfLayerRefPtr asset, shot;
+    UsdStageRefPtr stage = BuildFixture(&asset, &shot);
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+    auto pump = []() { CommandStack::GetInstance().ExecuteCommands(); };
+
+    // A FIND statement belongs to run_query — redirected, not executed.
+    std::string out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "FIND USDPRIM WHERE TYPE = \"Camera\""))}}));
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "run_query");
+
+    // ...and a write statement through run_query is redirected here.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Lights\" SET ACTIVE = false"))}}));
+    CHECK_CONTAINS(out, "[error]");
+    CHECK_CONTAINS(out, "run_mutation");
+
+    // Fork F2: UPDATE without an explicit selection is a compile error.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM SET ACTIVE = false"))}}));
+    CHECK_CONTAINS(out, "[error] compile");
+
+    // Dry run: full manifest, nothing authored, nothing queued.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+                  "UPDATE USDPRIM WHERE NAME = \"Lights\" SET ACTIVE = false"))},
+              {"dry_run", JsValue(true)}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "dry run");
+    CHECK_CONTAINS(out, "1 changed");
+    CHECK_CONTAINS(out, "/World/Lights");
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive());
+    CHECK(!CommandStack::GetInstance().HasNextCommand());
+
+    // Wet run: the manifest comes back at once, the edit lands on the pump.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Lights\" SET ACTIVE = false"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "1 changed");
+    CHECK_CONTAINS(out, "queued");
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive()); // not yet
+    pump();
+    CHECK(!stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive());
+
+    // A statement that matches nothing queues nothing and says so.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"DoesNotExist\" SET ACTIVE = false"))}}));
+    CHECK_CONTAINS(out, "nothing to change");
+    CHECK(!CommandStack::GetInstance().HasNextCommand());
+
+    // CREATE authors a new prim (missing ancestors included).
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "CREATE USDPRIM \"/World/lights/key\" TYPE \"Xform\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "1 created");
+    CHECK_CONTAINS(out, "queued");
+    pump();
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/lights/key")).IsValid());
+
+    // DELETE removes authored specs, one per layer that authors the attribute
+    // (greeting is authored in both asset.usda and shot.usda).
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "DELETE SDFATTRIBUTE IN LAYERSTACK WHERE NAME = \"greeting\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "2 removed");
+    pump();
+    // Both authored specs must be gone — this exercises the one-delegate-per-
+    // layer fix in SdfCommandGroupRecorder (a shared delegate applied the shot
+    // layer's edits to the asset layer).
+    CHECK(!shot->GetAttributeAtPath(SdfPath("/World/Hero.greeting")));
+    CHECK(!asset->GetAttributeAtPath(SdfPath("/World/Hero.greeting")));
+    CHECK(!stage->GetPrimAtPath(SdfPath("/World/Hero"))
+               .HasAttribute(TfToken("greeting")));
+
+    // Find-then-mutate: a resultset cached by run_query is a mutation target.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE TYPE = \"Camera\" AS \"cams\""))}}));
+    CHECK_CONTAINS(out, "cached as RESULTSET \"cams\"");
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM IN RESULTSET \"cams\" SET ACTIVE = false"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "1 changed");
+    pump();
+    CHECK(!stage->GetPrimAtPath(SdfPath("/World/Camera")).IsActive());
+}
+
+// UsdSceneLock: the reader/writer gate enforcing USD's threading contract
+// (parallel reads, single-thread writes). Checks writer reentrancy, reader
+// pass-through on the writer thread, reader/writer exclusion, the yielding
+// reader giving way to a pending writer, and the cancellable acquire.
+void TestSceneLock() {
+    Section("UsdSceneLock: reentrancy, exclusion, yielding, cancel");
+    using namespace std::chrono_literals;
+    UsdSceneLock& gate = UsdSceneLock::GetInstance();
+
+    // Bounded wait helper so a logic error fails the test instead of hanging it.
+    auto waitFor = [](const std::function<bool()>& cond) {
+        for (int i = 0; i < 5000 && !cond(); ++i)
+            std::this_thread::sleep_for(1ms);
+        return cond();
+    };
+
+    // Writer reentrancy + reader pass-through on the owning thread.
+    gate.LockWrite();
+    gate.LockWrite(); // drag span + queued command on the same thread
+    CHECK(gate.CurrentThreadIsWriter());
+    {
+        ScopedSceneRead r;
+        CHECK(r.Acquired()); // same thread: no concurrency, passes through
+    }
+    gate.UnlockWrite();
+    CHECK(gate.CurrentThreadIsWriter()); // still owned, depth 1
+    gate.UnlockWrite();
+    CHECK(!gate.CurrentThreadIsWriter());
+
+    // Reader/writer exclusion + yielding reader.
+    {
+        std::atomic<bool> readerHolds{false};
+        std::atomic<bool> releaseReader{false};
+        std::thread reader([&]() {
+            ScopedSceneRead r;
+            readerHolds.store(true);
+            while (!releaseReader.load()) std::this_thread::sleep_for(1ms);
+        });
+        CHECK(waitFor([&]() { return readerHolds.load(); }));
+
+        // Readers are parallel: a second (yielding) reader gets in alongside.
+        {
+            ScopedSceneRead r2(ScopedSceneRead::kTryYielding);
+            CHECK(r2.Acquired());
+        }
+
+        std::atomic<bool> writerDone{false};
+        std::thread writer([&]() {
+            ScopedSceneWrite w;
+            writerDone.store(true);
+        });
+        CHECK(waitFor([&]() { return gate.IsWritePending(); }));
+        CHECK(!writerDone.load()); // blocked behind the active reader
+
+        // A yielding reader must give up while a writer is waiting.
+        {
+            ScopedSceneRead r3(ScopedSceneRead::kTryYielding);
+            CHECK(!r3.Acquired());
+        }
+
+        releaseReader.store(true);
+        reader.join();
+        writer.join();
+        CHECK(writerDone.load());
+    }
+
+    // Cancellable acquire: gives up when its cancel flag fires while a
+    // writer holds the lock (the CancelRunningQuery-then-join pattern).
+    {
+        gate.LockWrite();
+        std::atomic<bool> cancel{false};
+        std::atomic<bool> acquired{true};
+        std::thread t([&]() {
+            ScopedSceneRead r(cancel);
+            acquired.store(r.Acquired());
+        });
+        std::this_thread::sleep_for(5ms);
+        cancel.store(true);
+        t.join();
+        CHECK(!acquired.load());
+        gate.UnlockWrite();
+    }
+}
+
+// Concurrency smoke: an agent thread hammers read tools (and queues edits)
+// while the "UI" thread executes commands and holds a BeginEdition/EndEdition
+// drag span — the exact production overlap. Passes when nothing crashes or
+// deadlocks and the scene ends in the expected state.
+void TestConcurrentSceneAccess() {
+    Section("UsdSceneLock: concurrent agent reads vs UI writes (smoke)");
+    using namespace std::chrono_literals;
+
+    SdfLayerRefPtr asset, shot;
+    UsdStageRefPtr stage = BuildFixture(&asset, &shot);
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    std::atomic<bool> stop{false};
+    std::atomic<int>  reads{0};
+    std::thread agent([&]() {
+        while (!stop.load()) {
+            // Every read runs to completion (possibly reported degraded when a
+            // writer pre-empted the scan) — the point is it never crashes.
+            std::string out = d.Dispatch("run_query",
+                Args({{"query", JsValue(std::string(
+                    "FIND USDPRIM WHERE TYPE = \"Camera\""))}}));
+            CHECK(out.find("[error]") == std::string::npos);
+            ++reads;
+        }
+    });
+
+    // UI thread: per-frame queued commands (the ExecuteAfterDraw path).
+    UsdPrim lights = stage->GetPrimAtPath(SdfPath("/World/Lights"));
+    for (int i = 0; i < 100; ++i) {
+        const bool active = (i % 2) == 0;
+        ExecuteAfterDraw<UsdFunctionCall>(SdfLayerRefPtr(shot),
+            std::function<void()>([lights, active]() {
+                UsdPrim p = lights;
+                p.SetActive(active);
+            }));
+        CommandStack::GetInstance().ExecuteCommands();
+    }
+
+    // UI thread: a manipulator-style drag span (direct writes, lock held
+    // across "frames").
+    BeginEdition(shot);
+    for (int i = 0; i < 50; ++i) {
+        stage->GetPrimAtPath(SdfPath("/World/Camera"))
+            .GetAttribute(TfToken("focalLength"))
+            .Set(35.0f + (float)i);
+        std::this_thread::sleep_for(1ms);
+    }
+    EndEdition();
+
+    // Let the agent observe the post-drag scene a few more times.
+    std::this_thread::sleep_for(20ms);
+    stop.store(true);
+    agent.join();
+
+    CHECK(reads.load() > 0); // the reader made progress throughout
+    float focal = 0;
+    stage->GetPrimAtPath(SdfPath("/World/Camera"))
+        .GetAttribute(TfToken("focalLength")).Get(&focal);
+    CHECK(focal == 84.0f); // 35 + 49 — the drag writes all landed
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive() == false);
+}
+
 // run_query: COMPOSED FROM — forward composition (design A4). The authored spec
 // at /World/Hero (def in asset.usda, over in shot.usda) feeds the composed prim
 // /World/Hero; COMPOSED FROM recovers it from the spec side, the inverse of
@@ -1423,6 +1677,9 @@ int main() {
     TestFindPrims         (dispatcher);
     TestRunQuery          (dispatcher);
     TestRunQueryChaining  (dispatcher);
+    TestRunMutation       ();
+    TestSceneLock         ();
+    TestConcurrentSceneAccess();
     TestRunQueryComposedFrom(dispatcher);
     TestRunQuerySdf       (dispatcher);
     TestRunQuerySublayer  ();
