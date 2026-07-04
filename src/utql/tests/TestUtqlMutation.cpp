@@ -15,10 +15,14 @@
 #include "Executor.h"
 #include "Parser.h"
 
+#include <pxr/pxr.h>
+
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/tf/type.h>
+#if PXR_VERSION >= 2411
 #include <pxr/base/ts/knot.h>
 #include <pxr/base/ts/spline.h>
+#endif
 #include <pxr/base/vt/array.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/attributeSpec.h>
@@ -1573,6 +1577,9 @@ static void TestSplineClipGates() {
     stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
 
     // Spline-animated prim (USD 26 animation curves) — no time samples.
+    // Pre-24.11 USD has no Usd-level spline API: the fixture prim is skipped
+    // and the gates are compile-time false (see UsdAttrHasSpline).
+#if PXR_VERSION >= 2411
     UsdPrim door = stage->DefinePrim(SdfPath("/World/door"), TfToken("Xform"));
     UsdAttribute rot = door.CreateAttribute(TfToken("rotateY"), SdfValueTypeNames->Double);
     {
@@ -1587,6 +1594,10 @@ static void TestSplineClipGates() {
         spline.SetKnot(k2);
         CHECK(rot.SetSpline(spline));
     }
+    const size_t splinePrims = 1;
+#else
+    const size_t splinePrims = 0;
+#endif
 
     // Time-sampled prim — the other value source, for contrast.
     UsdPrim ball = stage->DefinePrim(SdfPath("/World/ball"), TfToken("Xform"));
@@ -1609,8 +1620,8 @@ static void TestSplineClipGates() {
     // Attribute gate: the spline attr, and only it.
     utql::UtqlResult r =
         RunFind("FIND USDATTRIBUTE WHERE VALUE.HAS_SPLINE RETURN PATH", ctx);
-    CHECK_MSG(r.rows.size() == 1, r.message);
-    if (r.rows.size() == 1)
+    CHECK_MSG(r.rows.size() == splinePrims, r.message);
+    if (splinePrims && r.rows.size() == 1)
         CHECK(r.rows[0].path == SdfPath("/World/door.rotateY"));
 
     // Splines are a separate value source from timeSamples — no overlap.
@@ -1620,8 +1631,8 @@ static void TestSplineClipGates() {
 
     // Prim gates partition the fixture: spline / samples / clips / none.
     r = RunFind("FIND USDPRIM WHERE HAS_SPLINE", ctx);
-    CHECK_MSG(r.rows.size() == 1, r.message);
-    if (r.rows.size() == 1)
+    CHECK_MSG(r.rows.size() == splinePrims, r.message);
+    if (splinePrims && r.rows.size() == 1)
         CHECK(r.rows[0].path == SdfPath("/World/door"));
     r = RunFind("FIND USDPRIM WHERE HAS_TIME_SAMPLES", ctx);
     CHECK_MSG(r.rows.size() == 1, r.message);
@@ -1635,15 +1646,15 @@ static void TestSplineClipGates() {
     // "Animated at all" is the disjunction of the three gates.
     r = RunFind("FIND USDPRIM WHERE HAS_SPLINE OR HAS_TIME_SAMPLES OR HAS_CLIPS",
                 ctx);
-    CHECK_MSG(r.rows.size() == 3, r.message);
+    CHECK_MSG(r.rows.size() == 2 + splinePrims, r.message);
 
     // Layer world: the authored specs answer the same gates.
     const std::string rootId = stage->GetRootLayer()->GetIdentifier();
     r = RunFind("FIND SDFATTRIBUTE IN LAYER \"" + rootId +
                 "\" WHERE VALUE.HAS_SPLINE", ctx);
-    CHECK_MSG(r.rows.size() == 1, r.message);
+    CHECK_MSG(r.rows.size() == splinePrims, r.message);
     r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE HAS_SPLINE", ctx);
-    CHECK_MSG(r.rows.size() == 1, r.message);
+    CHECK_MSG(r.rows.size() == splinePrims, r.message);
     r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId + "\" WHERE HAS_CLIPS", ctx);
     CHECK_MSG(r.rows.size() == 1, r.message);
     if (r.rows.size() == 1)

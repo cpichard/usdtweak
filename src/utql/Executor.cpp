@@ -858,17 +858,34 @@ bool SdfPrimHasTimeSamples(const SdfPrimSpecHandle &spec) {
 
 /// Spline gates (USD 26 animation curves, design A8) — the HAS_TIME_SAMPLES
 /// shape for the other authored value source. HasSpline is a metadata check,
-/// no value resolution.
+/// no value resolution. Version ladder: UsdAttribute::HasSpline exists from
+/// USD 24.11; SdfAttributeSpec::HasSpline only from 25.11 (older layers answer
+/// via the authored spline field key); before 24.11 there is no Usd-level
+/// spline API at all, so the gates are compile-time false.
+#if PXR_VERSION >= 2411
+bool UsdAttrHasSpline(const UsdAttribute &attr) { return attr.HasSpline(); }
+bool SdfAttrHasSpline(const SdfAttributeSpecHandle &attr) {
+#if PXR_VERSION >= 2511
+    return attr->HasSpline();
+#else
+    return attr->HasInfo(SdfFieldKeys->Spline);
+#endif
+}
+#else
+bool UsdAttrHasSpline(const UsdAttribute &) { return false; }
+bool SdfAttrHasSpline(const SdfAttributeSpecHandle &) { return false; }
+#endif
+
 bool UsdPrimHasSpline(const UsdPrim &prim) {
     for (const UsdAttribute &attr : prim.GetAttributes())
-        if (attr.HasSpline())
+        if (UsdAttrHasSpline(attr))
             return true;
     return false;
 }
 
 bool SdfPrimHasSpline(const SdfPrimSpecHandle &spec) {
     for (const SdfAttributeSpecHandle &attr : spec->GetAttributes())
-        if (attr && attr->HasSpline())
+        if (attr && SdfAttrHasSpline(attr))
             return true;
     return false;
 }
@@ -1152,7 +1169,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(attr.GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(attr.GetNumTimeSamples() > 0);
-    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(attr.HasSpline());
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(UsdAttrHasSpline(attr));
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(attr.GetNumTimeSamples()));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!attr.GetTypeName().IsArray())
@@ -1239,7 +1256,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(spec->GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(layer->GetNumTimeSamplesForPath(spec->GetPath()) > 0);
-    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(spec->HasSpline());
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(SdfAttrHasSpline(spec));
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(layer->GetNumTimeSamplesForPath(spec->GetPath())));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!spec->GetTypeName().IsArray())
