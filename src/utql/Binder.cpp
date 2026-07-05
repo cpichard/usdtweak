@@ -802,6 +802,8 @@ class Binder {
         out.arcMutations = std::move(q.arcMutations);
         out.hasOnLayer = q.hasOnLayer;
         out.onLayer = std::move(q.onLayer);
+        out.insideVariantSets = std::move(_ivSets);
+        out.insideVariantSels = std::move(_ivSels);
         out.createPath = std::move(q.createPath);
         out.createType = std::move(q.createType);
         out.createSpecifier = std::move(q.createSpecifier);
@@ -1345,22 +1347,127 @@ class Binder {
 
         // ADD/REMOVE arc clauses (design-mutation §4, M3).
         for (const ArcMutation &am : q.arcMutations)
-            if (!ValidateArcMutation(am))
+            if (!ValidateArcMutation(am, world))
                 return false;
+
+        // INSIDE VARIANT "{set=sel}…" (§15) — the destination variant
+        // context. Stage world only; nesting = concatenated pairs.
+        if (!q.insideVariant.empty()) {
+            if (world != UtqlWorld::Stage) {
+                Fail("INSIDE VARIANT is Stage-world — the opinion lands at "
+                     "the edit target inside the composed prim's variant "
+                     "(UPDATE USDPRIM / USDATTRIBUTE / USDRELATIONSHIP).");
+                return false;
+            }
+            if (!ParseVariantContext(q.insideVariant))
+                return false;
+            for (const SetAssignment &sa : q.sets)
+                if (sa.field == "NAME" || sa.field == "PARENT") {
+                    Fail("INSIDE VARIANT cannot combine with SET NAME/PARENT "
+                         "— namespace edits cannot cross variant scopes.");
+                    return false;
+                }
+        }
+        return true;
+    }
+
+    /// Parse an INSIDE VARIANT context string — "{set=sel}" or the nested
+    /// concatenation "{model=sedan}{trim=sport}" (outermost first, the same
+    /// notation as the read side's VARIANT_SELECTIONS) — into _ivSets/_ivSels.
+    bool ParseVariantContext(const std::string &s) {
+        auto trim = [](std::string v) {
+            const auto b = v.find_first_not_of(" \t");
+            const auto e = v.find_last_not_of(" \t");
+            return b == std::string::npos ? std::string()
+                                          : v.substr(b, e - b + 1);
+        };
+        const char *shape = "INSIDE VARIANT expects \"{set=sel}\" pairs — "
+                            "e.g. \"{model=sedan}\" or nested "
+                            "\"{model=sedan}{trim=sport}\".";
+        size_t i = 0;
+        while (i < s.size()) {
+            if (s[i] != '{') { Fail(shape); return false; }
+            const size_t close = s.find('}', i);
+            if (close == std::string::npos) { Fail(shape); return false; }
+            const std::string body = s.substr(i + 1, close - i - 1);
+            const size_t eq = body.find('=');
+            if (eq == std::string::npos) { Fail(shape); return false; }
+            const std::string set = trim(body.substr(0, eq));
+            const std::string sel = trim(body.substr(eq + 1));
+            if (!SdfPath::IsValidIdentifier(set)) {
+                Fail("INSIDE VARIANT: \"" + set + "\" is not a valid variant "
+                     "set name.");
+                return false;
+            }
+            if (!SdfSchema::GetInstance().IsValidVariantIdentifier(sel)) {
+                Fail("INSIDE VARIANT: \"" + sel + "\" is not a valid variant "
+                     "name.");
+                return false;
+            }
+            _ivSets.push_back(set);
+            _ivSels.push_back(sel);
+            i = close + 1;
+        }
+        if (_ivSets.empty()) { Fail(shape); return false; }
         return true;
     }
 
     /// Validate one ADD/REMOVE clause (design-mutation §4): known family,
     /// entity gating (arc families live on prims, SUBLAYER on LAYER, TARGET on
     /// relationships, CONNECTION on attributes), and value shape.
-    bool ValidateArcMutation(const ArcMutation &am) {
+    bool ValidateArcMutation(const ArcMutation &am, UtqlWorld world) {
         const std::string &fam = am.family;
         const char *verb = am.isRemove ? "REMOVE" : "ADD";
 
-        if (fam == "VARIANT" || fam == "VARIANT_SET") {
-            Fail("Variant authoring is not supported yet — SET VARIANT[\"set\"]"
-                 " = \"selection\" switches an existing selection.");
+        // Variant authoring (design-mutation §15). ADD VARIANT["set"] "name"
+        // creates the set (if needed) and the variant — the keyed spelling
+        // mirrors the selection verb SET VARIANT["set"] = "sel".
+        if (fam == "VARIANT_SET") {
+            Fail("ADD VARIANT[\"set\"] \"name\" creates the set and the "
+                 "variant in one clause — there is no separate VARIANT_SET "
+                 "verb.");
             return false;
+        }
+        if (fam == "VARIANT") {
+            if (am.isRemove) {
+                Fail("REMOVE VARIANT is not supported yet — removing a "
+                     "variant is destructive Sdf surgery (deferred, §15).");
+                return false;
+            }
+            if (_cat != Category::Prim) {
+                Fail("ADD VARIANT applies to prim entities — UPDATE USDPRIM.");
+                return false;
+            }
+            if (world == UtqlWorld::Layer) {
+                Fail("Variant authoring is Stage-world — UPDATE USDPRIM (the "
+                     "specs land at the edit target and stay visible to "
+                     "SDFPRIM reads).");
+                return false;
+            }
+            if (am.variantSet.empty()) {
+                Fail("ADD VARIANT names its set: ADD VARIANT[\"model\"] "
+                     "\"sedan\".");
+                return false;
+            }
+            if (am.value.empty()) {
+                Fail("ADD VARIANT[\"" + am.variantSet + "\"] needs a quoted "
+                     "variant name.");
+                return false;
+            }
+            if (!am.primPath.empty()) {
+                Fail("PRIM_PATH applies to REFERENCE/PAYLOAD arcs.");
+                return false;
+            }
+            if (!SdfPath::IsValidIdentifier(am.variantSet)) {
+                Fail("\"" + am.variantSet + "\" is not a valid variant set "
+                     "name.");
+                return false;
+            }
+            if (!SdfSchema::GetInstance().IsValidVariantIdentifier(am.value)) {
+                Fail("\"" + am.value + "\" is not a valid variant name.");
+                return false;
+            }
+            return true;
         }
 
         Category host;
@@ -1729,6 +1836,9 @@ class Binder {
     bool       _perTarget = false;
     std::string _error;
     std::vector<std::string> _warnings;
+    // INSIDE VARIANT context pairs (§15), filled by ParseVariantContext.
+    std::vector<std::string> _ivSets;
+    std::vector<std::string> _ivSels;
 };
 
 } // namespace

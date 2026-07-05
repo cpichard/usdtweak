@@ -196,8 +196,9 @@ struct ArcMutation {
     bool        isRemove = false;
     std::string family;   ///< upper-cased family name (REFERENCE, API, TARGET, …)
     bool        hasValue = false;
-    std::string value;    ///< asset path / target path / schema name
+    std::string value;    ///< asset path / target path / schema / variant name
     std::string primPath; ///< optional PRIM_PATH (REFERENCE/PAYLOAD only)
+    std::string variantSet; ///< ADD VARIANT["set"] "name" only (raw, case kept — §15)
 };
 
 // ----------------------------------------------------------------- the query
@@ -228,6 +229,10 @@ struct Query {
     std::vector<ArcMutation>    arcMutations;
     bool            hasOnLayer = false;
     std::string     onLayer;
+    // INSIDE VARIANT "{set=sel}" (§15) — retargets every mutation clause of
+    // the statement into the named variant (Stage world; composes with ON
+    // LAYER). Raw string here; the binder parses and validates it.
+    std::string     insideVariant;
 
     // CREATE statement only (design-mutation §6): the new prim's path plus the
     // optional TYPE / SPECIFIER clauses (SPECIFIER is SDFPRIM-only, checked by

@@ -883,10 +883,10 @@ static void TestM3BinderErrors() {
                        "relationship entities");
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD CONNECTION \"/World/x.y\"",
                        "attribute entities");
-    // Unknown family / variant authoring deferral.
+    // Unknown family; ADD VARIANT without its set gets guidance (§15).
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD FOO \"x\"", "unknown arc family");
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD VARIANT \"red\"",
-                       "Variant authoring");
+                       "names its set");
     // Value shape.
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD REFERENCE", "quoted value");
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD REFERENCE \"\"", "non-empty");
@@ -2013,6 +2013,140 @@ static void TestSamples() {
     CHECK(a.GetNumTimeSamples() == before);
 }
 
+static void TestVariantAuthoringBinder() {
+    // Stage world only — the specs land at the edit target.
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                       "ADD VARIANT[\"model\"] \"sedan\"",
+                       "Stage-world");
+    ExpectCompileError("UPDATE SDFATTRIBUTE IN LAYER \"a\" WHERE NAME = \"x\" "
+                       "INSIDE VARIANT \"{look=red}\" SET VALUE = 1",
+                       "Stage-world");
+    // REMOVE is deferred; VARIANT_SET is not a verb; prim entities only.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE REMOVE VARIANT[\"model\"] "
+                       "\"sedan\"",
+                       "not supported yet");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD VARIANT_SET \"model\"",
+                       "no separate VARIANT_SET verb");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"x\" "
+                       "ADD VARIANT[\"model\"] \"sedan\"",
+                       "prim entities");
+    // Context-string shape and identifier validation.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE INSIDE VARIANT \"look=red\" "
+                       "SET ACTIVE = false",
+                       "expects \"{set=sel}\"");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE INSIDE VARIANT \"{look}\" "
+                       "SET ACTIVE = false",
+                       "expects \"{set=sel}\"");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE ADD VARIANT[\"3x\"] \"red\"",
+                       "not a valid variant set name");
+}
+
+static void TestVariantAuthoring() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("variant_test.usda");
+    stage->DefinePrim(SdfPath("/Car"), TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Garage"), TfToken("Xform"));
+    utql::UtqlContext ctx = MakeCtx(stage);
+    const SdfLayerRefPtr root = SdfLayerRefPtr(stage->GetRootLayer());
+    UsdPrim car = stage->GetPrimAtPath(SdfPath("/Car"));
+
+    // ADD VARIANT["set"] "name" creates the set and the variants; a re-run is
+    // an idempotent counted skip.
+    utql::UtqlResult r = RunUpdate(
+        "UPDATE USDPRIM WHERE PATH = \"/Car\" "
+        "ADD VARIANT[\"look\"] \"red\" ADD VARIANT[\"look\"] \"blue\"",
+        ctx);
+    CHECK_MSG(r.changed == 2, r.message);
+    CHECK(car.GetVariantSets().HasVariantSet("look"));
+    {
+        const auto names = car.GetVariantSets().GetVariantSet("look").GetVariantNames();
+        CHECK(names.size() == 2);
+    }
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "ADD VARIANT[\"look\"] \"red\"",
+                  ctx);
+    CHECK_MSG(r.changed == 0 && r.skipped == 1, r.message);
+
+    // INSIDE VARIANT authors into the named variant; opinions land at the
+    // variant spec path in the destination layer.
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "INSIDE VARIANT \"{look=red}\" "
+                  "CREATE ATTRIBUTE \"tint\" TYPE \"color3f\" VALUE (1, 0, 0)",
+                  ctx);
+    CHECK_MSG(r.created == 1, r.message);
+    CHECK(root->GetAttributeAtPath(SdfPath("/Car{look=red}.tint")));
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "INSIDE VARIANT \"{look=blue}\" "
+                  "CREATE ATTRIBUTE \"tint\" TYPE \"color3f\" VALUE (0, 0, 1)",
+                  ctx);
+    CHECK_MSG(r.created == 1, r.message);
+
+    // The composed switch: selecting a variant exposes its opinions.
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "SET VARIANT[\"look\"] = \"red\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    GfVec3f tint;
+    stage->GetAttributeAtPath(SdfPath("/Car.tint")).Get(&tint);
+    CHECK(tint == GfVec3f(1.f, 0.f, 0.f));
+
+    // Editing the OTHER (unselected) variant through an attribute row: the
+    // row matches under the current composition, the opinion lands in blue.
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE PATH = \"/Car.tint\" "
+                  "INSIDE VARIANT \"{look=blue}\" SET VALUE = (0, 0.5, 1)",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    stage->GetAttributeAtPath(SdfPath("/Car.tint")).Get(&tint);
+    CHECK(tint == GfVec3f(1.f, 0.f, 0.f)); // red still composed, untouched
+    RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" SET VARIANT[\"look\"] = "
+              "\"blue\"",
+              ctx);
+    stage->GetAttributeAtPath(SdfPath("/Car.tint")).Get(&tint);
+    CHECK(tint == GfVec3f(0.f, 0.5f, 1.f));
+
+    // Nesting, both spellings: a nested INSIDE chain, and INSIDE + ADD
+    // VARIANT creating a set inside a variant.
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "INSIDE VARIANT \"{look=red}{trim=chrome}\" "
+                  "CREATE ATTRIBUTE \"trimMask\" TYPE \"float\" VALUE 1",
+                  ctx);
+    CHECK_MSG(r.created == 1, r.message);
+    CHECK(root->GetAttributeAtPath(SdfPath("/Car{look=red}{trim=chrome}.trimMask")));
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" "
+                  "INSIDE VARIANT \"{look=red}\" ADD VARIANT[\"trim\"] \"leather\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(root->GetObjectAtPath(SdfPath("/Car{look=red}{trim=leather}")));
+    // Composed: the nested set is visible when the outer variant is selected.
+    RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Car\" SET VARIANT[\"look\"] = "
+              "\"red\"",
+              ctx);
+    CHECK(car.GetVariantSets().HasVariantSet("trim"));
+
+    // The car-asset idiom: a reference per variant (auto-created set).
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Garage\" "
+                  "INSIDE VARIANT \"{model=sedan}\" ADD REFERENCE \"sedan.usd\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    {
+        SdfPrimSpecHandle vspec = root->GetPrimAtPath(SdfPath("/Garage{model=sedan}"));
+        CHECK(vspec && vspec->GetReferenceList().GetPrependedItems().size() == 1);
+    }
+
+    // Dry run: auto-create is announced, nothing is authored.
+    utql::UtqlContext dry = ctx;
+    dry.dryRun = true;
+    r = RunUpdate("UPDATE USDPRIM WHERE PATH = \"/Garage\" "
+                  "INSIDE VARIANT \"{model=suv}\" ADD REFERENCE \"suv.usd\"",
+                  dry);
+    CHECK_MSG(r.dryRun && r.changed == 1, r.message);
+    bool noted = false;
+    for (const std::string &wmsg : r.warnings)
+        if (wmsg.find("auto-creates") != std::string::npos)
+            noted = true;
+    CHECK(noted);
+    CHECK(!root->GetObjectAtPath(SdfPath("/Garage{model=suv}")));
+}
+
 int main() {
     TestBinderErrors();
     TestExecuteRejectsWrites();
@@ -2053,6 +2187,8 @@ int main() {
     TestBaseName();
     TestSamplesBinder();
     TestSamples();
+    TestVariantAuthoringBinder();
+    TestVariantAuthoring();
 
     if (gFailures == 0) {
         std::cout << "test_utql_mutation: all " << gChecks << " checks passed\n";

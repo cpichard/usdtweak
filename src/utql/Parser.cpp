@@ -35,7 +35,7 @@ bool IsReservedWord(const std::string &w) {
                                 // Write side (design-mutation). ADD/REMOVE reserved
                                 // ahead of M3 so fields never squat the clause names.
                                 "UPDATE", "CREATE", "DELETE", "SET", "ON", "ADD",
-                                "REMOVE", "BLOCK", "SAMPLES",
+                                "REMOVE", "BLOCK", "SAMPLES", "INSIDE",
                                 // Schema-inheritance operator (design A7). One
                                 // token — the lexer folds '_' into words, so this
                                 // never collides with IS NULL.
@@ -347,6 +347,22 @@ class Parser {
             out.onLayer = Cur().text;
             Advance();
         }
+        // INSIDE VARIANT "{set=sel}" / "{a=x}{b=y}" (§15) — the destination
+        // variant context for every mutation clause; nesting = concatenated
+        // pairs, outermost first. Validation happens in the binder.
+        if (CurIsKeyword("INSIDE")) {
+            Advance();
+            if (!ExpectKeyword("VARIANT"))
+                return false;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted variant context after INSIDE VARIANT "
+                     "— e.g. INSIDE VARIANT \"{model=sedan}\" (nested: "
+                     "\"{model=sedan}{trim=sport}\")");
+                return false;
+            }
+            out.insideVariant = Cur().text;
+            Advance();
+        }
         bool sawMutation = false;
         while (true) {
             if (CurIsKeyword("SET")) {
@@ -401,8 +417,8 @@ class Parser {
         if (Cur().kind != Token::Kind::End) {
             Fail("Unexpected '" + TokenText(Cur()) +
                  "'. Clauses must appear in order: UPDATE … [COMPOSING INTO] "
-                 "[IN] [AT] [WHERE] [ON LAYER] SET …/CREATE ATTRIBUTE …/ADD …/"
-                 "REMOVE … [RETURN] [LIMIT]");
+                 "[IN] [AT] [WHERE] [ON LAYER] [INSIDE VARIANT \"{s=v}\"] "
+                 "SET …/CREATE ATTRIBUTE …/ADD …/REMOVE … [RETURN] [LIMIT]");
             return false;
         }
         return true;
@@ -426,6 +442,22 @@ class Parser {
         }
         am.family = Upper(Cur().text);
         Advance();
+        // ADD VARIANT["set"] "name" (§15) — the keyed spelling, mirroring
+        // SET VARIANT["set"] = "sel" on the selection side.
+        if (am.family == "VARIANT" && Cur().kind == Token::Kind::LBracket) {
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted set name in VARIANT[\"set\"]");
+                return false;
+            }
+            am.variantSet = Cur().text;
+            Advance();
+            if (Cur().kind != Token::Kind::RBracket) {
+                Fail("Expected ']' after VARIANT[\"" + am.variantSet + "\"");
+                return false;
+            }
+            Advance();
+        }
         if (Cur().kind == Token::Kind::String) {
             am.hasValue = true;
             am.value = Cur().text;

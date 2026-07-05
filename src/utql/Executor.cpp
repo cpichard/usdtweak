@@ -3090,6 +3090,64 @@ std::string VtValueDisplay(bool got, const VtValue &v) {
 
 /// Apply one planned write. Returns false on an unexpected per-row failure
 /// (skip + count); binder guarantees the field/entity/literal combination.
+/// The prim whose namespace hosts a Stage-world write's variant context —
+/// the row's own prim for prim rows, the owning prim for property rows.
+SdfPath StageWritePrimPath(const PlannedWrite &w) {
+    if (w.prim) return w.prim.GetPath();
+    if (w.attr) return w.attr.GetPrim().GetPath();
+    if (w.rel)  return w.rel.GetPrim().GetPath();
+    return SdfPath();
+}
+
+/// Destination context for a Stage-world write: ON LAYER retarget and/or the
+/// INSIDE VARIANT mapping (design-mutation §15). INSIDE VARIANT builds a
+/// direct-variant edit target on the destination layer — nesting folds the
+/// pair chain into one variant-selection path — and first ensures the whole
+/// set/variant chain exists there (SdfCreateVariantInLayer level by level:
+/// idempotent auto-create, fork V3). No ON LAYER and no INSIDE = nullptr, the
+/// stage's current edit target applies as-is (incl. its own variant mapping);
+/// an INSIDE clause deliberately *replaces* that mapping.
+/// Ensure the whole INSIDE VARIANT set/variant chain exists in `layer`
+/// (SdfCreateVariantInLayer level by level — idempotent auto-create, fork V3)
+/// and return the fully-mapped variant-selection path.
+SdfPath EnsureVariantChain(const BoundQuery &q, const SdfLayerHandle &layer,
+                           const SdfPath &primPath) {
+    SdfPath varPath = primPath;
+    for (size_t k = 0; k < q.insideVariantSets.size(); ++k) {
+        SdfCreateVariantInLayer(layer, varPath, q.insideVariantSets[k],
+                                q.insideVariantSels[k]);
+        varPath = varPath.AppendVariantSelection(q.insideVariantSets[k],
+                                                 q.insideVariantSels[k]);
+    }
+    return varPath;
+}
+
+/// The destination layer of a Stage-world write (ON LAYER retarget, else the
+/// stage's edit-target layer).
+SdfLayerHandle StageWriteLayer(const PlannedWrite &w) {
+    if (w.destLayer)
+        return w.destLayer;
+    return w.stage ? w.stage->GetEditTarget().GetLayer() : SdfLayerHandle();
+}
+
+std::unique_ptr<UsdEditContext> MakeStageEditContext(const BoundQuery &q, PlannedWrite &w) {
+    if (!w.stage)
+        return nullptr;
+    if (q.insideVariantSets.empty()) {
+        if (!(q.hasOnLayer && w.destLayer))
+            return nullptr;
+        return std::unique_ptr<UsdEditContext>(
+            new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+    }
+    const SdfPath primPath = StageWritePrimPath(w);
+    const SdfLayerHandle layer = StageWriteLayer(w);
+    if (primPath.IsEmpty() || !layer)
+        return nullptr;
+    const SdfPath varPath = EnsureVariantChain(q, layer, primPath);
+    return std::unique_ptr<UsdEditContext>(new UsdEditContext(
+        w.stage, UsdEditTarget::ForLocalDirectVariant(layer, varPath)));
+}
+
 bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w) {
     const Literal &lit = sa.value;
     const bool isNull = (lit.kind == Literal::Kind::Null);
@@ -3104,9 +3162,7 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
         case UtqlEntity::UsdPrim: {
             // ON LAYER retargets the write; otherwise the stage's edit target
             // applies as-is (including a variant edit target's path mapping).
-            std::unique_ptr<UsdEditContext> ectx;
-            if (q.hasOnLayer && w.destLayer && w.stage)
-                ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
             UsdPrim &p = w.prim;
             if (f == "ACTIVE")       return isNull ? p.ClearActive() : p.SetActive(lit.boolean);
             if (f == "INSTANCEABLE") return isNull ? p.ClearInstanceable() : p.SetInstanceable(lit.boolean);
@@ -3182,9 +3238,7 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
             return false;
         }
         case UtqlEntity::UsdAttribute: {
-            std::unique_ptr<UsdEditContext> ectx;
-            if (q.hasOnLayer && w.destLayer && w.stage)
-                ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
             UsdAttribute &a = w.attr;
             if (f == "VALUE") {
                 // SAMPLES (§14): the whole batch on this attribute, entry ops
@@ -3347,44 +3401,14 @@ bool PerformNamespaceEdit(PlannedWrite &w, std::string &why) {
     return true;
 }
 
-/// Apply one CREATE ATTRIBUTE/RELATIONSHIP clause to a matched prim (design
-/// §5). Plan already checked type conflicts and coerced the VALUE literal
-/// (w.coerced); an existing same-typed property is reused (idempotent).
-bool PerformCreateProp(const BoundQuery &q, const CreateProperty &cp, PlannedWrite &w) {
+/// Author one CREATE ATTRIBUTE/RELATIONSHIP clause as a property spec on
+/// `s` in `layer` — the Sdf-level form, shared by the SDFPRIM branch and the
+/// INSIDE VARIANT Stage branch (where composed handles never appear for an
+/// unselected variant, so Usd-level creation cannot report success).
+bool PerformCreatePropOnSpec(const BoundQuery &q, const CreateProperty &cp,
+                             PlannedWrite &w, const SdfPrimSpecHandle &s,
+                             const SdfLayerHandle &layer) {
     static const TfToken kInterp("interpolation");
-    if (q.entity == UtqlEntity::UsdPrim) {
-        std::unique_ptr<UsdEditContext> ectx;
-        if (q.hasOnLayer && w.destLayer && w.stage)
-            ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
-        UsdPrim &p = w.prim;
-        const TfToken name(cp.name);
-        if (cp.isRelationship) {
-            // Custom iff not schema-defined (the §5 semantics).
-            const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
-            UsdRelationship rel = p.CreateRelationship(name, custom);
-            if (!rel)
-                return false;
-            if (!cp.target.empty())
-                return rel.AddTarget(SdfPath(cp.target));
-            return true;
-        }
-        const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
-        const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
-        UsdAttribute attr = p.CreateAttribute(name, tn, custom);
-        if (!attr)
-            return false;
-        if (!cp.interpolation.empty() &&
-            !attr.SetMetadata(kInterp, TfToken(cp.interpolation)))
-            return false;
-        if (cp.hasValue) {
-            const UsdTimeCode t = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
-            return attr.Set(w.coerced, t);
-        }
-        return true;
-    }
-    // SDFPRIM — author the property spec in the owning layer.
-    SdfPrimSpecHandle &s = w.primSpec;
-    const SdfLayerHandle layer = s->GetLayer();
     const SdfPath propPath = s->GetPath().AppendProperty(TfToken(cp.name));
     if (cp.isRelationship) {
         SdfRelationshipSpecHandle rel = layer->GetRelationshipAtPath(propPath);
@@ -3412,6 +3436,55 @@ bool PerformCreateProp(const BoundQuery &q, const CreateProperty &cp, PlannedWri
         return attr->SetDefaultValue(w.coerced);
     }
     return true;
+}
+
+/// Apply one CREATE ATTRIBUTE/RELATIONSHIP clause to a matched prim (design
+/// §5). Plan already checked type conflicts and coerced the VALUE literal
+/// (w.coerced); an existing same-typed property is reused (idempotent).
+bool PerformCreateProp(const BoundQuery &q, const CreateProperty &cp, PlannedWrite &w) {
+    static const TfToken kInterp("interpolation");
+    if (q.entity == UtqlEntity::UsdPrim) {
+        // INSIDE VARIANT (§15): author the spec directly at the mapped
+        // variant path — a composed UsdAttribute handle only exists while
+        // the variant is selected, so the Usd-level path below would
+        // misreport success into an unselected variant.
+        if (!q.insideVariantSets.empty()) {
+            const SdfLayerHandle layer = StageWriteLayer(w);
+            if (!layer)
+                return false;
+            const SdfPath varPath = EnsureVariantChain(q, layer, w.prim.GetPath());
+            SdfPrimSpecHandle vs = SdfCreatePrimInLayer(layer, varPath);
+            return vs && PerformCreatePropOnSpec(q, cp, w, vs, layer);
+        }
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        UsdPrim &p = w.prim;
+        const TfToken name(cp.name);
+        if (cp.isRelationship) {
+            // Custom iff not schema-defined (the §5 semantics).
+            const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
+            UsdRelationship rel = p.CreateRelationship(name, custom);
+            if (!rel)
+                return false;
+            if (!cp.target.empty())
+                return rel.AddTarget(SdfPath(cp.target));
+            return true;
+        }
+        const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
+        const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
+        UsdAttribute attr = p.CreateAttribute(name, tn, custom);
+        if (!attr)
+            return false;
+        if (!cp.interpolation.empty() &&
+            !attr.SetMetadata(kInterp, TfToken(cp.interpolation)))
+            return false;
+        if (cp.hasValue) {
+            const UsdTimeCode t = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
+            return attr.Set(w.coerced, t);
+        }
+        return true;
+    }
+    // SDFPRIM — author the property spec in the owning layer.
+    return PerformCreatePropOnSpec(q, cp, w, w.primSpec, w.primSpec->GetLayer());
 }
 
 /// Remove one authored spec (design §7). The caller has already verified the
@@ -3449,9 +3522,7 @@ bool PerformDeleteSpec(PlannedWrite &w) {
 /// the named layer, ancestors created as the API creates them.
 bool PerformCreatePrim(const BoundQuery &q, PlannedWrite &w) {
     if (q.entity == UtqlEntity::UsdPrim) {
-        std::unique_ptr<UsdEditContext> ectx;
-        if (q.hasOnLayer && w.destLayer && w.stage)
-            ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
         const UsdPrim p = q.createType.empty()
                               ? w.stage->DefinePrim(w.path)
                               : w.stage->DefinePrim(w.path, TfToken(q.createType));
@@ -3579,9 +3650,14 @@ void SdfListOpPrepend(ListEditorProxy proxy, const T &item) {
 bool PerformArcAdd(const BoundQuery &q, const ArcMutation &am, PlannedWrite &w) {
     const std::string &fam = am.family;
     if (q.world == UtqlWorld::Stage) {
-        std::unique_ptr<UsdEditContext> ectx;
-        if (q.hasOnLayer && w.destLayer && w.stage)
-            ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        if (fam == "VARIANT") {
+            // ADD VARIANT["set"] "name" (§15): AddVariantSet is get-or-create,
+            // so this is idempotent; under an INSIDE VARIANT context the new
+            // set nests inside the mapped variant.
+            UsdVariantSet vs = w.prim.GetVariantSets().AddVariantSet(am.variantSet);
+            return vs.AddVariant(am.value);
+        }
         if (fam == "REFERENCE")
             return w.prim.GetReferences().AddReference(
                 SdfReference(w.arcAsset, w.arcPath), UsdListPositionFrontOfPrependList);
@@ -3653,9 +3729,7 @@ bool PerformArcAdd(const BoundQuery &q, const ArcMutation &am, PlannedWrite &w) 
 bool PerformArcRemove(const BoundQuery &q, const ArcMutation &am, PlannedWrite &w) {
     const std::string &fam = am.family;
     if (q.world == UtqlWorld::Stage) {
-        std::unique_ptr<UsdEditContext> ectx;
-        if (q.hasOnLayer && w.destLayer && w.stage)
-            ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
         if (fam == "REFERENCE")
             return w.prim.GetReferences().RemoveReference(
                 SdfReference(w.arcAsset, w.arcPath, w.arcOffset));
@@ -4229,6 +4303,8 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             std::map<std::string, std::vector<ArcItem>> current; // projected, per family
             for (size_t i = 0; i < q.arcMutations.size(); ++i) {
                 const ArcMutation &am = q.arcMutations[i];
+                if (am.family == "VARIANT")
+                    continue; // §15 — planned by planVariantAdds, not arc identity
                 auto cit = current.find(am.family);
                 if (cit == current.end())
                     cit = current.emplace(am.family, buildItems(am.family)).first;
@@ -4495,6 +4571,41 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
     // descendant of a matched ancestor becomes the §7 counted skip.
     std::unordered_map<std::string, std::vector<SdfPath>> plannedPrimDeletes;
 
+    // ADD VARIANT["set"] "name" clauses (§15) — planned apart from the
+    // generic arc machinery: idempotence is a composed variant-list check,
+    // not an arc identity. Inside an INSIDE context the exists-check is
+    // skipped (composed state cannot see into an unselected outer variant;
+    // AddVariantSet/AddVariant are idempotent at apply anyway).
+    bool ivCreateNoted = false;
+    auto planVariantAdds = [&](const UsdStageRefPtr &stage, const std::string &source,
+                               const UsdPrim &prim, const SdfLayerHandle &dest) {
+        for (size_t i = 0; i < q.arcMutations.size(); ++i) {
+            const ArcMutation &am = q.arcMutations[i];
+            if (am.family != "VARIANT")
+                continue;
+            if (q.insideVariantSets.empty()) {
+                const std::vector<std::string> names =
+                    prim.GetVariantSets().GetVariantSet(am.variantSet).GetVariantNames();
+                if (std::find(names.begin(), names.end(), am.value) != names.end()) {
+                    skip("variant {" + am.variantSet + "=" + am.value +
+                         "} already exists");
+                    continue;
+                }
+            }
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::ArcAdd;
+            w.stage = stage;
+            w.prim = prim;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = prim.GetPath();
+            w.arcIndex = i;
+            w.newDisplay = "{" + am.variantSet + "=" + am.value + "}";
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+    };
+
     // Plan every SET assignment against one matched row. Old values are read
     // now (still pre-write); coercion failures are per-row skips (§3.1).
     auto planUsdPrimWrites = [&](const UsdStageRefPtr &stage, const std::string &source,
@@ -4503,6 +4614,18 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
         if (q.hasOnLayer && !dest) {
             skip("ON LAYER \"" + q.onLayer + "\" is not in the stage's layer stack");
             return;
+        }
+        // §15 dry-run visibility: flag once when the INSIDE context will
+        // create rather than reuse the (outermost) variant.
+        if (!q.insideVariantSets.empty() && !ivCreateNoted) {
+            const std::vector<std::string> names =
+                prim.GetVariantSets().GetVariantSet(q.insideVariantSets[0]).GetVariantNames();
+            if (std::find(names.begin(), names.end(), q.insideVariantSels[0]) ==
+                names.end()) {
+                m.warnings.push_back("INSIDE VARIANT auto-creates missing "
+                                     "variant(s) on the matched prims");
+                ivCreateNoted = true;
+            }
         }
         for (size_t i = 0; i < q.sets.size(); ++i) {
             const SetAssignment &sa = q.sets[i];
@@ -4522,6 +4645,7 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             plan.writes.push_back(std::move(w));
         }
         planUsdCreateProps(stage, source, prim, dest);
+        planVariantAdds(stage, source, prim, dest);
         planArcMutations([&](const std::string &fam) { return usdPrimArcItems(prim, fam); },
                          witness, nullptr, dest, source, prim.GetPath(),
                          [&](PlannedWrite &w) {

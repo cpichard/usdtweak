@@ -43,6 +43,11 @@ struct BoundQuery {
     std::vector<ArcMutation>    arcMutations;
     bool        hasOnLayer = false;
     std::string onLayer;
+    // INSIDE VARIANT (§15): validated "{set=sel}" pairs, outermost first
+    // (nested contexts concatenate: "{model=sedan}{trim=sport}"). Empty =
+    // no variant context. Parallel vectors.
+    std::vector<std::string> insideVariantSets;
+    std::vector<std::string> insideVariantSels;
 
     // CREATE statement only (design-mutation §6, M2).
     std::string createPath;
