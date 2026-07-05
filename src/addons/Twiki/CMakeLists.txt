@@ -21,6 +21,9 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG        v0.15.3
 )
+# Don't let httplib add its own install() rules (headers + lib/cmake/httplib)
+# to our install prefix / app bundle — we only consume it as a header target.
+set(HTTPLIB_INSTALL                  OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_REQUIRE_OPENSSL          OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
