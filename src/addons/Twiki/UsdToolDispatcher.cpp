@@ -980,33 +980,34 @@ std::string UsdToolDispatcher::FindPrims(const JsObject& args) const {
 // composition clauses invert/forward against the active stage. A CompileError is
 // recoverable — the model reads the message, fixes the query, and retries.
 // --------------------------------------------------------------------------
-std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
-    const std::string query   = JsGetString(args, "query");
-    if (query.empty()) return "[error] missing 'query' argument";
-    // When set, the FULL result path set is retained client-side under this
-    // handle for reuse by the edit tools (list_id) and read_list — exactly like
-    // find_prims store_as, so a query result composes with the batched edits.
-    const std::string storeAs = JsGetString(args, "store_as");
-
-    UsdStageRefPtr stage = _stageFn();
-    if (!stage) return "[error] no active stage";
-
+void UsdToolDispatcher::_RunOneQuery(const std::string&    query,
+                                    const UsdStageRefPtr& stage,
+                                    const std::string&    storeAs,
+                                    std::ostringstream&   oss) const {
     // Compile. Parse failures carry a column; bind failures a plain message.
+    // Both are recoverable and reported inline (never thrown / returned early)
+    // so a batch keeps the reports of its other, well-formed queries.
     utql::Query ast;
     std::string err;
     size_t      errPos = 0;
-    if (!utql::Parse(query, ast, err, errPos))
-        return "[error] compile: " + err + " (at column "
-               + std::to_string(errPos + 1) + ") — fix the query and retry";
+    if (!utql::Parse(query, ast, err, errPos)) {
+        oss << "[error] compile: " << err << " (at column " << (errPos + 1)
+            << ") — fix the query and retry\n";
+        return;
+    }
     utql::BoundQuery bound;
-    if (!utql::Bind(std::move(ast), bound, err))
-        return "[error] compile: " + err + " — fix the query and retry";
+    if (!utql::Bind(std::move(ast), bound, err)) {
+        oss << "[error] compile: " << err << " — fix the query and retry\n";
+        return;
+    }
 
     // Write statements have their own tool (with dry-run + undo semantics);
     // this path stays strictly read-only.
-    if (bound.statement != utql::StatementKind::Find)
-        return "[error] that statement writes (UPDATE/CREATE/DELETE) — "
-               "run_query is read-only. Use run_mutation instead.";
+    if (bound.statement != utql::StatementKind::Find) {
+        oss << "[error] that statement writes (UPDATE/CREATE/DELETE) — "
+               "run_query is read-only. Use run_mutation instead.\n";
+        return;
+    }
 
     // No scope guard: every bound query runs. COMPOSING INTO (composition
     // inversion) and COMPOSED FROM both resolve against the active stage set
@@ -1015,8 +1016,8 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
 
     // Stage context: the active stage, plus its used-layer set so FIND LAYER has
     // layers to scan (sublayers + referenced/payload layers). The named-results
-    // cache is shared across run_query calls so `AS "x"` / `IN RESULTSET "x"`
-    // compose; current time = the context default. Execute only reads USD.
+    // cache is shared across run_query calls (and across a queries batch) so
+    // `AS "x"` / `IN RESULTSET "x"` compose; current time = the context default.
     utql::UtqlContext ctx;
     ctx.currentStage = stage;
     ctx.allStages    = {stage};
@@ -1042,10 +1043,11 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
     }
 
     // Status → behaviour the model should follow (mirrors the UtqlStatus design).
-    if (res.status == utql::UtqlStatus::CompileError)
-        return "[error] compile: " + res.message + " — fix the query and retry";
+    if (res.status == utql::UtqlStatus::CompileError) {
+        oss << "[error] compile: " << res.message << " — fix the query and retry\n";
+        return;
+    }
 
-    std::ostringstream oss;
     oss << "run_query: " << res.matched << " matched, " << res.scanned
         << " scanned";
     if (res.status == utql::UtqlStatus::OkDegraded)
@@ -1066,7 +1068,7 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
         oss << "no rows matched — report 'none found'; do NOT retry the same "
                "query.\n";
         appendCacheNote();
-        return oss.str();
+        return;
     }
 
     // Column header: the path is always present; RETURN fields follow.
@@ -1108,6 +1110,50 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
         oss << "\n";
     }
     appendCacheNote();
+}
+
+std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
+    // When set, the FULL result path set is retained client-side under this
+    // handle for reuse by the edit tools (list_id) and read_list — exactly like
+    // find_prims store_as, so a query result composes with the batched edits.
+    const std::string storeAs = JsGetString(args, "store_as");
+
+    // Resolve the effective query list: a single `query`, or a `queries` batch
+    // of INDEPENDENT reads run in one call. Each element compiles + runs on its
+    // own; the reports are concatenated. The shared RESULTSET cache still
+    // composes across them, so an `AS "n"` in an earlier element is visible to
+    // `IN RESULTSET "n"` in a later one.
+    std::vector<std::string> queries;
+    for (const JsValue& v : JsGetArray(args, "queries"))
+        if (v.IsString() && !v.GetString().empty())
+            queries.push_back(v.GetString());
+    const std::string single = JsGetString(args, "query");
+    if (!queries.empty() && !single.empty())
+        return "[error] pass either 'query' (one) or 'queries' (a batch), not both";
+    if (queries.empty()) {
+        if (single.empty()) return "[error] missing 'query' (or 'queries') argument";
+        queries.push_back(single);
+    }
+    // store_as names ONE result set; with a batch it is ambiguous. Keep it a
+    // single-query affordance and steer batches to per-query AS for chaining.
+    if (queries.size() > 1 && !storeAs.empty())
+        return "[error] 'store_as' saves a single result set and is not supported "
+               "with a 'queries' batch — run that query alone, or add AS \"name\" "
+               "inside the query to cache it for chaining";
+
+    UsdStageRefPtr stage = _stageFn();
+    if (!stage) return "[error] no active stage";
+
+    std::ostringstream oss;
+    if (queries.size() == 1) {
+        _RunOneQuery(queries[0], stage, storeAs, oss);
+    } else {
+        for (size_t i = 0; i < queries.size(); ++i) {
+            oss << "── query " << (i + 1) << "/" << queries.size() << ": "
+                << queries[i] << "\n";
+            _RunOneQuery(queries[i], stage, /*storeAs*/ "", oss);
+        }
+    }
     return oss.str();
 }
 
@@ -1131,26 +1177,60 @@ std::string UsdToolDispatcher::RunQuery(const JsObject& args) const {
 // changes; the host has no modal gate (undo is the safety net).
 // --------------------------------------------------------------------------
 std::string UsdToolDispatcher::RunMutation(const JsObject& args) const {
-    const std::string statement = JsGetString(args, "statement");
-    if (statement.empty()) return "[error] missing 'statement' argument";
     const bool dryRun = JsGetBool(args, "dry_run", false);
+
+    // Resolve the effective statement list: a single `statement`, or a
+    // `statements` batch of INDEPENDENT writes applied in one call. They share
+    // one manifest and land as ONE undoable command. Independent-only: each
+    // statement's dry-run plan is computed against the UNMODIFIED stage, so a
+    // statement must NOT depend on an earlier statement in the same batch
+    // having been authored (e.g. CREATE a prim, then SET on it) — split those
+    // across steps. The reference-adding workflow (several ADD REFERENCE on
+    // different prims) is exactly the independent case this serves.
+    std::vector<std::string> statements;
+    for (const JsValue& v : JsGetArray(args, "statements"))
+        if (v.IsString() && !v.GetString().empty())
+            statements.push_back(v.GetString());
+    const std::string single = JsGetString(args, "statement");
+    if (!statements.empty() && !single.empty())
+        return "[error] pass either 'statement' (one) or 'statements' (a batch), "
+               "not both";
+    if (statements.empty()) {
+        if (single.empty())
+            return "[error] missing 'statement' (or 'statements') argument";
+        statements.push_back(single);
+    }
+    const bool batch = statements.size() > 1;
 
     UsdStageRefPtr stage = _stageFn();
     if (!stage) return "[error] no active stage";
 
-    utql::Query ast;
-    std::string err;
-    size_t      errPos = 0;
-    if (!utql::Parse(statement, ast, err, errPos))
-        return "[error] compile: " + err + " (at column "
-               + std::to_string(errPos + 1) + ") — fix the statement and retry";
-    auto bound = std::make_shared<utql::BoundQuery>();
-    if (!utql::Bind(std::move(ast), *bound, err))
-        return "[error] compile: " + err + " — fix the statement and retry";
-
-    if (bound->statement == utql::StatementKind::Find)
-        return "[error] that is a FIND query — run_mutation only accepts "
-               "UPDATE / CREATE / DELETE. Use run_query for reads.";
+    // Compile ALL statements up front. A malformed statement anywhere in the
+    // batch aborts the whole call before anything is authored — so the batch is
+    // atomic on compile errors, never partially applied.
+    std::vector<std::shared_ptr<utql::BoundQuery>> bounds;
+    bounds.reserve(statements.size());
+    for (size_t i = 0; i < statements.size(); ++i) {
+        const std::string idx = batch
+            ? " (statement " + std::to_string(i + 1) + "/"
+                  + std::to_string(statements.size()) + ")"
+            : "";
+        utql::Query ast;
+        std::string err;
+        size_t      errPos = 0;
+        if (!utql::Parse(statements[i], ast, err, errPos))
+            return "[error] compile: " + err + " (at column "
+                   + std::to_string(errPos + 1) + ")" + idx
+                   + " — fix the statement and retry";
+        auto bound = std::make_shared<utql::BoundQuery>();
+        if (!utql::Bind(std::move(ast), *bound, err))
+            return "[error] compile: " + err + idx
+                   + " — fix the statement and retry";
+        if (bound->statement == utql::StatementKind::Find)
+            return "[error] that is a FIND query" + idx + " — run_mutation only "
+                   "accepts UPDATE / CREATE / DELETE. Use run_query for reads.";
+        bounds.push_back(std::move(bound));
+    }
 
     // Same context shape as run_query: the active stage plus its used-layer
     // set (Layer-world statements scan/author those), and the shared RESULTSET
@@ -1163,46 +1243,64 @@ std::string UsdToolDispatcher::RunMutation(const JsObject& args) const {
         if (h)
             ctx.allLayers.push_back(SdfLayerRefPtr(h));
     ctx.named = &_namedResults;
-
     // Phase 1 — manifest pass. Never authors (ctx.dryRun), so it is safe here
     // on the worker thread; this is what the model reads.
     ctx.dryRun = true;
-    utql::MutationPlan plan = utql::PlanUpdate(*bound, ctx);
-    utql::ApplyUpdate(*bound, plan, ctx);
-    const utql::UtqlResult& res = plan.manifest;
 
-    if (res.status == utql::UtqlStatus::CompileError)
-        return "[error] compile: " + res.message
-               + " — fix the statement and retry";
-
-    const uint64_t writes = res.changed + res.created + res.removed;
-
+    // Append one statement's manifest (counts, warnings, rows) at the current
+    // oss position and return its write count. The caller writes whatever
+    // precedes the counts on the same line (the "run_mutation …:" prefix for a
+    // single statement, or a per-statement header line for a batch).
     std::ostringstream oss;
-    oss << "run_mutation" << (dryRun ? " (dry run)" : " (plan)") << ": "
-        << res.changed << " changed";
-    if (res.created) oss << " / " << res.created << " created";
-    if (res.removed) oss << " / " << res.removed << " removed";
-    oss << " / " << res.matched << " matched / " << res.skipped << " skipped\n";
-    for (const std::string& w : res.warnings) oss << "warning: " << w << "\n";
-
-    if (!res.rows.empty()) {
-        // Manifest rows: PATH | LAYER | FIELD | OLD | NEW (CREATE/DELETE default
-        // to PATH | LAYER) — the path is a column here, unlike run_query rows.
-        oss << "columns:";
-        for (size_t c = 0; c < res.columnNames.size(); ++c)
-            oss << (c ? " | " : " ") << res.columnNames[c];
-        oss << "\n";
-        const size_t shown = std::min<size_t>(res.rows.size(), kFindPrimsLimit);
-        for (size_t i = 0; i < shown; ++i) {
-            oss << " ";
-            for (const utql::UtqlValue& v : res.rows[i].columns)
-                oss << " | " << v.ToDisplay();
+    auto appendManifest = [&](const utql::UtqlResult& res) -> uint64_t {
+        oss << res.changed << " changed";
+        if (res.created) oss << " / " << res.created << " created";
+        if (res.removed) oss << " / " << res.removed << " removed";
+        oss << " / " << res.matched << " matched / " << res.skipped
+            << " skipped\n";
+        for (const std::string& w : res.warnings) oss << "warning: " << w << "\n";
+        if (!res.rows.empty()) {
+            // Manifest rows: PATH | LAYER | FIELD | OLD | NEW (CREATE/DELETE
+            // default to PATH | LAYER) — path is a column here, unlike run_query.
+            oss << "columns:";
+            for (size_t c = 0; c < res.columnNames.size(); ++c)
+                oss << (c ? " | " : " ") << res.columnNames[c];
             oss << "\n";
+            const size_t shown = std::min<size_t>(res.rows.size(), kFindPrimsLimit);
+            for (size_t i = 0; i < shown; ++i) {
+                oss << " ";
+                for (const utql::UtqlValue& v : res.rows[i].columns)
+                    oss << " | " << v.ToDisplay();
+                oss << "\n";
+            }
+            if (res.rows.size() > shown)
+                oss << "... showing first " << shown << " of " << res.rows.size()
+                    << " rows\n";
         }
-        if (res.rows.size() > shown)
-            oss << "... showing first " << shown << " of " << res.rows.size()
-                << " rows\n";
+        return res.changed + res.created + res.removed;
+    };
+
+    uint64_t writes = 0;
+    for (size_t i = 0; i < bounds.size(); ++i) {
+        utql::MutationPlan plan = utql::PlanUpdate(*bounds[i], ctx);
+        utql::ApplyUpdate(*bounds[i], plan, ctx);
+        const utql::UtqlResult& res = plan.manifest;
+        if (res.status == utql::UtqlStatus::CompileError)
+            return "[error] compile: " + res.message
+                   + (batch ? " (statement " + std::to_string(i + 1) + "/"
+                                  + std::to_string(bounds.size()) + ")"
+                            : "")
+                   + " — fix the statement and retry";
+        if (batch)
+            oss << "── statement " << (i + 1) << "/" << bounds.size() << ": "
+                << statements[i] << "\n";
+        else
+            oss << "run_mutation" << (dryRun ? " (dry run): " : " (plan): ");
+        writes += appendManifest(res);
     }
+    if (batch)
+        oss << "TOTAL: " << writes << (dryRun ? " would change" : " to change")
+            << " across " << bounds.size() << " statements\n";
 
     if (dryRun) {
         oss << "dry run — NOTHING was changed. Repeat with dry_run=false to "
@@ -1218,7 +1316,8 @@ std::string UsdToolDispatcher::RunMutation(const JsObject& args) const {
     }
 
     // Phase 2 — queue the real apply. One command slot per frame: if another
-    // edit is already waiting, report and let the model retry next step.
+    // edit is already waiting, report and let the model retry next step. Note
+    // the whole batch shares this one slot — it queues a SINGLE command.
     if (CommandStack::GetInstance().HasNextCommand())
         return "[error] another edit is already queued for this frame — "
                "call run_mutation again on your next step";
@@ -1231,20 +1330,37 @@ std::string UsdToolDispatcher::RunMutation(const JsObject& args) const {
     utql::UtqlContext applyCtx = ctx;
     applyCtx.dryRun = false;
     applyCtx.named  = namedCopy.get();
-    auto applyPlan = std::make_shared<utql::MutationPlan>();
+    // One plan slot per statement, (re)computed on the UI thread at apply time
+    // so handles are valid then. `prepare` plans every statement and returns the
+    // UNION of their destination layers, so the single undo recorder wraps them
+    // all; `apply` then authors every statement inside that one recorder — the
+    // whole batch is ONE undoable command.
+    auto boundVec  = std::make_shared<std::vector<std::shared_ptr<utql::BoundQuery>>>(
+        std::move(bounds));
+    auto applyPlans = std::make_shared<std::vector<utql::MutationPlan>>();
     ExecuteAfterDraw<MultiLayerFunctionCall>(
         std::function<SdfLayerHandleVector()>(
-            [bound, applyCtx, namedCopy, applyPlan]() {
-                *applyPlan = utql::PlanUpdate(*bound, applyCtx);
-                return SdfLayerHandleVector(applyPlan->layers);
+            [boundVec, applyCtx, namedCopy, applyPlans]() {
+                applyPlans->resize(boundVec->size());
+                SdfLayerHandleVector layers;
+                for (size_t i = 0; i < boundVec->size(); ++i) {
+                    (*applyPlans)[i] = utql::PlanUpdate(*(*boundVec)[i], applyCtx);
+                    for (const SdfLayerHandle& l : (*applyPlans)[i].layers)
+                        if (std::find(layers.begin(), layers.end(), l)
+                            == layers.end())
+                            layers.push_back(l);
+                }
+                return layers;
             }),
-        std::function<void()>([bound, applyCtx, namedCopy, applyPlan]() {
-            utql::ApplyUpdate(*bound, *applyPlan, applyCtx);
+        std::function<void()>([boundVec, applyCtx, namedCopy, applyPlans]() {
+            for (size_t i = 0; i < boundVec->size(); ++i)
+                utql::ApplyUpdate(*(*boundVec)[i], (*applyPlans)[i], applyCtx);
         }));
 
-    oss << "queued: applies after this frame as ONE undoable edit. The "
-           "manifest above is the plan for it; verify with run_query on a "
-           "later step if you need proof it landed.\n";
+    oss << "queued: applies after this frame as ONE undoable edit"
+        << (batch ? " (all statements together)" : "") << ". The manifest above "
+           "is the plan for it; verify with run_query on a later step if you "
+           "need proof it landed.\n";
     return oss.str();
 }
 

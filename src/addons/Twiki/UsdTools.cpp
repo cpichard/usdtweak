@@ -276,7 +276,8 @@ ToolDefs BuildReadOnlyToolDefinitions() {
     {
         JsObject props;
         props["query"] = MakeStringParam(
-            "a single UTQL query string. Grammar:\n"
+            "a single UTQL query string (to run several independent queries in "
+            "one call, use 'queries' instead — exactly one of the two). Grammar:\n"
             "  FIND <entity> [COMPOSED FROM <origin> | COMPOSING INTO <target> "
             "[PER TARGET] | CONNECTED [UPSTREAM|DOWNSTREAM] (TO|OF) <origin> "
             "[WITHIN n]] [IN <scope>] [AT <time>] [WHERE <cond>] "
@@ -470,8 +471,19 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "  FIND USDPRIM WHERE KIND = \"component\" AS \"comps\"   then   "
             "FIND USDPRIM WHERE TYPE = \"Mesh\" AND PATH UNDER RESULTSET "
             "\"comps\"\n");
+        props["queries"] = _ArrayOfStringsParam(
+            "optional: a batch of INDEPENDENT UTQL query strings to run in one "
+            "call (each element uses the same grammar as 'query'). Their result "
+            "tables come back concatenated, one block per query. Use this to "
+            "gather several unrelated facts in a single round-trip instead of "
+            "one call per query. The RESULTSET cache still composes across the "
+            "batch, so an earlier element's AS \"name\" is visible to a later "
+            "element's IN RESULTSET \"name\". Pass either 'query' (one) or "
+            "'queries' (a batch), never both; 'store_as' is not supported with a "
+            "batch (add AS \"name\" inside a query to cache it instead).");
         props["store_as"] = MakeStringParam(
-            "optional handle name. If set, the FULL result path set is saved "
+            "optional handle name (single-'query' calls only). If set, the FULL "
+            "result path set is saved "
             "client-side under this name (like find_prims store_as). For a "
             "USDPRIM query reuse it with list_id on the edit tools to act on all "
             "matches in one undoable command, or page it with read_list. (For "
@@ -512,8 +524,10 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "describe — UPDATE / CREATE / DELETE statements over the same "
             "entities and WHERE surface — use run_mutation; an AS \"name\" "
             "resultset cached here is a first-class mutation target there "
-            "(UPDATE … IN RESULTSET \"name\" …).",
-            props, _Strings({"query"}))));
+            "(UPDATE … IN RESULTSET \"name\" …).\n"
+            "Pass ONE query in 'query', or a batch of independent reads in "
+            "'queries' — exactly one of the two.",
+            props, _Strings({}))));
     }
 
     // 7d. read_list
@@ -1237,7 +1251,9 @@ ToolDefs BuildEditToolDefinitions() {
     {
         JsObject props;
         props["statement"] = MakeStringParam(
-            "a single UTQL mutation statement. Grammar (clauses in this order; "
+            "a single UTQL mutation statement (to apply several independent "
+            "statements as ONE undoable edit, use 'statements' instead — exactly "
+            "one of the two). Grammar (clauses in this order; "
             "keywords case-insensitive; strings in \"double quotes\"):\n"
             "  UPDATE <entity> [COMPOSING INTO <target>] [IN <scope>] "
             "[AT TIME t] [WHERE <cond>] [ON LAYER \"id\"] "
@@ -1414,13 +1430,29 @@ ToolDefs BuildEditToolDefinitions() {
             "  run_query: FIND USDPRIM WHERE NAME LIKE \"chair_old\" AS "
             "\"olds\"   then   UPDATE USDPRIM IN RESULTSET \"olds\" "
             "SET ACTIVE = false\n");
+        props["statements"] = _ArrayOfStringsParam(
+            "optional: a batch of INDEPENDENT UTQL mutation statements (each "
+            "uses the same grammar as 'statement') applied together as ONE "
+            "undoable edit — one command, one undo. Use it when you have "
+            "planned several unrelated writes up front (the classic case: "
+            "adding a different reference/payload to each of several prims): "
+            "batching them is one tool call and one undo step instead of one "
+            "per statement. INDEPENDENT means each statement is planned against "
+            "the stage as it is NOW — a statement must NOT rely on an earlier "
+            "one in the same batch having been authored (e.g. CREATE a prim in "
+            "statement 1, then SET on it in statement 2); split those across "
+            "separate calls. A compile error in ANY statement aborts the whole "
+            "batch before anything is written. dry_run applies to the whole "
+            "batch. Pass either 'statement' (one) or 'statements' (a batch), "
+            "never both.");
         props["dry_run"] = MakeBoolParam(
             "optional, default false. true = plan only: compute and return the "
             "full manifest (counts + per-write rows) WITHOUT changing "
             "anything. Use it to preview, then repeat with dry_run=false to "
             "apply. Always dry-run first when the change is broad or "
             "destructive (DELETE, REMOVE, whole-subtree writes) and show the "
-            "user the manifest before applying.");
+            "user the manifest before applying. With a 'statements' batch it "
+            "plans every statement.");
         tools.push_back(JsValue(_Tool(
             "run_mutation",
             "Runs a UTQL WRITE statement — UPDATE / CREATE / DELETE — against "
@@ -1446,8 +1478,14 @@ ToolDefs BuildEditToolDefinitions() {
             "(DELETE, bare REMOVE, many rows, or any doubt) call with "
             "dry_run=true first, show the user the manifest, and apply only "
             "after they confirm. A compile error is recoverable — read the "
-            "message, fix the statement, call again.",
-            props, _Strings({"statement"}))));
+            "message, fix the statement, call again.\n"
+            "BATCHING: when you have planned several INDEPENDENT edits at once "
+            "(e.g. adding a different reference to each of several prims), pass "
+            "them together in 'statements' — they share one manifest and land "
+            "as ONE undoable command, saving a tool call and an undo step per "
+            "statement. Pass ONE statement in 'statement', or a batch in "
+            "'statements' — exactly one of the two.",
+            props, _Strings({}))));
     }
 
     // open_file
