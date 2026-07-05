@@ -1,5 +1,9 @@
 #include "Binder.h"
 
+#include <pxr/base/tf/type.h>
+#include <pxr/usd/sdf/schema.h>
+#include <pxr/usd/usd/schemaRegistry.h>
+
 #include <map>
 
 namespace utql {
@@ -80,6 +84,9 @@ FieldInfo LookupPrimField(const std::string &f) {
     };
     if (f == "NAME")       return mk(FieldType::String, false);
     if (f == "PATH")           return mk(FieldType::String, false);
+    // Parent prim path ("/" for root prims). Readable in both worlds; also a
+    // writable Layer-world lvalue (reparent, design-mutation §13).
+    if (f == "PARENT")         return mk(FieldType::String, false);
     if (f == "TYPE")       return mk(FieldType::String, true);
     if (f == "KIND")           return mk(FieldType::String, true);
     if (f == "SPECIFIER")      return mk(FieldType::String, false);
@@ -96,6 +103,11 @@ FieldInfo LookupPrimField(const std::string &f) {
     // Prim-level animation gate (design A2). Not a composition family — a plain
     // bool leaf: true iff the prim has any attribute with authored time samples.
     if (f == "HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
+    // Prim-level spline gate (USD 26 animation curves, design A8): any attribute
+    // with an authored spline. Value clips gate: authored `clips` metadata on the
+    // prim. Both authored facts — valid in both worlds, like HAS_TIME_SAMPLES.
+    if (f == "HAS_SPLINE") return mk(FieldType::Bool, false);
+    if (f == "HAS_CLIPS")  return mk(FieldType::Bool, false);
     // Native-instancing classification gates (design I1). Plain bool leaves.
     // IS_INSTANCE / IS_PROTOTYPE / IS_IN_PROTOTYPE are composed facts (Stage world only —
     // enforced in ValidateLeaf); INSTANCEABLE is authored metadata, valid in both
@@ -115,6 +127,18 @@ FieldInfo LookupPrimField(const std::string &f) {
     // SDFPRIM.
     if (f == "HAS_RELATIONSHIP") return mk(FieldType::Bool, false);
     if (f == "RELATIONSHIPS")    return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // assetInfo metadata (design metadata-M1). The registered VtDictionary keys
+    // surface as a dotted group of plain fields — NOT an arc family (no per-arc
+    // correlation; FamilyDisplayField ignores the ASSETINFO head). Both worlds,
+    // like INSTANCEABLE: composed dict on USDPRIM, this spec's authored dict on
+    // SDFPRIM. HAS_ASSETINFO is the presence gate; DEPENDENCIES
+    // (assetInfo:payloadAssetDependencies) is a set field queried with CONTAINS.
+    // IDENTIFIER is the authored asset-path string, not resolved.
+    if (f == "HAS_ASSETINFO")          return mk(FieldType::Bool, false);
+    if (f == "ASSETINFO.IDENTIFIER")   return mk(FieldType::String, true);
+    if (f == "ASSETINFO.NAME")         return mk(FieldType::String, true);
+    if (f == "ASSETINFO.VERSION")      return mk(FieldType::String, true);
+    if (f == "ASSETINFO.DEPENDENCIES") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
     // Variant nesting — Layer world only (rejected on USDPRIM in ValidateLeaf, since a
     // composed-stage path has no variant components). IS_IN_VARIANT is a plain bool
     // gate; VARIANT_SELECTIONS is a set field of the "{set=value}" variant scopes the
@@ -122,15 +146,26 @@ FieldInfo LookupPrimField(const std::string &f) {
     // family (variant sets defined *on* a prim).
     if (f == "IS_IN_VARIANT")      return mk(FieldType::Bool, false);
     if (f == "VARIANT_SELECTIONS") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    // customData metadata (metadata M2). HAS_CUSTOMDATA is the presence gate;
+    // CUSTOMDATA.KEYS is a set field of the dict's flattened colon-joined leaf
+    // key paths (CONTAINS / LIKE). CUSTOMDATA["key:path"] addresses one entry —
+    // type-polymorphic like VALUE.SCALAR (the value type is unknown at bind),
+    // nullable (missing key = NULL, so IS NOT NULL is the existence test).
+    // Both worlds: composed dict on USDPRIM, this spec's authored dict on SDFPRIM.
+    if (f == "HAS_CUSTOMDATA")  return mk(FieldType::Bool, false);
+    if (f == "CUSTOMDATA.KEYS") return FieldInfo{true, FieldType::String, false, true, /*isSet*/ true};
+    if (IsCustomDataField(f))   return mk(FieldType::String, true);
     return FieldInfo{}; // unknown
 }
 
 // Prim fields valid in BOTH worlds (USDPRIM and SDFPRIM).
 const char *kPrimFieldListCommon =
-    "NAME, PATH, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
+    "NAME, PATH, PARENT, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
     "CHILD_COUNT, ATTRIBUTE_COUNT, SPEC_COUNT, HAS_REFERENCE, HAS_PAYLOAD, "
-    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, INSTANCEABLE, "
-    "HAS_RELATIONSHIP, RELATIONSHIPS";
+    "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, HAS_SPLINE, HAS_CLIPS, INSTANCEABLE, "
+    "HAS_RELATIONSHIP, RELATIONSHIPS, HAS_ASSETINFO, ASSETINFO.IDENTIFIER, "
+    "ASSETINFO.NAME, ASSETINFO.VERSION, ASSETINFO.DEPENDENCIES, "
+    "HAS_CUSTOMDATA, CUSTOMDATA.KEYS, CUSTOMDATA[\"key\"]";
 
 // Composed-stage facts — valid only on USDPRIM (Stage world). The binder rejects
 // these on SDFPRIM (see ValidateLeaf), so they must not appear in the Layer-world
@@ -148,12 +183,20 @@ FieldInfo LookupAttrField(const std::string &f) {
     if (f == "NAME")       return mk(FieldType::String, false);
     if (f == "TYPE")        return mk(FieldType::String, true);
     if (f == "NAMESPACE")  return mk(FieldType::String, true);
+    // Name after the final ':' ("inputs:intensity" → "intensity") — the NL
+    // trap fix: models routinely forget schema namespaces (nl-examples #67).
+    if (f == "BASENAME")   return mk(FieldType::String, false);
+    if (f == "PARENT")     return mk(FieldType::String, false); ///< owning prim path
     if (f == "VALUE.ARRAY_SIZE")      return mk(FieldType::Number, false);
     if (f == "VALUE.BYTE_SIZE")       return mk(FieldType::Number, false);
     if (f == "VALUE.IS_ARRAY")        return mk(FieldType::Bool, false);
     if (f == "VALUE.HAS_TIME_SAMPLES") return mk(FieldType::Bool, false);
     if (f == "VALUE.SAMPLE_COUNT")    return mk(FieldType::Number, false);
-    if (f == "VALUE.IS_NONE")         return mk(FieldType::Bool, false);
+    // Spline gate (USD 26 animation curves, design A8). Splines are a separate
+    // authored value source from timeSamples, so this does NOT overlap
+    // VALUE.HAS_TIME_SAMPLES. Both worlds (authored fact, like the samples gate).
+    if (f == "VALUE.HAS_SPLINE")      return mk(FieldType::Bool, false);
+    if (f == "VALUE.IS_BLOCKED")         return mk(FieldType::Bool, false);
     // VALUE.SCALAR (design A1) is type-polymorphic; its operator validity is decided
     // by ValidateScalarLeaf (the runtime value type is unknown at bind). Listed here
     // as nullable String so it is recognised, displayable in RETURN, and null-testable.
@@ -182,9 +225,9 @@ FieldInfo LookupAttrField(const std::string &f) {
 }
 
 const char *kAttrFieldList =
-    "NAME, TYPE, NAMESPACE, VALUE.ARRAY_SIZE, "
+    "NAME, TYPE, NAMESPACE, BASENAME, PARENT, VALUE.ARRAY_SIZE, "
     "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
-    "VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
+    "VALUE.HAS_SPLINE, VALUE.IS_BLOCKED, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
     "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT, ASSET.IS_MISSING";
 
 // Authored variant-nesting facts — valid only on SDFATTRIBUTE (Layer world), like
@@ -198,15 +241,26 @@ FieldInfo LookupRelField(const std::string &f) {
     };
     if (f == "NAME")         return mk(FieldType::String, false);
     if (f == "NAMESPACE")    return mk(FieldType::String, true);
+    if (f == "BASENAME")     return mk(FieldType::String, false); ///< name after final ':'
+    if (f == "PARENT")       return mk(FieldType::String, false); ///< owning prim path
     if (f == "TARGET")       return mk(FieldType::String, false, /*set*/ true);
     if (f == "TARGET_COUNT") return mk(FieldType::Number, false);
+    // Dangling-target gate: true iff some composed target path resolves to no
+    // object on the stage. Composed fact — USDRELATIONSHIP only (rejected on
+    // SDFRELATIONSHIP in ValidateLeaf: authored targets legitimately resolve
+    // only after composition, so a per-layer existence test would flag healthy
+    // cross-layer targets).
+    if (f == "TARGET.IS_MISSING") return mk(FieldType::Bool, false);
     if (f == "PATH")         return mk(FieldType::String, false);
     return FieldInfo{};
 }
 
 const char *kRelFieldList =
-    "NAME, NAMESPACE, TARGET, "
+    "NAME, NAMESPACE, BASENAME, PARENT, TARGET, "
     "TARGET_COUNT, PATH";
+
+// Composed-stage facts — valid only on USDRELATIONSHIP (see LookupRelField).
+const char *kRelFieldListStageOnly = "TARGET.IS_MISSING";
 
 /// LAYER entity scalar fields (design §5). The stage-root metadata
 /// (UP_AXIS/METERS_PER_UNIT/time codes/DEFAULT_PRIM) is read off the layer;
@@ -247,6 +301,12 @@ const char *kLayerFieldList =
     "FRAMES_PER_SECOND";
 
 FieldInfo LookupField(Category c, const std::string &f) {
+    // Generic registered-metadata accessor (metadata M3b) — recognised on prim,
+    // attribute and relationship entities (LAYER deferred). Type-polymorphic
+    // like CUSTOMDATA["key"]: nullable String so it is displayable/null-testable;
+    // the value type and the key's schema validity are decided in ValidateLeaf.
+    if (IsMetadataField(f) && c != Category::Layer)
+        return FieldInfo{true, FieldType::String, /*nullable*/ true, true, false};
     switch (c) {
         case Category::Prim:         return LookupPrimField(f);
         case Category::Attribute:    return LookupAttrField(f);
@@ -289,6 +349,12 @@ std::string ValidFieldsFor(Category c, UtqlWorld world) {
             s += std::string(", ") + kAttrFieldListLayerOnly;
         return s;
     }
+    if (c == Category::Relationship) {
+        std::string s = kRelFieldList;
+        if (world == UtqlWorld::Stage)
+            s += std::string(", ") + kRelFieldListStageOnly;
+        return s;
+    }
     if (c == Category::Layer)
         return std::string(kLayerFieldList) +
                ", and the sublayer family: HAS_SUBLAYER SUBLAYER.{ASSET,IS_MISSING,"
@@ -296,7 +362,157 @@ std::string ValidFieldsFor(Category c, UtqlWorld world) {
     return FieldListFor(c);
 }
 
+// ------------------------------------------------- writable fields (mutation M1)
+
+/// What a SET assignment accepts (design-mutation §3). `Value` is the
+/// type-polymorphic attribute VALUE lvalue (scalar/tuple/NULL/BLOCK, coerced to
+/// the attribute's declared type per row).
+struct WritableField {
+    bool known = false;
+    enum class Accepts { Bool, String, Number, Value } accepts = Accepts::Bool;
+    bool nullable = true;           ///< SET f = NULL clears the authored opinion
+    const char *enumVals = nullptr; ///< restricted string values, for the error hint
+};
+
+WritableField LookupWritable(Category c, const std::string &f) {
+    using A = WritableField::Accepts;
+    auto mk = [](A a, bool nullable, const char *ev = nullptr) {
+        return WritableField{true, a, nullable, ev};
+    };
+    switch (c) {
+        case Category::Prim:
+            if (f == "ACTIVE")       return mk(A::Bool, true);
+            if (f == "INSTANCEABLE") return mk(A::Bool, true);
+            if (f == "KIND")         return mk(A::String, true);
+            if (f == "TYPE")         return mk(A::String, true);
+            if (f == "SPECIFIER")    return mk(A::String, false, "def, over, class");
+            // assetInfo scalar sub-fields (metadata M3a). IDENTIFIER authors an
+            // SdfAssetPath (typed); NAME/VERSION are strings. DEPENDENCIES stays
+            // read-only (list semantics — the generic "not writable" error names
+            // the writable trio). HAS_ASSETINFO is a read-only gate.
+            if (f == "ASSETINFO.NAME")       return mk(A::String, true);
+            if (f == "ASSETINFO.VERSION")    return mk(A::String, true);
+            if (f == "ASSETINFO.IDENTIFIER") return mk(A::String, true);
+            break;
+        case Category::Attribute:
+            if (f == "VALUE")         return mk(A::Value, true);
+            if (f == "INTERPOLATION") return mk(A::String, true);
+            if (f == "VARIABILITY")   return mk(A::String, false, "varying, uniform");
+            break;
+        case Category::Relationship:
+            break; // nothing writable in M1 (ADD/REMOVE TARGET is M3)
+        case Category::Layer:
+            if (f == "DEFAULT_PRIM")          return mk(A::String, true);
+            if (f == "UP_AXIS")               return mk(A::String, true, "Y, Z");
+            if (f == "START_TIME")            return mk(A::Number, true);
+            if (f == "END_TIME")              return mk(A::Number, true);
+            if (f == "TIMECODES_PER_SECOND")  return mk(A::Number, true);
+            if (f == "FRAMES_PER_SECOND")     return mk(A::Number, true);
+            if (f == "METERS_PER_UNIT")       return mk(A::Number, true);
+            if (f == "MUTED")                 return mk(A::Bool, false);
+            break;
+    }
+    return WritableField{};
+}
+
+/// The "Writable: …" hint per entity category and world (SPECIFIER and
+/// VARIABILITY are authored-only, so they appear only in the Layer-world list).
+std::string WritableListFor(Category c, UtqlWorld world) {
+    switch (c) {
+        case Category::Prim:
+            return world == UtqlWorld::Stage
+                       ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"], "
+                         "CUSTOMDATA[\"key\"], ASSETINFO.NAME, ASSETINFO.VERSION, "
+                         "ASSETINFO.IDENTIFIER, METADATA[\"key\"]"
+                       : "ACTIVE, INSTANCEABLE, KIND, TYPE, SPECIFIER, "
+                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"], ASSETINFO.NAME, "
+                         "ASSETINFO.VERSION, ASSETINFO.IDENTIFIER, METADATA[\"key\"], "
+                         "NAME, PARENT";
+        case Category::Attribute:
+            return world == UtqlWorld::Stage
+                       ? "VALUE, INTERPOLATION, METADATA[\"key\"]"
+                       : "VALUE, INTERPOLATION, VARIABILITY, METADATA[\"key\"], NAME";
+        case Category::Relationship:
+            return world == UtqlWorld::Stage
+                       ? "METADATA[\"key\"] (edit targets with ADD TARGET \"/p\" / REMOVE TARGET)"
+                       : "METADATA[\"key\"], NAME (targets via ADD TARGET \"/p\" / REMOVE TARGET)";
+        case Category::Layer:
+            return "DEFAULT_PRIM, UP_AXIS, START_TIME, END_TIME, "
+                   "TIMECODES_PER_SECOND, FRAMES_PER_SECOND, METERS_PER_UNIT, MUTED";
+    }
+    return "";
+}
+
+// -------------------------------------------------- generic metadata (M3b)
+
+/// A registered metadata key that already has a dedicated UTQL field. The
+/// generic METADATA["key"] accessor rejects these with a pointer at the field —
+/// one spelling per fact (two would cost NL accuracy). Redirect, don't alias.
+const char *MetadataRedirect(const std::string &key) {
+    static const std::map<std::string, const char *> kRedirect = {
+        {"kind", "KIND"},
+        {"active", "ACTIVE"},
+        {"instanceable", "INSTANCEABLE"},
+        {"typeName", "TYPE"},
+        {"specifier", "SPECIFIER"},
+        {"interpolation", "INTERPOLATION"},
+        {"variability", "VARIABILITY"},
+        {"customData", "CUSTOMDATA[\"…\"]"},
+        {"assetInfo", "ASSETINFO.NAME / .VERSION / .IDENTIFIER"},
+        {"variantSelection", "the VARIANT family (WHERE VARIANT.SET / SET VARIANT[\"set\"])"},
+        {"variantSetNames", "the VARIANT family (WHERE VARIANT.SET / SET VARIANT[\"set\"])"},
+        {"apiSchemas", "the API family (WHERE API CONTAINS / ADD API)"},
+        {"clips", "HAS_CLIPS"},
+    };
+    const auto it = kRedirect.find(key);
+    return it == kRedirect.end() ? nullptr : it->second;
+}
+
+/// Validate a METADATA["key"] against the Sdf schema + the redirect table.
+/// `err` is filled (and false returned) on any problem; a registered scalar key
+/// passes. Shared by every field surface (predicate, RETURN, SET).
+bool ValidateMetadataKeyString(const std::string &key, std::string &err) {
+    if (const char *redir = MetadataRedirect(key)) {
+        err = "metadata key \"" + key + "\" has a dedicated field — use " + redir +
+              " instead of METADATA[\"" + key + "\"].";
+        return false;
+    }
+    const SdfSchema::FieldDefinition *def =
+        SdfSchema::GetInstance().GetFieldDefinition(TfToken(key));
+    if (!def) {
+        err = "\"" + key + "\" is not a registered metadata key.";
+        return false;
+    }
+    if (def->HoldsChildren()) {
+        err = "\"" + key + "\" is a namespace-children field, not queryable metadata.";
+        return false;
+    }
+    const VtValue &fb = def->GetFallbackValue();
+    if (fb.IsHolding<VtDictionary>()) {
+        err = "\"" + key + "\" is a dictionary metadatum — no generic dict access; "
+              "CUSTOMDATA/ASSETINFO cover the dicts UTQL reads.";
+        return false;
+    }
+    if (fb.GetTypeName().find("ListOp") != std::string::npos) {
+        err = "\"" + key + "\" is a list-op metadatum — composition arcs are the "
+              "REFERENCE/PAYLOAD/INHERIT/SPECIALIZE/API families.";
+        return false;
+    }
+    return true;
+}
+
 // ---------------------------------------------------- composition families
+
+/// TYPE IS_A support (design A7). Resolve a user-supplied schema type name to a
+/// TfType: the schema registry covers schema type names ("Mesh", "Gprim",
+/// "Imageable" — concrete and abstract IsA schemas alike), with a TfType-name
+/// fallback ("UsdGeomGprim") for robustness. Unknown ⇒ empty TfType.
+TfType ResolveSchemaType(const std::string &name) {
+    TfType t = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(name));
+    if (t.IsUnknown())
+        t = TfType::FindByName(name);
+    return t;
+}
 
 bool IsHasGate(const std::string &f) {
     return f == "HAS_REFERENCE" || f == "HAS_PAYLOAD" || f == "HAS_VARIANT" ||
@@ -493,11 +709,28 @@ void CountFamilyMatches(const WhereExpr &e, std::map<Family, int> &counts) {
 class Binder {
   public:
     bool Run(Query &&q, BoundQuery &out) {
-        // 1. Entity → world.
+        // 1. Entity → world. A common CREATE mistake gets guidance before the
+        //    generic unknown-entity message: properties are an UPDATE clause.
+        if (q.statement == StatementKind::Create &&
+            (q.entityName == "ATTRIBUTE" || q.entityName == "RELATIONSHIP")) {
+            Fail("CREATE " + q.entityName + " is an UPDATE clause — properties "
+                 "are created per matched prim: UPDATE USDPRIM|SDFPRIM WHERE … "
+                 "CREATE " + q.entityName + " \"name\" ….");
+            return false;
+        }
         if (!ResolveEntity(q.entityName, out.entity, out.world))
             return false;
         _entity = out.entity;
         _cat = CategoryOf(out.entity);
+        _isUpdate = (q.statement == StatementKind::Update);
+        out.statement = q.statement;
+
+        // 1b. Statement-level checks that fix the world/scope rules before the
+        //     generic scope validation can give a misleading message.
+        if (q.statement == StatementKind::Create && !ValidateCreate(q))
+            return false;
+        if (q.statement == StatementKind::Delete && !ValidateDelete(q))
+            return false;
 
         // 2. COMPOSING INTO — composition inversion (design §4). Layer-world
         //    SDF entities only; mutually exclusive with IN.
@@ -510,6 +743,13 @@ class Binder {
             }
             if (q.scope.kind != ScopeSpec::Kind::Default) {
                 Fail("COMPOSING INTO replaces IN; remove the IN clause.");
+                return false;
+            }
+            // PER TARGET is a read-side display fan-out (one row per
+            // (spec, target) pair); a mutation writes each spec once.
+            if (q.statement != StatementKind::Find && q.composingInto.perTarget) {
+                Fail("PER TARGET is a display fan-out; a mutation statement "
+                     "writes each authored spec once. Remove PER TARGET.");
                 return false;
             }
         }
@@ -562,8 +802,11 @@ class Binder {
             }
         }
 
-        // 3. Scope.
-        if (!ValidateScope(q.scope, out.world))
+        // 3. Scope. CREATE owns its scope rules (ValidateCreate above): the
+        //    generic world/scope matrix would reject CREATE SDFPRIM IN LAYER's
+        //    Stage-vs-Layer wording before the §6 messages could apply.
+        if (q.statement != StatementKind::Create &&
+            !ValidateScope(q.scope, out.world))
             return false;
 
         // 4. AT — attribute entities only (design §2).
@@ -579,13 +822,21 @@ class Binder {
         if (q.where && !ValidateExpr(*q.where, out.world))
             return false;
 
-        // 6. RETURN / 7. ORDERED BY display fields.
-        for (const auto &f : q.returnFields)
-            if (!ValidateDisplayField(f, out.world, "RETURN"))
-                return false;
-        for (const auto &ob : q.orderBy)
-            if (!ValidateDisplayField(ob.field, out.world, "ORDERED BY"))
-                return false;
+        // 6. RETURN / 7. ORDERED BY display fields. A mutation statement's
+        //    RETURN selects manifest columns instead (design-mutation §8),
+        //    checked in ValidateUpdate / ValidateDelete.
+        if (q.statement == StatementKind::Find) {
+            for (const auto &f : q.returnFields)
+                if (!ValidateDisplayField(f, out.world, "RETURN"))
+                    return false;
+            for (const auto &ob : q.orderBy)
+                if (!ValidateDisplayField(ob.field, out.world, "ORDERED BY"))
+                    return false;
+        }
+
+        // 5b. UPDATE-specific checks (design-mutation §1/§2/§3/§9).
+        if (_isUpdate && !ValidateUpdate(q, out.world))
+            return false;
 
         if (q.hasLimit && q.limit < 0) {
             Fail("LIMIT must be non-negative.");
@@ -612,6 +863,8 @@ class Binder {
         out.composedFrom = std::move(q.composedFrom);
         out.connected = std::move(q.connected);
         out.scope = std::move(q.scope);
+        out.hasAt = q.hasAt;
+        out.atTime = q.atTime;
         out.where = std::move(q.where);
         out.returnAll = q.returnAll;
         out.returnFields = std::move(q.returnFields);
@@ -619,6 +872,16 @@ class Binder {
         out.hasLimit = q.hasLimit;
         out.limit = q.limit;
         out.asName = std::move(q.asName);
+        out.sets = std::move(q.sets);
+        out.createProps = std::move(q.createProps);
+        out.arcMutations = std::move(q.arcMutations);
+        out.hasOnLayer = q.hasOnLayer;
+        out.onLayer = std::move(q.onLayer);
+        out.insideVariantSets = std::move(_ivSets);
+        out.insideVariantSels = std::move(_ivSels);
+        out.createPath = std::move(q.createPath);
+        out.createType = std::move(q.createType);
+        out.createSpecifier = std::move(q.createSpecifier);
         out.warnings = std::move(_warnings);
         return true;
     }
@@ -743,7 +1006,7 @@ class Binder {
     /// bind time. Numeric literal → all ordering operators; string/token → = / != /
     /// LIKE; bool → = / != or the bare flag form. A mismatched ordering operator on
     /// a non-numeric literal is a CompileError, not a silent miss.
-    bool ValidateScalarLeaf(const WhereExpr &e) {
+    bool ValidateScalarLeaf(const WhereExpr &e, const std::string &what = "VALUE.SCALAR") {
         switch (e.kind) {
             case WhereExpr::Kind::Like:      // string/token pattern match
             case WhereExpr::Kind::IsNull:
@@ -752,7 +1015,7 @@ class Binder {
             case WhereExpr::Kind::In:        // set of equality comparisons
                 return true;
             case WhereExpr::Kind::Contains:
-                Fail("VALUE.SCALAR is a single value; use =, !=, <, >, LIKE or the "
+                Fail(what + " is a single value; use =, !=, <, >, LIKE or the "
                      "bare flag form, not CONTAINS.");
                 return false;
             case WhereExpr::Kind::Compare: {
@@ -763,19 +1026,39 @@ class Binder {
                 if (lk == Literal::Kind::Bool) {
                     if (eqOnly)
                         return true;
-                    Fail("VALUE.SCALAR vs a boolean compares only with = / != (or the "
+                    Fail(what + " vs a boolean compares only with = / != (or the "
                          "bare flag form); ordering operators need a numeric literal.");
                     return false;
                 }
                 if (eqOnly)
                     return true; // string / token equality
-                Fail("VALUE.SCALAR vs a string compares only with = / != / LIKE; "
+                Fail(what + " vs a string compares only with = / != / LIKE; "
                      "<, <=, >, >= need a numeric literal.");
                 return false;
             }
             default:
                 return true;
         }
+    }
+
+    /// Bind-time gate for a METADATA["key"] field (M3b), shared by predicate /
+    /// RETURN / ORDERED BY / SET surfaces. LAYER entity is deferred; the key is
+    /// checked against the Sdf schema and the redirect table. Returns true and
+    /// does nothing for a non-metadata field.
+    bool CheckMetadataField(const std::string &f) {
+        if (!IsMetadataField(f))
+            return true;
+        if (_cat == Category::Layer) {
+            Fail("METADATA[\"…\"] is not supported on the LAYER entity yet "
+                 "(layer metadata like customLayerData is a separate pass).");
+            return false;
+        }
+        std::string err;
+        if (!ValidateMetadataKeyString(MetadataKeyPath(f), err)) {
+            Fail(err);
+            return false;
+        }
+        return true;
     }
 
     bool ValidateLeaf(const WhereExpr &e, UtqlWorld world) {
@@ -807,6 +1090,19 @@ class Binder {
              f == "IS_INSTANCE_PROXY" || f == "IS_LOADED") &&
             world == UtqlWorld::Layer) {
             Fail(f + " is a composed-stage fact, invalid in Layer world. Query USDPRIM.");
+            return false;
+        }
+
+        // Dangling-target gate — resolves composed targets against the stage, so
+        // Stage world only. There is deliberately no Layer form: authored targets
+        // legitimately resolve only after composition (an over's target lands in
+        // another layer), so a per-layer existence test would flag healthy scenes.
+        // The "which layer authors the dangling target" question is the two-step:
+        // find on USDRELATIONSHIP, then COMPOSING INTO.
+        if (_cat == Category::Relationship && f == "TARGET.IS_MISSING" &&
+            world == UtqlWorld::Layer) {
+            Fail(f + " is a composed-stage fact, invalid in Layer world. Query "
+                     "USDRELATIONSHIP (then COMPOSING INTO for the authoring layer).");
             return false;
         }
 
@@ -843,9 +1139,20 @@ class Binder {
         }
 
         // VALUE.SCALAR has type-polymorphic operator rules (design A1) — validate it
-        // before the generic single-FieldType path.
+        // before the generic single-FieldType path. CUSTOMDATA["key"] (metadata M2)
+        // shares the rules: the entry's value type is equally unknown at bind time.
         if (_cat == Category::Attribute && f == "VALUE.SCALAR")
             return ValidateScalarLeaf(e);
+        if (_cat == Category::Prim && IsCustomDataField(f))
+            return ValidateScalarLeaf(e, f);
+        // Generic registered metadata (M3b) — prim/attribute/relationship, both
+        // worlds. Validate the key (registered + not-redirected + scalar) then
+        // reuse the type-polymorphic scalar-leaf operator rules.
+        if (IsMetadataField(f)) {
+            if (!CheckMetadataField(f))
+                return false;
+            return ValidateScalarLeaf(e, f);
+        }
 
         const FieldInfo fi = LookupField(_cat, f);
         if (!fi.known) {
@@ -888,6 +1195,23 @@ class Binder {
             case WhereExpr::Kind::IsNull:
             case WhereExpr::Kind::IsNotNull:
                 return true; // null test valid on any field
+            case WhereExpr::Kind::IsA:
+                // Schema-inheritance test (design A7): prim TYPE only — the
+                // attribute TYPE is a value type name ("float3[]"), not a schema —
+                // and the target must resolve in the schema registry at bind time
+                // so typos fail the compile, not silently match nothing.
+                if (_cat != Category::Prim || f != "TYPE") {
+                    Fail("IS_A tests typed-schema inheritance and applies only to "
+                         "the prim TYPE field (TYPE IS_A \"Gprim\").");
+                    return false;
+                }
+                if (ResolveSchemaType(e.likeText).IsUnknown()) {
+                    Fail("Unknown schema type \"" + e.likeText + "\" — not in the "
+                         "schema registry. Use the schema type name, e.g. \"Mesh\", "
+                         "\"Gprim\", \"Xformable\", \"Imageable\", \"Boundable\".");
+                    return false;
+                }
+                return true;
             case WhereExpr::Kind::Compare:
             case WhereExpr::Kind::In:
                 return true; // executor coerces literal types / does set-existential
@@ -896,9 +1220,719 @@ class Binder {
         }
     }
 
+    // ---------------------------------------------- CREATE / DELETE (mutation M2)
+
+    /// Validate a CREATE statement (design-mutation §6): prim entities only,
+    /// an absolute prim path, and the per-world destination rules — USDPRIM
+    /// targets the current stage (ON LAYER optional), SDFPRIM requires the
+    /// IN LAYER destination.
+    bool ValidateCreate(const Query &q) {
+        if (_entity == UtqlEntity::UsdAttribute || _entity == UtqlEntity::SdfAttribute ||
+            _entity == UtqlEntity::UsdRelationship || _entity == UtqlEntity::SdfRelationship) {
+            Fail(std::string("CREATE ") + EntityName(_entity) + " is not a "
+                 "statement — properties are created per matched prim: UPDATE "
+                 "USDPRIM|SDFPRIM WHERE … CREATE ATTRIBUTE \"name\" TYPE \"…\".");
+            return false;
+        }
+        if (_entity == UtqlEntity::Layer) {
+            Fail("CREATE LAYER is not supported — create new files from the "
+                 "Content Browser.");
+            return false;
+        }
+        std::string perr;
+        if (!SdfPath::IsValidPathString(q.createPath, &perr)) {
+            Fail("CREATE: \"" + q.createPath + "\" is not a valid path" +
+                 (perr.empty() ? "" : " (" + perr + ")") + ".");
+            return false;
+        }
+        const SdfPath path(q.createPath);
+        if (!path.IsAbsolutePath() || !path.IsPrimPath()) {
+            Fail("CREATE needs an absolute prim path, e.g. \"/World/lights/key\".");
+            return false;
+        }
+        if (_entity == UtqlEntity::UsdPrim) {
+            if (q.scope.kind != ScopeSpec::Kind::Default) {
+                Fail("CREATE USDPRIM targets the current stage (IN scopes are "
+                     "not supported yet); use ON LAYER \"id\" to pick the "
+                     "destination layer.");
+                return false;
+            }
+            if (!q.createSpecifier.empty()) {
+                Fail("SPECIFIER is authored-only; CREATE USDPRIM defines a "
+                     "\"def\" prim. Use CREATE SDFPRIM \"/path\" IN LAYER "
+                     "\"id\" SPECIFIER \"over\".");
+                return false;
+            }
+            return true;
+        }
+        // SDFPRIM — the authored form.
+        if (q.scope.kind != ScopeSpec::Kind::Layer || q.scope.ids.size() != 1) {
+            Fail("CREATE SDFPRIM requires IN LAYER \"id\" — an authored spec "
+                 "needs a destination layer.");
+            return false;
+        }
+        if (q.hasOnLayer) {
+            Fail("ON LAYER applies to Stage-world writes; the IN scope already "
+                 "names the destination layer.");
+            return false;
+        }
+        if (!q.createSpecifier.empty() && q.createSpecifier != "def" &&
+            q.createSpecifier != "over" && q.createSpecifier != "class") {
+            Fail("SPECIFIER accepts: def, over, class.");
+            return false;
+        }
+        return true;
+    }
+
+    /// Validate a DELETE statement (design-mutation §7): authored specs only
+    /// (Layer world), mandatory explicit selection (fork F2), manifest RETURN
+    /// columns, no AS.
+    bool ValidateDelete(const Query &q) {
+        if (_entity == UtqlEntity::UsdPrim || _entity == UtqlEntity::UsdAttribute ||
+            _entity == UtqlEntity::UsdRelationship) {
+            Fail("DELETE is authored-only. Deactivate instead (UPDATE USDPRIM "
+                 "… SET ACTIVE = false) or delete the authored specs (DELETE "
+                 "SDFPRIM IN LAYER … WHERE …).");
+            return false;
+        }
+        if (_entity == UtqlEntity::Layer) {
+            Fail("DELETE applies to authored specs: SDFPRIM, SDFATTRIBUTE, "
+                 "SDFRELATIONSHIP.");
+            return false;
+        }
+        using K = ScopeSpec::Kind;
+        // COMPOSING INTO qualifies as explicit selection (fork F2): its target
+        // set is a deliberate, bounded choice (§2.1's delete-everywhere).
+        const bool namedScope = (q.scope.kind == K::Resultset || q.scope.kind == K::Layer ||
+                                 q.scope.kind == K::Layers ||
+                                 q.composingInto.targetKind != ComposingInto::TargetKind::None);
+        if (!q.where && !namedScope) {
+            Fail("DELETE without WHERE removes every spec. Add WHERE (or IN "
+                 "RESULTSET \"name\" / IN LAYER \"id\"), or spell it "
+                 "explicitly: WHERE PATH UNDER \"/\".");
+            return false;
+        }
+        if (!q.asName.empty()) {
+            Fail("Mutation statements do not cache result sets. Re-run a FIND "
+                 "to verify.");
+            return false;
+        }
+        for (const auto &f : q.returnFields) {
+            if (f != "PATH" && f != "LAYER") {
+                Fail("RETURN on DELETE selects manifest columns. Valid: PATH, "
+                     "LAYER.");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ------------------------------------------------- UPDATE (mutation M1)
+
+    /// Validate the write side of an UPDATE statement: mandatory explicit
+    /// selection (fork F2), ON LAYER world rules, no AS, manifest RETURN
+    /// columns, and each SET assignment against the writable-field table.
+    bool ValidateUpdate(const Query &q, UtqlWorld world) {
+        // F2 — an unbounded UPDATE is the classic without-WHERE foot-gun. A
+        // WHERE, an IN RESULTSET, an explicitly *named* scope, or a COMPOSING
+        // INTO target qualifies; broad scopes (LAYERSTACK / SUBLAYERS /
+        // STAGES "*" / none) do not.
+        using K = ScopeSpec::Kind;
+        const bool namedScope = (q.scope.kind == K::Resultset || q.scope.kind == K::Layer ||
+                                 q.scope.kind == K::Layers ||
+                                 q.composingInto.targetKind != ComposingInto::TargetKind::None);
+        if (!q.where && !namedScope) {
+            Fail("UPDATE without WHERE writes to every row. Add WHERE (or IN "
+                 "RESULTSET \"name\" / IN LAYER \"id\"), or spell it explicitly: "
+                 "WHERE PATH UNDER \"/\".");
+            return false;
+        }
+
+        if (q.hasOnLayer && world == UtqlWorld::Layer) {
+            Fail("ON LAYER applies to Stage-world writes; the IN scope already "
+                 "names the destination layer.");
+            return false;
+        }
+
+        if (!q.asName.empty()) {
+            Fail("Mutation statements do not cache result sets. Re-run a FIND "
+                 "to verify.");
+            return false;
+        }
+
+        // RETURN on UPDATE selects manifest columns (design-mutation §8).
+        for (const auto &f : q.returnFields) {
+            if (f != "PATH" && f != "LAYER" && f != "FIELD" && f != "OLD" && f != "NEW") {
+                Fail("RETURN on UPDATE selects manifest columns. Valid: PATH, "
+                     "LAYER, FIELD, OLD, NEW.");
+                return false;
+            }
+        }
+
+        for (const SetAssignment &sa : q.sets)
+            if (!ValidateAssignment(sa, world))
+                return false;
+
+        // SAMPLES carries its own times (design-mutation §14): a statement
+        // AT TIME would be a second time authority — a contradiction, not a
+        // merge.
+        if (q.hasAt)
+            for (const SetAssignment &sa : q.sets)
+                if (sa.value.kind == Literal::Kind::Samples) {
+                    Fail("SAMPLES {t: v, …} carries its own times — drop the "
+                         "statement's AT TIME.");
+                    return false;
+                }
+
+        // Namespace edits (rename/reparent, design-mutation §13) cannot mix
+        // with other mutation clauses — a field write would race the path
+        // change. NAME + PARENT together is the one allowed pair (it is a
+        // single namespace edit per row). Checked after the per-assignment
+        // pass so world/entity errors surface first.
+        int nsName = 0, nsParent = 0;
+        bool otherSet = false;
+        for (const SetAssignment &sa : q.sets) {
+            if (sa.field == "NAME") ++nsName;
+            else if (sa.field == "PARENT") ++nsParent;
+            else otherSet = true;
+        }
+        if (nsName + nsParent > 0) {
+            if (otherSet || !q.createProps.empty() || !q.arcMutations.empty()) {
+                Fail("SET NAME/PARENT cannot be combined with other mutation "
+                     "clauses in one statement. Split into two UPDATEs.");
+                return false;
+            }
+            if (nsName > 1 || nsParent > 1) {
+                Fail("SET NAME/PARENT appears twice — one rename/reparent per "
+                     "statement.");
+                return false;
+            }
+        }
+
+        // CREATE ATTRIBUTE/RELATIONSHIP clauses (design-mutation §5, M2) —
+        // per-row property creation, prim entities only.
+        if (!q.createProps.empty() && _cat != Category::Prim) {
+            Fail("CREATE ATTRIBUTE/RELATIONSHIP clauses apply to prim entities "
+                 "— UPDATE USDPRIM or SDFPRIM.");
+            return false;
+        }
+        for (const CreateProperty &cp : q.createProps) {
+            if (!SdfPath::IsValidNamespacedIdentifier(cp.name)) {
+                Fail("\"" + cp.name + "\" is not a valid property name.");
+                return false;
+            }
+            if (cp.isRelationship) {
+                if (!cp.target.empty() && !SdfPath::IsValidPathString(cp.target)) {
+                    Fail("TARGET \"" + cp.target + "\" is not a valid path.");
+                    return false;
+                }
+                continue;
+            }
+            if (!SdfSchema::GetInstance().FindType(cp.typeName)) {
+                Fail("Unknown attribute TYPE \"" + cp.typeName + "\" — use an "
+                     "Sdf value type name like float, double3, color3f, string, "
+                     "asset, float[].");
+                return false;
+            }
+            if (cp.hasValue && (cp.value.kind == Literal::Kind::Null ||
+                                cp.value.kind == Literal::Kind::Block)) {
+                Fail("VALUE on CREATE ATTRIBUTE authors an initial value; omit "
+                     "VALUE instead of NULL/BLOCK.");
+                return false;
+            }
+            if (cp.hasValue && cp.value.kind == Literal::Kind::Samples) {
+                Fail("VALUE on CREATE ATTRIBUTE authors one initial value; "
+                     "key it with a follow-up UPDATE … SET VALUE = SAMPLES "
+                     "{…}.");
+                return false;
+            }
+        }
+
+        // ADD/REMOVE arc clauses (design-mutation §4, M3).
+        for (const ArcMutation &am : q.arcMutations)
+            if (!ValidateArcMutation(am, world))
+                return false;
+
+        // INSIDE VARIANT "{set=sel}…" (§15) — the destination variant
+        // context. Stage world only; nesting = concatenated pairs.
+        if (!q.insideVariant.empty()) {
+            if (world != UtqlWorld::Stage) {
+                Fail("INSIDE VARIANT is Stage-world — the opinion lands at "
+                     "the edit target inside the composed prim's variant "
+                     "(UPDATE USDPRIM / USDATTRIBUTE / USDRELATIONSHIP).");
+                return false;
+            }
+            if (!ParseVariantContext(q.insideVariant))
+                return false;
+            for (const SetAssignment &sa : q.sets)
+                if (sa.field == "NAME" || sa.field == "PARENT") {
+                    Fail("INSIDE VARIANT cannot combine with SET NAME/PARENT "
+                         "— namespace edits cannot cross variant scopes.");
+                    return false;
+                }
+        }
+        return true;
+    }
+
+    /// Parse an INSIDE VARIANT context string — "{set=sel}" or the nested
+    /// concatenation "{model=sedan}{trim=sport}" (outermost first, the same
+    /// notation as the read side's VARIANT_SELECTIONS) — into _ivSets/_ivSels.
+    bool ParseVariantContext(const std::string &s) {
+        auto trim = [](std::string v) {
+            const auto b = v.find_first_not_of(" \t");
+            const auto e = v.find_last_not_of(" \t");
+            return b == std::string::npos ? std::string()
+                                          : v.substr(b, e - b + 1);
+        };
+        const char *shape = "INSIDE VARIANT expects \"{set=sel}\" pairs — "
+                            "e.g. \"{model=sedan}\" or nested "
+                            "\"{model=sedan}{trim=sport}\".";
+        size_t i = 0;
+        while (i < s.size()) {
+            if (s[i] != '{') { Fail(shape); return false; }
+            const size_t close = s.find('}', i);
+            if (close == std::string::npos) { Fail(shape); return false; }
+            const std::string body = s.substr(i + 1, close - i - 1);
+            const size_t eq = body.find('=');
+            if (eq == std::string::npos) { Fail(shape); return false; }
+            const std::string set = trim(body.substr(0, eq));
+            const std::string sel = trim(body.substr(eq + 1));
+            if (!SdfPath::IsValidIdentifier(set)) {
+                Fail("INSIDE VARIANT: \"" + set + "\" is not a valid variant "
+                     "set name.");
+                return false;
+            }
+            if (!SdfSchema::GetInstance().IsValidVariantIdentifier(sel)) {
+                Fail("INSIDE VARIANT: \"" + sel + "\" is not a valid variant "
+                     "name.");
+                return false;
+            }
+            _ivSets.push_back(set);
+            _ivSels.push_back(sel);
+            i = close + 1;
+        }
+        if (_ivSets.empty()) { Fail(shape); return false; }
+        return true;
+    }
+
+    /// Validate one ADD/REMOVE clause (design-mutation §4): known family,
+    /// entity gating (arc families live on prims, SUBLAYER on LAYER, TARGET on
+    /// relationships, CONNECTION on attributes), and value shape.
+    bool ValidateArcMutation(const ArcMutation &am, UtqlWorld world) {
+        const std::string &fam = am.family;
+        const char *verb = am.isRemove ? "REMOVE" : "ADD";
+
+        // Variant authoring (design-mutation §15). ADD VARIANT["set"] "name"
+        // creates the set (if needed) and the variant — the keyed spelling
+        // mirrors the selection verb SET VARIANT["set"] = "sel".
+        if (fam == "VARIANT_SET") {
+            Fail("ADD VARIANT[\"set\"] \"name\" creates the set and the "
+                 "variant in one clause — there is no separate VARIANT_SET "
+                 "verb.");
+            return false;
+        }
+        if (fam == "VARIANT") {
+            if (am.isRemove) {
+                Fail("REMOVE VARIANT is not supported yet — removing a "
+                     "variant is destructive Sdf surgery (deferred, §15).");
+                return false;
+            }
+            if (_cat != Category::Prim) {
+                Fail("ADD VARIANT applies to prim entities — UPDATE USDPRIM.");
+                return false;
+            }
+            if (world == UtqlWorld::Layer) {
+                Fail("Variant authoring is Stage-world — UPDATE USDPRIM (the "
+                     "specs land at the edit target and stay visible to "
+                     "SDFPRIM reads).");
+                return false;
+            }
+            if (am.variantSet.empty()) {
+                Fail("ADD VARIANT names its set: ADD VARIANT[\"model\"] "
+                     "\"sedan\".");
+                return false;
+            }
+            if (am.value.empty()) {
+                Fail("ADD VARIANT[\"" + am.variantSet + "\"] needs a quoted "
+                     "variant name.");
+                return false;
+            }
+            if (!am.primPath.empty()) {
+                Fail("PRIM_PATH applies to REFERENCE/PAYLOAD arcs.");
+                return false;
+            }
+            if (!SdfPath::IsValidIdentifier(am.variantSet)) {
+                Fail("\"" + am.variantSet + "\" is not a valid variant set "
+                     "name.");
+                return false;
+            }
+            if (!SdfSchema::GetInstance().IsValidVariantIdentifier(am.value)) {
+                Fail("\"" + am.value + "\" is not a valid variant name.");
+                return false;
+            }
+            return true;
+        }
+
+        Category host;
+        const char *hostHint;
+        bool valueIsPath = false;
+        if (fam == "REFERENCE" || fam == "PAYLOAD" || fam == "INHERIT" ||
+            fam == "SPECIALIZE" || fam == "API") {
+            host = Category::Prim;
+            hostHint = "prim entities — UPDATE USDPRIM or SDFPRIM";
+            valueIsPath = (fam == "INHERIT" || fam == "SPECIALIZE");
+        } else if (fam == "SUBLAYER") {
+            host = Category::Layer;
+            hostHint = "the LAYER entity — UPDATE LAYER";
+        } else if (fam == "TARGET") {
+            host = Category::Relationship;
+            hostHint = "relationship entities — UPDATE USDRELATIONSHIP or "
+                       "SDFRELATIONSHIP";
+            valueIsPath = true;
+        } else if (fam == "CONNECTION") {
+            host = Category::Attribute;
+            hostHint = "attribute entities — UPDATE USDATTRIBUTE or "
+                       "SDFATTRIBUTE";
+            valueIsPath = true;
+        } else {
+            Fail(std::string(verb) + " " + fam + ": unknown arc family. Valid: "
+                 "REFERENCE, PAYLOAD, INHERIT, SPECIALIZE, API (prims), "
+                 "SUBLAYER (LAYER), TARGET (relationships), CONNECTION "
+                 "(attributes).");
+            return false;
+        }
+        if (_cat != host) {
+            Fail(std::string(verb) + " " + fam + " applies to " + hostHint + ".");
+            return false;
+        }
+
+        if (!am.primPath.empty()) {
+            if (fam != "REFERENCE" && fam != "PAYLOAD") {
+                Fail("PRIM_PATH applies to REFERENCE/PAYLOAD arcs.");
+                return false;
+            }
+            const SdfPath p(SdfPath::IsValidPathString(am.primPath) ? am.primPath : "");
+            if (p.IsEmpty() || !p.IsAbsolutePath() || !p.IsPrimPath()) {
+                Fail("PRIM_PATH \"" + am.primPath + "\" is not an absolute "
+                     "prim path.");
+                return false;
+            }
+        }
+
+        if (!am.isRemove && am.value.empty() &&
+            !((fam == "REFERENCE" || fam == "PAYLOAD") && !am.primPath.empty())) {
+            Fail("ADD " + fam + " needs a non-empty value" +
+                 ((fam == "REFERENCE" || fam == "PAYLOAD")
+                      ? " (or PRIM_PATH \"/p\" for an internal arc)."
+                      : "."));
+            return false;
+        }
+
+        if (valueIsPath && am.hasValue && !am.value.empty()) {
+            const SdfPath p(SdfPath::IsValidPathString(am.value) ? am.value : "");
+            const bool primOnly = (fam == "INHERIT" || fam == "SPECIALIZE");
+            if (p.IsEmpty() || !p.IsAbsolutePath() || (primOnly && !p.IsPrimPath())) {
+                Fail(std::string(verb) + " " + fam + ": \"" + am.value +
+                     "\" is not an absolute " +
+                     (primOnly ? "prim path." : "path."));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool ValidateAssignment(const SetAssignment &sa, UtqlWorld world) {
+        const std::string &f = sa.field;
+
+        // §9 catalog special cases, most specific first.
+        if (f == "PATH") {
+            Fail("PATH is not writable. SET NAME renames, SET PARENT reparents "
+                 "(or both in one SET).");
+            return false;
+        }
+        // Rename / reparent (design-mutation §13). Layer world only in v1 —
+        // the Sdf namespace-edit backend fixes paths within the destination
+        // layer; the Stage backend (UsdNamespaceEditor) is deferred (M-R2).
+        if (f == "NAME" || f == "PARENT") {
+            if (_cat == Category::Layer) {
+                Fail("Field " + f + " is not writable on LAYER. Writable: " +
+                     WritableListFor(_cat, world) + ".");
+                return false;
+            }
+            if (world == UtqlWorld::Stage) {
+                Fail("Rename/reparent is authored-only for now. UPDATE " +
+                     std::string(_cat == Category::Prim ? "SDFPRIM"
+                                 : _cat == Category::Attribute
+                                     ? "SDFATTRIBUTE"
+                                     : "SDFRELATIONSHIP") +
+                     " IN LAYER \"…\" SET " + f + " = ….");
+                return false;
+            }
+            if (f == "PARENT" && _cat != Category::Prim) {
+                Fail("SET PARENT applies to prim entities — moving a property "
+                     "to another prim is not supported yet. SET NAME renames "
+                     "it in place.");
+                return false;
+            }
+            if (sa.value.kind != Literal::Kind::String) {
+                Fail("SET " + f + " expects a quoted " +
+                     (f == "NAME" ? std::string("name.")
+                                  : std::string("prim path.")));
+                return false;
+            }
+            if (f == "NAME") {
+                const bool ok = _cat == Category::Prim
+                                    ? SdfPath::IsValidIdentifier(sa.value.str)
+                                    : SdfPath::IsValidNamespacedIdentifier(sa.value.str);
+                if (!ok) {
+                    Fail("\"" + sa.value.str + "\" is not a valid " +
+                         (_cat == Category::Prim ? "prim name."
+                                                 : "property name."));
+                    return false;
+                }
+            } else {
+                const SdfPath p(SdfPath::IsValidPathString(sa.value.str) ? sa.value.str : "");
+                if (p.IsEmpty() || !p.IsAbsolutePath() ||
+                    !(p.IsPrimPath() || p == SdfPath::AbsoluteRootPath())) {
+                    Fail("SET PARENT: \"" + sa.value.str + "\" is not an "
+                         "absolute prim path (\"/\" reparents to the root).");
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (_cat == Category::Prim && (f == "VALUE" || StartsWith(f, "VALUE."))) {
+            Fail("VALUE is an attribute field. UPDATE USDATTRIBUTE instead, or "
+                 "add one per matched prim with CREATE ATTRIBUTE \"name\" TYPE "
+                 "\"…\" VALUE ….");
+            return false;
+        }
+        // VARIANT["set"] selection (M2) — a scalar per-set assignment, unlike
+        // the VARIANT.* read family. Checked before the family gate so SET
+        // VARIANT gets selection guidance, not the arc/list error.
+        if (f == "VARIANT" || f == "VARIANT.SET" || f == "VARIANT.SELECTION") {
+            if (sa.variantSet.empty()) {
+                Fail("SET VARIANT selects per set: SET VARIANT[\"set\"] = "
+                     "\"selection\" (e.g. SET VARIANT[\"lod\"] = \"proxy\").");
+                return false;
+            }
+            if (_cat != Category::Prim) {
+                Fail("VARIANT[\"…\"] applies to prim entities (USDPRIM / "
+                     "SDFPRIM).");
+                return false;
+            }
+            if (sa.value.kind == Literal::Kind::String ||
+                sa.value.kind == Literal::Kind::Null)
+                return true;
+            Fail("VARIANT[\"" + sa.variantSet + "\"] expects a quoted variant "
+                 "name, or NULL to clear the selection.");
+            return false;
+        }
+        // CUSTOMDATA["key"] (metadata M2) — per-key scalar writes, batchable with
+        // commas; NULL erases the entry (colon key paths nest; intermediates are
+        // auto-created on write). Checked before LookupWritable since the keyed
+        // spelling is per-query, not a catalog entry.
+        // Bare CUSTOMDATA (M3c): a dict literal replaces the whole authored dict,
+        // NULL clears it. Anything else routes to the per-key guidance. KEYS /
+        // HAS_CUSTOMDATA never take SET.
+        if (f == "CUSTOMDATA") {
+            if (sa.value.kind == Literal::Kind::Dict ||
+                sa.value.kind == Literal::Kind::Null) {
+                if (_cat != Category::Prim) {
+                    Fail("CUSTOMDATA applies to prim entities (USDPRIM / SDFPRIM).");
+                    return false;
+                }
+                return true;
+            }
+            Fail("SET CUSTOMDATA writes per key or the whole dict: "
+                 "SET CUSTOMDATA[\"key\"] = value (colon-nested), "
+                 "SET CUSTOMDATA = {\"key\": value, …} (replace), or "
+                 "SET CUSTOMDATA = NULL (clear).");
+            return false;
+        }
+        if (f == "CUSTOMDATA.KEYS" || f == "HAS_CUSTOMDATA") {
+            Fail("SET CUSTOMDATA writes per key: SET CUSTOMDATA[\"key\"] = value "
+                 "(colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]; NULL "
+                 "erases the entry).");
+            return false;
+        }
+        // assetInfo has fixed scalar sub-fields — no whole-dict form (M3c).
+        if (f == "ASSETINFO") {
+            Fail("SET ASSETINFO writes its scalar sub-fields: SET ASSETINFO.NAME "
+                 "/ .VERSION / .IDENTIFIER = value (no whole-dict form).");
+            return false;
+        }
+        if (IsCustomDataField(f)) {
+            if (_cat != Category::Prim) {
+                Fail("CUSTOMDATA[\"…\"] applies to prim entities (USDPRIM / "
+                     "SDFPRIM).");
+                return false;
+            }
+            switch (sa.value.kind) {
+                case Literal::Kind::String:
+                case Literal::Kind::Number:
+                case Literal::Kind::Bool:
+                case Literal::Kind::Null: // erase the entry
+                    return true;
+                default:
+                    Fail(f + " expects a scalar literal (string, number, bool) "
+                         "or NULL to erase the entry; dict/array values are not "
+                         "supported yet.");
+                    return false;
+            }
+        }
+        // Generic registered metadata write (M3b) — per-key scalar, batchable;
+        // NULL clears the opinion. Value coerced to the registered type at plan
+        // time (a mismatch is a per-row skip, not a bind error).
+        if (f == "METADATA") {
+            Fail("SET METADATA writes per key: SET METADATA[\"key\"] = value "
+                 "(a registered scalar metadatum, e.g. "
+                 "METADATA[\"documentation\"]; NULL clears the opinion).");
+            return false;
+        }
+        if (IsMetadataField(f)) {
+            if (!CheckMetadataField(f))
+                return false;
+            switch (sa.value.kind) {
+                case Literal::Kind::String:
+                case Literal::Kind::Number:
+                case Literal::Kind::Bool:
+                case Literal::Kind::Null: // clear the opinion
+                    return true;
+                default:
+                    Fail(f + " expects a scalar literal (string, number, bool) "
+                         "or NULL to clear the opinion; dictionary/array "
+                         "metadata is not writable here.");
+                    return false;
+            }
+        }
+        if (_cat == Category::Prim && f == "SPECIFIER" && world == UtqlWorld::Stage) {
+            Fail("SPECIFIER is authored-only. UPDATE SDFPRIM IN LAYER \"…\" "
+                 "instead.");
+            return false;
+        }
+        if (_cat == Category::Attribute && f == "VARIABILITY" && world == UtqlWorld::Stage) {
+            Fail("VARIABILITY is creation-time metadata; author it on the spec: "
+                 "UPDATE SDFATTRIBUTE IN LAYER \"…\".");
+            return false;
+        }
+        // Arc families are lists, not scalars — they get ADD/REMOVE verbs (§4).
+        if (IsHasGate(f) || IsFamilyField(f) || IsFamilyHead(f)) {
+            std::string fam =
+                f.find('.') == std::string::npos ? f : f.substr(0, f.find('.'));
+            if (StartsWith(fam, "HAS_"))
+                fam = fam.substr(4); // HAS_REFERENCE gate → the REFERENCE family
+            Fail(f + " is an arc/list field; SET assigns scalars. Use ADD " +
+                 fam + " \"…\" / REMOVE " + fam + " instead.");
+            return false;
+        }
+
+        const WritableField wf = LookupWritable(_cat, f);
+        if (!wf.known) {
+            // Distinguish a read-only known field from an unknown one.
+            const bool readable = LookupField(_cat, f).known;
+            if (readable)
+                Fail("Field " + f + " is not writable. Writable for " +
+                     EntityName(_entity) + ": " + WritableListFor(_cat, world) + ".");
+            else
+                Fail("Field " + f + " not valid for " + EntityName(_entity) +
+                     ". Writable: " + WritableListFor(_cat, world) + ".");
+            return false;
+        }
+
+        // Literal kind vs what the field accepts.
+        using A = WritableField::Accepts;
+        using LK = Literal::Kind;
+        switch (sa.value.kind) {
+            case LK::Null:
+                if (!wf.nullable) {
+                    Fail(f + " cannot be cleared with NULL; assign a value.");
+                    return false;
+                }
+                return true;
+            case LK::Block:
+                if (wf.accepts != A::Value) {
+                    Fail("BLOCK applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Samples:
+                // Batched keyframes (design-mutation §14). Entry shapes were
+                // validated by the parser (no nesting, non-empty map).
+                if (wf.accepts != A::Value) {
+                    Fail("SAMPLES applies to attribute VALUE only (UPDATE "
+                         "USDATTRIBUTE / SDFATTRIBUTE … SET VALUE = SAMPLES "
+                         "{t: v, …}).");
+                    return false;
+                }
+                return true;
+            case LK::Tuple:
+                if (wf.accepts != A::Value) {
+                    Fail("A tuple literal applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Array:
+                if (wf.accepts != A::Value) {
+                    Fail("An array literal applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Dict:
+                // A dict literal is the whole-customData replace form (M3c);
+                // bare CUSTOMDATA handled it above, so any other field is wrong.
+                Fail("A dict literal applies to SET CUSTOMDATA = {\"key\": value, "
+                     "…} only.");
+                return false;
+            case LK::Bool:
+                if (wf.accepts == A::Bool || wf.accepts == A::Value)
+                    return true;
+                Fail(f + " expects a " +
+                     (wf.accepts == A::Number ? "number" : "string") +
+                     ", not a boolean.");
+                return false;
+            case LK::Number:
+                if (wf.accepts == A::Number || wf.accepts == A::Value)
+                    return true;
+                Fail(f + " expects a " + (wf.accepts == A::Bool ? "boolean" : "string") +
+                     ", not a number.");
+                return false;
+            case LK::String:
+                if (wf.accepts == A::String || wf.accepts == A::Value) {
+                    if (wf.enumVals) {
+                        // Restricted value set (SPECIFIER / VARIABILITY / UP_AXIS).
+                        const std::string allowed(wf.enumVals);
+                        std::string needle = sa.value.str;
+                        bool ok = false;
+                        size_t pos = 0;
+                        while (pos != std::string::npos) {
+                            size_t comma = allowed.find(", ", pos);
+                            const std::string item =
+                                allowed.substr(pos, comma == std::string::npos
+                                                        ? std::string::npos
+                                                        : comma - pos);
+                            if (item == needle) { ok = true; break; }
+                            pos = (comma == std::string::npos) ? comma : comma + 2;
+                        }
+                        if (!ok) {
+                            Fail(f + " accepts: " + allowed + ".");
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                Fail(f + " expects a " + (wf.accepts == A::Bool ? "boolean" : "number") +
+                     ", not a string.");
+                return false;
+        }
+        return true;
+    }
+
     bool ValidateDisplayField(const std::string &f, UtqlWorld world, const char *clause) {
         if (f == "PATH")
             return true;
+        if (IsMetadataField(f))
+            return CheckMetadataField(f);
         if (IsCompositionField(f))
             return ValidateCompositionField(f);
         if (f == "STAGE") {
@@ -957,10 +1991,14 @@ class Binder {
 
     UtqlEntity _entity = UtqlEntity::UsdPrim;
     Category   _cat = Category::Prim;
+    bool       _isUpdate = false;
     bool       _composing = false;
     bool       _perTarget = false;
     std::string _error;
     std::vector<std::string> _warnings;
+    // INSIDE VARIANT context pairs (§15), filled by ParseVariantContext.
+    std::vector<std::string> _ivSets;
+    std::vector<std::string> _ivSels;
 };
 
 } // namespace

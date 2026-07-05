@@ -31,7 +31,15 @@ bool IsReservedWord(const std::string &w) {
                                 "IN",     "AT",           "WHERE",   "RETURN", "ORDERED",
                                 "BY",     "LIMIT",        "AS",      "AND",    "OR",
                                 "CONNECTED", "UPSTREAM",   "DOWNSTREAM", "OF",  "WITHIN",
-                                "COMPOSED",  "INTO",       "FROM"};
+                                "COMPOSED",  "INTO",       "FROM",
+                                // Write side (design-mutation). ADD/REMOVE reserved
+                                // ahead of M3 so fields never squat the clause names.
+                                "UPDATE", "CREATE", "DELETE", "SET", "ON", "ADD",
+                                "REMOVE", "BLOCK", "SAMPLES", "INSIDE",
+                                // Schema-inheritance operator (design A7). One
+                                // token — the lexer folds '_' into words, so this
+                                // never collides with IS NULL.
+                                "IS_A"};
     for (const char *kw : kws)
         if (IEquals(w, kw))
             return true;
@@ -43,6 +51,12 @@ class Parser {
     Parser(const std::vector<Token> &toks) : _toks(toks) {}
 
     bool ParseQuery(Query &out) {
+        if (CurIsKeyword("UPDATE"))
+            return ParseUpdate(out);
+        if (CurIsKeyword("CREATE"))
+            return ParseCreate(out);
+        if (CurIsKeyword("DELETE"))
+            return ParseDelete(out);
         if (!ExpectKeyword("FIND"))
             return false;
         if (Cur().kind != Token::Kind::Word) {
@@ -280,6 +294,614 @@ class Parser {
         return true;
     }
 
+    // ---------------------------------------------------------------- UPDATE
+    // UPDATE <entity> [IN <scope>] [AT <time>] [WHERE <cond>] [ON LAYER "id"]
+    //        <mutation>+ [RETURN <fields>] [LIMIT n]
+    //   <mutation> = SET f = lit [, f = lit …]
+    //              | CREATE ATTRIBUTE "name" TYPE "t" [VALUE lit] [INTERPOLATION "i"]
+    //              | CREATE RELATIONSHIP "name" [TARGET "/p"]
+    //              | ADD <family> "value" [PRIM_PATH "/p"]
+    //              | REMOVE <family> ["value" [PRIM_PATH "/p"]]
+    // (design-mutation §1/§3/§4/§5.)
+    bool ParseUpdate(Query &out) {
+        out.statement = StatementKind::Update;
+        Advance(); // UPDATE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (USDPRIM, SDFPRIM, …) after UPDATE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+
+        if (CurIsKeyword("COMPOSING")) { // cross-world targeting (§2.1, M3)
+            if (!ParseComposingInto(out.composingInto))
+                return false;
+        }
+        if (CurIsKeyword("IN")) {
+            if (!ParseScope(out.scope))
+                return false;
+        }
+        if (CurIsKeyword("AT")) {
+            if (!ParseAt(out))
+                return false;
+        }
+        if (CurIsKeyword("WHERE")) {
+            Advance();
+            out.where = ParseOr();
+            if (_failed)
+                return false;
+            if (!out.where) {
+                Fail("Expected a condition after WHERE");
+                return false;
+            }
+        }
+        if (CurIsKeyword("ON")) {
+            Advance();
+            if (!ExpectKeyword("LAYER"))
+                return false;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted layer identifier after ON LAYER");
+                return false;
+            }
+            out.hasOnLayer = true;
+            out.onLayer = Cur().text;
+            Advance();
+        }
+        // INSIDE VARIANT "{set=sel}" / "{a=x}{b=y}" (§15) — the destination
+        // variant context for every mutation clause; nesting = concatenated
+        // pairs, outermost first. Validation happens in the binder.
+        if (CurIsKeyword("INSIDE")) {
+            Advance();
+            if (!ExpectKeyword("VARIANT"))
+                return false;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted variant context after INSIDE VARIANT "
+                     "— e.g. INSIDE VARIANT \"{model=sedan}\" (nested: "
+                     "\"{model=sedan}{trim=sport}\")");
+                return false;
+            }
+            out.insideVariant = Cur().text;
+            Advance();
+        }
+        bool sawMutation = false;
+        while (true) {
+            if (CurIsKeyword("SET")) {
+                if (!ParseSet(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            if (CurIsKeyword("CREATE")) {
+                if (!ParseCreateProperty(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            if (CurIsKeyword("ADD") || CurIsKeyword("REMOVE")) {
+                if (!ParseArcMutation(out))
+                    return false;
+                sawMutation = true;
+                continue;
+            }
+            break;
+        }
+        if (!sawMutation) {
+            Fail("Expected a mutation clause — SET f = …, CREATE ATTRIBUTE "
+                 "\"name\" TYPE \"…\", CREATE RELATIONSHIP \"name\", ADD "
+                 "<family> \"…\", or REMOVE <family>");
+            return false;
+        }
+        if (CurIsKeyword("RETURN")) {
+            if (!ParseReturn(out))
+                return false;
+        }
+        if (CurIsKeyword("LIMIT")) {
+            Advance();
+            if (Cur().kind != Token::Kind::Number) {
+                Fail("Expected an integer after LIMIT");
+                return false;
+            }
+            out.hasLimit = true;
+            out.limit = static_cast<int>(Cur().number);
+            Advance();
+        }
+        if (CurIsKeyword("AS")) { // parsed so the binder can give the §9 message
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted name after AS");
+                return false;
+            }
+            out.asName = Cur().text;
+            Advance();
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. Clauses must appear in order: UPDATE … [COMPOSING INTO] "
+                 "[IN] [AT] [WHERE] [ON LAYER] [INSIDE VARIANT \"{s=v}\"] "
+                 "SET …/CREATE ATTRIBUTE …/ADD …/REMOVE … [RETURN] [LIMIT]");
+            return false;
+        }
+        return true;
+    }
+
+    // --------------------------------------------------- ADD / REMOVE (arcs)
+    // The arc & list-op mutation clauses of an UPDATE (design-mutation §4):
+    //   ADD <family> "value" [PRIM_PATH "/p"]
+    //   REMOVE <family> ["value" [PRIM_PATH "/p"]]
+    // The family set and its entity gating live in the binder.
+    bool ParseArcMutation(Query &out) {
+        ArcMutation am;
+        am.isRemove = CurIsKeyword("REMOVE");
+        Advance(); // ADD / REMOVE
+        const char *verb = am.isRemove ? "REMOVE" : "ADD";
+        if (Cur().kind != Token::Kind::Word) {
+            Fail(std::string("Expected an arc family after ") + verb +
+                 " — REFERENCE, PAYLOAD, INHERIT, SPECIALIZE, API, SUBLAYER, "
+                 "TARGET, or CONNECTION");
+            return false;
+        }
+        am.family = Upper(Cur().text);
+        Advance();
+        // ADD VARIANT["set"] "name" (§15) — the keyed spelling, mirroring
+        // SET VARIANT["set"] = "sel" on the selection side.
+        if (am.family == "VARIANT" && Cur().kind == Token::Kind::LBracket) {
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted set name in VARIANT[\"set\"]");
+                return false;
+            }
+            am.variantSet = Cur().text;
+            Advance();
+            if (Cur().kind != Token::Kind::RBracket) {
+                Fail("Expected ']' after VARIANT[\"" + am.variantSet + "\"");
+                return false;
+            }
+            Advance();
+        }
+        if (Cur().kind == Token::Kind::String) {
+            am.hasValue = true;
+            am.value = Cur().text;
+            Advance();
+        } else if (!am.isRemove) {
+            Fail("Expected a quoted value after ADD " + am.family +
+                 " (e.g. ADD " + am.family + " \"…\")");
+            return false;
+        }
+        if (CurIsKeyword("PRIM_PATH")) {
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted prim path after PRIM_PATH");
+                return false;
+            }
+            am.primPath = Cur().text;
+            Advance();
+        }
+        out.arcMutations.push_back(std::move(am));
+        return true;
+    }
+
+    // SET f = lit [, f = lit …]  — the lvalue may be VARIANT["set"] (M2).
+    bool ParseSet(Query &out) {
+        Advance(); // SET
+        while (true) {
+            if (Cur().kind != Token::Kind::Word || IsReservedWord(Cur().text)) {
+                Fail("Expected a field name after SET");
+                return false;
+            }
+            SetAssignment sa;
+            sa.field = Upper(Cur().text);
+            Advance();
+            if (!ParseKeyedFieldSuffix(sa.field))
+                return false;
+            if (sa.field == "VARIANT" && Cur().kind == Token::Kind::LBracket) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted set name in VARIANT[\"set\"]");
+                    return false;
+                }
+                sa.variantSet = Cur().text;
+                Advance();
+                if (Cur().kind != Token::Kind::RBracket) {
+                    Fail("Expected ']' after VARIANT[\"" + sa.variantSet + "\"");
+                    return false;
+                }
+                Advance();
+            }
+            if (Cur().kind != Token::Kind::Op || Cur().text != "=") {
+                Fail("Expected '=' in SET " + sa.field + " = …");
+                return false;
+            }
+            Advance();
+            if (!ParseSetLiteral(sa.value))
+                return false;
+            out.sets.push_back(std::move(sa));
+            if (Cur().kind == Token::Kind::Comma) {
+                Advance();
+                continue;
+            }
+            break;
+        }
+        return true;
+    }
+
+    // A SET rvalue: the WHERE literals plus BLOCK, tuple `(x, y, z)`, array
+    // `[e1, e2, …]` (whole-array assignment, M1.5 — elements are scalars or
+    // tuples; `[]` authors an empty array), and `SAMPLES {t: v, …}` (batched
+    // keyframes, design-mutation §14 — entries are any non-SAMPLES rvalue,
+    // NULL erases and BLOCK blocks the sample at t).
+    bool ParseSetLiteral(Literal &lit) {
+        if (CurIsKeyword("BLOCK")) {
+            lit.kind = Literal::Kind::Block;
+            Advance();
+            return true;
+        }
+        if (CurIsKeyword("SAMPLES")) {
+            Advance();
+            if (Cur().kind != Token::Kind::LBrace) {
+                Fail("Expected '{' after SAMPLES: SAMPLES {1: 0.0, 24: 9.0}");
+                return false;
+            }
+            Advance();
+            lit.kind = Literal::Kind::Samples;
+            if (Cur().kind == Token::Kind::RBrace) {
+                // Deliberately rejected here, not the binder: {} as "clear all
+                // samples" is too destructive to hide in two characters.
+                Fail("SAMPLES {} is empty — list at least one t: value entry "
+                     "(clearing a whole animation is not a SAMPLES job)");
+                return false;
+            }
+            while (true) {
+                if (Cur().kind != Token::Kind::Number) {
+                    Fail("Expected a numeric time before ':' in SAMPLES "
+                         "{t: value, …}");
+                    return false;
+                }
+                lit.sampleTimes.push_back(Cur().number);
+                Advance();
+                if (Cur().kind != Token::Kind::Colon) {
+                    Fail("Expected ':' after the time in SAMPLES {t: value, …}");
+                    return false;
+                }
+                Advance();
+                if (CurIsKeyword("SAMPLES")) {
+                    Fail("SAMPLES cannot nest");
+                    return false;
+                }
+                Literal entry;
+                if (!ParseSetLiteral(entry))
+                    return false;
+                lit.sampleValues.push_back(std::move(entry));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBrace) {
+                Fail("Expected '}' to close SAMPLES {…}");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        // Bare `{` (no SAMPLES keyword) with quoted-string keys = a dict literal
+        // (whole-customData replace, M3c). SAMPLES uses numeric keys behind its
+        // keyword, so the two never collide.
+        if (Cur().kind == Token::Kind::LBrace) {
+            Advance();
+            lit.kind = Literal::Kind::Dict;
+            if (Cur().kind == Token::Kind::RBrace) {
+                Fail("SET CUSTOMDATA = {} is empty — use SET CUSTOMDATA = NULL to "
+                     "clear the whole dict, or list at least one \"key\": value.");
+                return false;
+            }
+            while (true) {
+                if (Cur().kind != Token::Kind::String || Cur().text.empty()) {
+                    Fail("Expected a non-empty quoted key in a dict literal "
+                         "{\"key\": value, …} (colon-nested, e.g. "
+                         "\"pipeline:reviewState\").");
+                    return false;
+                }
+                lit.dictKeys.push_back(Cur().text);
+                Advance();
+                if (Cur().kind != Token::Kind::Colon) {
+                    Fail("Expected ':' after the key in a dict literal "
+                         "{\"key\": value, …}.");
+                    return false;
+                }
+                Advance();
+                if (Cur().kind == Token::Kind::LBrace) {
+                    Fail("Nested dict literals are not supported — nest with colon "
+                         "key paths (\"a:b\": value).");
+                    return false;
+                }
+                if (CurIsKeyword("NULL")) {
+                    Fail("NULL inside a dict literal is not allowed (replace "
+                         "semantics — omit the key instead).");
+                    return false;
+                }
+                Literal entry;
+                if (!ParseSetLiteral(entry))
+                    return false;
+                lit.dictValues.push_back(std::move(entry));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBrace) {
+                Fail("Expected '}' to close the dict literal {\"key\": value, …}.");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        if (Cur().kind == Token::Kind::LBracket) {
+            Advance();
+            lit.kind = Literal::Kind::Array;
+            if (Cur().kind == Token::Kind::RBracket) { // [] = empty array
+                Advance();
+                return true;
+            }
+            while (true) {
+                if (Cur().kind == Token::Kind::LBracket) {
+                    Fail("Nested arrays are not supported");
+                    return false;
+                }
+                if (CurIsKeyword("NULL") || CurIsKeyword("BLOCK")) {
+                    Fail("Array elements must be numbers, strings, booleans, "
+                         "or tuples");
+                    return false;
+                }
+                Literal elem;
+                if (!ParseSetLiteral(elem))
+                    return false;
+                lit.arrayElems.push_back(std::move(elem));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBracket) {
+                Fail("Expected ']'");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        if (Cur().kind == Token::Kind::LParen) {
+            Advance();
+            lit.kind = Literal::Kind::Tuple;
+            while (true) {
+                if (Cur().kind != Token::Kind::Number) {
+                    Fail("Expected a number inside a tuple literal (x, y, z)");
+                    return false;
+                }
+                lit.tuple.push_back(Cur().number);
+                Advance();
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RParen) {
+                Fail("Expected ')'");
+                return false;
+            }
+            Advance();
+            return true;
+        }
+        return ParseLiteral(lit);
+    }
+
+    // ------------------------------------------- CREATE ATTRIBUTE/RELATIONSHIP
+    // The per-row property-creation clause of an UPDATE (design-mutation §5):
+    //   CREATE ATTRIBUTE "name" TYPE "t" [VALUE <lit>] [INTERPOLATION "i"]
+    //   CREATE RELATIONSHIP "name" [TARGET "/p"]
+    bool ParseCreateProperty(Query &out) {
+        Advance(); // CREATE
+        CreateProperty cp;
+        if (AcceptKeyword("RELATIONSHIP")) {
+            cp.isRelationship = true;
+        } else if (!AcceptKeyword("ATTRIBUTE")) {
+            Fail("Expected ATTRIBUTE or RELATIONSHIP after CREATE in an UPDATE "
+                 "(new prims use the CREATE USDPRIM/SDFPRIM statement)");
+            return false;
+        }
+        if (Cur().kind != Token::Kind::String) {
+            Fail(std::string("Expected a quoted property name after CREATE ") +
+                 (cp.isRelationship ? "RELATIONSHIP" : "ATTRIBUTE"));
+            return false;
+        }
+        cp.name = Cur().text;
+        Advance();
+        if (cp.isRelationship) {
+            if (AcceptKeyword("TARGET")) {
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted path after TARGET");
+                    return false;
+                }
+                cp.target = Cur().text;
+                Advance();
+            }
+        } else {
+            while (true) {
+                if (CurIsKeyword("TYPE")) {
+                    Advance();
+                    if (Cur().kind != Token::Kind::String) {
+                        Fail("Expected a quoted type name after TYPE "
+                             "(e.g. TYPE \"float\")");
+                        return false;
+                    }
+                    cp.typeName = Cur().text;
+                    Advance();
+                    continue;
+                }
+                if (CurIsKeyword("VALUE")) {
+                    Advance();
+                    if (!ParseSetLiteral(cp.value))
+                        return false;
+                    cp.hasValue = true;
+                    continue;
+                }
+                if (CurIsKeyword("INTERPOLATION")) {
+                    Advance();
+                    if (Cur().kind != Token::Kind::String) {
+                        Fail("Expected a quoted value after INTERPOLATION");
+                        return false;
+                    }
+                    cp.interpolation = Cur().text;
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (cp.typeName.empty()) {
+                Fail("CREATE ATTRIBUTE \"" + cp.name +
+                     "\" requires TYPE \"…\" (e.g. TYPE \"float\")");
+                return false;
+            }
+        }
+        out.createProps.push_back(std::move(cp));
+        return true;
+    }
+
+    // ---------------------------------------------------------------- CREATE
+    // CREATE USDPRIM "/path" [TYPE "Mesh"] [ON LAYER "id"]
+    // CREATE SDFPRIM "/path" IN LAYER "id" [SPECIFIER "def"] [TYPE "Mesh"]
+    // (design-mutation §6 — the clauses after the path may come in any order.)
+    bool ParseCreate(Query &out) {
+        out.statement = StatementKind::Create;
+        Advance(); // CREATE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (USDPRIM or SDFPRIM) after CREATE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+        if (Cur().kind != Token::Kind::String) {
+            Fail("Expected a quoted prim path after CREATE " + out.entityName);
+            return false;
+        }
+        out.createPath = Cur().text;
+        Advance();
+        while (true) {
+            if (CurIsKeyword("TYPE")) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted type name after TYPE");
+                    return false;
+                }
+                out.createType = Cur().text;
+                Advance();
+                continue;
+            }
+            if (CurIsKeyword("SPECIFIER")) {
+                Advance();
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected \"def\", \"over\" or \"class\" after SPECIFIER");
+                    return false;
+                }
+                out.createSpecifier = Cur().text;
+                Advance();
+                continue;
+            }
+            if (CurIsKeyword("IN")) {
+                if (!ParseScope(out.scope))
+                    return false;
+                continue;
+            }
+            if (CurIsKeyword("ON")) {
+                Advance();
+                if (!ExpectKeyword("LAYER"))
+                    return false;
+                if (Cur().kind != Token::Kind::String) {
+                    Fail("Expected a quoted layer identifier after ON LAYER");
+                    return false;
+                }
+                out.hasOnLayer = true;
+                out.onLayer = Cur().text;
+                Advance();
+                continue;
+            }
+            break;
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. CREATE takes: CREATE USDPRIM \"/path\" [TYPE \"t\"] "
+                 "[ON LAYER \"id\"] | CREATE SDFPRIM \"/path\" IN LAYER \"id\" "
+                 "[SPECIFIER \"def\"] [TYPE \"t\"]");
+            return false;
+        }
+        return true;
+    }
+
+    // ---------------------------------------------------------------- DELETE
+    // DELETE <entity> [IN <scope>] [WHERE <cond>] [RETURN <fields>] [LIMIT n]
+    // (design-mutation §7 — Layer world only, enforced by the binder.)
+    bool ParseDelete(Query &out) {
+        out.statement = StatementKind::Delete;
+        Advance(); // DELETE
+        if (Cur().kind != Token::Kind::Word) {
+            Fail("Expected an entity (SDFPRIM, SDFATTRIBUTE, SDFRELATIONSHIP) "
+                 "after DELETE");
+            return false;
+        }
+        out.entityName = Upper(Cur().text);
+        Advance();
+        if (CurIsKeyword("COMPOSING")) { // cross-world targeting (§2.1, M3)
+            if (!ParseComposingInto(out.composingInto))
+                return false;
+        }
+        if (CurIsKeyword("IN")) {
+            if (!ParseScope(out.scope))
+                return false;
+        }
+        if (CurIsKeyword("WHERE")) {
+            Advance();
+            out.where = ParseOr();
+            if (_failed)
+                return false;
+            if (!out.where) {
+                Fail("Expected a condition after WHERE");
+                return false;
+            }
+        }
+        if (CurIsKeyword("RETURN")) {
+            if (!ParseReturn(out))
+                return false;
+        }
+        if (CurIsKeyword("LIMIT")) {
+            Advance();
+            if (Cur().kind != Token::Kind::Number) {
+                Fail("Expected an integer after LIMIT");
+                return false;
+            }
+            out.hasLimit = true;
+            out.limit = static_cast<int>(Cur().number);
+            Advance();
+        }
+        if (CurIsKeyword("AS")) { // parsed so the binder can give the §9 message
+            Advance();
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted name after AS");
+                return false;
+            }
+            out.asName = Cur().text;
+            Advance();
+        }
+        if (Cur().kind != Token::Kind::End) {
+            Fail("Unexpected '" + TokenText(Cur()) +
+                 "'. Clauses must appear in order: DELETE … [COMPOSING INTO] "
+                 "[IN] [WHERE] [RETURN] [LIMIT]");
+            return false;
+        }
+        return true;
+    }
+
     // ----------------------------------------------------------- CONNECTED TO
     // CONNECTED [UPSTREAM|DOWNSTREAM] (TO|OF) <origin> [WITHIN n]
     //   <origin> = RESULTSET "name" | "path" | ("p1","p2", …)
@@ -458,8 +1080,11 @@ class Parser {
                 Fail("Expected a field name in RETURN");
                 return false;
             }
-            out.returnFields.push_back(Upper(Cur().text));
+            std::string field = Upper(Cur().text);
             Advance();
+            if (!ParseKeyedFieldSuffix(field))
+                return false;
+            out.returnFields.push_back(std::move(field));
             if (Cur().kind == Token::Kind::Comma) {
                 Advance();
                 continue;
@@ -482,6 +1107,8 @@ class Parser {
             OrderBy ob;
             ob.field = Upper(Cur().text);
             Advance();
+            if (!ParseKeyedFieldSuffix(ob.field))
+                return false;
             if (AcceptKeyword("DESC"))
                 ob.desc = true;
             else
@@ -576,6 +1203,9 @@ class Parser {
             case Token::Kind::Number:
                 lit.kind = Literal::Kind::Number;
                 lit.number = Cur().number;
+                lit.intLike = Cur().text.find('.') == std::string::npos &&
+                              Cur().text.find('e') == std::string::npos &&
+                              Cur().text.find('E') == std::string::npos;
                 Advance();
                 return true;
             case Token::Kind::Word:
@@ -599,14 +1229,50 @@ class Parser {
         }
     }
 
+    /// CUSTOMDATA["key:path"] / METADATA["key"] — the keyed-field suffix
+    /// (metadata M2 / M3b). Called after a field name is read anywhere a field
+    /// can appear (predicate, RETURN, ORDERED BY, SET lvalue): on CUSTOMDATA or
+    /// METADATA + '[' it consumes the bracketed key and rewrites `field` to the
+    /// canonical embedded spelling. The key stays verbatim (case-sensitive; ':'
+    /// nests per USD's customData convention). Anything else passes through.
+    bool ParseKeyedFieldSuffix(std::string &field) {
+        const bool isMeta = (field == "METADATA");
+        if ((field != "CUSTOMDATA" && !isMeta) || Cur().kind != Token::Kind::LBracket)
+            return true;
+        const char *head = isMeta ? "METADATA" : "CUSTOMDATA";
+        Advance();
+        if (Cur().kind != Token::Kind::String || Cur().text.empty()) {
+            Fail(isMeta ? "Expected a non-empty quoted key in METADATA[\"key\"] — "
+                          "a registered metadata name, e.g. METADATA[\"documentation\"]"
+                        : "Expected a non-empty quoted key in CUSTOMDATA[\"key\"] — "
+                          "colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]");
+            return false;
+        }
+        const std::string key = Cur().text;
+        Advance();
+        if (Cur().kind != Token::Kind::RBracket) {
+            Fail(std::string("Expected ']' after ") + head + "[\"" + key + "\"");
+            return false;
+        }
+        Advance();
+        field = std::string(head) + "[\"" + key + "\"]";
+        return true;
+    }
+
     std::unique_ptr<WhereExpr> ParsePredicate() {
-        if (Cur().kind != Token::Kind::Word || IsReservedWord(Cur().text)) {
+        // TARGET is both a clause keyword (PER TARGET, CREATE RELATIONSHIP …
+        // TARGET, ADD TARGET) and the relationship-targets field (v0.12
+        // rename) — in a predicate position it can only be the field.
+        if (Cur().kind != Token::Kind::Word ||
+            (IsReservedWord(Cur().text) && !IEquals(Cur().text, "TARGET"))) {
             Fail("Expected a condition");
             return nullptr;
         }
         auto node = std::make_unique<WhereExpr>();
         node->field = Upper(Cur().text);
         Advance();
+        if (!ParseKeyedFieldSuffix(node->field))
+            return nullptr;
 
         // field OP literal
         if (Cur().kind == Token::Kind::Op && Cur().text != "*") {
@@ -621,6 +1287,19 @@ class Parser {
             node->kind = WhereExpr::Kind::Compare;
             if (!ParseLiteral(node->literal))
                 return nullptr;
+            return node;
+        }
+        // TYPE IS_A "SchemaType" — schema-registry inheritance test (design A7).
+        // The binder restricts it to the prim TYPE field and validates the target.
+        if (AcceptKeyword("IS_A")) {
+            node->kind = WhereExpr::Kind::IsA;
+            if (Cur().kind != Token::Kind::String) {
+                Fail("Expected a quoted schema type after IS_A "
+                     "(e.g. TYPE IS_A \"Gprim\")");
+                return nullptr;
+            }
+            node->likeText = Cur().text;
+            Advance();
             return node;
         }
         // field LIKE "text" | /regex/

@@ -126,6 +126,7 @@ set(_twiki_command_sources_for_tests
     ${CMAKE_SOURCE_DIR}/src/commands/SdfLayerInstructions.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/SdfUndoRedoRecorder.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/UndoLayerStateDelegate.cpp
+    ${CMAKE_SOURCE_DIR}/src/commands/UsdSceneLock.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/AttributeCommands.cpp
     ${CMAKE_SOURCE_DIR}/src/Selection.cpp
 )

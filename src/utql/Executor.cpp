@@ -1,17 +1,40 @@
 #include "Executor.h"
 
+#include <pxr/base/gf/half.h>
+#include <pxr/base/gf/quatd.h>
+#include <pxr/base/gf/quatf.h>
+#include <pxr/base/gf/quath.h>
+#include <pxr/base/gf/vec2d.h>
+#include <pxr/base/gf/vec2f.h>
+#include <pxr/base/gf/vec2h.h>
+#include <pxr/base/gf/vec2i.h>
+#include <pxr/base/gf/vec3d.h>
+#include <pxr/base/gf/vec3f.h>
+#include <pxr/base/gf/vec3h.h>
+#include <pxr/base/gf/vec3i.h>
+#include <pxr/base/gf/vec4d.h>
+#include <pxr/base/gf/vec4f.h>
+#include <pxr/base/gf/vec4h.h>
+#include <pxr/base/gf/vec4i.h>
+#include <pxr/base/tf/stringUtils.h>
+#include <pxr/base/tf/type.h>
+#include <pxr/base/vt/array.h>
+#include <pxr/base/vt/dictionary.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/pcp/node.h>
 #include <pxr/usd/pcp/types.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/attributeSpec.h>
+#include <pxr/usd/sdf/changeBlock.h>
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/layerOffset.h>
 #include <pxr/usd/sdf/layerUtils.h>
 #include <pxr/usd/sdf/listOp.h>
+#include <pxr/usd/sdf/namespaceEdit.h>
 #include <pxr/usd/sdf/payload.h>
+#include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/sdf/propertySpec.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
@@ -20,11 +43,18 @@
 #include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/sdf/types.h>
 #include <pxr/usd/usd/attribute.h>
+#include <pxr/usd/usd/editContext.h>
+#include <pxr/usd/usd/inherits.h>
+#include <pxr/usd/usd/modelAPI.h>
+#include <pxr/usd/usd/payloads.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primCompositionQuery.h>
 #include <pxr/usd/usd/primFlags.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/relationship.h>
+#include <pxr/usd/usd/schemaRegistry.h>
+#include <pxr/usd/usd/specializes.h>
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usdShade/udimUtils.h>
 
@@ -37,6 +67,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
@@ -74,6 +105,13 @@ std::string LiteralToString(const Literal &l) {
                 return std::to_string(static_cast<long long>(l.number));
             return std::to_string(l.number);
         }
+        // SET-only literal kinds (never produced inside WHERE; the display
+        // form for manifests is LiteralDisplay below).
+        case Literal::Kind::Tuple:   return "(tuple)";
+        case Literal::Kind::Block:   return "BLOCK";
+        case Literal::Kind::Array:   return "[array]";
+        case Literal::Kind::Samples: return "SAMPLES{…}";
+        case Literal::Kind::Dict:    return "{dict}";
     }
     return "";
 }
@@ -126,6 +164,10 @@ struct Arc {
     std::map<std::string, UtqlValue> fields;
     std::vector<std::string>         apiMembers; ///< {schemaName} for API arcs
     bool                             isApi = false;
+    /// Authoring layer of the arc when known (Stage-world REFERENCE/PAYLOAD,
+    /// read off the prim stack) — lets a REMOVE report whether it erased the
+    /// local entry or authored a delete list-op over a weaker layer (§4).
+    std::string                      layerId;
 };
 
 /// Resolved target for a PATH UNDER predicate: either a literal ancestor path,
@@ -135,6 +177,24 @@ struct UnderData {
     SdfPath                               literal;
     const std::unordered_set<std::string> *set = nullptr;
 };
+
+/// TYPE IS_A support (design A7): does typed schema `typeName` inherit from (or
+/// equal) `target`, per the schema registry? Both names resolve through
+/// UsdSchemaRegistry schema type names ("Mesh", "Gprim", "Imageable" — concrete
+/// and abstract alike), with a TfType-name fallback ("UsdGeomGprim"). Typeless
+/// prims and unregistered names don't match. Pure registry lookups — no
+/// composition, so the same test serves both worlds.
+bool SchemaTypeIsA(const std::string &typeName, const std::string &target) {
+    TfType t = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(typeName));
+    if (t.IsUnknown())
+        t = TfType::FindByName(typeName);
+    if (t.IsUnknown())
+        return false;
+    TfType tgt = UsdSchemaRegistry::GetTypeFromSchemaTypeName(TfToken(target));
+    if (tgt.IsUnknown())
+        tgt = TfType::FindByName(target);
+    return !tgt.IsUnknown() && t.IsA(tgt);
+}
 
 /// Per-row evaluation context. `get` reads scalar fields; `getSet` reads the
 /// members of a set-valued field (relationship targets / API). `setFields` names
@@ -250,6 +310,14 @@ bool EvalWhere(const WhereExpr &e, const EvalCtx &ctx) {
             const UtqlValue v = ctx.get(e.field);
             return v.type == UtqlValue::Type::Bool && v.boolean;
         }
+        case WhereExpr::Kind::IsA: {
+            // TYPE IS_A "SchemaType" (design A7): the row's typed schema (composed
+            // on USDPRIM, authored on SDFPRIM) IsA the target, equality included.
+            const UtqlValue v = ctx.get(e.field);
+            if (v.type != UtqlValue::Type::String || v.str.empty())
+                return false; // typeless prim (bare def/over) never matches
+            return SchemaTypeIsA(v.str, e.likeText);
+        }
         case WhereExpr::Kind::Under: {
             if (!ctx.underData)
                 return false;
@@ -337,6 +405,89 @@ void CollectWitnesses(const WhereExpr &e, const EvalCtx &ctx, bool positive,
             return;
         default:
             return; // scalar leaves carry no arc witness
+    }
+}
+
+/// Does one member of a set-valued field satisfy a leaf predicate? Mirrors the
+/// per-member logic of EvalWhere's set branches (Compare/Like/In/Contains).
+bool MemberMatchesLeaf(const std::string &m, const WhereExpr &e, const EvalCtx &ctx) {
+    switch (e.kind) {
+        case WhereExpr::Kind::Compare:
+            return EvalCompare(UtqlValue::String_(m), e.op, e.literal);
+        case WhereExpr::Kind::Like:
+            return MatchLike(m, e, *ctx.regexes);
+        case WhereExpr::Kind::In:
+            for (const Literal &lit : e.set)
+                if (EvalCompare(UtqlValue::String_(m), CompareOp::Eq, lit))
+                    return true;
+            return false;
+        case WhereExpr::Kind::Contains:
+            if (e.likeIsRegex) {
+                auto it = ctx.regexes->find(&e);
+                return it != ctx.regexes->end() && std::regex_search(m, it->second);
+            }
+            return m == e.likeText;
+        default:
+            return false;
+    }
+}
+
+/// The set-field analogue of CollectWitnesses (design-mutation §4): collect the
+/// members of set-valued field `field` (TARGET / CONNECTION.SOURCE) that
+/// positively explain the row's match, so REMOVE TARGET/CONNECTION can be
+/// gated to them. Same truth-gating and polarity rules; an empty result means
+/// no positive same-field predicate drove the match — REMOVE falls back to all
+/// members, like arc display does. Precondition: the row matched.
+void CollectMemberWitnesses(const WhereExpr &e, const EvalCtx &ctx, bool positive,
+                            const std::string &field, std::vector<std::string> &out) {
+    using K = WhereExpr::Kind;
+    switch (e.kind) {
+        case K::Compare:
+        case K::Like:
+        case K::In:
+        case K::Contains:
+            if (!positive || e.field != field || !ctx.IsSet(field))
+                return;
+            for (const std::string &m : ctx.getSet(field))
+                if (MemberMatchesLeaf(m, e, ctx))
+                    out.push_back(m);
+            return;
+        case K::BoolFlag:
+            // A bool gate can carry per-member evidence: TARGET.IS_MISSING
+            // explains its match by the *missing* members, which the evaluator
+            // exposes through getSet under the gate's own name (only the USD
+            // relationship mutation site answers it; elsewhere getSet yields {}).
+            // Positive polarity only, like the other leaves — NOT TARGET.IS_MISSING
+            // names no member. A false gate yields an empty subset naturally.
+            if (positive && e.field == field + ".IS_MISSING")
+                for (const std::string &m : ctx.getSet(e.field))
+                    out.push_back(m);
+            return;
+        case K::Not:
+            CollectMemberWitnesses(*e.children[0], ctx, !positive, field, out);
+            return;
+        case K::And:
+            if (EvalWhere(e, ctx)) {
+                for (const auto &c : e.children)
+                    CollectMemberWitnesses(*c, ctx, positive, field, out);
+            } else {
+                for (const auto &c : e.children)
+                    if (!EvalWhere(*c, ctx))
+                        CollectMemberWitnesses(*c, ctx, positive, field, out);
+            }
+            return;
+        case K::Or:
+            if (EvalWhere(e, ctx)) {
+                for (const auto &c : e.children)
+                    if (EvalWhere(*c, ctx))
+                        CollectMemberWitnesses(*c, ctx, positive, field, out);
+            } else {
+                for (const auto &c : e.children)
+                    CollectMemberWitnesses(*c, ctx, positive, field, out);
+            }
+            return;
+        default:
+            return;
     }
 }
 
@@ -431,6 +582,16 @@ UtqlValue NamespaceOf(const std::string &name) {
                                     : UtqlValue::String_(name.substr(0, pos));
 }
 
+/// BASENAME — the property name after the final namespace separator
+/// ("inputs:intensity" → "intensity"; un-namespaced names are their own
+/// basename). The complement of NAMESPACE, and the fix for the NL trap where
+/// a model asks for NAME = "intensity" and misses the inputs: prefix.
+UtqlValue BaseNameOf(const std::string &name) {
+    const auto pos = name.rfind(':');
+    return UtqlValue::String_(pos == std::string::npos ? name
+                                                       : name.substr(pos + 1));
+}
+
 std::string JoinPaths(const SdfPathVector &paths) {
     std::string out;
     for (size_t i = 0; i < paths.size(); ++i) {
@@ -474,6 +635,156 @@ std::vector<std::string> SdfPrimRelationshipNames(const SdfPrimSpecHandle &spec)
         if (rel)
             out.push_back(rel->GetName());
     return out;
+}
+
+/// assetInfo metadata (design metadata-M1) — the ASSETINFO.* fields +
+/// HAS_ASSETINFO gate. Composed dict on USDPRIM (UsdObject::GetAssetInfo),
+/// the spec's own authored dict on SDFPRIM. In-memory metadata reads: no
+/// resolver I/O, IDENTIFIER stays the authored asset-path string.
+VtDictionary UsdPrimAssetInfoDict(const UsdPrim &prim) { return prim.GetAssetInfo(); }
+
+VtDictionary SdfPrimAssetInfoDict(const SdfPrimSpecHandle &spec) {
+    const VtValue v = spec->GetInfo(SdfFieldKeys->AssetInfo);
+    return v.IsHolding<VtDictionary>() ? v.UncheckedGet<VtDictionary>() : VtDictionary();
+}
+
+/// One scalar assetInfo entry as a UtqlValue. `identifier` is an SdfAssetPath —
+/// projected to its authored path string; `name`/`version` are strings. Absent
+/// key or unexpected type ⇒ Null.
+UtqlValue AssetInfoField(const VtDictionary &d, const std::string &key) {
+    const auto it = d.find(key);
+    if (it == d.end())
+        return UtqlValue::Null();
+    const VtValue &v = it->second;
+    if (v.IsHolding<SdfAssetPath>())
+        return UtqlValue::String_(v.UncheckedGet<SdfAssetPath>().GetAssetPath());
+    if (v.IsHolding<std::string>())
+        return UtqlValue::String_(v.UncheckedGet<std::string>());
+    if (v.IsHolding<TfToken>())
+        return UtqlValue::String_(v.UncheckedGet<TfToken>().GetString());
+    return UtqlValue::Null();
+}
+
+/// assetInfo:payloadAssetDependencies as member strings — the
+/// ASSETINFO.DEPENDENCIES set field.
+std::vector<std::string> AssetInfoDependencies(const VtDictionary &d) {
+    std::vector<std::string> out;
+    const auto it = d.find("payloadAssetDependencies");
+    if (it == d.end() || !it->second.IsHolding<VtArray<SdfAssetPath>>())
+        return out;
+    for (const SdfAssetPath &p : it->second.UncheckedGet<VtArray<SdfAssetPath>>())
+        out.push_back(p.GetAssetPath());
+    return out;
+}
+
+/// customData metadata (metadata M2) — HAS_CUSTOMDATA, CUSTOMDATA.KEYS and the
+/// keyed CUSTOMDATA["key:path"] field. Composed dict on USDPRIM
+/// (UsdObject::GetCustomData*), the spec's own authored dict on SDFPRIM. Colon
+/// key paths follow USD's customData convention (VtDictionary path APIs).
+VtDictionary SdfPrimCustomDataDict(const SdfPrimSpecHandle &spec) {
+    const VtValue v = spec->GetInfo(SdfFieldKeys->CustomData);
+    return v.IsHolding<VtDictionary>() ? v.UncheckedGet<VtDictionary>() : VtDictionary();
+}
+
+/// Composed *authored* customData for a Stage-world prim. UsdObject::GetCustomData
+/// merges in schema-fallback entries (USD 26 stamps userDocBrief on every typed
+/// prim definition), which would make HAS_CUSTOMDATA vacuously true — so the
+/// Stage-world fields read authored opinions only (still composed across layers).
+VtDictionary UsdPrimAuthoredCustomDataDict(const UsdPrim &prim) {
+    if (!prim.HasAuthoredCustomData())
+        return VtDictionary();
+    const UsdMetadataValueMap m = prim.GetAllAuthoredMetadata();
+    const auto it = m.find(SdfFieldKeys->CustomData);
+    return (it != m.end() && it->second.IsHolding<VtDictionary>())
+               ? it->second.UncheckedGet<VtDictionary>()
+               : VtDictionary();
+}
+
+/// One customData entry as a UtqlValue. Scalars go through ScalarFromVtValue
+/// (declared below); dicts / arrays project to a truncated TfStringify string —
+/// lossy for comparison, but non-null so IS NOT NULL works as the existence
+/// test on any entry.
+UtqlValue ScalarFromVtValue(const VtValue &v); // defined with the VALUE.* helpers
+UtqlValue CustomDataValue(const VtValue &v) {
+    if (v.IsEmpty())
+        return UtqlValue::Null();
+    UtqlValue s = ScalarFromVtValue(v);
+    if (!s.IsNull())
+        return s;
+    std::string disp = TfStringify(v);
+    if (disp.size() > 64)
+        disp = disp.substr(0, 61) + "...";
+    return UtqlValue::String_(disp);
+}
+
+/// Flattened colon-joined leaf key paths of a customData dict — the
+/// CUSTOMDATA.KEYS set field. Nested dicts recurse ("a:b:c"); an empty nested
+/// dict contributes its own path so it is still discoverable.
+void CustomDataLeafKeysRec(const VtDictionary &d, const std::string &prefix,
+                           std::vector<std::string> &out) {
+    for (const auto &kv : d) {
+        const std::string path = prefix.empty() ? kv.first : prefix + ":" + kv.first;
+        if (kv.second.IsHolding<VtDictionary>()) {
+            const VtDictionary &sub = kv.second.UncheckedGet<VtDictionary>();
+            if (sub.empty())
+                out.push_back(path);
+            else
+                CustomDataLeafKeysRec(sub, path, out);
+        } else {
+            out.push_back(path);
+        }
+    }
+}
+
+std::vector<std::string> CustomDataLeafKeys(const VtDictionary &d) {
+    std::vector<std::string> out;
+    CustomDataLeafKeysRec(d, std::string(), out);
+    return out;
+}
+
+/// SET CUSTOMDATA["k"] rvalue → the VtValue to author. A number written without
+/// a decimal point authors int64 (USD's default for bare ints in usda);
+/// otherwise double. Strings stay std::string, bools bool.
+VtValue LiteralToCustomDataValue(const Literal &lit) {
+    switch (lit.kind) {
+        case Literal::Kind::Bool:   return VtValue(lit.boolean);
+        case Literal::Kind::Number:
+            return lit.intLike ? VtValue(static_cast<int64_t>(lit.number))
+                               : VtValue(lit.number);
+        default:                    return VtValue(lit.str);
+    }
+}
+
+/// A whole-dict SET CUSTOMDATA = {"k": lit, …} literal (M3c) built into a
+/// VtDictionary — colon key paths nest via SetValueAtPath (intermediates
+/// auto-created), values typed by literal spelling. Replaces the authored dict.
+VtDictionary DictLiteralToVtDictionary(const Literal &lit) {
+    VtDictionary d;
+    for (size_t i = 0; i < lit.dictKeys.size(); ++i)
+        d.SetValueAtPath(lit.dictKeys[i], LiteralToCustomDataValue(lit.dictValues[i]));
+    return d;
+}
+
+/// Generic registered metadata read (metadata M3b) — the keyed METADATA["key"]
+/// field on prim / attribute / relationship. Stage world reads *authored*
+/// opinions only (schema fallbacks — e.g. userDoc / documentation on typed prim
+/// definitions — would otherwise make every typed object match, the customData
+/// userDocBrief lesson). Scalars project through CustomDataValue; missing /
+/// unauthored ⇒ Null. The key is bind-validated as a registered scalar.
+UtqlValue UsdObjectMetadataValue(const UsdObject &obj, const std::string &f) {
+    const TfToken key(MetadataKeyPath(f));
+    VtValue v;
+    if (!obj.HasAuthoredMetadata(key) || !obj.GetMetadata(key, &v))
+        return UtqlValue::Null();
+    return CustomDataValue(v);
+}
+
+/// Layer-world counterpart — the spec's own authored opinion (HasInfo/GetInfo).
+UtqlValue SdfSpecMetadataValue(const SdfSpecHandle &spec, const std::string &f) {
+    const TfToken key(MetadataKeyPath(f));
+    if (!spec->HasInfo(key))
+        return UtqlValue::Null();
+    return CustomDataValue(spec->GetInfo(key));
 }
 
 /// Variant selections a spec is nested *under* — the VARIANT_SELECTIONS set field
@@ -590,9 +901,53 @@ bool SdfPrimHasTimeSamples(const SdfPrimSpecHandle &spec) {
     return false;
 }
 
+/// Spline gates (USD 26 animation curves, design A8) — the HAS_TIME_SAMPLES
+/// shape for the other authored value source. HasSpline is a metadata check,
+/// no value resolution. Version ladder: UsdAttribute::HasSpline exists from
+/// USD 24.11; SdfAttributeSpec::HasSpline only from 25.11 (older layers answer
+/// via the authored spline field key); before 24.11 there is no Usd-level
+/// spline API at all, so the gates are compile-time false.
+#if PXR_VERSION >= 2411
+bool UsdAttrHasSpline(const UsdAttribute &attr) { return attr.HasSpline(); }
+bool SdfAttrHasSpline(const SdfAttributeSpecHandle &attr) {
+#if PXR_VERSION >= 2511
+    return attr->HasSpline();
+#else
+    return attr->HasInfo(SdfFieldKeys->Spline);
+#endif
+}
+#else
+bool UsdAttrHasSpline(const UsdAttribute &) { return false; }
+bool SdfAttrHasSpline(const SdfAttributeSpecHandle &) { return false; }
+#endif
+
+bool UsdPrimHasSpline(const UsdPrim &prim) {
+    for (const UsdAttribute &attr : prim.GetAttributes())
+        if (UsdAttrHasSpline(attr))
+            return true;
+    return false;
+}
+
+bool SdfPrimHasSpline(const SdfPrimSpecHandle &spec) {
+    for (const SdfAttributeSpecHandle &attr : spec->GetAttributes())
+        if (attr && SdfAttrHasSpline(attr))
+            return true;
+    return false;
+}
+
+/// Value-clips gate (design A8): authored `clips` metadata on the prim — the
+/// UsdClipsAPI dictionary. An authored fact (any layer for USDPRIM via
+/// HasAuthoredMetadata, this spec's own opinion for SDFPRIM), deliberately not
+/// "some attribute resolves through a clip".
+const TfToken &ClipsToken() {
+    static const TfToken kClips("clips");
+    return kClips;
+}
+
 UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "NAME") return UtqlValue::String_(prim.GetName().GetString());
     if (f == "PATH")     return UtqlValue::String_(prim.GetPath().GetString());
+    if (f == "PARENT")   return UtqlValue::String_(prim.GetPath().GetParentPath().GetString());
     if (f == "TYPE") {
         const TfToken &t = prim.GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
@@ -612,6 +967,8 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "SPEC_COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetPrimStack().size()));
     if (f == "API.COUNT")      return UtqlValue::Number_(static_cast<double>(prim.GetAppliedSchemas().size()));
     if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(UsdPrimHasTimeSamples(prim));
+    if (f == "HAS_SPLINE")       return UtqlValue::Bool(UsdPrimHasSpline(prim));
+    if (f == "HAS_CLIPS")        return UtqlValue::Bool(prim.HasAuthoredMetadata(ClipsToken()));
     // Native-instancing classification (design I1). Composed facts.
     if (f == "IS_INSTANCE")     return UtqlValue::Bool(prim.IsInstance());
     if (f == "IS_PROTOTYPE")    return UtqlValue::Bool(prim.IsPrototype());
@@ -627,6 +984,26 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     // form here is its display join; membership goes through getSet.
     if (f == "HAS_RELATIONSHIP") return UtqlValue::Bool(!prim.GetRelationships().empty());
     if (f == "RELATIONSHIPS")    return UtqlValue::String_(JoinStrings(UsdPrimRelationshipNames(prim)));
+    // assetInfo metadata (design metadata-M1). Composed dict; DEPENDENCIES scalar
+    // form is its display join — membership goes through getSet.
+    if (f == "HAS_ASSETINFO")          return UtqlValue::Bool(!UsdPrimAssetInfoDict(prim).empty());
+    if (f == "ASSETINFO.IDENTIFIER")   return AssetInfoField(UsdPrimAssetInfoDict(prim), "identifier");
+    if (f == "ASSETINFO.NAME")         return AssetInfoField(UsdPrimAssetInfoDict(prim), "name");
+    if (f == "ASSETINFO.VERSION")      return AssetInfoField(UsdPrimAssetInfoDict(prim), "version");
+    if (f == "ASSETINFO.DEPENDENCIES")
+        return UtqlValue::String_(JoinStrings(AssetInfoDependencies(UsdPrimAssetInfoDict(prim))));
+    // customData metadata (metadata M2). Composed authored dict (schema fallbacks
+    // excluded — see UsdPrimAuthoredCustomDataDict); KEYS scalar form is its
+    // display join — membership goes through getSet. The keyed field walks colon
+    // key paths via GetCustomDataByKey, gated on an authored opinion.
+    if (f == "HAS_CUSTOMDATA")  return UtqlValue::Bool(prim.HasAuthoredCustomData());
+    if (f == "CUSTOMDATA.KEYS") return UtqlValue::String_(JoinStrings(CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim))));
+    if (IsCustomDataField(f)) {
+        const TfToken key(CustomDataKeyPath(f));
+        return prim.HasAuthoredCustomDataKey(key) ? CustomDataValue(prim.GetCustomDataByKey(key))
+                                                  : UtqlValue::Null();
+    }
+    if (IsMetadataField(f)) return UsdObjectMetadataValue(prim, f);
     return UtqlValue::Null();
 }
 
@@ -645,6 +1022,7 @@ double SdfApiCount(const SdfPrimSpecHandle &spec) {
 UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     if (f == "NAME") return UtqlValue::String_(spec->GetName());
     if (f == "PATH")     return UtqlValue::String_(spec->GetPath().GetString());
+    if (f == "PARENT")   return UtqlValue::String_(spec->GetPath().GetParentPath().GetString());
     if (f == "TYPE") {
         const TfToken t = spec->GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
@@ -662,6 +1040,8 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     if (f == "SPEC_COUNT")      return UtqlValue::Number_(1.0);
     if (f == "API.COUNT")      return UtqlValue::Number_(SdfApiCount(spec));
     if (f == "HAS_TIME_SAMPLES") return UtqlValue::Bool(SdfPrimHasTimeSamples(spec));
+    if (f == "HAS_SPLINE")       return UtqlValue::Bool(SdfPrimHasSpline(spec));
+    if (f == "HAS_CLIPS")        return UtqlValue::Bool(spec->HasInfo(ClipsToken()));
     // Authored instanceable metadata (design I1). Unauthored ⇒ false. IS_INSTANCE /
     // IS_PROTOTYPE are composed-only and rejected by the binder in Layer world.
     if (f == "INSTANCEABLE")   return UtqlValue::Bool(spec->GetInstanceable());
@@ -674,6 +1054,23 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     // Stage world (USDPRIM).
     if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
     if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
+    // assetInfo metadata (design metadata-M1). This spec's authored dict only —
+    // "which layer stamped the assetInfo".
+    if (f == "HAS_ASSETINFO")          return UtqlValue::Bool(!SdfPrimAssetInfoDict(spec).empty());
+    if (f == "ASSETINFO.IDENTIFIER")   return AssetInfoField(SdfPrimAssetInfoDict(spec), "identifier");
+    if (f == "ASSETINFO.NAME")         return AssetInfoField(SdfPrimAssetInfoDict(spec), "name");
+    if (f == "ASSETINFO.VERSION")      return AssetInfoField(SdfPrimAssetInfoDict(spec), "version");
+    if (f == "ASSETINFO.DEPENDENCIES")
+        return UtqlValue::String_(JoinStrings(AssetInfoDependencies(SdfPrimAssetInfoDict(spec))));
+    // customData metadata (metadata M2). This spec's authored dict only.
+    if (f == "HAS_CUSTOMDATA")  return UtqlValue::Bool(!SdfPrimCustomDataDict(spec).empty());
+    if (f == "CUSTOMDATA.KEYS") return UtqlValue::String_(JoinStrings(CustomDataLeafKeys(SdfPrimCustomDataDict(spec))));
+    if (IsCustomDataField(f)) {
+        const VtDictionary d = SdfPrimCustomDataDict(spec);
+        const VtValue *v = d.GetValueAtPath(CustomDataKeyPath(f));
+        return v ? CustomDataValue(*v) : UtqlValue::Null();
+    }
+    if (IsMetadataField(f)) return SdfSpecMetadataValue(spec, f);
     return UtqlValue::Null();
 }
 
@@ -804,7 +1201,9 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     };
     if (f == "NAME")      return UtqlValue::String_(attr.GetName().GetString());
     if (f == "PATH")                return UtqlValue::String_(attr.GetPath().GetString());
+    if (f == "PARENT")    return UtqlValue::String_(attr.GetPath().GetParentPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(attr.GetName().GetString());
+    if (f == "BASENAME")  return BaseNameOf(attr.GetName().GetString());
     if (f == "TYPE") {
         const SdfValueTypeName tn = attr.GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
@@ -821,6 +1220,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(attr.GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(attr.GetNumTimeSamples() > 0);
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(UsdAttrHasSpline(attr));
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(attr.GetNumTimeSamples()));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!attr.GetTypeName().IsArray())
@@ -830,7 +1230,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.IS_NONE") {
+    if (f == "VALUE.IS_BLOCKED") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
@@ -870,6 +1270,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     if (f == "HAS_CONNECTION")    return UtqlValue::Bool(!UsdAttrConnectionSources(attr).empty());
     if (f == "CONNECTION.COUNT")  return UtqlValue::Number_(static_cast<double>(UsdAttrConnectionSources(attr).size()));
     if (f == "CONNECTION.SOURCE") return UtqlValue::String_(JoinPaths(UsdAttrConnectionSources(attr)));
+    if (IsMetadataField(f)) return UsdObjectMetadataValue(attr, f);
     return UtqlValue::Null();
 }
 
@@ -888,7 +1289,9 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     };
     if (f == "NAME")      return UtqlValue::String_(spec->GetName());
     if (f == "PATH")                return UtqlValue::String_(spec->GetPath().GetString());
+    if (f == "PARENT")    return UtqlValue::String_(spec->GetPath().GetParentPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(spec->GetName());
+    if (f == "BASENAME")  return BaseNameOf(spec->GetName());
     if (f == "TYPE") {
         const SdfValueTypeName tn = spec->GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
@@ -907,6 +1310,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     }
     if (f == "VALUE.IS_ARRAY")        return UtqlValue::Bool(spec->GetTypeName().IsArray());
     if (f == "VALUE.HAS_TIME_SAMPLES") return UtqlValue::Bool(layer->GetNumTimeSamplesForPath(spec->GetPath()) > 0);
+    if (f == "VALUE.HAS_SPLINE")       return UtqlValue::Bool(SdfAttrHasSpline(spec));
     if (f == "VALUE.SAMPLE_COUNT")    return UtqlValue::Number_(static_cast<double>(layer->GetNumTimeSamplesForPath(spec->GetPath())));
     if (f == "VALUE.ARRAY_SIZE") {
         if (!spec->GetTypeName().IsArray())
@@ -916,7 +1320,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.IS_NONE") {
+    if (f == "VALUE.IS_BLOCKED") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
@@ -948,6 +1352,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     // Variant nesting (Layer world) — mirrors GetSdfPrimField.
     if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
     if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
+    if (IsMetadataField(f)) return SdfSpecMetadataValue(spec, f);
     return UtqlValue::Null();
 }
 
@@ -957,11 +1362,45 @@ UtqlValue GetRelScalarField(const std::string &name, const SdfPathVector &target
                             const SdfPath &path, const std::string &f) {
     if (f == "NAME")         return UtqlValue::String_(name);
     if (f == "PATH")         return UtqlValue::String_(path.GetString());
+    if (f == "PARENT")       return UtqlValue::String_(path.GetParentPath().GetString());
     if (f == "NAMESPACE")    return NamespaceOf(name);
+    if (f == "BASENAME")     return BaseNameOf(name);
     if (f == "TARGET_COUNT") return UtqlValue::Number_(static_cast<double>(targets.size()));
     if (f == "TARGET")
         return UtqlValue::String_(JoinPaths(targets)); // display form of the set
     return UtqlValue::Null();
+}
+
+/// TARGET.IS_MISSING — true iff some composed target path resolves to no object
+/// on the relationship's stage (Stage world only; the binder rejects the Layer
+/// form). Prim and property targets both count; paths into instances resolve as
+/// instance proxies via GetObjectAtPath. An empty target list is not missing.
+/// The USD emit sites answer this before delegating to GetRelScalarField, which
+/// stays stage-less for the shared Sdf paths.
+bool UsdRelTargetsMissing(const UsdRelationship &rel, const SdfPathVector &targets) {
+    const UsdStageWeakPtr stage = rel.GetStage();
+    if (!stage)
+        return false;
+    for (const SdfPath &p : targets)
+        if (!stage->GetObjectAtPath(p))
+            return true;
+    return false;
+}
+
+/// The missing subset of a relationship's targets, as path strings — the
+/// per-member evidence behind TARGET.IS_MISSING. The mutation evaluator
+/// exposes this through getSet("TARGET.IS_MISSING") so CollectMemberWitnesses
+/// can gate a bare REMOVE TARGET to exactly the dangling targets.
+std::vector<std::string> UsdRelMissingTargets(const UsdRelationship &rel,
+                                              const SdfPathVector &targets) {
+    std::vector<std::string> out;
+    const UsdStageWeakPtr stage = rel.GetStage();
+    if (!stage)
+        return out;
+    for (const SdfPath &p : targets)
+        if (!stage->GetObjectAtPath(p))
+            out.push_back(p.GetString());
+    return out;
 }
 
 // ------------------------------------------------- composition/API arcs (§3)
@@ -1034,6 +1473,8 @@ std::vector<Arc> BuildUsdArcs(const UsdPrim &prim, Family fam) {
             if (!asset.empty() && anchor)
                 missing = !SdfLayer::FindOrOpenRelativeToLayer(anchor, asset);
             a.fields[prefix + ".IS_MISSING"] = UtqlValue::Bool(missing);
+            if (anchor)
+                a.layerId = anchor->GetIdentifier();
             arcs.push_back(std::move(a));
         };
         for (const SdfPrimSpecHandle &spec : prim.GetPrimStack()) {
@@ -1389,6 +1830,16 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
     UtqlResult result;
     result.world = q.world;
 
+    // FIND stays pure (design-mutation principle 1): this entry point never
+    // writes. Hosts run UPDATE/CREATE/DELETE through PlanUpdate/ApplyUpdate on
+    // the UI thread.
+    if (q.statement != StatementKind::Find) {
+        result.status = UtqlStatus::CompileError;
+        result.message = "UPDATE/CREATE/DELETE are write statements; this "
+                         "query path is read-only and cannot execute them.";
+        return result;
+    }
+
     RegexCache regexes;
     std::map<const WhereExpr *, UnderData> underMap;
     std::deque<std::unordered_set<std::string>> underSets;
@@ -1411,7 +1862,7 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         setFields = {"TARGET"};
     // Prim-level relationship-name set field (design I2, RELATIONSHIPS CONTAINS …).
     else if (q.entity == UtqlEntity::UsdPrim || q.entity == UtqlEntity::SdfPrim)
-        setFields = {"RELATIONSHIPS"};
+        setFields = {"RELATIONSHIPS", "ASSETINFO.DEPENDENCIES", "CUSTOMDATA.KEYS"};
     // Attribute connection-source set field (design C1, CONNECTION.SOURCE CONTAINS …).
     else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
         setFields = {"CONNECTION.SOURCE"};
@@ -1640,6 +2091,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                      [s](const std::string &f) { return GetSdfPrimField(s, f); },
                                      [s](const std::string &f) -> std::vector<std::string> {
                                          if (f == "RELATIONSHIPS") return SdfPrimRelationshipNames(s);
+                                         if (f == "ASSETINFO.DEPENDENCIES") return AssetInfoDependencies(SdfPrimAssetInfoDict(s));
+                                         if (f == "CUSTOMDATA.KEYS") return CustomDataLeafKeys(SdfPrimCustomDataDict(s));
                                          if (f == "VARIANT_SELECTIONS") return VariantSelectionsOfPath(s->GetPath());
                                          return {};
                                      });
@@ -1685,7 +2138,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     const std::string nm = s->GetName();
                     const SdfPath pp = s->GetPath();
                     emitComposition(l, pp, i, arcFor(l), targetPath,
-                                     [nm, tg, pp](const std::string &f) { return GetRelScalarField(nm, tg, pp, f); },
+                                     [nm, tg, pp, s](const std::string &f) {
+                                         if (IsMetadataField(f)) return SdfSpecMetadataValue(s, f);
+                                         return GetRelScalarField(nm, tg, pp, f);
+                                     },
                                      [tg](const std::string &) { return PathsToStrings(tg); });
                 }
             }
@@ -1837,6 +2293,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                 auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                     if (fld == "RELATIONSHIPS")
                         return UsdPrimRelationshipNames(prim);
+                    if (fld == "ASSETINFO.DEPENDENCIES")
+                        return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                    if (fld == "CUSTOMDATA.KEYS")
+                        return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                     return {};
                 };
                 emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
@@ -1919,6 +2379,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
             auto scanUsdPrim = [&](const UsdPrim &prim) {
+                // The range starts at the pseudo-root to enable instance descent,
+                // but "/" is not a queryable prim row (the Layer scan skips its
+                // AbsoluteRootPath spec the same way).
+                if (prim.IsPseudoRoot())
+                    return;
                 if (q.entity == UtqlEntity::UsdPrim) {
                     if (checkCancel()) return;
                     ++result.scanned;
@@ -1944,6 +2409,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                         if (fld == "RELATIONSHIPS")
                             return UsdPrimRelationshipNames(prim);
+                        if (fld == "ASSETINFO.DEPENDENCIES")
+                            return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                        if (fld == "CUSTOMDATA.KEYS")
+                            return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                         return {};
                     };
                     emit(source, prim.GetPath(), get, getSet, getArcs, &witness);
@@ -1974,7 +2443,13 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         const std::string name = rel.GetName().GetString();
                         const SdfPath path = rel.GetPath();
                         emit(source, path,
-                             [&](const std::string &fld) { return GetRelScalarField(name, targets, path, fld); },
+                             [&](const std::string &fld) {
+                                 if (fld == "TARGET.IS_MISSING")
+                                     return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
+                                 if (IsMetadataField(fld))
+                                     return UsdObjectMetadataValue(rel, fld);
+                                 return GetRelScalarField(name, targets, path, fld);
+                             },
                              [&](const std::string &) { return PathsToStrings(targets); }, noArcs, nullptr);
                     }
                 }
@@ -2016,10 +2491,14 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
             if (!stage) continue;
             hadSources = true;
             const std::string source = stage->GetRootLayer()->GetIdentifier();
-            // Descend into instances (design I1 / IS_INSTANCE_PROXY).
+            // Descend into instances (design I1 / IS_INSTANCE_PROXY). The range
+            // starts at the pseudo-root to reach everything, but "/" itself is
+            // not a queryable prim row — it matched every negated predicate
+            // (e.g. NOT TYPE IS_A "…") as a typeless phantom row.
             for (UsdPrim p : UsdPrimRange(stage->GetPseudoRoot(),
                                           UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate)))
-                primItems.push_back({source, p});
+                if (!p.IsPseudoRoot())
+                    primItems.push_back({source, p});
             // Prototype masters hang off GetPrototypes(), not the pseudo-root.
             for (const UsdPrim &proto : stage->GetPrototypes())
                 for (UsdPrim p : UsdPrimRange::AllPrims(proto))
@@ -2075,6 +2554,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                         auto getSet = [&](const std::string &fld) -> std::vector<std::string> {
                             if (fld == "RELATIONSHIPS")
                                 return UsdPrimRelationshipNames(prim);
+                            if (fld == "ASSETINFO.DEPENDENCIES")
+                                return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+                            if (fld == "CUSTOMDATA.KEYS")
+                                return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
                             return {};
                         };
                         UtqlRow row;
@@ -2111,6 +2594,11 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                             UtqlRow row;
                             if (evalItem(item.source, path,
                                          [&](const std::string &fld) {
+                                             if (fld == "TARGET.IS_MISSING")
+                                                 return UtqlValue::Bool(
+                                                     UsdRelTargetsMissing(rel, targets));
+                                             if (IsMetadataField(fld))
+                                                 return UsdObjectMetadataValue(rel, fld);
                                              return GetRelScalarField(name, targets, path, fld);
                                          },
                                          [&](const std::string &) { return PathsToStrings(targets); },
@@ -2281,6 +2769,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                     return SdfPrimRelationshipNames(prim);
                                 if (fld == "VARIANT_SELECTIONS")
                                     return VariantSelectionsOfPath(prim->GetPath());
+                                if (fld == "ASSETINFO.DEPENDENCIES")
+                                    return AssetInfoDependencies(SdfPrimAssetInfoDict(prim));
+                                if (fld == "CUSTOMDATA.KEYS")
+                                    return CustomDataLeafKeys(SdfPrimCustomDataDict(prim));
                                 return {};
                             };
                             UtqlRow row;
@@ -2322,6 +2814,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                 UtqlRow row;
                                 if (evalItem(item.source, path,
                                              [&](const std::string &fld) {
+                                                 if (IsMetadataField(fld))
+                                                     return SdfSpecMetadataValue(spec, fld);
                                                  return GetRelScalarField(name, targets, path, fld);
                                              },
                                              [&](const std::string &) { return PathsToStrings(targets); },
@@ -2379,6 +2873,3003 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
         result.status = UtqlStatus::OkEmpty;
     }
     return result;
+}
+
+// ================================================== mutation (design-mutation M1)
+
+namespace {
+
+/// Manifest display of a SET rvalue (the NEW column for non-VALUE fields; VALUE
+/// shows the coerced VtValue instead). Empty = cleared, matching the read side's
+/// null convention.
+std::string LiteralDisplay(const Literal &l) {
+    switch (l.kind) {
+        case Literal::Kind::Block: return "BLOCK";
+        case Literal::Kind::Null:  return "";
+        case Literal::Kind::Tuple: {
+            std::string out = "(";
+            for (size_t i = 0; i < l.tuple.size(); ++i) {
+                if (i) out += ", ";
+                out += TfStringify(l.tuple[i]);
+            }
+            return out + ")";
+        }
+        case Literal::Kind::Array: {
+            std::string out = "[";
+            for (size_t i = 0; i < l.arrayElems.size(); ++i) {
+                if (i) out += ", ";
+                out += LiteralDisplay(l.arrayElems[i]);
+            }
+            return out + "]";
+        }
+        case Literal::Kind::Samples: {
+            // Compact by design (§14): a dense key set echoed verbatim would
+            // blow the tool-result budget. "N samples (t0…tn)" + op counts.
+            size_t erased = 0, blocked = 0;
+            for (const Literal &e : l.sampleValues) {
+                if (e.kind == Literal::Kind::Null) ++erased;
+                else if (e.kind == Literal::Kind::Block) ++blocked;
+            }
+            double tmin = l.sampleTimes.front(), tmax = l.sampleTimes.front();
+            for (double t : l.sampleTimes) {
+                tmin = std::min(tmin, t);
+                tmax = std::max(tmax, t);
+            }
+            std::string out = std::to_string(l.sampleTimes.size()) + " samples (" +
+                              TfStringify(tmin) + "…" + TfStringify(tmax) + ")";
+            if (erased)  out += ", " + std::to_string(erased) + " erased";
+            if (blocked) out += ", " + std::to_string(blocked) + " blocked";
+            return out;
+        }
+        case Literal::Kind::Dict: {
+            std::string out = "{";
+            for (size_t i = 0; i < l.dictKeys.size(); ++i) {
+                if (i) out += ", ";
+                out += "\"" + l.dictKeys[i] + "\": " + LiteralDisplay(l.dictValues[i]);
+            }
+            return out + "}";
+        }
+        default: return LiteralToString(l);
+    }
+}
+
+SdfSpecifier SpecifierFromString(const std::string &s) {
+    if (s == "over")  return SdfSpecifierOver;
+    if (s == "class") return SdfSpecifierClass;
+    return SdfSpecifierDef;
+}
+
+/// Build the exact C++ vec/quat value a tuple literal means for an attribute's
+/// declared type. Matching on the type's default-value holding avoids relying on
+/// VtValue cast registrations between Gf types. Quats read the design's
+/// (x, y, z, w) order — w last. Empty VtValue = dimension/type mismatch.
+VtValue TupleToVtValue(const std::vector<double> &t, const VtValue &def) {
+    const size_t n = t.size();
+    if (n == 2) {
+        if (def.IsHolding<GfVec2f>()) return VtValue(GfVec2f((float)t[0], (float)t[1]));
+        if (def.IsHolding<GfVec2d>()) return VtValue(GfVec2d(t[0], t[1]));
+        if (def.IsHolding<GfVec2h>()) return VtValue(GfVec2h(GfHalf(t[0]), GfHalf(t[1])));
+        if (def.IsHolding<GfVec2i>()) return VtValue(GfVec2i((int)t[0], (int)t[1]));
+    } else if (n == 3) {
+        if (def.IsHolding<GfVec3f>()) return VtValue(GfVec3f((float)t[0], (float)t[1], (float)t[2]));
+        if (def.IsHolding<GfVec3d>()) return VtValue(GfVec3d(t[0], t[1], t[2]));
+        if (def.IsHolding<GfVec3h>()) return VtValue(GfVec3h(GfHalf(t[0]), GfHalf(t[1]), GfHalf(t[2])));
+        if (def.IsHolding<GfVec3i>()) return VtValue(GfVec3i((int)t[0], (int)t[1], (int)t[2]));
+    } else if (n == 4) {
+        if (def.IsHolding<GfVec4f>()) return VtValue(GfVec4f((float)t[0], (float)t[1], (float)t[2], (float)t[3]));
+        if (def.IsHolding<GfVec4d>()) return VtValue(GfVec4d(t[0], t[1], t[2], t[3]));
+        if (def.IsHolding<GfVec4h>()) return VtValue(GfVec4h(GfHalf(t[0]), GfHalf(t[1]), GfHalf(t[2]), GfHalf(t[3])));
+        if (def.IsHolding<GfVec4i>()) return VtValue(GfVec4i((int)t[0], (int)t[1], (int)t[2], (int)t[3]));
+        if (def.IsHolding<GfQuatf>()) return VtValue(GfQuatf((float)t[3], GfVec3f((float)t[0], (float)t[1], (float)t[2])));
+        if (def.IsHolding<GfQuatd>()) return VtValue(GfQuatd(t[3], GfVec3d(t[0], t[1], t[2])));
+        if (def.IsHolding<GfQuath>()) return VtValue(GfQuath(GfHalf(t[3]), GfVec3h(GfHalf(t[0]), GfHalf(t[1]), GfHalf(t[2]))));
+    }
+    return VtValue();
+}
+
+/// Coerce a scalar/tuple SET VALUE literal against a *scalar* type's default
+/// value holding. Shared by the scalar attribute path and, per element, the
+/// array path. `typeStr` names the type in the skip reason.
+bool CoerceScalarLiteral(const Literal &lit, const VtValue &def, const std::string &typeStr,
+                         VtValue &out, std::string &why) {
+    switch (lit.kind) {
+        case Literal::Kind::Number: {
+            VtValue v = VtValue::CastToTypeOf(VtValue(lit.number), def);
+            if (v.IsEmpty()) {
+                why = "cannot cast a number to " + typeStr;
+                return false;
+            }
+            out = std::move(v);
+            return true;
+        }
+        case Literal::Kind::Bool:
+            if (def.IsHolding<bool>()) {
+                out = VtValue(lit.boolean);
+                return true;
+            }
+            why = "cannot cast a boolean to " + typeStr;
+            return false;
+        case Literal::Kind::String:
+            if (def.IsHolding<TfToken>())      { out = VtValue(TfToken(lit.str)); return true; }
+            if (def.IsHolding<std::string>())  { out = VtValue(lit.str); return true; }
+            if (def.IsHolding<SdfAssetPath>()) { out = VtValue(SdfAssetPath(lit.str)); return true; }
+            why = "cannot cast a string to " + typeStr;
+            return false;
+        case Literal::Kind::Tuple: {
+            VtValue v = TupleToVtValue(lit.tuple, def);
+            if (v.IsEmpty()) {
+                why = "cannot build a " + typeStr + " from a " +
+                      std::to_string(lit.tuple.size()) + "-tuple";
+                return false;
+            }
+            out = std::move(v);
+            return true;
+        }
+        default:
+            why = "unsupported literal";
+            return false;
+    }
+}
+
+/// Pack coerced element values (each holding T, the scalar default's type)
+/// into a VtArray<T> VtValue.
+template <typename T>
+bool BuildArrayOf(const std::vector<VtValue> &elems, VtValue &out) {
+    VtArray<T> arr(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i) {
+        if (!elems[i].IsHolding<T>())
+            return false;
+        arr[i] = elems[i].UncheckedGet<T>();
+    }
+    out = VtValue(std::move(arr));
+    return true;
+}
+
+/// Dispatch VtArray construction on the scalar type's default-value holding —
+/// the array counterpart of TupleToVtValue's explicit matching (no reliance on
+/// cast registrations). Covers the common Sdf scalar value types.
+bool BuildArrayValue(const VtValue &scalarDef, const std::vector<VtValue> &elems, VtValue &out) {
+    if (scalarDef.IsHolding<bool>())          return BuildArrayOf<bool>(elems, out);
+    if (scalarDef.IsHolding<unsigned char>()) return BuildArrayOf<unsigned char>(elems, out);
+    if (scalarDef.IsHolding<int>())           return BuildArrayOf<int>(elems, out);
+    if (scalarDef.IsHolding<unsigned int>())  return BuildArrayOf<unsigned int>(elems, out);
+    if (scalarDef.IsHolding<int64_t>())       return BuildArrayOf<int64_t>(elems, out);
+    if (scalarDef.IsHolding<uint64_t>())      return BuildArrayOf<uint64_t>(elems, out);
+    if (scalarDef.IsHolding<GfHalf>())        return BuildArrayOf<GfHalf>(elems, out);
+    if (scalarDef.IsHolding<float>())         return BuildArrayOf<float>(elems, out);
+    if (scalarDef.IsHolding<double>())        return BuildArrayOf<double>(elems, out);
+    if (scalarDef.IsHolding<TfToken>())       return BuildArrayOf<TfToken>(elems, out);
+    if (scalarDef.IsHolding<std::string>())   return BuildArrayOf<std::string>(elems, out);
+    if (scalarDef.IsHolding<SdfAssetPath>())  return BuildArrayOf<SdfAssetPath>(elems, out);
+    if (scalarDef.IsHolding<GfVec2f>())       return BuildArrayOf<GfVec2f>(elems, out);
+    if (scalarDef.IsHolding<GfVec2d>())       return BuildArrayOf<GfVec2d>(elems, out);
+    if (scalarDef.IsHolding<GfVec2h>())       return BuildArrayOf<GfVec2h>(elems, out);
+    if (scalarDef.IsHolding<GfVec2i>())       return BuildArrayOf<GfVec2i>(elems, out);
+    if (scalarDef.IsHolding<GfVec3f>())       return BuildArrayOf<GfVec3f>(elems, out);
+    if (scalarDef.IsHolding<GfVec3d>())       return BuildArrayOf<GfVec3d>(elems, out);
+    if (scalarDef.IsHolding<GfVec3h>())       return BuildArrayOf<GfVec3h>(elems, out);
+    if (scalarDef.IsHolding<GfVec3i>())       return BuildArrayOf<GfVec3i>(elems, out);
+    if (scalarDef.IsHolding<GfVec4f>())       return BuildArrayOf<GfVec4f>(elems, out);
+    if (scalarDef.IsHolding<GfVec4d>())       return BuildArrayOf<GfVec4d>(elems, out);
+    if (scalarDef.IsHolding<GfVec4h>())       return BuildArrayOf<GfVec4h>(elems, out);
+    if (scalarDef.IsHolding<GfVec4i>())       return BuildArrayOf<GfVec4i>(elems, out);
+    if (scalarDef.IsHolding<GfQuatf>())       return BuildArrayOf<GfQuatf>(elems, out);
+    if (scalarDef.IsHolding<GfQuatd>())       return BuildArrayOf<GfQuatd>(elems, out);
+    if (scalarDef.IsHolding<GfQuath>())       return BuildArrayOf<GfQuath>(elems, out);
+    return false;
+}
+
+/// Coerce a SET VALUE literal to the attribute's declared type (design-mutation
+/// §3.1) — the write-side mirror of VALUE.SCALAR's type polymorphism. A failure
+/// is a per-row skip reason, never a hard error. NULL/BLOCK never reach here.
+/// An array literal `[…]` assigns the whole array (M1.5): each element is
+/// coerced against the scalar element type; `[]` authors an empty array.
+bool CoerceLiteral(const Literal &lit, const SdfValueTypeName &tn, VtValue &out,
+                   std::string &why) {
+    if (!tn) {
+        why = "attribute has no declared type";
+        return false;
+    }
+    const std::string typeStr = tn.GetAsToken().GetString();
+
+    if (lit.kind == Literal::Kind::Array) {
+        if (!tn.IsArray()) {
+            why = typeStr + " is not array-typed; drop the [ … ] brackets";
+            return false;
+        }
+        const SdfValueTypeName scalarTn = tn.GetScalarType();
+        const VtValue &scalarDef = scalarTn.GetDefaultValue();
+        const std::string elemStr = scalarTn.GetAsToken().GetString();
+        std::vector<VtValue> elems;
+        elems.reserve(lit.arrayElems.size());
+        for (const Literal &el : lit.arrayElems) {
+            VtValue v;
+            if (!CoerceScalarLiteral(el, scalarDef, elemStr, v, why))
+                return false;
+            elems.push_back(std::move(v));
+        }
+        if (!BuildArrayValue(scalarDef, elems, out)) {
+            why = "unsupported array element type " + elemStr;
+            return false;
+        }
+        return true;
+    }
+
+    if (tn.IsArray()) {
+        // No silent broadcasting: a scalar assigned to an array is a skip.
+        why = "array-typed attribute — wrap the value in [ … ] (e.g. [" +
+              LiteralDisplay(lit) + "])";
+        return false;
+    }
+    return CoerceScalarLiteral(lit, tn.GetDefaultValue(), typeStr, out, why);
+}
+
+/// Coerce every SAMPLES entry up front (design-mutation §14 row atomicity: a
+/// half-authored animation is worse than none, so one bad entry skips the
+/// whole row — `why` names the offending time). NULL / BLOCK entries become
+/// Erase / Block ops; everything else goes through CoerceLiteral like a plain
+/// SET VALUE.
+bool CoerceSamples(const Literal &lit, const SdfValueTypeName &tn,
+                   std::vector<PlannedWrite::CoercedSample> &out, std::string &why) {
+    using Op = PlannedWrite::CoercedSample::Op;
+    out.reserve(lit.sampleTimes.size());
+    for (size_t i = 0; i < lit.sampleTimes.size(); ++i) {
+        const Literal &e = lit.sampleValues[i];
+        PlannedWrite::CoercedSample cs;
+        cs.time = lit.sampleTimes[i];
+        if (e.kind == Literal::Kind::Null) {
+            cs.op = Op::Erase;
+        } else if (e.kind == Literal::Kind::Block) {
+            cs.op = Op::Block;
+        } else {
+            std::string ewhy;
+            if (!CoerceLiteral(e, tn, cs.value, ewhy)) {
+                why = "SAMPLES entry at time " + TfStringify(cs.time) + ": " +
+                      ewhy;
+                return false;
+            }
+        }
+        out.push_back(std::move(cs));
+    }
+    return true;
+}
+
+std::string VtValueDisplay(bool got, const VtValue &v) {
+    if (!got || v.IsEmpty())
+        return "";
+    if (v.IsHolding<SdfValueBlock>())
+        return "BLOCK";
+    return TfStringify(v);
+}
+
+/// Apply one planned write. Returns false on an unexpected per-row failure
+/// (skip + count); binder guarantees the field/entity/literal combination.
+/// The prim whose namespace hosts a Stage-world write's variant context —
+/// the row's own prim for prim rows, the owning prim for property rows.
+SdfPath StageWritePrimPath(const PlannedWrite &w) {
+    if (w.prim) return w.prim.GetPath();
+    if (w.attr) return w.attr.GetPrim().GetPath();
+    if (w.rel)  return w.rel.GetPrim().GetPath();
+    return SdfPath();
+}
+
+/// Destination context for a Stage-world write: ON LAYER retarget and/or the
+/// INSIDE VARIANT mapping (design-mutation §15). INSIDE VARIANT builds a
+/// direct-variant edit target on the destination layer — nesting folds the
+/// pair chain into one variant-selection path — and first ensures the whole
+/// set/variant chain exists there (SdfCreateVariantInLayer level by level:
+/// idempotent auto-create, fork V3). No ON LAYER and no INSIDE = nullptr, the
+/// stage's current edit target applies as-is (incl. its own variant mapping);
+/// an INSIDE clause deliberately *replaces* that mapping.
+/// Ensure the whole INSIDE VARIANT set/variant chain exists in `layer`
+/// (SdfCreateVariantInLayer level by level — idempotent auto-create, fork V3)
+/// and return the fully-mapped variant-selection path.
+SdfPath EnsureVariantChain(const BoundQuery &q, const SdfLayerHandle &layer,
+                           const SdfPath &primPath) {
+    SdfPath varPath = primPath;
+    for (size_t k = 0; k < q.insideVariantSets.size(); ++k) {
+        SdfCreateVariantInLayer(layer, varPath, q.insideVariantSets[k],
+                                q.insideVariantSels[k]);
+        varPath = varPath.AppendVariantSelection(q.insideVariantSets[k],
+                                                 q.insideVariantSels[k]);
+    }
+    return varPath;
+}
+
+/// The destination layer of a Stage-world write (ON LAYER retarget, else the
+/// stage's edit-target layer).
+SdfLayerHandle StageWriteLayer(const PlannedWrite &w) {
+    if (w.destLayer)
+        return w.destLayer;
+    return w.stage ? w.stage->GetEditTarget().GetLayer() : SdfLayerHandle();
+}
+
+std::unique_ptr<UsdEditContext> MakeStageEditContext(const BoundQuery &q, PlannedWrite &w) {
+    if (!w.stage)
+        return nullptr;
+    if (q.insideVariantSets.empty()) {
+        if (!(q.hasOnLayer && w.destLayer))
+            return nullptr;
+        return std::unique_ptr<UsdEditContext>(
+            new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
+    }
+    const SdfPath primPath = StageWritePrimPath(w);
+    const SdfLayerHandle layer = StageWriteLayer(w);
+    if (primPath.IsEmpty() || !layer)
+        return nullptr;
+    const SdfPath varPath = EnsureVariantChain(q, layer, primPath);
+    return std::unique_ptr<UsdEditContext>(new UsdEditContext(
+        w.stage, UsdEditTarget::ForLocalDirectVariant(layer, varPath)));
+}
+
+/// Coerce a SET METADATA["key"] rvalue to the key's registered fallback type
+/// (metadata M3b). Reuses the attribute value coercion. An untyped fallback
+/// (rare) authors the literal's natural VtValue. Returns false on a type
+/// mismatch — the caller turns that into a per-row skip.
+bool CoerceMetadataLiteral(const std::string &f, const Literal &lit, VtValue &out) {
+    const TfToken key(MetadataKeyPath(f));
+    const SdfSchema::FieldDefinition *def =
+        SdfSchema::GetInstance().GetFieldDefinition(key);
+    const VtValue fb = def ? def->GetFallbackValue() : VtValue();
+    if (fb.IsEmpty()) { // no registered type info — author the natural VtValue
+        out = LiteralToCustomDataValue(lit);
+        return true;
+    }
+    std::string why;
+    return CoerceScalarLiteral(lit, fb, fb.GetTypeName(), out, why);
+}
+
+/// SET METADATA["key"] on a composed UsdObject (prim/attr/rel). NULL clears the
+/// authored opinion; otherwise coerce then author. Authored-only reads make the
+/// clear observable.
+bool PerformUsdMetadataWrite(const UsdObject &obj, const std::string &f,
+                             const Literal &lit, bool isNull) {
+    const TfToken key(MetadataKeyPath(f));
+    if (isNull) { obj.ClearMetadata(key); return true; }
+    VtValue v;
+    if (!CoerceMetadataLiteral(f, lit, v))
+        return false;
+    return obj.SetMetadata(key, v);
+}
+
+/// Layer-world counterpart — the spec's own authored opinion (SetInfo/ClearInfo).
+bool PerformSdfMetadataWrite(const SdfSpecHandle &spec, const std::string &f,
+                             const Literal &lit, bool isNull) {
+    const TfToken key(MetadataKeyPath(f));
+    if (isNull) {
+        if (spec->HasInfo(key)) spec->ClearInfo(key);
+        return true;
+    }
+    VtValue v;
+    if (!CoerceMetadataLiteral(f, lit, v))
+        return false;
+    spec->SetInfo(key, v);
+    return true;
+}
+
+bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w) {
+    const Literal &lit = sa.value;
+    const bool isNull = (lit.kind == Literal::Kind::Null);
+    const bool isBlock = (lit.kind == Literal::Kind::Block);
+    const std::string &f = sa.field;
+    static const TfToken kKind("kind");
+    static const TfToken kInterp("interpolation");
+    static const TfToken kUpAxis("upAxis");
+    static const TfToken kMetersPerUnit("metersPerUnit");
+
+    switch (q.entity) {
+        case UtqlEntity::UsdPrim: {
+            // ON LAYER retargets the write; otherwise the stage's edit target
+            // applies as-is (including a variant edit target's path mapping).
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+            UsdPrim &p = w.prim;
+            if (f == "ACTIVE")       return isNull ? p.ClearActive() : p.SetActive(lit.boolean);
+            if (f == "INSTANCEABLE") return isNull ? p.ClearInstanceable() : p.SetInstanceable(lit.boolean);
+            if (f == "TYPE")         return isNull ? p.ClearTypeName() : p.SetTypeName(TfToken(lit.str));
+            if (f == "KIND")         return isNull ? p.ClearMetadata(kKind) : UsdModelAPI(p).SetKind(TfToken(lit.str));
+            if (f == "VARIANT") {
+                UsdVariantSet vs = p.GetVariantSets().GetVariantSet(sa.variantSet);
+                return isNull ? vs.ClearVariantSelection()
+                              : vs.SetVariantSelection(lit.str);
+            }
+            // Whole-dict replace / clear (M3c) — bare CUSTOMDATA.
+            if (f == "CUSTOMDATA") {
+                if (isNull) { p.ClearCustomData(); return true; }
+                p.SetCustomData(DictLiteralToVtDictionary(lit));
+                return true;
+            }
+            if (IsCustomDataField(f)) {
+                const TfToken key(CustomDataKeyPath(f));
+                if (isNull) {
+                    p.ClearCustomDataByKey(key);
+                    return true;
+                }
+                p.SetCustomDataByKey(key, LiteralToCustomDataValue(lit));
+                return true;
+            }
+            // assetInfo scalar writes (metadata M3a). IDENTIFIER is typed as an
+            // SdfAssetPath; NAME/VERSION are plain strings. NULL clears the key.
+            if (f == "ASSETINFO.NAME" || f == "ASSETINFO.VERSION" ||
+                f == "ASSETINFO.IDENTIFIER") {
+                const TfToken key(f == "ASSETINFO.NAME"    ? "name"
+                                  : f == "ASSETINFO.VERSION" ? "version"
+                                                             : "identifier");
+                if (isNull) { p.ClearAssetInfoByKey(key); return true; }
+                p.SetAssetInfoByKey(key, f == "ASSETINFO.IDENTIFIER"
+                                             ? VtValue(SdfAssetPath(lit.str))
+                                             : VtValue(lit.str));
+                return true;
+            }
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(p, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::SdfPrim: {
+            SdfPrimSpecHandle &s = w.primSpec;
+            if (f == "ACTIVE") {
+                if (isNull) s->ClearActive(); else s->SetActive(lit.boolean);
+                return true;
+            }
+            if (f == "INSTANCEABLE") {
+                if (isNull) s->ClearInstanceable(); else s->SetInstanceable(lit.boolean);
+                return true;
+            }
+            if (f == "TYPE") {
+                if (isNull) {
+                    if (s->HasInfo(SdfFieldKeys->TypeName))
+                        s->ClearInfo(SdfFieldKeys->TypeName);
+                } else {
+                    s->SetTypeName(lit.str);
+                }
+                return true;
+            }
+            if (f == "KIND") {
+                if (isNull) s->ClearKind(); else s->SetKind(TfToken(lit.str));
+                return true;
+            }
+            if (f == "SPECIFIER") {
+                s->SetSpecifier(SpecifierFromString(lit.str));
+                return true;
+            }
+            if (f == "VARIANT") {
+                // An empty selection removes the authored opinion (the Sdf
+                // convention), which is exactly what NULL means here.
+                s->SetVariantSelection(sa.variantSet, isNull ? "" : lit.str);
+                return true;
+            }
+            // Whole-dict replace / clear (M3c) — bare CUSTOMDATA on the spec.
+            if (f == "CUSTOMDATA") {
+                if (isNull) {
+                    if (s->HasInfo(SdfFieldKeys->CustomData))
+                        s->ClearInfo(SdfFieldKeys->CustomData);
+                    return true;
+                }
+                s->SetInfo(SdfFieldKeys->CustomData,
+                           VtValue(DictLiteralToVtDictionary(lit)));
+                return true;
+            }
+            if (IsCustomDataField(f)) {
+                // Round-trip the whole authored dict: VtDictionary's path APIs
+                // nest/erase along the colon key path, then one SetInfo authors
+                // the result (ClearInfo when the last entry goes away).
+                const std::string keyPath = CustomDataKeyPath(f);
+                VtDictionary d = SdfPrimCustomDataDict(s);
+                if (isNull)
+                    d.EraseValueAtPath(keyPath);
+                else
+                    d.SetValueAtPath(keyPath, LiteralToCustomDataValue(lit));
+                if (d.empty()) {
+                    if (s->HasInfo(SdfFieldKeys->CustomData))
+                        s->ClearInfo(SdfFieldKeys->CustomData);
+                } else {
+                    s->SetInfo(SdfFieldKeys->CustomData, VtValue(d));
+                }
+                return true;
+            }
+            // assetInfo scalar writes (metadata M3a) — round-trip the authored
+            // dict, mirroring the customData write above (ClearInfo when the
+            // last entry goes). IDENTIFIER stored as a typed SdfAssetPath.
+            if (f == "ASSETINFO.NAME" || f == "ASSETINFO.VERSION" ||
+                f == "ASSETINFO.IDENTIFIER") {
+                const std::string key = f == "ASSETINFO.NAME"    ? "name"
+                                        : f == "ASSETINFO.VERSION" ? "version"
+                                                                   : "identifier";
+                VtDictionary d = SdfPrimAssetInfoDict(s);
+                if (isNull)
+                    d.erase(key);
+                else
+                    d[key] = f == "ASSETINFO.IDENTIFIER"
+                                 ? VtValue(SdfAssetPath(lit.str))
+                                 : VtValue(lit.str);
+                if (d.empty()) {
+                    if (s->HasInfo(SdfFieldKeys->AssetInfo))
+                        s->ClearInfo(SdfFieldKeys->AssetInfo);
+                } else {
+                    s->SetInfo(SdfFieldKeys->AssetInfo, VtValue(d));
+                }
+                return true;
+            }
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(s, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::UsdAttribute: {
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+            UsdAttribute &a = w.attr;
+            if (f == "VALUE") {
+                // SAMPLES (§14): the whole batch on this attribute, entry ops
+                // pre-coerced at plan time. Erasing an absent sample is an
+                // idempotent no-op, not a failure.
+                if (lit.kind == Literal::Kind::Samples) {
+                    using Op = PlannedWrite::CoercedSample::Op;
+                    for (const PlannedWrite::CoercedSample &cs : w.coercedSamples) {
+                        const UsdTimeCode ct(cs.time);
+                        if (cs.op == Op::Erase)
+                            a.ClearAtTime(ct);
+                        else if (cs.op == Op::Block)
+                            a.Set(VtValue(SdfValueBlock()), ct);
+                        else if (!a.Set(cs.value, ct))
+                            return false;
+                    }
+                    return true;
+                }
+                // AT TIME t authors a time sample; no AT authors the default
+                // value (deliberate write-side asymmetry, design-mutation §3.1).
+                const UsdTimeCode t = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
+                if (isBlock) {
+                    if (q.hasAt)
+                        return a.Set(VtValue(SdfValueBlock()), t);
+                    a.Block();
+                    return true;
+                }
+                if (isNull)
+                    return q.hasAt ? a.ClearAtTime(t) : a.ClearDefault();
+                return a.Set(w.coerced, t);
+            }
+            if (f == "INTERPOLATION")
+                return isNull ? a.ClearMetadata(kInterp) : a.SetMetadata(kInterp, TfToken(lit.str));
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(a, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::SdfAttribute: {
+            SdfAttributeSpecHandle &s = w.attrSpec;
+            const SdfLayerHandle layer = s->GetLayer();
+            if (f == "VALUE") {
+                if (lit.kind == Literal::Kind::Samples) {
+                    using Op = PlannedWrite::CoercedSample::Op;
+                    for (const PlannedWrite::CoercedSample &cs : w.coercedSamples) {
+                        if (cs.op == Op::Erase)
+                            layer->EraseTimeSample(s->GetPath(), cs.time);
+                        else
+                            layer->SetTimeSample(s->GetPath(), cs.time,
+                                                 cs.op == Op::Block
+                                                     ? VtValue(SdfValueBlock())
+                                                     : cs.value);
+                    }
+                    return true;
+                }
+                if (q.hasAt) {
+                    if (isNull) { layer->EraseTimeSample(s->GetPath(), q.atTime); return true; }
+                    layer->SetTimeSample(s->GetPath(), q.atTime,
+                                         isBlock ? VtValue(SdfValueBlock()) : w.coerced);
+                    return true;
+                }
+                if (isNull) { s->ClearDefaultValue(); return true; }
+                return s->SetDefaultValue(isBlock ? VtValue(SdfValueBlock()) : w.coerced);
+            }
+            if (f == "INTERPOLATION") {
+                if (isNull) {
+                    if (s->HasInfo(kInterp))
+                        s->ClearInfo(kInterp);
+                } else {
+                    s->SetInfo(kInterp, VtValue(TfToken(lit.str)));
+                }
+                return true;
+            }
+            if (f == "VARIABILITY") {
+                s->SetInfo(SdfFieldKeys->Variability,
+                           VtValue(lit.str == "uniform" ? SdfVariabilityUniform
+                                                        : SdfVariabilityVarying));
+                return true;
+            }
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(s, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::Layer: {
+            SdfLayerRefPtr &l = w.layer;
+            const SdfPath root = SdfPath::AbsoluteRootPath();
+            if (f == "DEFAULT_PRIM") {
+                if (isNull) l->ClearDefaultPrim(); else l->SetDefaultPrim(TfToken(lit.str));
+                return true;
+            }
+            if (f == "UP_AXIS") {
+                if (isNull) l->EraseField(root, kUpAxis);
+                else        l->SetField(root, kUpAxis, VtValue(TfToken(lit.str)));
+                return true;
+            }
+            if (f == "START_TIME") {
+                if (isNull) l->ClearStartTimeCode(); else l->SetStartTimeCode(lit.number);
+                return true;
+            }
+            if (f == "END_TIME") {
+                if (isNull) l->ClearEndTimeCode(); else l->SetEndTimeCode(lit.number);
+                return true;
+            }
+            if (f == "TIMECODES_PER_SECOND") {
+                if (isNull) l->EraseField(root, SdfFieldKeys->TimeCodesPerSecond);
+                else        l->SetTimeCodesPerSecond(lit.number);
+                return true;
+            }
+            if (f == "FRAMES_PER_SECOND") {
+                if (isNull) l->EraseField(root, SdfFieldKeys->FramesPerSecond);
+                else        l->SetFramesPerSecond(lit.number);
+                return true;
+            }
+            if (f == "METERS_PER_UNIT") {
+                if (isNull) l->EraseField(root, kMetersPerUnit);
+                else        l->SetField(root, kMetersPerUnit, VtValue(lit.number));
+                return true;
+            }
+            if (f == "MUTED") {
+                // Session mute state, not layer data — applied, but outside the
+                // Sdf undo recording (an undo will not restore it).
+                l->SetMuted(lit.boolean);
+                return true;
+            }
+            return false;
+        }
+        case UtqlEntity::UsdRelationship: {
+            // Only METADATA["key"] is a scalar SET on relationships (M3b);
+            // targets go through ADD/REMOVE TARGET.
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(w.rel, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::SdfRelationship: {
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(w.relSpec, f, lit, isNull);
+            return false;
+        }
+    }
+    return false;
+}
+
+/// Apply one planned rename/reparent (design-mutation §13). One row = one
+/// single-edit batch: SdfLayer::Apply of a batch is all-or-nothing, so bigger
+/// batches would turn one bad row into a whole-statement failure. CanApply is
+/// re-checked here against the layer's current state — an earlier edit of this
+/// same statement may have created a collision plan time could not see — and
+/// its failure reason becomes the skip key. Within-layer target/connection
+/// backpointers are fixed by the Sdf machinery itself.
+bool PerformNamespaceEdit(PlannedWrite &w, std::string &why) {
+    // Deepest-first ordering keeps descendants ahead of their ancestors, so a
+    // row's own spec cannot have moved before its turn — but a resultset can
+    // hold rows an earlier statement edit removed.
+    if (!w.primSpec && !w.attrSpec && !w.relSpec) {
+        why = "stale row (moved or removed by an earlier edit)";
+        return false;
+    }
+    // Same keeps the sibling position on an in-place rename; a reparent
+    // arrives at the end of its new parent's children.
+    const SdfNamespaceEdit::Index index =
+        w.path.GetParentPath() == w.nsNewPath.GetParentPath()
+            ? SdfNamespaceEdit::Same
+            : SdfNamespaceEdit::AtEnd;
+    SdfBatchNamespaceEdit batch;
+    batch.Add(SdfNamespaceEdit(w.path, w.nsNewPath, index));
+    SdfNamespaceEditDetailVector details;
+    if (!w.layer->CanApply(batch, &details)) {
+        why = details.empty() ? "namespace edit rejected" : details.front().reason;
+        return false;
+    }
+    if (!w.layer->Apply(batch)) {
+        why = "namespace edit failed to apply";
+        return false;
+    }
+    w.path = w.nsNewPath; // manifest + click resolution follow the new location
+    return true;
+}
+
+/// Author one CREATE ATTRIBUTE/RELATIONSHIP clause as a property spec on
+/// `s` in `layer` — the Sdf-level form, shared by the SDFPRIM branch and the
+/// INSIDE VARIANT Stage branch (where composed handles never appear for an
+/// unselected variant, so Usd-level creation cannot report success).
+bool PerformCreatePropOnSpec(const BoundQuery &q, const CreateProperty &cp,
+                             PlannedWrite &w, const SdfPrimSpecHandle &s,
+                             const SdfLayerHandle &layer) {
+    static const TfToken kInterp("interpolation");
+    const SdfPath propPath = s->GetPath().AppendProperty(TfToken(cp.name));
+    if (cp.isRelationship) {
+        SdfRelationshipSpecHandle rel = layer->GetRelationshipAtPath(propPath);
+        if (!rel)
+            rel = SdfRelationshipSpec::New(s, cp.name, /*custom*/ true);
+        if (!rel)
+            return false;
+        if (!cp.target.empty())
+            rel->GetTargetPathList().GetPrependedItems().push_back(SdfPath(cp.target));
+        return true;
+    }
+    const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
+    SdfAttributeSpecHandle attr = layer->GetAttributeAtPath(propPath);
+    if (!attr)
+        attr = SdfAttributeSpec::New(s, cp.name, tn);
+    if (!attr)
+        return false;
+    if (!cp.interpolation.empty())
+        attr->SetInfo(kInterp, VtValue(TfToken(cp.interpolation)));
+    if (cp.hasValue) {
+        if (q.hasAt) {
+            layer->SetTimeSample(attr->GetPath(), q.atTime, w.coerced);
+            return true;
+        }
+        return attr->SetDefaultValue(w.coerced);
+    }
+    return true;
+}
+
+/// Apply one CREATE ATTRIBUTE/RELATIONSHIP clause to a matched prim (design
+/// §5). Plan already checked type conflicts and coerced the VALUE literal
+/// (w.coerced); an existing same-typed property is reused (idempotent).
+bool PerformCreateProp(const BoundQuery &q, const CreateProperty &cp, PlannedWrite &w) {
+    static const TfToken kInterp("interpolation");
+    if (q.entity == UtqlEntity::UsdPrim) {
+        // INSIDE VARIANT (§15): author the spec directly at the mapped
+        // variant path — a composed UsdAttribute handle only exists while
+        // the variant is selected, so the Usd-level path below would
+        // misreport success into an unselected variant.
+        if (!q.insideVariantSets.empty()) {
+            const SdfLayerHandle layer = StageWriteLayer(w);
+            if (!layer)
+                return false;
+            const SdfPath varPath = EnsureVariantChain(q, layer, w.prim.GetPath());
+            SdfPrimSpecHandle vs = SdfCreatePrimInLayer(layer, varPath);
+            return vs && PerformCreatePropOnSpec(q, cp, w, vs, layer);
+        }
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        UsdPrim &p = w.prim;
+        const TfToken name(cp.name);
+        if (cp.isRelationship) {
+            // Custom iff not schema-defined (the §5 semantics).
+            const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
+            UsdRelationship rel = p.CreateRelationship(name, custom);
+            if (!rel)
+                return false;
+            if (!cp.target.empty())
+                return rel.AddTarget(SdfPath(cp.target));
+            return true;
+        }
+        const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
+        const bool custom = !p.GetPrimDefinition().GetPropertyDefinition(name);
+        UsdAttribute attr = p.CreateAttribute(name, tn, custom);
+        if (!attr)
+            return false;
+        if (!cp.interpolation.empty() &&
+            !attr.SetMetadata(kInterp, TfToken(cp.interpolation)))
+            return false;
+        if (cp.hasValue) {
+            const UsdTimeCode t = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
+            return attr.Set(w.coerced, t);
+        }
+        return true;
+    }
+    // SDFPRIM — author the property spec in the owning layer.
+    return PerformCreatePropOnSpec(q, cp, w, w.primSpec, w.primSpec->GetLayer());
+}
+
+/// Remove one authored spec (design §7). The caller has already verified the
+/// handle is still alive (an earlier ancestor removal invalidates descendants).
+bool PerformDeleteSpec(PlannedWrite &w) {
+    if (w.attrSpec) {
+        SdfPrimSpecHandle owner =
+            TfDynamic_cast<SdfPrimSpecHandle>(w.attrSpec->GetOwner());
+        if (!owner)
+            return false;
+        owner->RemoveProperty(w.attrSpec);
+        return true;
+    }
+    if (w.relSpec) {
+        SdfPrimSpecHandle owner =
+            TfDynamic_cast<SdfPrimSpecHandle>(w.relSpec->GetOwner());
+        if (!owner)
+            return false;
+        owner->RemoveProperty(w.relSpec);
+        return true;
+    }
+    if (w.primSpec) {
+        if (SdfPrimSpecHandle parent = w.primSpec->GetNameParent())
+            return parent->RemoveNameChild(w.primSpec);
+        if (!w.layer)
+            return false;
+        w.layer->RemoveRootPrim(w.primSpec); // root-level prim spec
+        return true;
+    }
+    return false;
+}
+
+/// Create the prim named by a CREATE statement (design §6). USDPRIM =
+/// UsdStage::DefinePrim at the edit target (or ON LAYER); SDFPRIM = a spec in
+/// the named layer, ancestors created as the API creates them.
+bool PerformCreatePrim(const BoundQuery &q, PlannedWrite &w) {
+    if (q.entity == UtqlEntity::UsdPrim) {
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        const UsdPrim p = q.createType.empty()
+                              ? w.stage->DefinePrim(w.path)
+                              : w.stage->DefinePrim(w.path, TfToken(q.createType));
+        return bool(p);
+    }
+    SdfPrimSpecHandle spec = SdfCreatePrimInLayer(SdfLayerHandle(w.layer), w.path);
+    if (!spec)
+        return false;
+    spec->SetSpecifier(SpecifierFromString(q.createSpecifier)); // default "def"
+    if (!q.createType.empty())
+        spec->SetTypeName(q.createType);
+    return true;
+}
+
+// ------------------------------------------- ADD / REMOVE arcs (mutation M3)
+
+/// One arc/list item as targeted by an ADD/REMOVE clause — the identity fields
+/// only (design-mutation §4). `asset` holds a REFERENCE/PAYLOAD asset path, an
+/// API schema name or a SUBLAYER path; `path` a REFERENCE/PAYLOAD prim path or
+/// an INHERIT/SPECIALIZE/TARGET/CONNECTION path; `offset` completes the
+/// REFERENCE/PAYLOAD removal identity.
+struct ArcItem {
+    std::string    asset;
+    SdfPath        path;
+    SdfLayerOffset offset;
+    std::string    layerId; ///< authoring layer when known (manifest note)
+
+    std::string Key() const { return asset + '\x01' + path.GetString(); }
+};
+
+/// The identity of an existing arc, read back from its field map.
+ArcItem ArcItemFromArc(const std::string &fam, const Arc &a) {
+    ArcItem it;
+    auto get = [&](const std::string &fld) -> UtqlValue {
+        const auto f = a.fields.find(fld);
+        return f != a.fields.end() ? f->second : UtqlValue::Null();
+    };
+    if (fam == "API") {
+        it.asset = get("API").ToDisplay();
+    } else if (fam == "SUBLAYER") {
+        it.asset = get("SUBLAYER.ASSET").ToDisplay();
+    } else if (fam == "REFERENCE" || fam == "PAYLOAD") {
+        it.asset = get(fam + ".ASSET").ToDisplay();
+        const std::string p = get(fam + ".PRIM_PATH").ToDisplay();
+        if (!p.empty())
+            it.path = SdfPath(p);
+        const UtqlValue off = get(fam + ".LAYER_OFFSET");
+        const UtqlValue scl = get(fam + ".LAYER_SCALE");
+        it.offset = SdfLayerOffset(off.IsNull() ? 0.0 : off.number,
+                                   scl.IsNull() ? 1.0 : scl.number);
+        it.layerId = a.layerId;
+    } else { // INHERIT / SPECIALIZE
+        const std::string p = get(fam + ".PRIM_PATH").ToDisplay();
+        if (!p.empty())
+            it.path = SdfPath(p);
+    }
+    return it;
+}
+
+/// The item an ADD clause authors / an explicit-value REMOVE names.
+ArcItem ArcItemFromMutation(const ArcMutation &am) {
+    ArcItem it;
+    if (am.family == "API" || am.family == "SUBLAYER" ||
+        am.family == "REFERENCE" || am.family == "PAYLOAD") {
+        it.asset = am.value;
+        if (!am.primPath.empty())
+            it.path = SdfPath(am.primPath);
+    } else {
+        it.path = SdfPath(am.value);
+    }
+    return it;
+}
+
+/// Does an existing item match a REMOVE clause's explicit value/PRIM_PATH?
+bool ArcItemMatchesExplicit(const ArcMutation &am, const ArcItem &it) {
+    if (am.family == "REFERENCE" || am.family == "PAYLOAD") {
+        if (am.hasValue && it.asset != am.value)
+            return false;
+        if (!am.primPath.empty() && it.path != SdfPath(am.primPath))
+            return false;
+        return true;
+    }
+    if (am.family == "API" || am.family == "SUBLAYER")
+        return it.asset == am.value;
+    return it.path == SdfPath(am.value);
+}
+
+/// Manifest display of an arc item (@asset@<primPath> for file arcs).
+std::string ArcItemDisplay(const std::string &fam, const ArcItem &it) {
+    if (fam == "REFERENCE" || fam == "PAYLOAD") {
+        std::string s = it.asset.empty() ? std::string() : "@" + it.asset + "@";
+        if (!it.path.IsEmpty())
+            s += "<" + it.path.GetString() + ">";
+        return s;
+    }
+    if (fam == "API" || fam == "SUBLAYER")
+        return it.asset;
+    return it.path.GetString();
+}
+
+/// Witness-map key for an arc family name (the prim/layer families only).
+bool FamilyFromName(const std::string &fam, Family &out) {
+    if (fam == "REFERENCE")  { out = Family::Reference;  return true; }
+    if (fam == "PAYLOAD")    { out = Family::Payload;    return true; }
+    if (fam == "INHERIT")    { out = Family::Inherit;    return true; }
+    if (fam == "SPECIALIZE") { out = Family::Specialize; return true; }
+    if (fam == "API")        { out = Family::Api;        return true; }
+    if (fam == "SUBLAYER")   { out = Family::Sublayer;   return true; }
+    return false;
+}
+
+/// Prepend an item into an authored list op (fork F3: ADD always prepends).
+/// An explicit list has no prepend bucket — insert at its front instead.
+template <class ListEditorProxy, class T>
+void SdfListOpPrepend(ListEditorProxy proxy, const T &item) {
+    if (proxy.IsExplicit())
+        proxy.GetExplicitItems().Insert(0, item);
+    else
+        proxy.GetPrependedItems().Insert(0, item);
+}
+
+/// Apply one planned ADD (design-mutation §4). Stage world goes through the
+/// UsdReferences/UsdPayloads/… list-op editors at the edit target; Layer world
+/// authors into the spec's own list (prepend, fork F3).
+bool PerformArcAdd(const BoundQuery &q, const ArcMutation &am, PlannedWrite &w) {
+    const std::string &fam = am.family;
+    if (q.world == UtqlWorld::Stage) {
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        if (fam == "VARIANT") {
+            // ADD VARIANT["set"] "name" (§15): AddVariantSet is get-or-create,
+            // so this is idempotent; under an INSIDE VARIANT context the new
+            // set nests inside the mapped variant.
+            UsdVariantSet vs = w.prim.GetVariantSets().AddVariantSet(am.variantSet);
+            return vs.AddVariant(am.value);
+        }
+        if (fam == "REFERENCE")
+            return w.prim.GetReferences().AddReference(
+                SdfReference(w.arcAsset, w.arcPath), UsdListPositionFrontOfPrependList);
+        if (fam == "PAYLOAD")
+            return w.prim.GetPayloads().AddPayload(
+                SdfPayload(w.arcAsset, w.arcPath), UsdListPositionFrontOfPrependList);
+        if (fam == "INHERIT")
+            return w.prim.GetInherits().AddInherit(w.arcPath, UsdListPositionFrontOfPrependList);
+        if (fam == "SPECIALIZE")
+            return w.prim.GetSpecializes().AddSpecialize(w.arcPath,
+                                                         UsdListPositionFrontOfPrependList);
+        if (fam == "API")
+            return w.prim.AddAppliedSchema(TfToken(w.arcAsset));
+        if (fam == "TARGET")
+            return w.rel.AddTarget(w.arcPath, UsdListPositionFrontOfPrependList);
+        if (fam == "CONNECTION")
+            return w.attr.AddConnection(w.arcPath, UsdListPositionFrontOfPrependList);
+        return false;
+    }
+    if (fam == "SUBLAYER") {
+        w.layer->InsertSubLayerPath(w.arcAsset, 0);
+        return true;
+    }
+    if (fam == "REFERENCE") {
+        SdfListOpPrepend(w.primSpec->GetReferenceList(), SdfReference(w.arcAsset, w.arcPath));
+        return true;
+    }
+    if (fam == "PAYLOAD") {
+        SdfListOpPrepend(w.primSpec->GetPayloadList(), SdfPayload(w.arcAsset, w.arcPath));
+        return true;
+    }
+    if (fam == "INHERIT") {
+        SdfListOpPrepend(w.primSpec->GetInheritPathList(), w.arcPath);
+        return true;
+    }
+    if (fam == "SPECIALIZE") {
+        SdfListOpPrepend(w.primSpec->GetSpecializesList(), w.arcPath);
+        return true;
+    }
+    if (fam == "API") {
+        static const TfToken kApiSchemas("apiSchemas");
+        const VtValue v = w.primSpec->GetInfo(kApiSchemas);
+        SdfTokenListOp op = v.IsHolding<SdfTokenListOp>() ? v.UncheckedGet<SdfTokenListOp>()
+                                                          : SdfTokenListOp();
+        TfTokenVector items = op.IsExplicit() ? op.GetExplicitItems() : op.GetPrependedItems();
+        items.insert(items.begin(), TfToken(w.arcAsset));
+        if (op.IsExplicit())
+            op.SetExplicitItems(items);
+        else
+            op.SetPrependedItems(items);
+        w.primSpec->SetInfo(kApiSchemas, VtValue(op));
+        return true;
+    }
+    if (fam == "TARGET") {
+        SdfListOpPrepend(w.relSpec->GetTargetPathList(), w.arcPath);
+        return true;
+    }
+    if (fam == "CONNECTION") {
+        SdfListOpPrepend(w.attrSpec->GetConnectionPathList(), w.arcPath);
+        return true;
+    }
+    return false;
+}
+
+/// Apply one planned REMOVE of one arc. A Stage-world remove erases the local
+/// entry when the arc is authored at the edit target, and authors a delete
+/// list-op entry when it comes from a weaker layer (it cannot reach into other
+/// files); Layer world edits the authored list in place (RemoveItemEdits).
+bool PerformArcRemove(const BoundQuery &q, const ArcMutation &am, PlannedWrite &w) {
+    const std::string &fam = am.family;
+    if (q.world == UtqlWorld::Stage) {
+        std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+        if (fam == "REFERENCE")
+            return w.prim.GetReferences().RemoveReference(
+                SdfReference(w.arcAsset, w.arcPath, w.arcOffset));
+        if (fam == "PAYLOAD")
+            return w.prim.GetPayloads().RemovePayload(
+                SdfPayload(w.arcAsset, w.arcPath, w.arcOffset));
+        if (fam == "INHERIT")
+            return w.prim.GetInherits().RemoveInherit(w.arcPath);
+        if (fam == "SPECIALIZE")
+            return w.prim.GetSpecializes().RemoveSpecialize(w.arcPath);
+        if (fam == "API")
+            return w.prim.RemoveAppliedSchema(TfToken(w.arcAsset));
+        if (fam == "TARGET")
+            return w.rel.RemoveTarget(w.arcPath);
+        if (fam == "CONNECTION")
+            return w.attr.RemoveConnection(w.arcPath);
+        return false;
+    }
+    if (fam == "SUBLAYER") {
+        const SdfSubLayerProxy paths = w.layer->GetSubLayerPaths();
+        for (size_t i = paths.size(); i-- > 0;)
+            if (paths[i] == w.arcAsset)
+                w.layer->RemoveSubLayerPath(static_cast<int>(i));
+        return true;
+    }
+    if (fam == "REFERENCE") {
+        w.primSpec->GetReferenceList().RemoveItemEdits(
+            SdfReference(w.arcAsset, w.arcPath, w.arcOffset));
+        return true;
+    }
+    if (fam == "PAYLOAD") {
+        w.primSpec->GetPayloadList().RemoveItemEdits(
+            SdfPayload(w.arcAsset, w.arcPath, w.arcOffset));
+        return true;
+    }
+    if (fam == "INHERIT") {
+        w.primSpec->GetInheritPathList().RemoveItemEdits(w.arcPath);
+        return true;
+    }
+    if (fam == "SPECIALIZE") {
+        w.primSpec->GetSpecializesList().RemoveItemEdits(w.arcPath);
+        return true;
+    }
+    if (fam == "API") {
+        static const TfToken kApiSchemas("apiSchemas");
+        const VtValue v = w.primSpec->GetInfo(kApiSchemas);
+        if (!v.IsHolding<SdfTokenListOp>())
+            return true; // nothing authored — nothing to remove
+        SdfTokenListOp op = v.UncheckedGet<SdfTokenListOp>();
+        const TfToken tok(w.arcAsset);
+        op.ModifyOperations([&tok](const TfToken &t) -> std::optional<TfToken> {
+            if (t == tok)
+                return std::nullopt;
+            return t;
+        });
+        if (op.HasKeys())
+            w.primSpec->SetInfo(kApiSchemas, VtValue(op));
+        else if (w.primSpec->HasInfo(kApiSchemas))
+            w.primSpec->ClearInfo(kApiSchemas);
+        return true;
+    }
+    if (fam == "TARGET") {
+        w.relSpec->GetTargetPathList().RemoveItemEdits(w.arcPath);
+        return true;
+    }
+    if (fam == "CONNECTION") {
+        w.attrSpec->GetConnectionPathList().RemoveItemEdits(w.arcPath);
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
+    MutationPlan plan;
+    UtqlResult &m = plan.manifest;
+    m.world = q.world;
+    m.isMutation = true;
+    m.dryRun = ctx.dryRun;
+    const bool isCreate = (q.statement == StatementKind::Create);
+    const bool isDelete = (q.statement == StatementKind::Delete);
+    m.columnNames = (!q.returnAll && !q.returnFields.empty())
+                        ? q.returnFields
+                        : (isCreate || isDelete)
+                              ? std::vector<std::string>{"PATH", "LAYER"}
+                              : std::vector<std::string>{"PATH", "LAYER", "FIELD",
+                                                         "OLD", "NEW"};
+
+    auto fail = [&](const std::string &msg) {
+        m.status = UtqlStatus::CompileError;
+        m.message = msg;
+    };
+
+    RegexCache regexes;
+    std::map<const WhereExpr *, UnderData> underMap;
+    std::deque<std::unordered_set<std::string>> underSets;
+    if (q.where) {
+        std::string err;
+        if (!CompileRegexes(*q.where, regexes, err) ||
+            !CompileUnder(*q.where, ctx, underMap, underSets, err)) {
+            fail(err);
+            return plan;
+        }
+    }
+
+    std::unordered_set<std::string> setFields;
+    if (q.entity == UtqlEntity::UsdPrim || q.entity == UtqlEntity::SdfPrim)
+        setFields = {"RELATIONSHIPS", "ASSETINFO.DEPENDENCIES", "CUSTOMDATA.KEYS"};
+    else if (q.entity == UtqlEntity::UsdAttribute || q.entity == UtqlEntity::SdfAttribute)
+        setFields = {"CONNECTION.SOURCE"};
+    else if (q.entity == UtqlEntity::UsdRelationship || q.entity == UtqlEntity::SdfRelationship)
+        setFields = {"TARGET"};
+
+    // WHERE reads follow the read side (no-AT = UI current time); *writes* use
+    // Default() when no AT is given — that asymmetry lives in PerformWrite.
+    const UsdTimeCode time = q.hasAt ? UsdTimeCode(q.atTime) : ctx.currentTime;
+    const UsdTimeCode writeTime = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
+    const int rowLimit = q.hasLimit ? q.limit : -1;
+    bool limitReached = false;
+    auto noteMatch = [&]() {
+        ++plan.matched;
+        if (rowLimit >= 0 && plan.matched >= static_cast<uint64_t>(rowLimit))
+            limitReached = true; // LIMIT caps the rows mutated, in scan order
+    };
+
+    auto skip = [&](const std::string &reason) { ++plan.skips[reason]; };
+
+    std::unordered_set<std::string> destSeen;
+    auto addDest = [&](const SdfLayerHandle &l) {
+        if (l && destSeen.insert(l->GetIdentifier()).second)
+            plan.layers.push_back(l);
+    };
+
+    // Rename / reparent (design-mutation §13). The binder guarantees NAME /
+    // PARENT are the statement's only mutation clauses (Layer world), so one
+    // matched row plans exactly ONE namespace edit — not one per assignment.
+    bool nsHasName = false, nsHasParent = false;
+    std::string nsName;
+    SdfPath nsParent;
+    for (const SetAssignment &sa : q.sets) {
+        if (sa.field == "NAME") { nsHasName = true; nsName = sa.value.str; }
+        else if (sa.field == "PARENT") { nsHasParent = true; nsParent = SdfPath(sa.value.str); }
+    }
+    const bool nsStatement = nsHasName || nsHasParent;
+
+    // Plan one row's namespace edit. CanApply here (read-only) gives dry-run
+    // the real per-row answer; apply re-checks against post-earlier-edit
+    // state, where collisions between two planned rows first become visible.
+    auto planNamespaceEdit = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                 const SdfPath &cur,
+                                 const std::function<void(PlannedWrite &)> &fill) {
+        if (cur.ContainsPrimVariantSelection()) {
+            skip("target is inside a variant — namespace edits cannot cross "
+                 "variant scopes");
+            return;
+        }
+        SdfPath newPath;
+        if (cur.IsPrimPath()) {
+            const SdfPath base = nsHasParent ? nsParent : cur.GetParentPath();
+            newPath = base.AppendChild(TfToken(nsHasName ? nsName : cur.GetName()));
+        } else {
+            // Properties: rename only (SET PARENT is a binder error).
+            newPath = cur.GetParentPath().AppendProperty(TfToken(nsName));
+        }
+        if (newPath == cur) {
+            skip("already at " + cur.GetString() + " — nothing to do");
+            return;
+        }
+        SdfBatchNamespaceEdit batch;
+        batch.Add(SdfNamespaceEdit(
+            cur, newPath,
+            cur.GetParentPath() == newPath.GetParentPath() ? SdfNamespaceEdit::Same
+                                                           : SdfNamespaceEdit::AtEnd));
+        SdfNamespaceEditDetailVector details;
+        if (!layer->CanApply(batch, &details)) {
+            skip(details.empty() ? "namespace edit rejected" : details.front().reason);
+            return;
+        }
+        PlannedWrite w;
+        w.action = PlannedWrite::Action::NamespaceEdit;
+        w.layer = layer;
+        w.destLayer = SdfLayerHandle(layer);
+        w.source = source;
+        w.path = cur;
+        w.nsNewPath = newPath;
+        w.oldDisplay = cur.GetString();
+        w.newDisplay = newPath.GetString();
+        fill(w);
+        addDest(w.destLayer);
+        plan.writes.push_back(std::move(w));
+    };
+
+    // --------------------------------------------- CREATE statement (design §6)
+    // Not match-shaped: it names one new path. Creating an existing path is an
+    // idempotent no-op reported in the manifest, never an error (re-runs matter
+    // for the LLM loop).
+    if (isCreate) {
+        const SdfPath path(q.createPath);
+        if (q.entity == UtqlEntity::UsdPrim) {
+            const UsdStageRefPtr stage = ctx.currentStage;
+            if (!stage) {
+                fail("No stage open — CREATE USDPRIM targets the current stage.");
+                return plan;
+            }
+            SdfLayerHandle dest;
+            if (q.hasOnLayer) {
+                for (const SdfLayerHandle &l : stage->GetLayerStack(true))
+                    if (l && l->GetIdentifier() == q.onLayer) {
+                        dest = l;
+                        break;
+                    }
+                if (!dest) {
+                    fail("Layer \"" + q.onLayer + "\" is not in the current "
+                         "stage's layer stack; the edit target must live in "
+                         "the stack.");
+                    return plan;
+                }
+            } else {
+                dest = stage->GetEditTarget().GetLayer();
+            }
+            m.stages.push_back(stage);
+            const std::string source = stage->GetRootLayer()->GetIdentifier();
+            if (const UsdPrim existing = stage->GetPrimAtPath(path)) {
+                const TfToken wantType(q.createType);
+                if (!q.createType.empty() && !existing.GetTypeName().IsEmpty() &&
+                    existing.GetTypeName() != wantType) {
+                    skip("a prim already exists at " + q.createPath + " with type " +
+                         existing.GetTypeName().GetString() + " — not retyped");
+                    return plan;
+                }
+                if (existing.IsDefined() &&
+                    (q.createType.empty() || existing.GetTypeName() == wantType)) {
+                    skip("prim already exists — nothing created");
+                    return plan;
+                }
+                // else: an over→def upgrade / type fill-in — plan the define.
+            }
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::CreatePrim;
+            w.stage = stage;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = path;
+            w.newDisplay = q.createType;
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+            return plan;
+        }
+        // SDFPRIM — the IN LAYER destination (binder guaranteed the scope).
+        std::vector<SdfLayerRefPtr> layers;
+        std::string err;
+        if (!ResolveLayers(q, ctx, layers, err) || layers.empty() || !layers[0]) {
+            fail(err.empty() ? "IN LAYER: layer not found." : err);
+            return plan;
+        }
+        const SdfLayerRefPtr layer = layers[0];
+        m.stages = ctx.allStages; // keep stages alive for click resolution
+        if (layer->GetPrimAtPath(path)) {
+            skip("spec already exists — nothing created");
+            return plan;
+        }
+        PlannedWrite w;
+        w.action = PlannedWrite::Action::CreatePrim;
+        w.layer = layer;
+        w.destLayer = SdfLayerHandle(layer);
+        w.source = layer->GetIdentifier();
+        w.path = path;
+        w.newDisplay = q.createType;
+        addDest(w.destLayer);
+        plan.writes.push_back(std::move(w));
+        return plan;
+    }
+
+    // ON LAYER — resolved per stage against its layer stack (§2). Rows of a
+    // stage that does not contain the layer are skipped; if no stage in scope
+    // contains it at all, that is the §9 hard error (checked after the scan).
+    bool onLayerFound = false;
+    std::map<std::string, SdfLayerHandle> destByStage; // root-layer id → dest
+    auto destForStage = [&](const UsdStageRefPtr &stage) -> SdfLayerHandle {
+        const std::string id = stage->GetRootLayer()->GetIdentifier();
+        auto it = destByStage.find(id);
+        if (it != destByStage.end())
+            return it->second;
+        SdfLayerHandle dest;
+        if (!q.hasOnLayer) {
+            dest = stage->GetEditTarget().GetLayer();
+        } else {
+            for (const SdfLayerHandle &l : stage->GetLayerStack(true))
+                if (l && l->GetIdentifier() == q.onLayer) {
+                    dest = l;
+                    onLayerFound = true;
+                    break;
+                }
+        }
+        destByStage.emplace(id, dest);
+        return dest;
+    };
+
+    // Witness needs (design-mutation §4): a bare REMOVE (no explicit value) is
+    // gated to the arcs / set members that positively matched the WHERE clause,
+    // so those rows must collect witnesses at evaluation time.
+    bool needArcWitness = false, needMemberWitness = false;
+    if (q.where) {
+        for (const ArcMutation &am : q.arcMutations) {
+            if (!am.isRemove || am.hasValue || !am.primPath.empty())
+                continue;
+            if (am.family == "TARGET" || am.family == "CONNECTION")
+                needMemberWitness = true;
+            else
+                needArcWitness = true;
+        }
+    }
+
+    // ---------------------------------------------------------- WHERE evaluators
+    // Each returns whether the row matches; on a match it also fills the
+    // arc/member witnesses (when requested) for witness-gated REMOVE.
+
+    auto whereOkUsdPrim = [&](const UsdPrim &prim, const std::string &source,
+                              WitnessMap *witness) -> bool {
+        if (!q.where)
+            return true;
+        std::map<Family, std::vector<Arc>> arcCache;
+        std::function<const std::vector<Arc> &(Family)> getArcs =
+            [&](Family fam) -> const std::vector<Arc> & {
+            auto it = arcCache.find(fam);
+            if (it == arcCache.end())
+                it = arcCache.emplace(fam, BuildUsdArcs(prim, fam)).first;
+            return it->second;
+        };
+        EvalCtx e;
+        e.get = [&](const std::string &fld) -> UtqlValue {
+            Family fam;
+            if (FamilyDisplayField(fld, fam))
+                return JoinArcField(getArcs(fam), fld);
+            return GetUsdPrimField(prim, fld);
+        };
+        e.getSet = [&](const std::string &fld) -> std::vector<std::string> {
+            if (fld == "RELATIONSHIPS")
+                return UsdPrimRelationshipNames(prim);
+            if (fld == "ASSETINFO.DEPENDENCIES")
+                return AssetInfoDependencies(UsdPrimAssetInfoDict(prim));
+            if (fld == "CUSTOMDATA.KEYS")
+                return CustomDataLeafKeys(UsdPrimAuthoredCustomDataDict(prim));
+            return {};
+        };
+        e.getArcs = getArcs;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (witness)
+            CollectWitnesses(*q.where, e, true, *witness);
+        return true;
+    };
+
+    auto whereOkSdfPrim = [&](const SdfPrimSpecHandle &spec, const std::string &source,
+                              WitnessMap *witness) -> bool {
+        if (!q.where)
+            return true;
+        std::map<Family, std::vector<Arc>> arcCache;
+        std::function<const std::vector<Arc> &(Family)> getArcs =
+            [&](Family fam) -> const std::vector<Arc> & {
+            auto it = arcCache.find(fam);
+            if (it == arcCache.end())
+                it = arcCache.emplace(fam, BuildSdfArcs(spec, fam)).first;
+            return it->second;
+        };
+        EvalCtx e;
+        e.get = [&](const std::string &fld) -> UtqlValue {
+            Family fam;
+            if (FamilyDisplayField(fld, fam))
+                return JoinArcField(getArcs(fam), fld);
+            return GetSdfPrimField(spec, fld);
+        };
+        e.getSet = [&](const std::string &fld) -> std::vector<std::string> {
+            if (fld == "RELATIONSHIPS")
+                return SdfPrimRelationshipNames(spec);
+            if (fld == "VARIANT_SELECTIONS")
+                return VariantSelectionsOfPath(spec->GetPath());
+            if (fld == "ASSETINFO.DEPENDENCIES")
+                return AssetInfoDependencies(SdfPrimAssetInfoDict(spec));
+            if (fld == "CUSTOMDATA.KEYS")
+                return CustomDataLeafKeys(SdfPrimCustomDataDict(spec));
+            return {};
+        };
+        e.getArcs = getArcs;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (witness)
+            CollectWitnesses(*q.where, e, true, *witness);
+        return true;
+    };
+
+    static const std::vector<Arc> kNoArcs;
+    std::function<const std::vector<Arc> &(Family)> noArcsFn =
+        [](Family) -> const std::vector<Arc> & { return kNoArcs; };
+
+    auto whereOkUsdAttr = [&](const UsdAttribute &attr, const std::string &source,
+                              std::vector<std::string> *memberWitness) -> bool {
+        if (!q.where)
+            return true;
+        ValueCache vc;
+        EvalCtx e;
+        e.get = [&](const std::string &fld) { return GetUsdAttrField(attr, time, fld, vc); };
+        e.getSet = [&](const std::string &fld) -> std::vector<std::string> {
+            if (fld == "CONNECTION.SOURCE")
+                return PathsToStrings(UsdAttrConnectionSources(attr));
+            return {};
+        };
+        e.getArcs = noArcsFn;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (memberWitness)
+            CollectMemberWitnesses(*q.where, e, true, "CONNECTION.SOURCE", *memberWitness);
+        return true;
+    };
+
+    auto whereOkSdfAttr = [&](const SdfAttributeSpecHandle &spec, const SdfLayerHandle &layer,
+                              const std::string &source,
+                              std::vector<std::string> *memberWitness) -> bool {
+        if (!q.where)
+            return true;
+        ValueCache vc;
+        EvalCtx e;
+        e.get = [&](const std::string &fld) {
+            return GetSdfAttrField(spec, layer, q.hasAt, q.atTime, fld, vc);
+        };
+        e.getSet = [&](const std::string &fld) -> std::vector<std::string> {
+            if (fld == "CONNECTION.SOURCE")
+                return PathsToStrings(SdfAttrConnectionSources(spec));
+            if (fld == "VARIANT_SELECTIONS")
+                return VariantSelectionsOfPath(spec->GetPath());
+            return {};
+        };
+        e.getArcs = noArcsFn;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (memberWitness)
+            CollectMemberWitnesses(*q.where, e, true, "CONNECTION.SOURCE", *memberWitness);
+        return true;
+    };
+
+    auto whereOkUsdRel = [&](const UsdRelationship &rel, const std::string &source,
+                             std::vector<std::string> *memberWitness) -> bool {
+        if (!q.where)
+            return true;
+        SdfPathVector targets;
+        rel.GetTargets(&targets);
+        const std::string name = rel.GetName().GetString();
+        const SdfPath path = rel.GetPath();
+        EvalCtx e;
+        e.get = [&](const std::string &fld) {
+            if (fld == "TARGET.IS_MISSING")
+                return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
+            if (IsMetadataField(fld))
+                return UsdObjectMetadataValue(rel, fld);
+            return GetRelScalarField(name, targets, path, fld);
+        };
+        e.getSet = [&](const std::string &fld) {
+            // The gate's per-member evidence for witness-gated REMOVE TARGET.
+            if (fld == "TARGET.IS_MISSING")
+                return UsdRelMissingTargets(rel, targets);
+            return PathsToStrings(targets);
+        };
+        e.getArcs = noArcsFn;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (memberWitness)
+            CollectMemberWitnesses(*q.where, e, true, "TARGET", *memberWitness);
+        return true;
+    };
+
+    auto whereOkSdfRel = [&](const SdfRelationshipSpecHandle &spec,
+                             const std::string &source,
+                             std::vector<std::string> *memberWitness) -> bool {
+        if (!q.where)
+            return true;
+        SdfPathVector targets;
+        spec->GetTargetPathList().ApplyEditsToList(&targets);
+        EvalCtx e;
+        e.get = [&](const std::string &fld) {
+            if (IsMetadataField(fld))
+                return SdfSpecMetadataValue(spec, fld);
+            return GetRelScalarField(spec->GetName(), targets, spec->GetPath(), fld);
+        };
+        e.getSet = [&](const std::string &) { return PathsToStrings(targets); };
+        e.getArcs = noArcsFn;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (memberWitness)
+            CollectMemberWitnesses(*q.where, e, true, "TARGET", *memberWitness);
+        return true;
+    };
+
+    std::unordered_set<std::string> rootLayerIds, sessionLayerIds;
+    for (const auto &s : ctx.allStages) {
+        if (!s) continue;
+        if (const SdfLayerHandle r = s->GetRootLayer())
+            rootLayerIds.insert(r->GetIdentifier());
+        if (const SdfLayerHandle ss = s->GetSessionLayer())
+            sessionLayerIds.insert(ss->GetIdentifier());
+    }
+    auto whereOkLayer = [&](const SdfLayerHandle &layer, const std::string &source,
+                            WitnessMap *witness) -> bool {
+        if (!q.where)
+            return true;
+        std::map<Family, std::vector<Arc>> arcCache;
+        std::function<const std::vector<Arc> &(Family)> getArcs =
+            [&](Family fam) -> const std::vector<Arc> & {
+            auto it = arcCache.find(fam);
+            if (it == arcCache.end())
+                it = arcCache.emplace(fam, BuildLayerSublayerArcs(layer)).first;
+            return it->second;
+        };
+        EvalCtx e;
+        e.get = [&](const std::string &fld) -> UtqlValue {
+            Family fam;
+            if (FamilyDisplayField(fld, fam))
+                return JoinArcField(getArcs(fam), fld);
+            return GetLayerField(layer, rootLayerIds, sessionLayerIds, fld);
+        };
+        e.getSet = [](const std::string &) { return std::vector<std::string>{}; };
+        e.getArcs = getArcs;
+        e.setFields = &setFields;
+        e.regexes = &regexes;
+        e.underData = &underMap;
+        e.source = &source;
+        if (!EvalWhere(*q.where, e))
+            return false;
+        if (witness)
+            CollectWitnesses(*q.where, e, true, *witness);
+        return true;
+    };
+
+    // ---------------------------------------------------------- write planners
+
+    // Plan the ADD/REMOVE arc clauses against one matched row, in clause order
+    // (design-mutation §4). `buildItems` enumerates the row's current arcs of
+    // a family; the projected list is updated clause by clause so a
+    // REMOVE-then-ADD swap plans correctly against pre-write state. A bare
+    // REMOVE is gated to the WHERE witnesses when a positive same-family
+    // predicate drove the match, and falls back to all of the row's arcs
+    // otherwise (the display-fallback rule); an explicit value filters
+    // directly. `fill` sets the row's target handles on each write.
+    auto planArcMutations =
+        [&](const std::function<std::vector<ArcItem>(const std::string &)> &buildItems,
+            const WitnessMap *witness, const std::vector<std::string> *memberWitness,
+            const SdfLayerHandle &dest, const std::string &source, const SdfPath &rowPath,
+            const std::function<void(PlannedWrite &)> &fill) {
+            if (q.arcMutations.empty())
+                return;
+            std::map<std::string, std::vector<ArcItem>> current; // projected, per family
+            for (size_t i = 0; i < q.arcMutations.size(); ++i) {
+                const ArcMutation &am = q.arcMutations[i];
+                if (am.family == "VARIANT")
+                    continue; // §15 — planned by planVariantAdds, not arc identity
+                auto cit = current.find(am.family);
+                if (cit == current.end())
+                    cit = current.emplace(am.family, buildItems(am.family)).first;
+                std::vector<ArcItem> &items = cit->second;
+                auto makeWrite = [&](PlannedWrite::Action act, const ArcItem &item) {
+                    PlannedWrite w;
+                    w.action = act;
+                    w.arcIndex = i;
+                    w.destLayer = dest;
+                    w.source = source;
+                    w.path = rowPath;
+                    w.arcAsset = item.asset;
+                    w.arcPath = item.path;
+                    w.arcOffset = item.offset;
+                    fill(w);
+                    return w;
+                };
+                if (!am.isRemove) {
+                    const ArcItem add = ArcItemFromMutation(am);
+                    bool present = false;
+                    for (const ArcItem &c : items)
+                        if (c.Key() == add.Key()) {
+                            present = true;
+                            break;
+                        }
+                    if (present) {
+                        skip(am.family + " arc already present: " +
+                             ArcItemDisplay(am.family, add));
+                        continue;
+                    }
+                    items.push_back(add);
+                    PlannedWrite w = makeWrite(PlannedWrite::Action::ArcAdd, add);
+                    w.newDisplay = ArcItemDisplay(am.family, add);
+                    addDest(dest);
+                    plan.writes.push_back(std::move(w));
+                    continue;
+                }
+                // REMOVE — explicit value > witnesses > all of the row's arcs.
+                std::vector<ArcItem> cand;
+                if (am.hasValue || !am.primPath.empty()) {
+                    for (const ArcItem &c : items)
+                        if (ArcItemMatchesExplicit(am, c))
+                            cand.push_back(c);
+                    if (cand.empty()) {
+                        skip("no " + am.family + " arc matching " +
+                             (am.hasValue ? "\"" + am.value + "\""
+                                          : "PRIM_PATH \"" + am.primPath + "\""));
+                        continue;
+                    }
+                } else {
+                    Family famEnum;
+                    if (witness && FamilyFromName(am.family, famEnum)) {
+                        const auto wit = witness->find(famEnum);
+                        if (wit != witness->end()) {
+                            for (const Arc &a : wit->second) {
+                                const ArcItem c = ArcItemFromArc(am.family, a);
+                                for (const ArcItem &cur : items)
+                                    if (cur.Key() == c.Key()) {
+                                        cand.push_back(cur);
+                                        break;
+                                    }
+                            }
+                        }
+                    } else if (memberWitness) {
+                        for (const std::string &mp : *memberWitness) {
+                            const SdfPath p(mp);
+                            for (const ArcItem &cur : items)
+                                if (cur.path == p) {
+                                    cand.push_back(cur);
+                                    break;
+                                }
+                        }
+                    }
+                    if (cand.empty())
+                        cand = items; // no witness — remove all of the row's arcs
+                    if (cand.empty()) {
+                        skip("no " + am.family + " arcs to remove");
+                        continue;
+                    }
+                }
+                // Dedupe identical items (one authored entry can appear in
+                // several specs of the prim stack); one write removes every
+                // occurrence.
+                std::unordered_set<std::string> seenKeys;
+                for (const ArcItem &c : cand) {
+                    if (!seenKeys.insert(c.Key()).second)
+                        continue;
+                    items.erase(std::remove_if(items.begin(), items.end(),
+                                               [&](const ArcItem &x) {
+                                                   return x.Key() == c.Key();
+                                               }),
+                                items.end());
+                    PlannedWrite w = makeWrite(PlannedWrite::Action::ArcRemove, c);
+                    w.oldDisplay = ArcItemDisplay(am.family, c);
+                    // §4: a Stage-world remove of an arc authored in a weaker
+                    // layer cannot reach into that file — it authors a delete
+                    // list-op entry at the destination instead. Say which.
+                    if (q.world == UtqlWorld::Stage && !c.layerId.empty() && dest &&
+                        c.layerId != dest->GetIdentifier())
+                        w.newDisplay = "deleted by list-op";
+                    addDest(dest);
+                    plan.writes.push_back(std::move(w));
+                }
+            }
+        };
+
+    // Family-arc item builders per row kind (identity fields only).
+    auto usdPrimArcItems = [](const UsdPrim &prim, const std::string &fam) {
+        std::vector<ArcItem> out;
+        Family famEnum;
+        if (FamilyFromName(fam, famEnum))
+            for (const Arc &a : BuildUsdArcs(prim, famEnum))
+                out.push_back(ArcItemFromArc(fam, a));
+        return out;
+    };
+    auto sdfPrimArcItems = [](const SdfPrimSpecHandle &spec, const std::string &fam) {
+        std::vector<ArcItem> out;
+        Family famEnum;
+        if (FamilyFromName(fam, famEnum))
+            for (const Arc &a : BuildSdfArcs(spec, famEnum))
+                out.push_back(ArcItemFromArc(fam, a));
+        return out;
+    };
+    auto pathArcItems = [](const SdfPathVector &paths) {
+        std::vector<ArcItem> out;
+        for (const SdfPath &p : paths) {
+            ArcItem it;
+            it.path = p;
+            out.push_back(std::move(it));
+        }
+        return out;
+    };
+
+    // The authored selection of one variant set, for the VARIANT["set"] OLD
+    // column (empty = no authored opinion).
+    auto sdfVariantSel = [](const SdfPrimSpecHandle &s, const std::string &set) {
+        const auto sels = s->GetVariantSelections();
+        const auto it = sels.find(set);
+        return it != sels.end() ? it->second : std::string();
+    };
+
+    // Plan the CREATE ATTRIBUTE/RELATIONSHIP clauses against one matched prim
+    // (design §5): idempotent when the property exists with the same type,
+    // a per-row skip when it exists with a different type or kind.
+    auto planUsdCreateProps = [&](const UsdStageRefPtr &stage, const std::string &source,
+                                  const UsdPrim &prim, const SdfLayerHandle &dest) {
+        for (size_t i = 0; i < q.createProps.size(); ++i) {
+            const CreateProperty &cp = q.createProps[i];
+            const TfToken name(cp.name);
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::CreateProp;
+            w.stage = stage;
+            w.prim = prim;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = prim.GetPath().AppendProperty(name);
+            w.propIndex = i;
+            if (cp.isRelationship) {
+                if (prim.GetAttribute(name)) {
+                    skip("an attribute named \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                w.existed = bool(prim.GetRelationship(name));
+                if (w.existed && cp.target.empty()) {
+                    skip("relationship \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                w.newDisplay = cp.target;
+            } else {
+                if (prim.GetRelationship(name)) {
+                    skip("a relationship named \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
+                const UsdAttribute existing = prim.GetAttribute(name);
+                if (existing && existing.GetTypeName() &&
+                    existing.GetTypeName() != tn) {
+                    skip("attribute \"" + cp.name + "\" exists with type " +
+                         existing.GetTypeName().GetAsToken().GetString() +
+                         " — not retyped");
+                    continue;
+                }
+                w.existed = bool(existing);
+                if (cp.hasValue) {
+                    std::string why;
+                    if (!CoerceLiteral(cp.value, tn, w.coerced, why)) {
+                        skip(why);
+                        continue;
+                    }
+                    w.newDisplay = VtValueDisplay(true, w.coerced);
+                } else {
+                    if (w.existed && cp.interpolation.empty()) {
+                        skip("attribute \"" + cp.name + "\" already exists");
+                        continue;
+                    }
+                    w.newDisplay = cp.typeName;
+                }
+            }
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+    };
+
+    auto planSdfCreateProps = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                  const SdfPrimSpecHandle &spec) {
+        const SdfLayerHandle dest(layer);
+        for (size_t i = 0; i < q.createProps.size(); ++i) {
+            const CreateProperty &cp = q.createProps[i];
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::CreateProp;
+            w.primSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = spec->GetPath().AppendProperty(TfToken(cp.name));
+            w.propIndex = i;
+            const SdfAttributeSpecHandle exAttr = layer->GetAttributeAtPath(w.path);
+            const SdfRelationshipSpecHandle exRel = layer->GetRelationshipAtPath(w.path);
+            if (cp.isRelationship) {
+                if (exAttr) {
+                    skip("an attribute named \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                w.existed = bool(exRel);
+                if (w.existed && cp.target.empty()) {
+                    skip("relationship \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                w.newDisplay = cp.target;
+            } else {
+                if (exRel) {
+                    skip("a relationship named \"" + cp.name + "\" already exists");
+                    continue;
+                }
+                const SdfValueTypeName tn = SdfSchema::GetInstance().FindType(cp.typeName);
+                if (exAttr && exAttr->GetTypeName() != tn) {
+                    skip("attribute \"" + cp.name + "\" exists with type " +
+                         exAttr->GetTypeName().GetAsToken().GetString() +
+                         " — not retyped");
+                    continue;
+                }
+                w.existed = bool(exAttr);
+                if (cp.hasValue) {
+                    std::string why;
+                    if (!CoerceLiteral(cp.value, tn, w.coerced, why)) {
+                        skip(why);
+                        continue;
+                    }
+                    w.newDisplay = VtValueDisplay(true, w.coerced);
+                } else {
+                    if (w.existed && cp.interpolation.empty()) {
+                        skip("attribute \"" + cp.name + "\" already exists");
+                        continue;
+                    }
+                    w.newDisplay = cp.typeName;
+                }
+            }
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+    };
+
+    // DELETE — per-layer paths of already-planned prim removals, so a matched
+    // descendant of a matched ancestor becomes the §7 counted skip.
+    std::unordered_map<std::string, std::vector<SdfPath>> plannedPrimDeletes;
+
+    // ADD VARIANT["set"] "name" clauses (§15) — planned apart from the
+    // generic arc machinery: idempotence is a composed variant-list check,
+    // not an arc identity. Inside an INSIDE context the exists-check is
+    // skipped (composed state cannot see into an unselected outer variant;
+    // AddVariantSet/AddVariant are idempotent at apply anyway).
+    bool ivCreateNoted = false;
+    auto planVariantAdds = [&](const UsdStageRefPtr &stage, const std::string &source,
+                               const UsdPrim &prim, const SdfLayerHandle &dest) {
+        for (size_t i = 0; i < q.arcMutations.size(); ++i) {
+            const ArcMutation &am = q.arcMutations[i];
+            if (am.family != "VARIANT")
+                continue;
+            if (q.insideVariantSets.empty()) {
+                const std::vector<std::string> names =
+                    prim.GetVariantSets().GetVariantSet(am.variantSet).GetVariantNames();
+                if (std::find(names.begin(), names.end(), am.value) != names.end()) {
+                    skip("variant {" + am.variantSet + "=" + am.value +
+                         "} already exists");
+                    continue;
+                }
+            }
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::ArcAdd;
+            w.stage = stage;
+            w.prim = prim;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = prim.GetPath();
+            w.arcIndex = i;
+            w.newDisplay = "{" + am.variantSet + "=" + am.value + "}";
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+    };
+
+    // Plan every SET assignment against one matched row. Old values are read
+    // now (still pre-write); coercion failures are per-row skips (§3.1).
+    auto planUsdPrimWrites = [&](const UsdStageRefPtr &stage, const std::string &source,
+                                 const UsdPrim &prim, const WitnessMap *witness) {
+        const SdfLayerHandle dest = destForStage(stage);
+        if (q.hasOnLayer && !dest) {
+            skip("ON LAYER \"" + q.onLayer + "\" is not in the stage's layer stack");
+            return;
+        }
+        // §15 dry-run visibility: flag once when the INSIDE context will
+        // create rather than reuse the (outermost) variant.
+        if (!q.insideVariantSets.empty() && !ivCreateNoted) {
+            const std::vector<std::string> names =
+                prim.GetVariantSets().GetVariantSet(q.insideVariantSets[0]).GetVariantNames();
+            if (std::find(names.begin(), names.end(), q.insideVariantSels[0]) ==
+                names.end()) {
+                m.warnings.push_back("INSIDE VARIANT auto-creates missing "
+                                     "variant(s) on the matched prims");
+                ivCreateNoted = true;
+            }
+        }
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.stage = stage;
+            w.prim = prim;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = prim.GetPath();
+            w.setIndex = i;
+            w.oldDisplay =
+                (sa.field == "VARIANT")
+                    ? prim.GetVariantSets().GetVariantSet(sa.variantSet).GetVariantSelection()
+                    : GetUsdPrimField(prim, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planUsdCreateProps(stage, source, prim, dest);
+        planVariantAdds(stage, source, prim, dest);
+        planArcMutations([&](const std::string &fam) { return usdPrimArcItems(prim, fam); },
+                         witness, nullptr, dest, source, prim.GetPath(),
+                         [&](PlannedWrite &w) {
+                             w.stage = stage;
+                             w.prim = prim;
+                         });
+    };
+
+    auto planSdfPrimWrites = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                 const SdfPrimSpecHandle &spec, const WitnessMap *witness) {
+        const SdfLayerHandle dest(layer);
+        if (q.statement == StatementKind::Delete) {
+            const SdfPath p = spec->GetPath();
+            if (p.IsPrimVariantSelectionPath()) {
+                skip("target is a variant spec — removing variants is not "
+                     "supported yet");
+                return;
+            }
+            auto &planned = plannedPrimDeletes[layer->GetIdentifier()];
+            for (const SdfPath &a : planned)
+                if (p.HasPrefix(a)) {
+                    skip("already removed with a deleted ancestor");
+                    return;
+                }
+            planned.push_back(p);
+            PlannedWrite w;
+            w.action = PlannedWrite::Action::DeleteSpec;
+            w.primSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = p;
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+            return;
+        }
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.primSpec = spec; });
+            return;
+        }
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.primSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = spec->GetPath();
+            w.setIndex = i;
+            w.oldDisplay = (sa.field == "VARIANT")
+                               ? sdfVariantSel(spec, sa.variantSet)
+                               : GetSdfPrimField(spec, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planSdfCreateProps(layer, source, spec);
+        planArcMutations([&](const std::string &fam) { return sdfPrimArcItems(spec, fam); },
+                         witness, nullptr, dest, source, spec->GetPath(),
+                         [&](PlannedWrite &w) {
+                             w.primSpec = spec;
+                             w.layer = layer;
+                         });
+    };
+
+    // DELETE SDFATTRIBUTE / SDFRELATIONSHIP — remove the matched property spec.
+    auto planSdfPropDelete = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                 const SdfAttributeSpecHandle &attrSpec,
+                                 const SdfRelationshipSpecHandle &relSpec,
+                                 const SdfPath &path) {
+        PlannedWrite w;
+        w.action = PlannedWrite::Action::DeleteSpec;
+        w.attrSpec = attrSpec;
+        w.relSpec = relSpec;
+        w.layer = layer;
+        w.destLayer = SdfLayerHandle(layer);
+        w.source = source;
+        w.path = path;
+        addDest(w.destLayer);
+        plan.writes.push_back(std::move(w));
+    };
+
+    auto planUsdAttrWrites = [&](const UsdStageRefPtr &stage, const std::string &source,
+                                 const UsdAttribute &attr,
+                                 const std::vector<std::string> *memberWitness) {
+        const SdfLayerHandle dest = destForStage(stage);
+        if (q.hasOnLayer && !dest) {
+            skip("ON LAYER \"" + q.onLayer + "\" is not in the stage's layer stack");
+            return;
+        }
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.stage = stage;
+            w.attr = attr;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = attr.GetPath();
+            w.setIndex = i;
+            if (sa.field == "VALUE" && sa.value.kind == Literal::Kind::Samples) {
+                // §14: coerce the whole batch now — any bad entry skips the
+                // row atomically. OLD = prior authored sample count.
+                std::string why;
+                if (!CoerceSamples(sa.value, attr.GetTypeName(), w.coercedSamples, why)) {
+                    skip(why);
+                    continue;
+                }
+                const size_t n = attr.GetNumTimeSamples();
+                w.oldDisplay = n ? std::to_string(n) + " samples" : "";
+                w.newDisplay = LiteralDisplay(sa.value);
+            } else if (sa.field == "VALUE") {
+                const Literal::Kind k = sa.value.kind;
+                if (k != Literal::Kind::Null && k != Literal::Kind::Block) {
+                    std::string why;
+                    if (!CoerceLiteral(sa.value, attr.GetTypeName(), w.coerced, why)) {
+                        skip(why);
+                        continue;
+                    }
+                    w.newDisplay = VtValueDisplay(true, w.coerced);
+                } else {
+                    w.newDisplay = LiteralDisplay(sa.value);
+                }
+                VtValue old;
+                w.oldDisplay = VtValueDisplay(attr.Get(&old, writeTime), old);
+            } else {
+                ValueCache vc;
+                w.oldDisplay = GetUsdAttrField(attr, time, sa.field, vc).ToDisplay();
+                w.newDisplay = LiteralDisplay(sa.value);
+            }
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planArcMutations(
+            [&](const std::string &) { return pathArcItems(UsdAttrConnectionSources(attr)); },
+            nullptr, memberWitness, dest, source, attr.GetPath(),
+            [&](PlannedWrite &w) {
+                w.stage = stage;
+                w.attr = attr;
+            });
+    };
+
+    auto planSdfAttrWrites = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                 const SdfAttributeSpecHandle &spec,
+                                 const std::vector<std::string> *memberWitness) {
+        if (q.statement == StatementKind::Delete) {
+            planSdfPropDelete(layer, source, spec, SdfRelationshipSpecHandle(),
+                              spec->GetPath());
+            return;
+        }
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.attrSpec = spec; });
+            return;
+        }
+        const SdfLayerHandle dest(layer);
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.attrSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = spec->GetPath();
+            w.setIndex = i;
+            if (sa.field == "VALUE" && sa.value.kind == Literal::Kind::Samples) {
+                std::string why;
+                if (!CoerceSamples(sa.value, spec->GetTypeName(), w.coercedSamples, why)) {
+                    skip(why);
+                    continue;
+                }
+                const size_t n = layer->GetNumTimeSamplesForPath(spec->GetPath());
+                w.oldDisplay = n ? std::to_string(n) + " samples" : "";
+                w.newDisplay = LiteralDisplay(sa.value);
+            } else if (sa.field == "VALUE") {
+                const Literal::Kind k = sa.value.kind;
+                if (k != Literal::Kind::Null && k != Literal::Kind::Block) {
+                    std::string why;
+                    if (!CoerceLiteral(sa.value, spec->GetTypeName(), w.coerced, why)) {
+                        skip(why);
+                        continue;
+                    }
+                    w.newDisplay = VtValueDisplay(true, w.coerced);
+                } else {
+                    w.newDisplay = LiteralDisplay(sa.value);
+                }
+                VtValue old;
+                bool got = false;
+                if (q.hasAt) {
+                    got = layer->QueryTimeSample(spec->GetPath(), q.atTime, &old);
+                } else {
+                    old = spec->GetDefaultValue();
+                    got = !old.IsEmpty();
+                }
+                w.oldDisplay = VtValueDisplay(got, old);
+            } else {
+                ValueCache vc;
+                w.oldDisplay =
+                    GetSdfAttrField(spec, SdfLayerHandle(layer), q.hasAt, q.atTime, sa.field, vc)
+                        .ToDisplay();
+                w.newDisplay = LiteralDisplay(sa.value);
+            }
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planArcMutations(
+            [&](const std::string &) { return pathArcItems(SdfAttrConnectionSources(spec)); },
+            nullptr, memberWitness, dest, source, spec->GetPath(),
+            [&](PlannedWrite &w) {
+                w.attrSpec = spec;
+                w.layer = layer;
+            });
+    };
+
+    // UPDATE USDRELATIONSHIP/SDFRELATIONSHIP — ADD/REMOVE TARGET only (M3);
+    // relationships have no writable scalar field, the binder guarantees it.
+    auto planUsdRelWrites = [&](const UsdStageRefPtr &stage, const std::string &source,
+                                const UsdRelationship &rel,
+                                const std::vector<std::string> *memberWitness) {
+        const SdfLayerHandle dest = destForStage(stage);
+        if (q.hasOnLayer && !dest) {
+            skip("ON LAYER \"" + q.onLayer + "\" is not in the stage's layer stack");
+            return;
+        }
+        // SET METADATA["key"] on the relationship (M3b) — the only scalar SET on
+        // relationship entities; targets go through ADD/REMOVE TARGET below.
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.stage = stage;
+            w.rel = rel;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = rel.GetPath();
+            w.setIndex = i;
+            w.oldDisplay = UsdObjectMetadataValue(rel, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planArcMutations(
+            [&](const std::string &) {
+                SdfPathVector targets;
+                rel.GetTargets(&targets);
+                return pathArcItems(targets);
+            },
+            nullptr, memberWitness, dest, source, rel.GetPath(),
+            [&](PlannedWrite &w) {
+                w.stage = stage;
+                w.rel = rel;
+            });
+    };
+
+    auto planSdfRelWrites = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                const SdfRelationshipSpecHandle &spec,
+                                const std::vector<std::string> *memberWitness) {
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.relSpec = spec; });
+            return;
+        }
+        const SdfLayerHandle dest(layer);
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.relSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = spec->GetPath();
+            w.setIndex = i;
+            w.oldDisplay = SdfSpecMetadataValue(spec, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
+        planArcMutations(
+            [&](const std::string &) {
+                SdfPathVector targets;
+                spec->GetTargetPathList().ApplyEditsToList(&targets);
+                return pathArcItems(targets);
+            },
+            nullptr, memberWitness, SdfLayerHandle(layer), source, spec->GetPath(),
+            [&](PlannedWrite &w) {
+                w.relSpec = spec;
+                w.layer = layer;
+            });
+    };
+
+    auto planLayerWrites = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                               const WitnessMap *witness) {
+        const SdfLayerHandle layerH(layer);
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            PlannedWrite w;
+            w.layer = layer;
+            w.destLayer = layerH;
+            w.source = source;
+            w.path = SdfPath::AbsoluteRootPath();
+            w.setIndex = i;
+            w.oldDisplay =
+                GetLayerField(layerH, rootLayerIds, sessionLayerIds, q.sets[i].field).ToDisplay();
+            w.newDisplay = LiteralDisplay(q.sets[i].value);
+            addDest(layerH);
+            plan.writes.push_back(std::move(w));
+        }
+        planArcMutations(
+            [&](const std::string &fam) {
+                std::vector<ArcItem> out;
+                if (fam == "SUBLAYER")
+                    for (const Arc &a : BuildLayerSublayerArcs(layerH))
+                        out.push_back(ArcItemFromArc(fam, a));
+                return out;
+            },
+            witness, nullptr, layerH, source, SdfPath::AbsoluteRootPath(),
+            [&](PlannedWrite &w) { w.layer = layer; });
+    };
+
+    // Stage-world rows must be editable: instance proxies and prototype prims
+    // reject authoring. The direct scan below never yields them (TraverseAll,
+    // no instance descent); pinned resultset rows can.
+    auto usdPrimEditable = [&](const UsdPrim &prim) -> bool {
+        if (prim.IsInstanceProxy()) {
+            skip("target is an instance proxy — edit the prototype's source prim instead");
+            return false;
+        }
+        if (prim.IsInPrototype()) {
+            skip("target is inside an instancing prototype");
+            return false;
+        }
+        return true;
+    };
+
+    // ------------------------------------------------------------- targeting
+
+    if (q.composingInto.targetKind != ComposingInto::TargetKind::None) {
+        // COMPOSING INTO — cross-world targeting (§2.1): the targets are
+        // composed (Stage-world) objects; the rows are the authored specs
+        // that feed them, read off the composed object's prim/property stack
+        // — each write lands in the spec's own layer. Specs reached through
+        // several targets are deduped (written once); WHERE composes; a
+        // target that no longer resolves is a counted skip.
+        m.stages = ctx.allStages; // keep stages alive for click resolution
+        auto findStage = [&](const UtqlResult &res,
+                             const std::string &src) -> UsdStageRefPtr {
+            for (const auto &s : res.stages)
+                if (s && s->GetRootLayer() &&
+                    s->GetRootLayer()->GetIdentifier() == src)
+                    return s;
+            return ctx.currentStage;
+        };
+        std::vector<std::pair<UsdStageRefPtr, SdfPath>> targets;
+        if (q.composingInto.targetKind == ComposingInto::TargetKind::Resultset) {
+            const std::string &name = q.composingInto.resultsetName;
+            const UtqlResult *cached =
+                (ctx.named && ctx.named->count(name)) ? &ctx.named->at(name) : nullptr;
+            if (!cached) {
+                fail("RESULTSET \"" + name + "\" not found. Run a query with AS \"" +
+                     name + "\" first.");
+                return plan;
+            }
+            if (cached->world != UtqlWorld::Stage) {
+                fail("COMPOSING INTO RESULTSET \"" + name + "\" expects a "
+                     "Stage-world (USD*) result set — a Layer-world set already "
+                     "names authored specs; target it with IN RESULTSET.");
+                return plan;
+            }
+            for (const UtqlRow &row : cached->rows)
+                targets.emplace_back(findStage(*cached, row.source), row.path);
+        } else {
+            if (!ctx.currentStage) {
+                fail("No stage open — COMPOSING INTO \"/path\" targets the "
+                     "current stage.");
+                return plan;
+            }
+            for (const std::string &p : q.composingInto.paths)
+                targets.emplace_back(ctx.currentStage, SdfPath(p));
+        }
+
+        std::unordered_set<std::string> seenSpecs; // layerId \x01 specPath
+        auto firstSpec = [&](const SdfLayerHandle &l, const SdfPath &p) {
+            return seenSpecs
+                .insert((l ? l->GetIdentifier() : std::string()) + '\x01' + p.GetString())
+                .second;
+        };
+
+        for (const auto &tp : targets) {
+            if (limitReached)
+                break;
+            const UsdStageRefPtr &stage = tp.first;
+            const SdfPath &targetPath = tp.second;
+            if (!stage) {
+                skip("stale target (stage closed)");
+                continue;
+            }
+            if (q.entity == UtqlEntity::SdfPrim) {
+                UsdPrim prim = stage->GetPrimAtPath(targetPath.GetPrimPath());
+                if (!prim) {
+                    skip("target prim not found on its stage");
+                    continue;
+                }
+                for (const SdfPrimSpecHandle &spec : prim.GetPrimStack()) {
+                    if (limitReached)
+                        break;
+                    if (!spec)
+                        continue;
+                    const SdfLayerHandle l = spec->GetLayer();
+                    if (!l || !firstSpec(l, spec->GetPath()))
+                        continue;
+                    ++m.scanned;
+                    const std::string source = l->GetIdentifier();
+                    WitnessMap witness;
+                    if (!whereOkSdfPrim(spec, source, needArcWitness ? &witness : nullptr))
+                        continue;
+                    noteMatch();
+                    planSdfPrimWrites(SdfLayerRefPtr(l), source, spec, &witness);
+                }
+            } else if (q.entity == UtqlEntity::SdfAttribute) {
+                if (!targetPath.IsPropertyPath()) {
+                    skip("target is not an attribute path");
+                    continue;
+                }
+                UsdAttribute attr = stage->GetAttributeAtPath(targetPath);
+                if (!attr) {
+                    skip("target attribute not found on its stage");
+                    continue;
+                }
+                for (const SdfPropertySpecHandle &ps : attr.GetPropertyStack(time)) {
+                    if (limitReached)
+                        break;
+                    SdfAttributeSpecHandle spec =
+                        TfDynamic_cast<SdfAttributeSpecHandle>(ps);
+                    if (!spec)
+                        continue;
+                    const SdfLayerHandle l = spec->GetLayer();
+                    if (!l || !firstSpec(l, spec->GetPath()))
+                        continue;
+                    ++m.scanned;
+                    const std::string source = l->GetIdentifier();
+                    std::vector<std::string> mw;
+                    if (!whereOkSdfAttr(spec, l, source, needMemberWitness ? &mw : nullptr))
+                        continue;
+                    noteMatch();
+                    planSdfAttrWrites(SdfLayerRefPtr(l), source, spec, &mw);
+                }
+            } else { // SdfRelationship
+                if (!targetPath.IsPropertyPath()) {
+                    skip("target is not a relationship path");
+                    continue;
+                }
+                UsdRelationship rel = stage->GetRelationshipAtPath(targetPath);
+                if (!rel) {
+                    skip("target relationship not found on its stage");
+                    continue;
+                }
+                for (const SdfPropertySpecHandle &ps : rel.GetPropertyStack(time)) {
+                    if (limitReached)
+                        break;
+                    SdfRelationshipSpecHandle spec =
+                        TfDynamic_cast<SdfRelationshipSpecHandle>(ps);
+                    if (!spec)
+                        continue;
+                    const SdfLayerHandle l = spec->GetLayer();
+                    if (!l || !firstSpec(l, spec->GetPath()))
+                        continue;
+                    ++m.scanned;
+                    const std::string source = l->GetIdentifier();
+                    std::vector<std::string> mw;
+                    if (!whereOkSdfRel(spec, source, needMemberWitness ? &mw : nullptr))
+                        continue;
+                    noteMatch();
+                    if (q.statement == StatementKind::Delete)
+                        planSdfPropDelete(SdfLayerRefPtr(l), source,
+                                          SdfAttributeSpecHandle(), spec,
+                                          spec->GetPath());
+                    else
+                        planSdfRelWrites(SdfLayerRefPtr(l), source, spec, &mw);
+                }
+            }
+        }
+    } else if (q.scope.kind == ScopeSpec::Kind::Resultset) {
+        // Provenance-pinned targets (design-mutation §2.1): mutate exactly the
+        // cached rows; rows that no longer resolve are counted `stale` skips.
+        const std::string &name = q.scope.name;
+        const UtqlResult *cached =
+            (ctx.named && ctx.named->count(name)) ? &ctx.named->at(name) : nullptr;
+        if (!cached) {
+            fail("RESULTSET \"" + name + "\" not found. Run a query with AS \"" + name +
+                 "\" first.");
+            return plan;
+        }
+        if (cached->world != q.world) {
+            fail((cached->world == UtqlWorld::Stage)
+                     ? "RESULTSET \"" + name + "\" is Stage world; it cannot target a Layer "
+                       "statement."
+                     : "RESULTSET \"" + name + "\" is Layer world; it cannot target a Stage "
+                       "statement.");
+            return plan;
+        }
+
+        std::unordered_set<std::string> stagesSeen;
+        auto findStage = [&](const std::string &source) -> UsdStageRefPtr {
+            for (const auto &s : ctx.allStages)
+                if (s && s->GetRootLayer() && s->GetRootLayer()->GetIdentifier() == source)
+                    return s;
+            return UsdStageRefPtr();
+        };
+
+        // Entity projection mirrors FIND's IN RESULTSET semantics: the set's
+        // rows are projected onto the statement's entity — a prim row targets
+        // the prim's attributes for an attribute statement, a property row
+        // targets its owning prim for a prim statement. Distinct rows can
+        // project onto the same object (two attributes of one prim), so
+        // targets are deduped before planning.
+        std::unordered_set<std::string> targetsSeen;
+        auto firstSeen = [&](const std::string &source, const SdfPath &target) {
+            return targetsSeen.insert(SourceKey(source, target.GetString())).second;
+        };
+
+        for (const UtqlRow &row : cached->rows) {
+            if (limitReached)
+                break;
+            if (q.world == UtqlWorld::Stage) {
+                UsdStageRefPtr stage = findStage(row.source);
+                if (!stage) {
+                    skip("stale resultset row (stage closed)");
+                    continue;
+                }
+                if (stagesSeen.insert(row.source).second)
+                    m.stages.push_back(stage);
+                if (q.entity == UtqlEntity::UsdPrim) {
+                    const SdfPath primPath = row.path.GetPrimPath();
+                    if (!firstSeen(row.source, primPath))
+                        continue;
+                    ++m.scanned;
+                    UsdPrim prim = stage->GetPrimAtPath(primPath);
+                    if (!prim) {
+                        skip("stale resultset row (prim gone)");
+                        continue;
+                    }
+                    WitnessMap witness;
+                    if (!usdPrimEditable(prim) ||
+                        !whereOkUsdPrim(prim, row.source,
+                                        needArcWitness ? &witness : nullptr))
+                        continue;
+                    noteMatch();
+                    planUsdPrimWrites(stage, row.source, prim, &witness);
+                } else if (q.entity == UtqlEntity::UsdAttribute) {
+                    auto considerAttr = [&](const UsdAttribute &attr) {
+                        if (limitReached || !firstSeen(row.source, attr.GetPath()))
+                            return;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!usdPrimEditable(attr.GetPrim()) ||
+                            !whereOkUsdAttr(attr, row.source,
+                                            needMemberWitness ? &mw : nullptr))
+                            return;
+                        noteMatch();
+                        planUsdAttrWrites(stage, row.source, attr, &mw);
+                    };
+                    if (row.path.IsPropertyPath()) {
+                        UsdAttribute attr = stage->GetAttributeAtPath(row.path);
+                        if (!attr) {
+                            skip("stale resultset row (attribute gone)");
+                            continue;
+                        }
+                        considerAttr(attr);
+                    } else {
+                        // Prim row → the prim's attributes (WHERE narrows).
+                        UsdPrim prim = stage->GetPrimAtPath(row.path);
+                        if (!prim) {
+                            skip("stale resultset row (prim gone)");
+                            continue;
+                        }
+                        for (const UsdAttribute &attr : prim.GetAttributes()) {
+                            if (limitReached)
+                                break;
+                            considerAttr(attr);
+                        }
+                    }
+                } else if (q.entity == UtqlEntity::UsdRelationship) {
+                    auto considerUsdRel = [&](const UsdRelationship &rel) {
+                        if (limitReached || !firstSeen(row.source, rel.GetPath()))
+                            return;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!usdPrimEditable(rel.GetPrim()) ||
+                            !whereOkUsdRel(rel, row.source,
+                                           needMemberWitness ? &mw : nullptr))
+                            return;
+                        noteMatch();
+                        planUsdRelWrites(stage, row.source, rel, &mw);
+                    };
+                    if (row.path.IsPropertyPath()) {
+                        UsdRelationship rel = stage->GetRelationshipAtPath(row.path);
+                        if (!rel) {
+                            skip("stale resultset row (relationship gone)");
+                            continue;
+                        }
+                        considerUsdRel(rel);
+                    } else {
+                        // Prim row → the prim's relationships (WHERE narrows).
+                        UsdPrim prim = stage->GetPrimAtPath(row.path);
+                        if (!prim) {
+                            skip("stale resultset row (prim gone)");
+                            continue;
+                        }
+                        for (const UsdRelationship &rel : prim.GetRelationships()) {
+                            if (limitReached)
+                                break;
+                            considerUsdRel(rel);
+                        }
+                    }
+                }
+            } else {
+                SdfLayerRefPtr layer = SdfLayer::Find(row.source);
+                if (!layer) {
+                    skip("stale resultset row (layer closed)");
+                    continue;
+                }
+                if (q.entity == UtqlEntity::Layer) {
+                    if (!firstSeen(row.source, SdfPath::AbsoluteRootPath()))
+                        continue;
+                    ++m.scanned;
+                    WitnessMap witness;
+                    if (!whereOkLayer(SdfLayerHandle(layer), row.source,
+                                      needArcWitness ? &witness : nullptr))
+                        continue;
+                    noteMatch();
+                    planLayerWrites(layer, row.source, &witness);
+                } else if (q.entity == UtqlEntity::SdfPrim) {
+                    const SdfPath primPath =
+                        row.path.IsPropertyPath() ? row.path.GetPrimPath() : row.path;
+                    if (!firstSeen(row.source, primPath))
+                        continue;
+                    ++m.scanned;
+                    SdfPrimSpecHandle spec = layer->GetPrimAtPath(primPath);
+                    if (!spec) {
+                        skip("stale resultset row (spec gone)");
+                        continue;
+                    }
+                    WitnessMap witness;
+                    if (!whereOkSdfPrim(spec, row.source,
+                                        needArcWitness ? &witness : nullptr))
+                        continue;
+                    noteMatch();
+                    planSdfPrimWrites(layer, row.source, spec, &witness);
+                } else if (q.entity == UtqlEntity::SdfAttribute) {
+                    auto considerSpec = [&](const SdfAttributeSpecHandle &spec) {
+                        if (limitReached || !spec ||
+                            !firstSeen(row.source, spec->GetPath()))
+                            return;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!whereOkSdfAttr(spec, SdfLayerHandle(layer), row.source,
+                                            needMemberWitness ? &mw : nullptr))
+                            return;
+                        noteMatch();
+                        planSdfAttrWrites(layer, row.source, spec, &mw);
+                    };
+                    if (row.path.IsPropertyPath()) {
+                        SdfAttributeSpecHandle spec = layer->GetAttributeAtPath(row.path);
+                        if (!spec) {
+                            skip("stale resultset row (attribute spec gone)");
+                            continue;
+                        }
+                        considerSpec(spec);
+                    } else {
+                        // Prim-spec row → its authored attribute specs.
+                        SdfPrimSpecHandle prim = layer->GetPrimAtPath(row.path);
+                        if (!prim) {
+                            skip("stale resultset row (spec gone)");
+                            continue;
+                        }
+                        for (const SdfAttributeSpecHandle &spec : prim->GetAttributes()) {
+                            if (limitReached)
+                                break;
+                            considerSpec(spec);
+                        }
+                    }
+                } else if (q.entity == UtqlEntity::SdfRelationship) {
+                    auto considerRel = [&](const SdfRelationshipSpecHandle &spec) {
+                        if (limitReached || !spec ||
+                            !firstSeen(row.source, spec->GetPath()))
+                            return;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!whereOkSdfRel(spec, row.source,
+                                           needMemberWitness ? &mw : nullptr))
+                            return;
+                        noteMatch();
+                        if (q.statement == StatementKind::Delete)
+                            planSdfPropDelete(layer, row.source, SdfAttributeSpecHandle(),
+                                              spec, spec->GetPath());
+                        else
+                            planSdfRelWrites(layer, row.source, spec, &mw);
+                    };
+                    if (row.path.IsPropertyPath()) {
+                        SdfRelationshipSpecHandle spec =
+                            layer->GetRelationshipAtPath(row.path);
+                        if (!spec) {
+                            skip("stale resultset row (relationship spec gone)");
+                            continue;
+                        }
+                        considerRel(spec);
+                    } else {
+                        // Prim-spec row → its authored relationship specs.
+                        SdfPrimSpecHandle prim = layer->GetPrimAtPath(row.path);
+                        if (!prim) {
+                            skip("stale resultset row (spec gone)");
+                            continue;
+                        }
+                        for (const SdfRelationshipSpecHandle &spec :
+                             prim->GetRelationships()) {
+                            if (limitReached)
+                                break;
+                            considerRel(spec);
+                        }
+                    }
+                }
+            }
+        }
+    } else if (q.world == UtqlWorld::Stage) {
+        std::vector<UsdStageRefPtr> stages;
+        std::string err;
+        if (!ResolveStages(q, ctx, stages, err)) {
+            fail(err);
+            return plan;
+        }
+        m.stages = stages;
+        for (const auto &stage : stages) {
+            if (!stage || limitReached)
+                continue;
+            const std::string source = stage->GetRootLayer()->GetIdentifier();
+            for (UsdPrim prim : stage->TraverseAll()) {
+                if (limitReached)
+                    break;
+                if (q.entity == UtqlEntity::UsdPrim) {
+                    ++m.scanned;
+                    WitnessMap witness;
+                    if (!whereOkUsdPrim(prim, source, needArcWitness ? &witness : nullptr))
+                        continue;
+                    noteMatch();
+                    planUsdPrimWrites(stage, source, prim, &witness);
+                } else if (q.entity == UtqlEntity::UsdAttribute) {
+                    for (const UsdAttribute &attr : prim.GetAttributes()) {
+                        if (limitReached)
+                            break;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!whereOkUsdAttr(attr, source, needMemberWitness ? &mw : nullptr))
+                            continue;
+                        noteMatch();
+                        planUsdAttrWrites(stage, source, attr, &mw);
+                    }
+                } else { // UsdRelationship (M3: ADD/REMOVE TARGET)
+                    for (const UsdRelationship &rel : prim.GetRelationships()) {
+                        if (limitReached)
+                            break;
+                        ++m.scanned;
+                        std::vector<std::string> mw;
+                        if (!whereOkUsdRel(rel, source, needMemberWitness ? &mw : nullptr))
+                            continue;
+                        noteMatch();
+                        planUsdRelWrites(stage, source, rel, &mw);
+                    }
+                }
+            }
+        }
+    } else {
+        std::vector<SdfLayerRefPtr> layers;
+        std::string err;
+        if (!ResolveLayers(q, ctx, layers, err)) {
+            fail(err);
+            return plan;
+        }
+        m.stages = ctx.allStages; // keep stages alive for click resolution
+        if (q.entity == UtqlEntity::Layer) {
+            for (const auto &layer : layers) {
+                if (!layer || limitReached)
+                    continue;
+                const std::string source = layer->GetIdentifier();
+                ++m.scanned;
+                WitnessMap witness;
+                if (!whereOkLayer(SdfLayerHandle(layer), source,
+                                  needArcWitness ? &witness : nullptr))
+                    continue;
+                noteMatch();
+                planLayerWrites(layer, source, &witness);
+            }
+        } else {
+            for (const auto &layer : layers) {
+                if (!layer)
+                    continue;
+                if (limitReached)
+                    break;
+                const std::string source = layer->GetIdentifier();
+                const SdfLayerHandle layerH(layer);
+                std::function<void(const SdfPrimSpecHandle &)> visitSpec =
+                    [&](const SdfPrimSpecHandle &prim) {
+                        if (!prim || limitReached)
+                            return;
+                        if (prim->GetPath() != SdfPath::AbsoluteRootPath()) {
+                            if (q.entity == UtqlEntity::SdfPrim) {
+                                ++m.scanned;
+                                WitnessMap witness;
+                                if (whereOkSdfPrim(prim, source,
+                                                   needArcWitness ? &witness : nullptr)) {
+                                    noteMatch();
+                                    planSdfPrimWrites(layer, source, prim, &witness);
+                                }
+                            } else if (q.entity == UtqlEntity::SdfAttribute) {
+                                for (const SdfAttributeSpecHandle &spec : prim->GetAttributes()) {
+                                    if (!spec || limitReached)
+                                        break;
+                                    ++m.scanned;
+                                    std::vector<std::string> mw;
+                                    if (!whereOkSdfAttr(spec, layerH, source,
+                                                        needMemberWitness ? &mw : nullptr))
+                                        continue;
+                                    noteMatch();
+                                    planSdfAttrWrites(layer, source, spec, &mw);
+                                }
+                            } else { // SdfRelationship (DELETE, or M3 ADD/REMOVE TARGET)
+                                for (const SdfRelationshipSpecHandle &spec : prim->GetRelationships()) {
+                                    if (!spec || limitReached)
+                                        break;
+                                    ++m.scanned;
+                                    std::vector<std::string> mw;
+                                    if (!whereOkSdfRel(spec, source,
+                                                       needMemberWitness ? &mw : nullptr))
+                                        continue;
+                                    noteMatch();
+                                    if (q.statement == StatementKind::Delete)
+                                        planSdfPropDelete(layer, source,
+                                                          SdfAttributeSpecHandle(), spec,
+                                                          spec->GetPath());
+                                    else
+                                        planSdfRelWrites(layer, source, spec, &mw);
+                                }
+                            }
+                        }
+                        if (limitReached)
+                            return;
+                        for (const SdfPrimSpecHandle &child : prim->GetNameChildren())
+                            visitSpec(child);
+                        for (const auto &vsEntry : prim->GetVariantSets()) {
+                            const SdfVariantSetSpecHandle vss = vsEntry.second;
+                            if (!vss) continue;
+                            for (const SdfVariantSpecHandle &vs : vss->GetVariants())
+                                if (vs) visitSpec(vs->GetPrimSpec());
+                        }
+                    };
+                visitSpec(layer->GetPseudoRoot());
+            }
+        }
+    }
+
+    // ON LAYER named a layer that no stage in scope carries — §9 hard error.
+    if (q.hasOnLayer && !onLayerFound) {
+        plan.writes.clear();
+        plan.layers.clear();
+        fail("Layer \"" + q.onLayer + "\" is not in the layer stack of any stage in "
+             "scope; the edit target must live in the stack.");
+        return plan;
+    }
+    return plan;
+}
+
+void ApplyUpdate(const BoundQuery &q, MutationPlan &plan, const UtqlContext &ctx) {
+    UtqlResult &m = plan.manifest;
+    if (m.status == UtqlStatus::CompileError)
+        return;
+
+    // Rename/reparent rows apply deepest-first (as PrimReparent does), so a
+    // descendant row's own edit runs before a matched ancestor moves it out
+    // from under its handle. A namespace statement plans only NamespaceEdit
+    // writes (binder rule), so checking the first entry covers the batch.
+    if (!plan.writes.empty() &&
+        plan.writes.front().action == PlannedWrite::Action::NamespaceEdit)
+        std::stable_sort(plan.writes.begin(), plan.writes.end(),
+                         [](const PlannedWrite &a, const PlannedWrite &b) {
+                             return a.path.GetPathElementCount() >
+                                    b.path.GetPathElementCount();
+                         });
+
+    {
+        // One statement = one change block (design-mutation §8); the host wraps
+        // this call in its undo recording over plan.layers. CREATE runs without
+        // the block: it is a single action, and UsdStage::DefinePrim needs the
+        // stage to recompose its freshly authored ancestors mid-call — blocked
+        // notifications make it fail.
+        std::unique_ptr<SdfChangeBlock> block;
+        if (!ctx.dryRun && q.statement != StatementKind::Create)
+            block.reset(new SdfChangeBlock());
+        for (PlannedWrite &w : plan.writes) {
+            using A = PlannedWrite::Action;
+            std::string fieldDisplay;
+            uint64_t *counter = &m.changed;
+            bool ok = true;
+            switch (w.action) {
+                case A::Set: {
+                    const SetAssignment &sa = q.sets[w.setIndex];
+                    fieldDisplay = (sa.field == "VARIANT")
+                                       ? "VARIANT[\"" + sa.variantSet + "\"]"
+                                       : sa.field;
+                    if (!ctx.dryRun)
+                        ok = PerformWrite(q, sa, w);
+                    break;
+                }
+                case A::CreateProp: {
+                    const CreateProperty &cp = q.createProps[w.propIndex];
+                    fieldDisplay = cp.name;
+                    // A pre-existing property being filled in counts as a
+                    // change; a fresh property as a creation.
+                    counter = w.existed ? &m.changed : &m.created;
+                    if (!ctx.dryRun)
+                        ok = PerformCreateProp(q, cp, w);
+                    break;
+                }
+                case A::DeleteSpec: {
+                    counter = &m.removed;
+                    if (!ctx.dryRun) {
+                        // An earlier removal in this very statement may have
+                        // taken this spec's subtree with it (resultset rows in
+                        // arbitrary order) — the plan-time prefix check cannot
+                        // see those, so verify the handle is still alive.
+                        if (!w.primSpec && !w.attrSpec && !w.relSpec) {
+                            ++plan.skips["already removed with a deleted ancestor"];
+                            continue;
+                        }
+                        ok = PerformDeleteSpec(w);
+                    }
+                    break;
+                }
+                case A::CreatePrim: {
+                    counter = &m.created;
+                    if (!ctx.dryRun)
+                        ok = PerformCreatePrim(q, w);
+                    break;
+                }
+                case A::ArcAdd: {
+                    const ArcMutation &am = q.arcMutations[w.arcIndex];
+                    fieldDisplay = am.family;
+                    counter = &m.changed;
+                    if (!ctx.dryRun)
+                        ok = PerformArcAdd(q, am, w);
+                    break;
+                }
+                case A::ArcRemove: {
+                    const ArcMutation &am = q.arcMutations[w.arcIndex];
+                    fieldDisplay = am.family;
+                    counter = &m.removed;
+                    if (!ctx.dryRun)
+                        ok = PerformArcRemove(q, am, w);
+                    break;
+                }
+                case A::NamespaceEdit: {
+                    for (const SetAssignment &sa : q.sets)
+                        fieldDisplay += (fieldDisplay.empty() ? "" : ",") + sa.field;
+                    counter = &m.changed;
+                    if (!ctx.dryRun) {
+                        // The CanApply reason is the skip key (collision with
+                        // an earlier row's edit, missing destination parent…).
+                        std::string why;
+                        ok = PerformNamespaceEdit(w, why);
+                        if (!ok) {
+                            ++plan.skips[why];
+                            continue;
+                        }
+                    }
+                    break;
+                }
+            }
+            if (!ok) {
+                ++plan.skips["write failed"];
+                continue;
+            }
+            UtqlRow row;
+            row.source = w.source;
+            row.path = w.path;
+            row.columns.reserve(m.columnNames.size());
+            for (const std::string &col : m.columnNames) {
+                if (col == "PATH")
+                    row.columns.push_back(UtqlValue::String_(w.path.GetString()));
+                else if (col == "LAYER")
+                    row.columns.push_back(UtqlValue::String_(
+                        w.destLayer ? LayerDisplay(w.destLayer->GetIdentifier()) : ""));
+                else if (col == "FIELD")
+                    row.columns.push_back(fieldDisplay.empty()
+                                              ? UtqlValue::Null()
+                                              : UtqlValue::String_(fieldDisplay));
+                else if (col == "OLD")
+                    row.columns.push_back(w.oldDisplay.empty() ? UtqlValue::Null()
+                                                               : UtqlValue::String_(w.oldDisplay));
+                else if (col == "NEW")
+                    row.columns.push_back(w.newDisplay.empty() ? UtqlValue::Null()
+                                                               : UtqlValue::String_(w.newDisplay));
+                else
+                    row.columns.push_back(UtqlValue::Null());
+            }
+            m.rows.push_back(std::move(row));
+            ++(*counter);
+        }
+    }
+
+    m.matched = plan.matched;
+    for (const auto &kv : plan.skips) {
+        m.skipped += kv.second;
+        m.warnings.push_back(std::to_string(kv.second) + " skipped: " + kv.first);
+    }
+
+    // CREATE is not match-shaped — its manifest speaks in created/exists terms.
+    if (q.statement == StatementKind::Create) {
+        if (m.created > 0) {
+            m.status = UtqlStatus::Ok;
+            m.message = (ctx.dryRun ? "Dry run — would create " : "Created ") +
+                        q.createPath + ".";
+        } else {
+            m.status = UtqlStatus::OkEmpty;
+            m.message = "Nothing created."; // the skip reason is in warnings
+        }
+        return;
+    }
+
+    std::string counts;
+    auto addCount = [&](uint64_t n, const char *one, const char *many) {
+        if (n)
+            counts += (counts.empty() ? "" : ", ") + std::to_string(n) + " " +
+                      (n == 1 ? one : many);
+    };
+    addCount(m.changed, "write", "writes");
+    addCount(m.created, "property created", "properties created");
+    addCount(m.removed, "removal", "removals");
+
+    if (m.matched == 0 && m.skipped == 0) {
+        m.status = UtqlStatus::OkEmpty;
+        m.message = "Matched nothing — nothing written.";
+    } else if (counts.empty()) {
+        m.status = UtqlStatus::Ok;
+        m.message = "Matched " + std::to_string(m.matched) + " row" +
+                    (m.matched == 1 ? "" : "s") + " — nothing written (see "
+                    "warnings).";
+    } else {
+        m.status = UtqlStatus::Ok;
+        m.message = (ctx.dryRun ? "Dry run — would author " : "Authored ") + counts +
+                    " on " + std::to_string(m.matched) + " matched row" +
+                    (m.matched == 1 ? "" : "s") + ".";
+    }
 }
 
 } // namespace utql

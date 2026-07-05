@@ -19,11 +19,14 @@ SdfCommandGroupRecorder::~SdfCommandGroupRecorder() {
 
 void SdfCommandGroupRecorder::SetUndoStateDelegates() {
     if (_undoCommands.IsEmpty()) {
-        auto stateDelegate = UndoRedoLayerStateDelegate::New(_undoCommands);
+        // One delegate PER layer, all feeding the same SdfCommandGroup.
+        // SdfLayerStateDelegateBase keeps a _layer back-pointer (set on attach)
+        // and routes the layer's data edits through it, so a single delegate
+        // shared across layers applies every edit to the LAST layer attached.
         for (const auto &layer : _layers) {
             if (layer) {
                 _previousDelegates.push_back(layer->GetStateDelegate());
-                layer->SetStateDelegate(stateDelegate);
+                layer->SetStateDelegate(UndoRedoLayerStateDelegate::New(_undoCommands));
             } else {
                 _previousDelegates.push_back({});
             }

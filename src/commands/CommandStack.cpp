@@ -1,5 +1,6 @@
 #include "CommandStack.h"
 #include "SdfCommandGroupRecorder.h"
+#include "UsdSceneLock.h"
 
 CommandStack *CommandStack::instance = nullptr;
 
@@ -18,13 +19,26 @@ CommandStack::~CommandStack() {
 }
 
 void CommandStack::ExecuteCommands() {
-    if (lastCmd) {
-        if (lastCmd->DoIt()) {
-            _PushCommand(lastCmd);
-        } else {
-            delete lastCmd;
-        }
-        lastCmd = nullptr; // Reset the command
+    // Take the command out of the slot first (under the slot mutex, never
+    // while holding the scene lock — a worker queueing the next command must
+    // not be able to deadlock against a writer).
+    Command *cmd = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(_lastCmdMutex);
+        cmd = lastCmd;
+        lastCmd = nullptr;
+    }
+    if (!cmd)
+        return;
+
+    // Commands are THE write path: exclusive scene access while one runs, so
+    // background readers (Twiki dispatcher, UtqlEngine, search index) never
+    // observe a half-applied edit (USD: parallel reads, single-thread write).
+    ScopedSceneWrite sceneWrite;
+    if (cmd->DoIt()) {
+        _PushCommand(cmd);
+    } else {
+        delete cmd;
     }
 }
 
@@ -120,8 +134,14 @@ bool ClearUndoRedoCommand::DoIt() {
     CommandStack &commandStack = CommandStack::GetInstance();
     commandStack.undoStackPos = 0;
     commandStack.undoStack.clear();
-    delete commandStack.lastCmd;
-    commandStack.lastCmd = nullptr;
+    // Drop any command a worker queued since this one was extracted.
+    Command *pending = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(commandStack._lastCmdMutex);
+        pending = commandStack.lastCmd;
+        commandStack.lastCmd = nullptr;
+    }
+    delete pending;
     return false; // Should never be stored in the stack
 }
 template void ExecuteAfterDraw<ClearUndoRedoCommand>();
@@ -151,6 +171,28 @@ template <> UsdFunctionCall::UsdFunctionCall(UsdStageRefPtr stage, std::function
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerRefPtr layer, std::function<void()> func);
 template void ExecuteAfterDraw<UsdFunctionCall>(SdfLayerHandle layer, std::function<void()> func);
 template void ExecuteAfterDraw<UsdFunctionCall>(UsdStageRefPtr stage, std::function<void()> func);
+
+/// Plan first (read-only, returns the destination layers), then record the
+/// edits `apply` makes on those layers as one undoable SdfUndoRedoCommand.
+bool MultiLayerFunctionCall::DoIt() {
+    SdfLayerHandleVector layers = _prepare ? _prepare() : SdfLayerHandleVector();
+    SdfUndoRedoCommand *command = new SdfUndoRedoCommand();
+    {
+        SdfCommandGroupRecorder recorder(command->_undoCommands, layers);
+        if (_apply)
+            _apply();
+    }
+    if (command->_undoCommands.IsEmpty()) {
+        // Nothing was authored (dry run / all rows skipped): no undo entry.
+        delete command;
+    } else {
+        CommandStack::GetInstance()._PushCommand(command);
+    }
+    return false; // the SdfUndoRedoCommand was pushed instead of this command
+}
+
+template void ExecuteAfterDraw<MultiLayerFunctionCall>(std::function<SdfLayerHandleVector()> prepare,
+                                                       std::function<void()> apply);
 
 
 // Should go in Commands.cpp ???

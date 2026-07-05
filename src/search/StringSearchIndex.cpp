@@ -1,5 +1,7 @@
 #include "StringSearchIndex.h"
 
+#include "UsdSceneLock.h" // shared read scope around shard builds
+
 #include <pxr/base/tf/weakPtr.h>
 #include <pxr/base/vt/array.h>
 #include <pxr/base/vt/value.h>
@@ -195,9 +197,15 @@ void StringSearchIndex::TriggerBuild(SourceShard &shard) {
             return;
         }
         shard.dispatcher.Run([sourceCopy, stage, pending, building, ready]() {
-            StringSearchIndex::BuildStageShardEntries(sourceCopy, stage, *pending);
+            // Shared scene lock (USD: parallel reads, single-thread write),
+            // yielding flavour: give up rather than delay a pending/active
+            // writer. The write that pre-empted us fires LayersDidChange,
+            // which re-marks the shard dirty, so Update() retries the build.
+            ScopedSceneRead sceneRead(ScopedSceneRead::kTryYielding);
+            if (sceneRead.Acquired())
+                StringSearchIndex::BuildStageShardEntries(sourceCopy, stage, *pending);
             building->store(false, std::memory_order_release);
-            ready->store(true,    std::memory_order_release);
+            ready->store(sceneRead.Acquired(), std::memory_order_release);
         });
     } else {
         // Layer shard: resolve the layer on the main thread (SdfLayer::Find is safe here).
@@ -207,9 +215,11 @@ void StringSearchIndex::TriggerBuild(SourceShard &shard) {
             return;
         }
         shard.dispatcher.Run([sourceCopy, layer, pending, building, ready]() {
-            StringSearchIndex::BuildShardEntries(sourceCopy, layer, *pending);
+            ScopedSceneRead sceneRead(ScopedSceneRead::kTryYielding); // see stage shard note
+            if (sceneRead.Acquired())
+                StringSearchIndex::BuildShardEntries(sourceCopy, layer, *pending);
             building->store(false, std::memory_order_release);
-            ready->store(true,    std::memory_order_release);
+            ready->store(sceneRead.Acquired(), std::memory_order_release);
         });
     }
 }
