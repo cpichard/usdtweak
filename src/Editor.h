@@ -178,4 +178,9 @@ class Editor {
     /// Playback controls
     bool _isPlaying = false;
     std::chrono::time_point<std::chrono::steady_clock> _lastFrameTime;
+    /// Continuous, wall-clock-paced frame accumulator. Playback advances this smoothly to keep
+    /// real-time timing (dropping/repeating frames as needed), but only whole-frame values snapped
+    /// from it are handed to Hydra. Feeding fractional timecodes breaks topology-varying meshes
+    /// (points/topology sample at inconsistent brackets), which is why usdview also plays discrete frames.
+    double _playbackFrame = 0.0;
 };
