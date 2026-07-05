@@ -4,11 +4,10 @@
 #include <imgui_markdown.h>
 #include <imgui_stdlib.h>
 
-#include "AnthropicBackend.h"
 #include "JsHelpers.h"
 #include "ResourcesLoader.h"
 #include "UsdTools.h"
-#include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection, {Get,Set}AddonString
+#include "addons/Api.h"   // usdtweak::{Set,Add}StagePathSelection, FrameCameraOnSelection, {Get,Set}AddonString, PersistSettings
 
 #include <algorithm>
 #include <chrono>
@@ -431,21 +430,43 @@ AgentChatPanel::~AgentChatPanel() {
 }
 
 bool AgentChatPanel::_LazyInit(std::string* errOut) {
+    // Settings are loaded once at the top of Draw(), which always runs before
+    // this (reached only from the Chat tab's submit path).
     if (_initialized) return true;
+    return _RebuildBackend(errOut);
+}
 
-    const char* keyEnv = std::getenv("ANTHROPIC_API_KEY");
-    if (!keyEnv || !*keyEnv) {
-        *errOut = "ANTHROPIC_API_KEY is not set in the environment.\n"
-                  "Set it before launching usdtweak (e.g. in your shell rc) "
-                  "and restart, or paste it via the Settings menu (TODO).";
+bool AgentChatPanel::_RebuildBackend(std::string* errOut) {
+    const std::string key = ResolveApiKey(_provider, _apiKey);
+    if (ProviderRequiresKey(_provider) && key.empty()) {
+        if (errOut) {
+            const char* env = ApiKeyEnvVar(_provider);
+            *errOut = std::string(ProviderDisplayName(_provider)) +
+                      " needs an API key — paste one in the Settings tab" +
+                      (env ? std::string(" or set ") + env + " before launch"
+                           : std::string()) + ".";
+        }
         return false;
     }
 
-    const char* modelEnv = std::getenv("ANTHROPIC_MODEL");
-    std::string model = (modelEnv && *modelEnv) ? modelEnv : "claude-sonnet-4-6";
+    std::string model = _model.empty() ? DefaultModel(_provider) : _model;
+    if (model.empty()) {
+        if (errOut) *errOut = "No model selected. Pick one in the Settings tab "
+                              "(click \"Refresh list\").";
+        return false;
+    }
 
-    _InitToolState();  // ensure _allTools/prefs exist before we build the set
-    auto backend = std::make_unique<AnthropicBackend>(keyEnv, model);
+    _InitToolState();  // ensure _allTools / tool prefs exist before we build the set
+    auto backend = LLMBackend::Create(ProviderBackendType(_provider),
+                                      key, model, _baseUrl);
+    if (!backend) {
+        if (errOut) *errOut = "Could not construct a backend for the selected "
+                              "provider.";
+        return false;
+    }
+
+    // Replaces any previous orchestrator/backend; the dispatcher (and its
+    // lists) is a panel member and survives the swap.
     _orchestrator = std::make_unique<AgentOrchestrator>(
         std::move(backend), _dispatcher, _ActiveToolDefs());
     _initialized = true;
@@ -514,6 +535,56 @@ void AgentChatPanel::_SaveToolPrefs() const {
     usdtweak::SetAddonString("Twiki", "disabled_tools", csv);
 }
 
+void AgentChatPanel::_LoadSettings() {
+    const std::string id = "Twiki";
+    Provider p;
+    if (ProviderFromString(usdtweak::GetAddonString(id, "provider", ""), p))
+        _provider = p;
+    _baseUrl = usdtweak::GetAddonString(id, "baseUrl", "");
+    _apiKey  = usdtweak::GetAddonString(id, "apiKey",  "");
+    _model   = usdtweak::GetAddonString(id, "model",   "");
+
+    // Back-compat with the old env-only configuration.
+    if (_model.empty() && _provider == Provider::Anthropic) {
+        if (const char* m = std::getenv("ANTHROPIC_MODEL")) {
+            if (*m) _model = m;
+        }
+    }
+}
+
+void AgentChatPanel::_SaveSettings() const {
+    const std::string id = "Twiki";
+    usdtweak::SetAddonString(id, "provider", ProviderToString(_provider));
+    usdtweak::SetAddonString(id, "baseUrl",  _baseUrl);
+    usdtweak::SetAddonString(id, "apiKey",   _apiKey);
+    usdtweak::SetAddonString(id, "model",    _model);
+    // SetAddonString only updates the in-memory settings map; the config file is
+    // otherwise written only on a clean shutdown. Flush now (syncs the editor's
+    // working copy into the shared store, then writes it) so the choice survives
+    // a crash, kill, or the next launch regardless of how we exit.
+    usdtweak::PersistSettings();
+}
+
+void AgentChatPanel::_RefreshModels() {
+    if (_fetchingModels) return;  // one fetch at a time
+    _fetchingModels = true;
+    _modelsStatus   = "fetching…";
+    // Capture the current config by value; the worker must not touch `this`
+    // (Draw() applies the result on the UI thread when the future resolves).
+    const Provider    provider = _provider;
+    const std::string baseUrl  = _baseUrl;
+    const std::string apiKey   = _apiKey;
+    _modelsFuture = std::async(std::launch::async, [provider, baseUrl, apiKey]() {
+        ModelFetchResult r;
+        std::string err;
+        r.models = FetchModels(provider, baseUrl, apiKey, &err);
+        r.status = !r.models.empty()
+                       ? std::to_string(r.models.size()) + " models"
+                       : (err.empty() ? "no models found" : err);
+        return r;
+    });
+}
+
 std::string AgentChatPanel::_BuildSystemPrompt() const {
     // Live scene context is captured by the worker thread when each tool
     // runs. The system prompt only carries instructions and meta — keeping
@@ -522,9 +593,16 @@ std::string AgentChatPanel::_BuildSystemPrompt() const {
         "You are Twiki, the USD scene assistant integrated into usdtweak, "
         "a USD file editor. The user is USD-literate; use USD vocabulary "
         "freely (prim, layer, variant, composition arc, LIVRPS, edit target).\n"
+        "Your primary job is helping with the USD scene, but you are also a "
+        "friendly general assistant: when the user asks something unrelated to "
+        "the scene (movies, trivia, casual chat, general knowledge), just "
+        "answer it directly from your own knowledge. Never refuse or deflect a "
+        "question merely because it is off-topic.\n"
         "RULES:\n"
-        "- Always call a tool to gather facts before answering factual "
-        "questions about the scene. Do not guess or invent values.\n"
+        "- For factual questions ABOUT THE SCENE, always call a tool to gather "
+        "facts first. Do not guess or invent scene values. For general "
+        "questions that are not about the scene, answer directly without "
+        "calling a tool.\n"
         "- Make ONE tool call per turn. Do not request parallel tool calls.\n"
         "- For edit operations, describe what you are about to do in one "
         "sentence before calling the edit tool.\n"
@@ -566,6 +644,9 @@ void AgentChatPanel::Draw() {
 
     _InitToolState();  // build the tool list + load activation prefs (once)
 
+    // Load persisted backend settings once, before anything reads them.
+    if (!_settingsLoaded) { _LoadSettings(); _settingsLoaded = true; }
+
     // ----- poll background turn ------------------------------------------
     if (_pending.valid() &&
         _pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -582,6 +663,15 @@ void AgentChatPanel::Draw() {
             _pendingSink.reset();
         }
         _scrollToBottom = true;
+    }
+
+    // ----- poll background model fetch (Settings tab) --------------------
+    if (_modelsFuture.valid() &&
+        _modelsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        ModelFetchResult r = _modelsFuture.get();
+        _models         = std::move(r.models);
+        _modelsStatus   = std::move(r.status);
+        _fetchingModels = false;
     }
 
     // Tabs: Chat (the conversation, unchanged) + Lists (agent-curated prim
@@ -619,6 +709,10 @@ void AgentChatPanel::Draw() {
                  _allTools.size() - _disabledTools.size(), _allTools.size());
         if (ImGui::BeginTabItem(toolsLabel)) {
             _DrawToolsTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Settings")) {
+            _DrawSettingsTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -1047,6 +1141,124 @@ void AgentChatPanel::_DrawListsTab(const std::vector<std::string>& names) {
         }
     }
 
+    ImGui::EndChild();
+}
+
+// ----- Settings tab ---------------------------------------------------------
+// Pick the LLM provider (Anthropic / any OpenAI-compatible endpoint / Ollama),
+// its base URL and key, and the model. "Refresh list" enumerates the provider's
+// models; "Apply & Save" rebuilds the backend and persists the choice.
+
+void AgentChatPanel::_DrawSettingsTab() {
+    ImGui::BeginChild("##twiki_settings", ImVec2(0, 0), false);
+
+    const bool busy = _pending.valid();
+    if (busy) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.8f, 0.5f, 1.0f));
+        ImGui::TextWrapped("A turn is in flight — settings are locked until it "
+                           "finishes.");
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
+    ImGui::BeginDisabled(busy);
+
+    // ----- provider -------------------------------------------------------
+    ImGui::TextUnformatted("Provider");
+    static const Provider kProviders[] = {
+        Provider::Anthropic, Provider::OpenAI, Provider::Ollama };
+    if (ImGui::BeginCombo("##twiki_provider", ProviderDisplayName(_provider))) {
+        for (Provider p : kProviders) {
+            const bool sel = (p == _provider);
+            if (ImGui::Selectable(ProviderDisplayName(p), sel) && p != _provider) {
+                _provider = p;
+                // Start from the new provider's defaults; the user overrides
+                // below. Clear the key too, so a key entered for one provider is
+                // never carried over and sent to a different host.
+                _baseUrl = DefaultBaseUrl(p);
+                _model   = DefaultModel(p);
+                _apiKey.clear();
+                _models.clear();
+                _modelsStatus.clear();
+            }
+            if (sel) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+
+    // ----- endpoint -------------------------------------------------------
+    ImGui::Spacing();
+    if (_provider == Provider::Anthropic) {
+        ImGui::TextDisabled("Endpoint: https://api.anthropic.com (fixed)");
+    } else {
+        ImGui::TextUnformatted("Base URL");
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##twiki_baseurl",
+                                 DefaultBaseUrl(_provider).c_str(), &_baseUrl);
+    }
+
+    // ----- API key --------------------------------------------------------
+    ImGui::Spacing();
+    if (ProviderRequiresKey(_provider)) {
+        ImGui::TextUnformatted("API key");
+        const char* env = ApiKeyEnvVar(_provider);
+        const std::string hint =
+            env ? (std::string("leave empty to use $") + env) : std::string();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##twiki_apikey", hint.c_str(), &_apiKey,
+                                 ImGuiInputTextFlags_Password);
+    } else {
+        ImGui::TextDisabled("No API key required for Ollama.");
+    }
+
+    // ----- model ----------------------------------------------------------
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Model");
+    ImGui::SetNextItemWidth(-120);
+    ImGui::InputTextWithHint("##twiki_model", "model id", &_model);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(_fetchingModels);
+    if (ImGui::Button("Refresh list", ImVec2(-1, 0))) _RefreshModels();
+    ImGui::EndDisabled();
+    if (!_modelsStatus.empty())
+        ImGui::TextDisabled("%s", _modelsStatus.c_str());
+
+    if (!_models.empty()) {
+        ImGui::BeginChild("##twiki_modellist",
+                          ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 6),
+                          true);
+        for (const ModelInfo& mi : _models) {
+            std::string label = mi.id;
+            if (!mi.toolCapable) label += "   (no tool support)";
+            if (ImGui::Selectable(label.c_str(), mi.id == _model))
+                _model = mi.id;
+        }
+        ImGui::EndChild();
+        ImGui::TextDisabled("Twiki relies on tool-calling — prefer a model that "
+                            "lists tool support.");
+    }
+
+    // ----- apply ----------------------------------------------------------
+    ImGui::Spacing();
+    ImGui::Separator();
+    if (ImGui::Button("Apply & Save")) {
+        _SaveSettings();
+        _initialized = false;          // force a rebuild with the new settings
+        std::string err;
+        if (_RebuildBackend(&err)) {
+            _lastError.clear();
+            _modelsStatus = std::string("applied: ") +
+                            ProviderDisplayName(_provider) + " / " + _model;
+        } else {
+            _lastError    = err;       // also shown on the Chat tab
+            _modelsStatus = err;
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Active: %s / %s",
+                        ProviderDisplayName(_provider),
+                        _model.empty() ? "(none)" : _model.c_str());
+
+    ImGui::EndDisabled();
     ImGui::EndChild();
 }
 

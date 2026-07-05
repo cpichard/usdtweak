@@ -76,8 +76,9 @@ LLMResponse AnthropicBackend::Send(const Conversation& conv,
         {"anthropic-version", "2023-06-01"},
     };
 
+    // Shared chat read timeout (see kChatTimeoutSeconds in LLMBackend.h).
     HttpResponse http = HttpPostJson("https://api.anthropic.com/v1/messages",
-                                     headers, body);
+                                     headers, body, kChatTimeoutSeconds);
 
     if (http.status == 0) {
         LLMResponse r;

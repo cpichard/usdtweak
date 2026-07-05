@@ -24,18 +24,23 @@ jobs:
         id: cache-key
         run: |
           XCODE_VER=$(xcodebuild -version | head -1 | awk '{print $2}')
-          echo "value=usd-macos-${{ env.USD_VERSION }}-xcode${XCODE_VER}-py${{ env.PYTHON_VERSION }}" >> $GITHUB_OUTPUT
+          echo "value=usd-macos-${{ env.USD_VERSION }}-xcode${XCODE_VER}-py${{ env.PYTHON_VERSION }}-tbb2" >> $GITHUB_OUTPUT
 
       - name: Cache USD
         id: cache-usd
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ steps.cache-key.outputs.value }}
 
       - name: Install build dependencies
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        run: brew install cmake ninja tbb glew
+        # Do NOT install tbb here: build_usd.py builds its own (classic) TBB with an
+        # @rpath install id. If homebrew's oneTBB is present, embree's find_package(TBB)
+        # prefers it (it ships TBBConfig.cmake) and bakes in the absolute install id
+        # /opt/homebrew/opt/tbb/lib/libtbb.12.dylib, which is neither bundled nor present
+        # on end-user machines, so hdEmbree.dylib fails to dlopen.
+        run: brew install cmake ninja glew
 
       - name: Install Python Jinja2
         if: steps.cache-usd.outputs.cache-hit != 'true'
@@ -46,7 +51,7 @@ jobs:
 
       - name: Checkout OpenUSD ${{ env.USD_VERSION }}
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: PixarAnimationStudios/OpenUSD
           ref: v${{ env.USD_VERSION }}
@@ -55,6 +60,11 @@ jobs:
 
       - name: Build USD
         if: steps.cache-usd.outputs.cache-hit != 'true'
+        env:
+          # CMake 4 dropped support for cmake_minimum_required < 3.5, which OpenUSD's
+          # bundled dependencies (e.g. zlib 1.2.13) still declare. build_usd.py passes
+          # this env var down to every nested dependency configure.
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
         run: |
           python3 OpenUSD/build_scripts/build_usd.py \
             --embree \
@@ -72,23 +82,25 @@ jobs:
     needs: build-usd
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Restore USD cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.USD_INSTALL_DIR }}
           key: ${{ needs.build-usd.outputs.cache-key }}
 
       - name: Install dependencies
-        run: brew install tbb glew
+        # No tbb: usdtweak links TBB::tbb via pxrConfig.cmake, which points at the TBB
+        # inside the cached USD install (with an @rpath install id), not homebrew's.
+        run: brew install glew
 
       - name: Configure
         run: |
           cmake -G Ninja \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }};$(brew --prefix tbb);$(brew --prefix glew)" \
+            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }};$(brew --prefix glew)" \
             -Dpxr_DIR=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }} \
             -DBUILD_TWIKI=ON \
             -B build
@@ -100,7 +112,7 @@ jobs:
         run: cd build && cpack
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: usdtweak-macos-dmg
           path: build/usdtweak-*.dmg
@@ -111,7 +123,7 @@ jobs:
     if: (startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-prealpha')) || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download DMG artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: usdtweak-macos-dmg
 

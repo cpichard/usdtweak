@@ -1,7 +1,7 @@
 
 # usdtweak
 
-usdtweak is a free and open source editor for [OpenUSD](https://graphics.pixar.com/usd/release/index.html#). usdtweak can already be used for small and simple tasks like cleaning assets, creating and editing layers, inspecting and fixing usd stages. It works on windows, macos and linux.
+usdtweak is a free and open source editor for [OpenUSD](https://graphics.pixar.com/usd/release/index.html#). usdtweak can already be used for small and simple tasks like cleaning or preparing assets, creating and editing layers, inspecting and fixing usd stages. It works on windows, macos and linux.
 
 This project is written in C++ and is powered by [ImGUI](https://github.com/ocornut/imgui) for the UI and [GLFW](https://github.com/glfw/glfw) for the windowing system.
 
@@ -11,11 +11,11 @@ https://github.com/cpichard/usdtweak/assets/300243/3f34cd6f-de84-428f-9569-a1ac3
 
 ## Status
 
-usdtweak is a side project and the development follows its own pace. The original idea behind usdtweak was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't know the OpenUSD ascii syntax and are not familiar with python. The current goal driving the developments is to provide at least the same functionalities as usdview with the ability to edit stages and layers.
+usdtweak is a side project and the development follows its own pace. The original idea was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't know the OpenUSD ascii syntax and are not familiar with python. The current goal driving the developments is to provide at least the same functionalities as usdview with the ability to edit stages and layers.
 
 As of today usdtweak allows
  
-**Stage & layer editing**: browse and edit multiple stages and layers at the same time, copy and paste specs between layers, edit layer hierarchy (adding, deleting, reparenting, and renaming specs), and manage the stage layer stack (adding and deleting sublayers).
+**Stage & layer search and editing**: search, browse and edit multiple stages and layers in the same application, copy and paste specs between layers, edit layer hierarchy (adding, deleting, reparenting, and renaming specs), and manage the stage layer stack (adding and deleting sublayers).
  
 **Composition & variants**: create and delete compositions like references, payloads, and inherits, and create and edit variants at the layer level.
  
@@ -23,9 +23,11 @@ As of today usdtweak allows
  
 **Materials & viewport**: assign materials on a prim and interact with the viewport (translating, rotating, scaling objects).
  
-**Text editing**: basic editing of OpenUSD text files (for small files).
+**Text editing**: edit any layer with a text editor, navigate layers like a web browser.
 
-**Experimental features**: visualize and edit connection graphs, useful for shader/materials graphs.
+**Experimental features**:
+ - Connection editor - visualize and edit connection graphs, useful for shader/materials graphs. 
+ - A natural language agent named [Twiki](doc/Twiki.md), that can help you find issues in the scene or do bulk modifications.
 
 If you want to try usdtweak without the burden of compiling it, you can download the latest installer here https://github.com/cpichard/usdtweak/releases. Feel free to [reach out](#contact) if you have any issue with it (or success).
 
@@ -48,7 +50,7 @@ The documentation now lives in the growing [wiki](https://github.com/cpichard/us
 
 ## Extending usdtweak
 
-With the recent rise of the coding assistants, researchers, technical artists, and artists can build dedicated tools and interfaces without knowledge of coding language. usdtweak now allows you to easily write C++ addons for your specific needs, using the main application as a foundation. addons are similar to plugins, but maintained by you and without the burden of managing dynamic libraries, you build the application with your tools.
+With the recent rise of the coding assistants, researchers, technical artists, and artists can build dedicated tools and interfaces without knowledge of coding language. usdtweak now allows you to easily write C++ [addons](doc/Addons.md) for your specific needs, using the main application as a foundation. addons are similar to plugins, but maintained by you and without the burden of managing dynamic libraries, you build the application with your tools.
 
 ## Contributing
 

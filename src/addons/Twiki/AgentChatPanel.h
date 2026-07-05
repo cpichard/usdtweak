@@ -2,6 +2,7 @@
 
 #include "AgentOrchestrator.h"
 #include "LLMBackend.h"
+#include "ProviderCatalog.h"
 #include "UsdToolDispatcher.h"
 
 #include <future>
@@ -70,6 +71,23 @@ private:
     // Backend + orchestrator are constructed lazily on first send so the
     // panel costs nothing while it sits closed.
     bool _LazyInit(std::string* errOut);
+
+    // (Re)construct the backend + orchestrator from the current provider
+    // settings. Returns false and fills errOut on a configuration problem
+    // (e.g. a key-requiring provider with no key). Never called while a turn
+    // is in flight (the worker owns the orchestrator).
+    bool _RebuildBackend(std::string* errOut);
+
+    // Settings persistence via usdtweak::Get/SetAddonString (the .ini file).
+    // _LoadSettings runs once before the first Draw; _SaveSettings on Apply.
+    void _LoadSettings();
+    void _SaveSettings() const;
+
+    // Settings tab: pick provider, endpoint, key, and model. _RefreshModels
+    // launches model discovery on a worker thread (into _modelsFuture); Draw()
+    // polls it and applies the result, so the UI never blocks on the network.
+    void _DrawSettingsTab();
+    void _RefreshModels();
 
     // Build the per-turn system prompt with live scene context.
     std::string _BuildSystemPrompt() const;
@@ -144,6 +162,23 @@ private:
     std::unique_ptr<AgentOrchestrator> _orchestrator;  // lazy
     bool                             _initialized = false;
     bool                             _scrollToBottom = false;
+
+    // ----- backend configuration (editable in the Settings tab) -----------
+    Provider    _provider = Provider::Anthropic;
+    std::string _baseUrl;      // empty => provider default
+    std::string _apiKey;       // empty => fall back to the provider env var
+    std::string _model;
+    bool        _settingsLoaded = false;
+
+    // Model picker state (Settings tab). _RefreshModels runs FetchModels on a
+    // worker thread into _modelsFuture; Draw() polls it and moves the result
+    // into _models/_modelsStatus. _fetchingModels is true while a fetch is in
+    // flight. The worker captures its inputs by value and never touches `this`.
+    struct ModelFetchResult { std::vector<ModelInfo> models; std::string status; };
+    std::vector<ModelInfo>        _models;
+    std::string                   _modelsStatus;   // "5 models" / an error / ""
+    bool                          _fetchingModels = false;
+    std::future<ModelFetchResult> _modelsFuture;
 };
 
 } // namespace UsdAgent
