@@ -88,6 +88,13 @@ struct LLMResponse {
     LLMUsage    usage;
 };
 
+// Read timeout for a chat request, shared by all backends. Generous on purpose:
+// a local Ollama server running a large "thinking" model can take a minute or
+// more to first byte, especially on the cold first request (model load) with
+// the agent's full tool-def payload. Chat runs on a worker thread, so a long
+// ceiling never blocks the UI.
+inline constexpr int kChatTimeoutSeconds = 600;
+
 class LLMBackend {
 public:
     virtual ~LLMBackend() = default;
