@@ -34,6 +34,7 @@
 #include "UsdHelpers.h"
 #include "UsdPrimEditor.h"
 #include <array>
+#include <cmath>
 #include <iostream>
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -231,7 +232,7 @@ struct AboutModalDialog : public ModalDialog {
         textShadowed("https://github.com/cpichard/usdtweak/issues");
         textShadowed("or by mail: cpichard.github@gmail.com");
         ImGui::NewLine();
-        textShadowed("usdtweak - Copyright (c) 2016-2025 Cyril Pichard - Apache License 2.0");
+        textShadowed("usdtweak - Copyright (c) 2016-2026 Cyril Pichard - Apache License 2.0");
         textShadowed("Splash screen artwork - Copyright (c) 2025 Nastasia Bois");
         ImGui::NewLine();
         textShadowed("USD " USD_VERSION " - https://github.com/PixarAnimationStudios/USD");
@@ -245,6 +246,10 @@ struct AboutModalDialog : public ModalDialog {
         textShadowed("GLFW - https://www.glfw.org/");
         textShadowed("   Copyright © 2002-2006 Marcus Geelnard - The zlib/libpng License ");
         textShadowed("   Copyright © 2006-2019 Camilla Löwy - The zlib/libpng License ");
+        ImGui::NewLine();
+        textShadowed("imgui_markdown - https://github.com/enkisoftware/imgui_markdown");
+        textShadowed("   // License: zlib ");
+        textShadowed("   // Copyright (c) 2019 Juliette Foucaut & Doug Binks");
         ImGui::PopStyleColor();
 
         // Move cursor below the image before drawing the Close button
@@ -721,6 +726,8 @@ void Editor::SelectScaleManipulator() {
 void Editor::StartPlayback() {
     _isPlaying = true;
     _lastFrameTime = clk::steady_clock::now();
+    // Seed the continuous accumulator from the current (whole) frame.
+    _playbackFrame = _viewport1.GetCurrentTimeCode().GetValue();
 }
 
 void Editor::StopPlayback() {
@@ -747,19 +754,23 @@ void Editor::HydraRender() {
         auto current = clk::steady_clock::now();
         const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
         const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
-        // We use viewport 1 as the reference
-        double newFrame = _viewport1.GetCurrentTimeCode().GetValue() +
-                          timesCodePerSec * timeDifference.count(); // for now just increment the frame
-        if (newFrame > GetCurrentStage()->GetEndTimeCode()) {
-            newFrame = GetCurrentStage()->GetStartTimeCode();
-        } else if (newFrame < GetCurrentStage()->GetStartTimeCode()) {
-            newFrame = GetCurrentStage()->GetStartTimeCode();
+        // Advance the continuous accumulator by wall-clock elapsed time so playback stays real-time.
+        _playbackFrame += timesCodePerSec * timeDifference.count();
+        if (_playbackFrame > GetCurrentStage()->GetEndTimeCode() ||
+            _playbackFrame < GetCurrentStage()->GetStartTimeCode()) {
+            _playbackFrame = GetCurrentStage()->GetStartTimeCode();
         }
-        //_imagingSettings.frame = UsdTimeCode(newFrame);
-        _viewport1.SetCurrentTimeCode(UsdTimeCode(newFrame));
-        _viewport2.SetCurrentTimeCode(UsdTimeCode(newFrame));
-        _viewport3.SetCurrentTimeCode(UsdTimeCode(newFrame));
-        _viewport4.SetCurrentTimeCode(UsdTimeCode(newFrame));
+        // Snap the time handed to Hydra to a whole frame by default. Fractional timecodes make
+        // topology-varying meshes (e.g. sim caches whose point count changes per frame) resolve points
+        // and topology at inconsistent sample brackets, producing "points has N elements, topology
+        // expects M" warnings and garbage geometry; this matches usdview, which plays discrete frames.
+        // Snapping can be disabled in the viewport preferences to introspect subframe motion blur.
+        const bool snapToFrame = ResourcesLoader::GetViewportSettings()._snapPlaybackToFrame;
+        const UsdTimeCode newFrame(snapToFrame ? std::round(_playbackFrame) : _playbackFrame);
+        _viewport1.SetCurrentTimeCode(newFrame);
+        _viewport2.SetCurrentTimeCode(newFrame);
+        _viewport3.SetCurrentTimeCode(newFrame);
+        _viewport4.SetCurrentTimeCode(newFrame);
 
         _lastFrameTime = current;
     }

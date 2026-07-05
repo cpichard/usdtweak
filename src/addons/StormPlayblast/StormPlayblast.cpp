@@ -144,7 +144,7 @@ bool IsStormAvailable() {
 TF_REGISTRY_FUNCTION_WITH_TAG(UsdTweakAddonRegistry, StormPlayblast) {
     UsdTweakAddon addon;
     addon.id = "StormPlayblast";
-    addon.menuLabel = ICON_FA_IMAGES " Storm playblast";
+    addon.menuLabel = "Storm playblast";
     addon.kind = UsdTweakAddon::Kind::Action;
     addon.activate = []() {
         auto stage = usdtweak::GetCurrentStage();
