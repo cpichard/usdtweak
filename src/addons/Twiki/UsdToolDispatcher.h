@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -95,14 +96,18 @@ private:
     // UTQL query tool — compiles and runs a UTQL query string against the
     // active stage (Stage-world only for v1) and formats the result table.
     // Read-only; shares the named-list store via store_as so a query result
-    // composes with the batched edit tools (list_id). See UsdTools.cpp for the
-    // grammar cheatsheet advertised to the model.
+    // composes with the batched edit tools (list_id). Accepts a single `query`
+    // or a `queries` batch of independent reads run in one call (their reports
+    // are concatenated; the shared RESULTSET cache still composes across them).
+    // See UsdTools.cpp for the grammar cheatsheet advertised to the model.
     std::string RunQuery            (const JsObject& args) const;
 
     // UTQL write tool — compiles a mutation statement (UPDATE/CREATE/DELETE),
     // computes the full manifest with a synchronous dry-run plan (read-only,
     // safe on the worker thread), and — unless dry_run — queues the real apply
     // through the command system so it lands as ONE undoable edit next frame.
+    // Accepts a single `statement` or a `statements` batch of INDEPENDENT
+    // statements: they share one manifest and land as ONE undoable command.
     std::string RunMutation         (const JsObject& args) const;
     std::string GetNameVocabulary   (const JsObject& args) const;
     std::string FindUsdFiles        (const JsObject& args) const;
@@ -194,6 +199,13 @@ private:
     // errOut with a ready-to-return "[error] ..." string.
     bool _ResolveBatchItems(const JsObject& args, JsArray& out,
                             std::string& errOut) const;
+
+    // Compile + execute ONE read query against `stage`, appending its result
+    // table (or a recoverable error line) to `oss`. Never returns early — the
+    // batched RunQuery relies on one bad query not discarding the others.
+    // `storeAs`, when non-empty, saves the full path set as a named list.
+    void _RunOneQuery(const std::string& query, const UsdStageRefPtr& stage,
+                      const std::string& storeAs, std::ostringstream& oss) const;
 };
 
 } // namespace UsdAgent

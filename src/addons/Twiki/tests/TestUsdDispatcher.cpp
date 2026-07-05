@@ -1156,6 +1156,51 @@ void TestRunQuery(UsdToolDispatcher& d) {
         Args({{"query", JsValue(std::string(
             "FIND USDPRIM WHERE NAME = \"DoesNotExist\""))}}));
     CHECK_CONTAINS(out, "no rows matched");
+
+    // --- queries batch: several independent reads in one call ---
+    // Both blocks come back headed, and the second element sees the RESULTSET
+    // the first cached — the shared cache composes across a batch.
+    {
+        JsArray qs;
+        qs.push_back(JsValue(std::string(
+            "FIND USDPRIM WHERE KIND = \"component\" AS \"batchcomps\"")));
+        qs.push_back(JsValue(std::string(
+            "FIND USDPRIM IN RESULTSET \"batchcomps\" WHERE NAME = \"Hero\"")));
+        out = d.Dispatch("run_query", Args({{"queries", JsValue(qs)}}));
+        std::fprintf(stdout, "%s\n", out.c_str());
+        CHECK_CONTAINS(out, "query 1/2");
+        CHECK_CONTAINS(out, "query 2/2");
+        CHECK_CONTAINS(out, "/World/Hero");
+    }
+
+    // A malformed query in a batch is reported inline; well-formed siblings
+    // still run (reads are independent — one bad query is not fatal).
+    {
+        JsArray qs;
+        qs.push_back(JsValue(std::string("FIND NOSUCHENTITY")));
+        qs.push_back(JsValue(std::string("FIND USDPRIM WHERE NAME = \"Hero\"")));
+        out = d.Dispatch("run_query", Args({{"queries", JsValue(qs)}}));
+        CHECK_CONTAINS(out, "[error] compile");
+        CHECK_CONTAINS(out, "/World/Hero");
+    }
+
+    // Guards: query + queries is rejected, and store_as needs a single query.
+    {
+        JsArray qs; qs.push_back(JsValue(std::string("FIND USDPRIM")));
+        out = d.Dispatch("run_query",
+            Args({{"query",   JsValue(std::string("FIND USDPRIM"))},
+                  {"queries", JsValue(qs)}}));
+        CHECK_CONTAINS(out, "[error]");
+
+        JsArray qs2;
+        qs2.push_back(JsValue(std::string("FIND USDPRIM WHERE NAME = \"Hero\"")));
+        qs2.push_back(JsValue(std::string("FIND USDPRIM WHERE NAME = \"Camera\"")));
+        out = d.Dispatch("run_query",
+            Args({{"queries",  JsValue(qs2)},
+                  {"store_as", JsValue(std::string("x"))}}));
+        CHECK_CONTAINS(out, "[error]");
+        CHECK_CONTAINS(out, "store_as");
+    }
 }
 
 // run_query: AS caches a result that a later, separate call can reference via
@@ -1326,6 +1371,73 @@ void TestRunMutation() {
             "UPDATE USDPRIM WHERE NAME = \"RenderCam\" SET NAME = \"Cam\""))}}));
     CHECK_CONTAINS(out, "[error] compile");
     CHECK_CONTAINS(out, "SDFPRIM");
+
+    // --- statements batch: several INDEPENDENT writes as ONE undoable edit ---
+    // Two unrelated SETs on different prims. The manifest reports both under
+    // per-statement headers plus a TOTAL; the whole batch lands on ONE pump and
+    // a SINGLE undo reverts BOTH — proving it queued one command, not two.
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/Hero")).IsActive());
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive() == false);
+    {
+        JsArray sts;
+        sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Hero\" SET ACTIVE = false")));
+        sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Lights\" SET ACTIVE = true")));
+        out = d.Dispatch("run_mutation", Args({{"statements", JsValue(sts)}}));
+        std::fprintf(stdout, "%s\n", out.c_str());
+        CHECK_CONTAINS(out, "statement 1/2");
+        CHECK_CONTAINS(out, "statement 2/2");
+        CHECK_CONTAINS(out, "TOTAL: 2");
+        CHECK_CONTAINS(out, "queued");
+        // Not applied until the pump.
+        CHECK(stage->GetPrimAtPath(SdfPath("/World/Hero")).IsActive());
+        pump();
+        CHECK(!stage->GetPrimAtPath(SdfPath("/World/Hero")).IsActive());
+        CHECK(stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive());
+        // ONE undo reverts BOTH statements — the batch is a single command.
+        QueueUndo();
+        pump();
+        CHECK(stage->GetPrimAtPath(SdfPath("/World/Hero")).IsActive());
+        CHECK(!stage->GetPrimAtPath(SdfPath("/World/Lights")).IsActive());
+    }
+
+    // A dry-run batch plans every statement and queues nothing.
+    {
+        JsArray sts;
+        sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Hero\" SET ACTIVE = false")));
+        sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Lights\" SET ACTIVE = true")));
+        out = d.Dispatch("run_mutation",
+            Args({{"statements", JsValue(sts)}, {"dry_run", JsValue(true)}}));
+        CHECK_CONTAINS(out, "statement 2/2");
+        CHECK_CONTAINS(out, "dry run");
+        CHECK(!CommandStack::GetInstance().HasNextCommand());
+    }
+
+    // A compile error in ANY statement aborts the whole batch before authoring.
+    {
+        JsArray sts;
+        sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Hero\" SET ACTIVE = false")));
+        sts.push_back(JsValue(std::string("UPDATE NOSUCHENTITY SET X = 1")));
+        out = d.Dispatch("run_mutation", Args({{"statements", JsValue(sts)}}));
+        CHECK_CONTAINS(out, "[error] compile");
+        CHECK_CONTAINS(out, "statement 2/2");
+        CHECK(!CommandStack::GetInstance().HasNextCommand());
+    }
+
+    // Guard: statement + statements together is rejected.
+    {
+        JsArray sts; sts.push_back(JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"Hero\" SET ACTIVE = false")));
+        out = d.Dispatch("run_mutation",
+            Args({{"statement", JsValue(std::string(
+                       "UPDATE USDPRIM WHERE NAME = \"Hero\" SET ACTIVE = false"))},
+                  {"statements", JsValue(sts)}}));
+        CHECK_CONTAINS(out, "[error]");
+    }
 }
 
 // UsdSceneLock: the reader/writer gate enforcing USD's threading contract
