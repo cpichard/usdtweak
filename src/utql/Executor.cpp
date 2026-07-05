@@ -111,6 +111,7 @@ std::string LiteralToString(const Literal &l) {
         case Literal::Kind::Block:   return "BLOCK";
         case Literal::Kind::Array:   return "[array]";
         case Literal::Kind::Samples: return "SAMPLES{…}";
+        case Literal::Kind::Dict:    return "{dict}";
     }
     return "";
 }
@@ -754,6 +755,38 @@ VtValue LiteralToCustomDataValue(const Literal &lit) {
     }
 }
 
+/// A whole-dict SET CUSTOMDATA = {"k": lit, …} literal (M3c) built into a
+/// VtDictionary — colon key paths nest via SetValueAtPath (intermediates
+/// auto-created), values typed by literal spelling. Replaces the authored dict.
+VtDictionary DictLiteralToVtDictionary(const Literal &lit) {
+    VtDictionary d;
+    for (size_t i = 0; i < lit.dictKeys.size(); ++i)
+        d.SetValueAtPath(lit.dictKeys[i], LiteralToCustomDataValue(lit.dictValues[i]));
+    return d;
+}
+
+/// Generic registered metadata read (metadata M3b) — the keyed METADATA["key"]
+/// field on prim / attribute / relationship. Stage world reads *authored*
+/// opinions only (schema fallbacks — e.g. userDoc / documentation on typed prim
+/// definitions — would otherwise make every typed object match, the customData
+/// userDocBrief lesson). Scalars project through CustomDataValue; missing /
+/// unauthored ⇒ Null. The key is bind-validated as a registered scalar.
+UtqlValue UsdObjectMetadataValue(const UsdObject &obj, const std::string &f) {
+    const TfToken key(MetadataKeyPath(f));
+    VtValue v;
+    if (!obj.HasAuthoredMetadata(key) || !obj.GetMetadata(key, &v))
+        return UtqlValue::Null();
+    return CustomDataValue(v);
+}
+
+/// Layer-world counterpart — the spec's own authored opinion (HasInfo/GetInfo).
+UtqlValue SdfSpecMetadataValue(const SdfSpecHandle &spec, const std::string &f) {
+    const TfToken key(MetadataKeyPath(f));
+    if (!spec->HasInfo(key))
+        return UtqlValue::Null();
+    return CustomDataValue(spec->GetInfo(key));
+}
+
 /// Variant selections a spec is nested *under* — the VARIANT_SELECTIONS set field
 /// (Layer world). Each authored variant scope on the path contributes one
 /// "{set=value}" token; a spec can sit inside several (e.g.
@@ -970,6 +1003,7 @@ UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
         return prim.HasAuthoredCustomDataKey(key) ? CustomDataValue(prim.GetCustomDataByKey(key))
                                                   : UtqlValue::Null();
     }
+    if (IsMetadataField(f)) return UsdObjectMetadataValue(prim, f);
     return UtqlValue::Null();
 }
 
@@ -1036,6 +1070,7 @@ UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
         const VtValue *v = d.GetValueAtPath(CustomDataKeyPath(f));
         return v ? CustomDataValue(*v) : UtqlValue::Null();
     }
+    if (IsMetadataField(f)) return SdfSpecMetadataValue(spec, f);
     return UtqlValue::Null();
 }
 
@@ -1235,6 +1270,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     if (f == "HAS_CONNECTION")    return UtqlValue::Bool(!UsdAttrConnectionSources(attr).empty());
     if (f == "CONNECTION.COUNT")  return UtqlValue::Number_(static_cast<double>(UsdAttrConnectionSources(attr).size()));
     if (f == "CONNECTION.SOURCE") return UtqlValue::String_(JoinPaths(UsdAttrConnectionSources(attr)));
+    if (IsMetadataField(f)) return UsdObjectMetadataValue(attr, f);
     return UtqlValue::Null();
 }
 
@@ -1316,6 +1352,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     // Variant nesting (Layer world) — mirrors GetSdfPrimField.
     if (f == "IS_IN_VARIANT")      return UtqlValue::Bool(spec->GetPath().ContainsPrimVariantSelection());
     if (f == "VARIANT_SELECTIONS") return UtqlValue::String_(JoinStrings(VariantSelectionsOfPath(spec->GetPath())));
+    if (IsMetadataField(f)) return SdfSpecMetadataValue(spec, f);
     return UtqlValue::Null();
 }
 
@@ -2101,7 +2138,10 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                     const std::string nm = s->GetName();
                     const SdfPath pp = s->GetPath();
                     emitComposition(l, pp, i, arcFor(l), targetPath,
-                                     [nm, tg, pp](const std::string &f) { return GetRelScalarField(nm, tg, pp, f); },
+                                     [nm, tg, pp, s](const std::string &f) {
+                                         if (IsMetadataField(f)) return SdfSpecMetadataValue(s, f);
+                                         return GetRelScalarField(nm, tg, pp, f);
+                                     },
                                      [tg](const std::string &) { return PathsToStrings(tg); });
                 }
             }
@@ -2406,6 +2446,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                              [&](const std::string &fld) {
                                  if (fld == "TARGET.IS_MISSING")
                                      return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
+                                 if (IsMetadataField(fld))
+                                     return UsdObjectMetadataValue(rel, fld);
                                  return GetRelScalarField(name, targets, path, fld);
                              },
                              [&](const std::string &) { return PathsToStrings(targets); }, noArcs, nullptr);
@@ -2555,6 +2597,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                              if (fld == "TARGET.IS_MISSING")
                                                  return UtqlValue::Bool(
                                                      UsdRelTargetsMissing(rel, targets));
+                                             if (IsMetadataField(fld))
+                                                 return UsdObjectMetadataValue(rel, fld);
                                              return GetRelScalarField(name, targets, path, fld);
                                          },
                                          [&](const std::string &) { return PathsToStrings(targets); },
@@ -2770,6 +2814,8 @@ UtqlResult Execute(const BoundQuery &q, const UtqlContext &ctx, const std::atomi
                                 UtqlRow row;
                                 if (evalItem(item.source, path,
                                              [&](const std::string &fld) {
+                                                 if (IsMetadataField(fld))
+                                                     return SdfSpecMetadataValue(spec, fld);
                                                  return GetRelScalarField(name, targets, path, fld);
                                              },
                                              [&](const std::string &) { return PathsToStrings(targets); },
@@ -2874,6 +2920,14 @@ std::string LiteralDisplay(const Literal &l) {
             if (erased)  out += ", " + std::to_string(erased) + " erased";
             if (blocked) out += ", " + std::to_string(blocked) + " blocked";
             return out;
+        }
+        case Literal::Kind::Dict: {
+            std::string out = "{";
+            for (size_t i = 0; i < l.dictKeys.size(); ++i) {
+                if (i) out += ", ";
+                out += "\"" + l.dictKeys[i] + "\": " + LiteralDisplay(l.dictValues[i]);
+            }
+            return out + "}";
         }
         default: return LiteralToString(l);
     }
@@ -3148,6 +3202,51 @@ std::unique_ptr<UsdEditContext> MakeStageEditContext(const BoundQuery &q, Planne
         w.stage, UsdEditTarget::ForLocalDirectVariant(layer, varPath)));
 }
 
+/// Coerce a SET METADATA["key"] rvalue to the key's registered fallback type
+/// (metadata M3b). Reuses the attribute value coercion. An untyped fallback
+/// (rare) authors the literal's natural VtValue. Returns false on a type
+/// mismatch — the caller turns that into a per-row skip.
+bool CoerceMetadataLiteral(const std::string &f, const Literal &lit, VtValue &out) {
+    const TfToken key(MetadataKeyPath(f));
+    const SdfSchema::FieldDefinition *def =
+        SdfSchema::GetInstance().GetFieldDefinition(key);
+    const VtValue fb = def ? def->GetFallbackValue() : VtValue();
+    if (fb.IsEmpty()) { // no registered type info — author the natural VtValue
+        out = LiteralToCustomDataValue(lit);
+        return true;
+    }
+    std::string why;
+    return CoerceScalarLiteral(lit, fb, fb.GetTypeName(), out, why);
+}
+
+/// SET METADATA["key"] on a composed UsdObject (prim/attr/rel). NULL clears the
+/// authored opinion; otherwise coerce then author. Authored-only reads make the
+/// clear observable.
+bool PerformUsdMetadataWrite(const UsdObject &obj, const std::string &f,
+                             const Literal &lit, bool isNull) {
+    const TfToken key(MetadataKeyPath(f));
+    if (isNull) { obj.ClearMetadata(key); return true; }
+    VtValue v;
+    if (!CoerceMetadataLiteral(f, lit, v))
+        return false;
+    return obj.SetMetadata(key, v);
+}
+
+/// Layer-world counterpart — the spec's own authored opinion (SetInfo/ClearInfo).
+bool PerformSdfMetadataWrite(const SdfSpecHandle &spec, const std::string &f,
+                             const Literal &lit, bool isNull) {
+    const TfToken key(MetadataKeyPath(f));
+    if (isNull) {
+        if (spec->HasInfo(key)) spec->ClearInfo(key);
+        return true;
+    }
+    VtValue v;
+    if (!CoerceMetadataLiteral(f, lit, v))
+        return false;
+    spec->SetInfo(key, v);
+    return true;
+}
+
 bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w) {
     const Literal &lit = sa.value;
     const bool isNull = (lit.kind == Literal::Kind::Null);
@@ -3173,6 +3272,12 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 return isNull ? vs.ClearVariantSelection()
                               : vs.SetVariantSelection(lit.str);
             }
+            // Whole-dict replace / clear (M3c) — bare CUSTOMDATA.
+            if (f == "CUSTOMDATA") {
+                if (isNull) { p.ClearCustomData(); return true; }
+                p.SetCustomData(DictLiteralToVtDictionary(lit));
+                return true;
+            }
             if (IsCustomDataField(f)) {
                 const TfToken key(CustomDataKeyPath(f));
                 if (isNull) {
@@ -3182,6 +3287,21 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 p.SetCustomDataByKey(key, LiteralToCustomDataValue(lit));
                 return true;
             }
+            // assetInfo scalar writes (metadata M3a). IDENTIFIER is typed as an
+            // SdfAssetPath; NAME/VERSION are plain strings. NULL clears the key.
+            if (f == "ASSETINFO.NAME" || f == "ASSETINFO.VERSION" ||
+                f == "ASSETINFO.IDENTIFIER") {
+                const TfToken key(f == "ASSETINFO.NAME"    ? "name"
+                                  : f == "ASSETINFO.VERSION" ? "version"
+                                                             : "identifier");
+                if (isNull) { p.ClearAssetInfoByKey(key); return true; }
+                p.SetAssetInfoByKey(key, f == "ASSETINFO.IDENTIFIER"
+                                             ? VtValue(SdfAssetPath(lit.str))
+                                             : VtValue(lit.str));
+                return true;
+            }
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(p, f, lit, isNull);
             return false;
         }
         case UtqlEntity::SdfPrim: {
@@ -3217,6 +3337,17 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 s->SetVariantSelection(sa.variantSet, isNull ? "" : lit.str);
                 return true;
             }
+            // Whole-dict replace / clear (M3c) — bare CUSTOMDATA on the spec.
+            if (f == "CUSTOMDATA") {
+                if (isNull) {
+                    if (s->HasInfo(SdfFieldKeys->CustomData))
+                        s->ClearInfo(SdfFieldKeys->CustomData);
+                    return true;
+                }
+                s->SetInfo(SdfFieldKeys->CustomData,
+                           VtValue(DictLiteralToVtDictionary(lit)));
+                return true;
+            }
             if (IsCustomDataField(f)) {
                 // Round-trip the whole authored dict: VtDictionary's path APIs
                 // nest/erase along the colon key path, then one SetInfo authors
@@ -3235,6 +3366,31 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 }
                 return true;
             }
+            // assetInfo scalar writes (metadata M3a) — round-trip the authored
+            // dict, mirroring the customData write above (ClearInfo when the
+            // last entry goes). IDENTIFIER stored as a typed SdfAssetPath.
+            if (f == "ASSETINFO.NAME" || f == "ASSETINFO.VERSION" ||
+                f == "ASSETINFO.IDENTIFIER") {
+                const std::string key = f == "ASSETINFO.NAME"    ? "name"
+                                        : f == "ASSETINFO.VERSION" ? "version"
+                                                                   : "identifier";
+                VtDictionary d = SdfPrimAssetInfoDict(s);
+                if (isNull)
+                    d.erase(key);
+                else
+                    d[key] = f == "ASSETINFO.IDENTIFIER"
+                                 ? VtValue(SdfAssetPath(lit.str))
+                                 : VtValue(lit.str);
+                if (d.empty()) {
+                    if (s->HasInfo(SdfFieldKeys->AssetInfo))
+                        s->ClearInfo(SdfFieldKeys->AssetInfo);
+                } else {
+                    s->SetInfo(SdfFieldKeys->AssetInfo, VtValue(d));
+                }
+                return true;
+            }
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(s, f, lit, isNull);
             return false;
         }
         case UtqlEntity::UsdAttribute: {
@@ -3272,6 +3428,8 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
             }
             if (f == "INTERPOLATION")
                 return isNull ? a.ClearMetadata(kInterp) : a.SetMetadata(kInterp, TfToken(lit.str));
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(a, f, lit, isNull);
             return false;
         }
         case UtqlEntity::SdfAttribute: {
@@ -3315,6 +3473,8 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                                                         : SdfVariabilityVarying));
                 return true;
             }
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(s, f, lit, isNull);
             return false;
         }
         case UtqlEntity::Layer: {
@@ -3360,9 +3520,21 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
             }
             return false;
         }
-        default:
-            return false; // relationship entities have no writable field in M1
+        case UtqlEntity::UsdRelationship: {
+            // Only METADATA["key"] is a scalar SET on relationships (M3b);
+            // targets go through ADD/REMOVE TARGET.
+            std::unique_ptr<UsdEditContext> ectx = MakeStageEditContext(q, w);
+            if (IsMetadataField(f))
+                return PerformUsdMetadataWrite(w.rel, f, lit, isNull);
+            return false;
+        }
+        case UtqlEntity::SdfRelationship: {
+            if (IsMetadataField(f))
+                return PerformSdfMetadataWrite(w.relSpec, f, lit, isNull);
+            return false;
+        }
     }
+    return false;
 }
 
 /// Apply one planned rename/reparent (design-mutation §13). One row = one
@@ -4199,6 +4371,8 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
         e.get = [&](const std::string &fld) {
             if (fld == "TARGET.IS_MISSING")
                 return UtqlValue::Bool(UsdRelTargetsMissing(rel, targets));
+            if (IsMetadataField(fld))
+                return UsdObjectMetadataValue(rel, fld);
             return GetRelScalarField(name, targets, path, fld);
         };
         e.getSet = [&](const std::string &fld) {
@@ -4228,6 +4402,8 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
         spec->GetTargetPathList().ApplyEditsToList(&targets);
         EvalCtx e;
         e.get = [&](const std::string &fld) {
+            if (IsMetadataField(fld))
+                return SdfSpecMetadataValue(spec, fld);
             return GetRelScalarField(spec->GetName(), targets, spec->GetPath(), fld);
         };
         e.getSet = [&](const std::string &) { return PathsToStrings(targets); };
@@ -4870,6 +5046,22 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             skip("ON LAYER \"" + q.onLayer + "\" is not in the stage's layer stack");
             return;
         }
+        // SET METADATA["key"] on the relationship (M3b) — the only scalar SET on
+        // relationship entities; targets go through ADD/REMOVE TARGET below.
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.stage = stage;
+            w.rel = rel;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = rel.GetPath();
+            w.setIndex = i;
+            w.oldDisplay = UsdObjectMetadataValue(rel, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
+        }
         planArcMutations(
             [&](const std::string &) {
                 SdfPathVector targets;
@@ -4890,6 +5082,21 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             planNamespaceEdit(layer, source, spec->GetPath(),
                               [&](PlannedWrite &w) { w.relSpec = spec; });
             return;
+        }
+        const SdfLayerHandle dest(layer);
+        for (size_t i = 0; i < q.sets.size(); ++i) {
+            const SetAssignment &sa = q.sets[i];
+            PlannedWrite w;
+            w.relSpec = spec;
+            w.layer = layer;
+            w.destLayer = dest;
+            w.source = source;
+            w.path = spec->GetPath();
+            w.setIndex = i;
+            w.oldDisplay = SdfSpecMetadataValue(spec, sa.field).ToDisplay();
+            w.newDisplay = LiteralDisplay(sa.value);
+            addDest(dest);
+            plan.writes.push_back(std::move(w));
         }
         planArcMutations(
             [&](const std::string &) {

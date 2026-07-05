@@ -44,6 +44,20 @@ inline std::string CustomDataKeyPath(const std::string &f) {
     return IsCustomDataField(f) ? f.substr(12, f.size() - 14) : std::string();
 }
 
+/// METADATA["key"] (metadata M3b) — the generic registered-metadata accessor,
+/// same embedding trick as CUSTOMDATA["…"]. The key is a single registered
+/// field token (no colon nesting — registered metadata is flat). The binder
+/// validates the key against the Sdf schema + a redirect table at bind time.
+inline bool IsMetadataField(const std::string &f) {
+    static const char kPrefix[] = "METADATA[\"";
+    return f.size() > sizeof(kPrefix) + 1 && f.compare(0, sizeof(kPrefix) - 1, kPrefix) == 0 &&
+           f.compare(f.size() - 2, 2, "\"]") == 0;
+}
+
+inline std::string MetadataKeyPath(const std::string &f) {
+    return IsMetadataField(f) ? f.substr(10, f.size() - 12) : std::string();
+}
+
 /// The query entity. Phase 1 executes only UsdPrim / SdfPrim; the rest are
 /// declared so the binder can name them in messages and later phases fill in.
 enum class UtqlEntity {

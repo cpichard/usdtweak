@@ -584,6 +584,59 @@ class Parser {
             Advance();
             return true;
         }
+        // Bare `{` (no SAMPLES keyword) with quoted-string keys = a dict literal
+        // (whole-customData replace, M3c). SAMPLES uses numeric keys behind its
+        // keyword, so the two never collide.
+        if (Cur().kind == Token::Kind::LBrace) {
+            Advance();
+            lit.kind = Literal::Kind::Dict;
+            if (Cur().kind == Token::Kind::RBrace) {
+                Fail("SET CUSTOMDATA = {} is empty — use SET CUSTOMDATA = NULL to "
+                     "clear the whole dict, or list at least one \"key\": value.");
+                return false;
+            }
+            while (true) {
+                if (Cur().kind != Token::Kind::String || Cur().text.empty()) {
+                    Fail("Expected a non-empty quoted key in a dict literal "
+                         "{\"key\": value, …} (colon-nested, e.g. "
+                         "\"pipeline:reviewState\").");
+                    return false;
+                }
+                lit.dictKeys.push_back(Cur().text);
+                Advance();
+                if (Cur().kind != Token::Kind::Colon) {
+                    Fail("Expected ':' after the key in a dict literal "
+                         "{\"key\": value, …}.");
+                    return false;
+                }
+                Advance();
+                if (Cur().kind == Token::Kind::LBrace) {
+                    Fail("Nested dict literals are not supported — nest with colon "
+                         "key paths (\"a:b\": value).");
+                    return false;
+                }
+                if (CurIsKeyword("NULL")) {
+                    Fail("NULL inside a dict literal is not allowed (replace "
+                         "semantics — omit the key instead).");
+                    return false;
+                }
+                Literal entry;
+                if (!ParseSetLiteral(entry))
+                    return false;
+                lit.dictValues.push_back(std::move(entry));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBrace) {
+                Fail("Expected '}' to close the dict literal {\"key\": value, …}.");
+                return false;
+            }
+            Advance();
+            return true;
+        }
         if (Cur().kind == Token::Kind::LBracket) {
             Advance();
             lit.kind = Literal::Kind::Array;
@@ -1176,29 +1229,33 @@ class Parser {
         }
     }
 
-    /// CUSTOMDATA["key:path"] — the keyed-field suffix (metadata M2). Called
-    /// after a field name is read anywhere a field can appear (predicate,
-    /// RETURN, ORDERED BY, SET lvalue): on CUSTOMDATA + '[' it consumes the
-    /// bracketed key and rewrites `field` to the canonical embedded spelling.
-    /// The key stays verbatim (case-sensitive; ':' nests per USD's customData
-    /// convention). Anything else passes through untouched.
+    /// CUSTOMDATA["key:path"] / METADATA["key"] — the keyed-field suffix
+    /// (metadata M2 / M3b). Called after a field name is read anywhere a field
+    /// can appear (predicate, RETURN, ORDERED BY, SET lvalue): on CUSTOMDATA or
+    /// METADATA + '[' it consumes the bracketed key and rewrites `field` to the
+    /// canonical embedded spelling. The key stays verbatim (case-sensitive; ':'
+    /// nests per USD's customData convention). Anything else passes through.
     bool ParseKeyedFieldSuffix(std::string &field) {
-        if (field != "CUSTOMDATA" || Cur().kind != Token::Kind::LBracket)
+        const bool isMeta = (field == "METADATA");
+        if ((field != "CUSTOMDATA" && !isMeta) || Cur().kind != Token::Kind::LBracket)
             return true;
+        const char *head = isMeta ? "METADATA" : "CUSTOMDATA";
         Advance();
         if (Cur().kind != Token::Kind::String || Cur().text.empty()) {
-            Fail("Expected a non-empty quoted key in CUSTOMDATA[\"key\"] — "
-                 "colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]");
+            Fail(isMeta ? "Expected a non-empty quoted key in METADATA[\"key\"] — "
+                          "a registered metadata name, e.g. METADATA[\"documentation\"]"
+                        : "Expected a non-empty quoted key in CUSTOMDATA[\"key\"] — "
+                          "colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]");
             return false;
         }
         const std::string key = Cur().text;
         Advance();
         if (Cur().kind != Token::Kind::RBracket) {
-            Fail("Expected ']' after CUSTOMDATA[\"" + key + "\"");
+            Fail(std::string("Expected ']' after ") + head + "[\"" + key + "\"");
             return false;
         }
         Advance();
-        field = "CUSTOMDATA[\"" + key + "\"]";
+        field = std::string(head) + "[\"" + key + "\"]";
         return true;
     }
 

@@ -301,6 +301,12 @@ const char *kLayerFieldList =
     "FRAMES_PER_SECOND";
 
 FieldInfo LookupField(Category c, const std::string &f) {
+    // Generic registered-metadata accessor (metadata M3b) — recognised on prim,
+    // attribute and relationship entities (LAYER deferred). Type-polymorphic
+    // like CUSTOMDATA["key"]: nullable String so it is displayable/null-testable;
+    // the value type and the key's schema validity are decided in ValidateLeaf.
+    if (IsMetadataField(f) && c != Category::Layer)
+        return FieldInfo{true, FieldType::String, /*nullable*/ true, true, false};
     switch (c) {
         case Category::Prim:         return LookupPrimField(f);
         case Category::Attribute:    return LookupAttrField(f);
@@ -380,6 +386,13 @@ WritableField LookupWritable(Category c, const std::string &f) {
             if (f == "KIND")         return mk(A::String, true);
             if (f == "TYPE")         return mk(A::String, true);
             if (f == "SPECIFIER")    return mk(A::String, false, "def, over, class");
+            // assetInfo scalar sub-fields (metadata M3a). IDENTIFIER authors an
+            // SdfAssetPath (typed); NAME/VERSION are strings. DEPENDENCIES stays
+            // read-only (list semantics — the generic "not writable" error names
+            // the writable trio). HAS_ASSETINFO is a read-only gate.
+            if (f == "ASSETINFO.NAME")       return mk(A::String, true);
+            if (f == "ASSETINFO.VERSION")    return mk(A::String, true);
+            if (f == "ASSETINFO.IDENTIFIER") return mk(A::String, true);
             break;
         case Category::Attribute:
             if (f == "VALUE")         return mk(A::Value, true);
@@ -409,21 +422,83 @@ std::string WritableListFor(Category c, UtqlWorld world) {
         case Category::Prim:
             return world == UtqlWorld::Stage
                        ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"], "
-                         "CUSTOMDATA[\"key\"]"
+                         "CUSTOMDATA[\"key\"], ASSETINFO.NAME, ASSETINFO.VERSION, "
+                         "ASSETINFO.IDENTIFIER, METADATA[\"key\"]"
                        : "ACTIVE, INSTANCEABLE, KIND, TYPE, SPECIFIER, "
-                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"], NAME, PARENT";
+                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"], ASSETINFO.NAME, "
+                         "ASSETINFO.VERSION, ASSETINFO.IDENTIFIER, METADATA[\"key\"], "
+                         "NAME, PARENT";
         case Category::Attribute:
-            return world == UtqlWorld::Stage ? "VALUE, INTERPOLATION"
-                                             : "VALUE, INTERPOLATION, VARIABILITY, NAME";
+            return world == UtqlWorld::Stage
+                       ? "VALUE, INTERPOLATION, METADATA[\"key\"]"
+                       : "VALUE, INTERPOLATION, VARIABILITY, METADATA[\"key\"], NAME";
         case Category::Relationship:
             return world == UtqlWorld::Stage
-                       ? "(none — edit targets with ADD TARGET \"/p\" / REMOVE TARGET)"
-                       : "NAME (targets via ADD TARGET \"/p\" / REMOVE TARGET)";
+                       ? "METADATA[\"key\"] (edit targets with ADD TARGET \"/p\" / REMOVE TARGET)"
+                       : "METADATA[\"key\"], NAME (targets via ADD TARGET \"/p\" / REMOVE TARGET)";
         case Category::Layer:
             return "DEFAULT_PRIM, UP_AXIS, START_TIME, END_TIME, "
                    "TIMECODES_PER_SECOND, FRAMES_PER_SECOND, METERS_PER_UNIT, MUTED";
     }
     return "";
+}
+
+// -------------------------------------------------- generic metadata (M3b)
+
+/// A registered metadata key that already has a dedicated UTQL field. The
+/// generic METADATA["key"] accessor rejects these with a pointer at the field —
+/// one spelling per fact (two would cost NL accuracy). Redirect, don't alias.
+const char *MetadataRedirect(const std::string &key) {
+    static const std::map<std::string, const char *> kRedirect = {
+        {"kind", "KIND"},
+        {"active", "ACTIVE"},
+        {"instanceable", "INSTANCEABLE"},
+        {"typeName", "TYPE"},
+        {"specifier", "SPECIFIER"},
+        {"interpolation", "INTERPOLATION"},
+        {"variability", "VARIABILITY"},
+        {"customData", "CUSTOMDATA[\"…\"]"},
+        {"assetInfo", "ASSETINFO.NAME / .VERSION / .IDENTIFIER"},
+        {"variantSelection", "the VARIANT family (WHERE VARIANT.SET / SET VARIANT[\"set\"])"},
+        {"variantSetNames", "the VARIANT family (WHERE VARIANT.SET / SET VARIANT[\"set\"])"},
+        {"apiSchemas", "the API family (WHERE API CONTAINS / ADD API)"},
+        {"clips", "HAS_CLIPS"},
+    };
+    const auto it = kRedirect.find(key);
+    return it == kRedirect.end() ? nullptr : it->second;
+}
+
+/// Validate a METADATA["key"] against the Sdf schema + the redirect table.
+/// `err` is filled (and false returned) on any problem; a registered scalar key
+/// passes. Shared by every field surface (predicate, RETURN, SET).
+bool ValidateMetadataKeyString(const std::string &key, std::string &err) {
+    if (const char *redir = MetadataRedirect(key)) {
+        err = "metadata key \"" + key + "\" has a dedicated field — use " + redir +
+              " instead of METADATA[\"" + key + "\"].";
+        return false;
+    }
+    const SdfSchema::FieldDefinition *def =
+        SdfSchema::GetInstance().GetFieldDefinition(TfToken(key));
+    if (!def) {
+        err = "\"" + key + "\" is not a registered metadata key.";
+        return false;
+    }
+    if (def->HoldsChildren()) {
+        err = "\"" + key + "\" is a namespace-children field, not queryable metadata.";
+        return false;
+    }
+    const VtValue &fb = def->GetFallbackValue();
+    if (fb.IsHolding<VtDictionary>()) {
+        err = "\"" + key + "\" is a dictionary metadatum — no generic dict access; "
+              "CUSTOMDATA/ASSETINFO cover the dicts UTQL reads.";
+        return false;
+    }
+    if (fb.GetTypeName().find("ListOp") != std::string::npos) {
+        err = "\"" + key + "\" is a list-op metadatum — composition arcs are the "
+              "REFERENCE/PAYLOAD/INHERIT/SPECIALIZE/API families.";
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------- composition families
@@ -966,6 +1041,26 @@ class Binder {
         }
     }
 
+    /// Bind-time gate for a METADATA["key"] field (M3b), shared by predicate /
+    /// RETURN / ORDERED BY / SET surfaces. LAYER entity is deferred; the key is
+    /// checked against the Sdf schema and the redirect table. Returns true and
+    /// does nothing for a non-metadata field.
+    bool CheckMetadataField(const std::string &f) {
+        if (!IsMetadataField(f))
+            return true;
+        if (_cat == Category::Layer) {
+            Fail("METADATA[\"…\"] is not supported on the LAYER entity yet "
+                 "(layer metadata like customLayerData is a separate pass).");
+            return false;
+        }
+        std::string err;
+        if (!ValidateMetadataKeyString(MetadataKeyPath(f), err)) {
+            Fail(err);
+            return false;
+        }
+        return true;
+    }
+
     bool ValidateLeaf(const WhereExpr &e, UtqlWorld world) {
         const std::string &f = e.field;
 
@@ -1050,6 +1145,14 @@ class Binder {
             return ValidateScalarLeaf(e);
         if (_cat == Category::Prim && IsCustomDataField(f))
             return ValidateScalarLeaf(e, f);
+        // Generic registered metadata (M3b) — prim/attribute/relationship, both
+        // worlds. Validate the key (registered + not-redirected + scalar) then
+        // reuse the type-polymorphic scalar-leaf operator rules.
+        if (IsMetadataField(f)) {
+            if (!CheckMetadataField(f))
+                return false;
+            return ValidateScalarLeaf(e, f);
+        }
 
         const FieldInfo fi = LookupField(_cat, f);
         if (!fi.known) {
@@ -1629,10 +1732,34 @@ class Binder {
         // commas; NULL erases the entry (colon key paths nest; intermediates are
         // auto-created on write). Checked before LookupWritable since the keyed
         // spelling is per-query, not a catalog entry.
-        if (f == "CUSTOMDATA" || f == "CUSTOMDATA.KEYS" || f == "HAS_CUSTOMDATA") {
+        // Bare CUSTOMDATA (M3c): a dict literal replaces the whole authored dict,
+        // NULL clears it. Anything else routes to the per-key guidance. KEYS /
+        // HAS_CUSTOMDATA never take SET.
+        if (f == "CUSTOMDATA") {
+            if (sa.value.kind == Literal::Kind::Dict ||
+                sa.value.kind == Literal::Kind::Null) {
+                if (_cat != Category::Prim) {
+                    Fail("CUSTOMDATA applies to prim entities (USDPRIM / SDFPRIM).");
+                    return false;
+                }
+                return true;
+            }
+            Fail("SET CUSTOMDATA writes per key or the whole dict: "
+                 "SET CUSTOMDATA[\"key\"] = value (colon-nested), "
+                 "SET CUSTOMDATA = {\"key\": value, …} (replace), or "
+                 "SET CUSTOMDATA = NULL (clear).");
+            return false;
+        }
+        if (f == "CUSTOMDATA.KEYS" || f == "HAS_CUSTOMDATA") {
             Fail("SET CUSTOMDATA writes per key: SET CUSTOMDATA[\"key\"] = value "
                  "(colon-nested, e.g. CUSTOMDATA[\"pipeline:reviewState\"]; NULL "
                  "erases the entry).");
+            return false;
+        }
+        // assetInfo has fixed scalar sub-fields — no whole-dict form (M3c).
+        if (f == "ASSETINFO") {
+            Fail("SET ASSETINFO writes its scalar sub-fields: SET ASSETINFO.NAME "
+                 "/ .VERSION / .IDENTIFIER = value (no whole-dict form).");
             return false;
         }
         if (IsCustomDataField(f)) {
@@ -1651,6 +1778,31 @@ class Binder {
                     Fail(f + " expects a scalar literal (string, number, bool) "
                          "or NULL to erase the entry; dict/array values are not "
                          "supported yet.");
+                    return false;
+            }
+        }
+        // Generic registered metadata write (M3b) — per-key scalar, batchable;
+        // NULL clears the opinion. Value coerced to the registered type at plan
+        // time (a mismatch is a per-row skip, not a bind error).
+        if (f == "METADATA") {
+            Fail("SET METADATA writes per key: SET METADATA[\"key\"] = value "
+                 "(a registered scalar metadatum, e.g. "
+                 "METADATA[\"documentation\"]; NULL clears the opinion).");
+            return false;
+        }
+        if (IsMetadataField(f)) {
+            if (!CheckMetadataField(f))
+                return false;
+            switch (sa.value.kind) {
+                case Literal::Kind::String:
+                case Literal::Kind::Number:
+                case Literal::Kind::Bool:
+                case Literal::Kind::Null: // clear the opinion
+                    return true;
+                default:
+                    Fail(f + " expects a scalar literal (string, number, bool) "
+                         "or NULL to clear the opinion; dictionary/array "
+                         "metadata is not writable here.");
                     return false;
             }
         }
@@ -1726,6 +1878,12 @@ class Binder {
                     return false;
                 }
                 return true;
+            case LK::Dict:
+                // A dict literal is the whole-customData replace form (M3c);
+                // bare CUSTOMDATA handled it above, so any other field is wrong.
+                Fail("A dict literal applies to SET CUSTOMDATA = {\"key\": value, "
+                     "…} only.");
+                return false;
             case LK::Bool:
                 if (wf.accepts == A::Bool || wf.accepts == A::Value)
                     return true;
@@ -1773,6 +1931,8 @@ class Binder {
     bool ValidateDisplayField(const std::string &f, UtqlWorld world, const char *clause) {
         if (f == "PATH")
             return true;
+        if (IsMetadataField(f))
+            return CheckMetadataField(f);
         if (IsCompositionField(f))
             return ValidateCompositionField(f);
         if (f == "STAGE") {

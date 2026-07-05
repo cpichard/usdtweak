@@ -23,7 +23,7 @@ namespace utql {
 /// NULL to erase and BLOCK to block one sample); the binder rejects them
 /// anywhere else.
 struct Literal {
-    enum class Kind { String, Number, Bool, Null, Tuple, Block, Array, Samples };
+    enum class Kind { String, Number, Bool, Null, Tuple, Block, Array, Samples, Dict };
     Kind        kind = Kind::String;
     std::string str;          ///< String literals
     double      number = 0.0; ///< Number literals
@@ -35,6 +35,11 @@ struct Literal {
     // need a complete Literal; vector alone is fine in C++17).
     std::vector<double>  sampleTimes;
     std::vector<Literal> sampleValues;
+    // Dict literals `{"key": lit, …}` (whole-customData replace, M3c) — parallel
+    // vectors for the same reason as SAMPLES. Keys are colon-nesting paths;
+    // values are scalar literals (no nested braces, no NULL inside).
+    std::vector<std::string> dictKeys;
+    std::vector<Literal>     dictValues;
 };
 
 // ---------------------------------------------------------------- WHERE clause

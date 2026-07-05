@@ -1366,8 +1366,43 @@ static void TestAssetInfoFields() {
     if (r.rows.size() == 1 && r.rows[0].columns.size() == 2)
         CHECK(r.rows[0].columns[1].ToDisplay() == "shaders/wood.usd, textures/oak.usd");
 
-    // M1 is read-only: ASSETINFO.* refuses SET.
-    ExpectCompileError("UPDATE USDPRIM WHERE HAS_ASSETINFO SET ASSETINFO.VERSION = \"3\"",
+    // M3a writes: the three scalar sub-fields are writable (Stage world).
+    utql::UtqlResult m =
+        RunUpdate("UPDATE USDPRIM WHERE NAME = \"table\" SET "
+                  "ASSETINFO.VERSION = \"3\", ASSETINFO.NAME = \"table\", "
+                  "ASSETINFO.IDENTIFIER = \"assets/table.usd\"",
+                  ctx);
+    CHECK_MSG(m.changed == 3, m.message);
+    CHECK(table.GetAssetInfoByKey(TfToken("version")).UncheckedGet<std::string>() == "3");
+    CHECK(table.GetAssetInfoByKey(TfToken("name")).UncheckedGet<std::string>() == "table");
+    // IDENTIFIER is authored as a typed SdfAssetPath, not a plain string.
+    {
+        const VtValue idv = table.GetAssetInfoByKey(TfToken("identifier"));
+        CHECK_MSG(idv.IsHolding<SdfAssetPath>(), idv.GetTypeName());
+        CHECK(idv.IsHolding<SdfAssetPath>() &&
+              idv.UncheckedGet<SdfAssetPath>().GetAssetPath() == "assets/table.usd");
+    }
+
+    // NULL clears one sub-key; siblings survive.
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"table\" SET ASSETINFO.NAME = NULL", ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    CHECK(table.GetAssetInfoByKey(TfToken("name")).IsEmpty());
+    CHECK(!table.GetAssetInfoByKey(TfToken("version")).IsEmpty());
+
+    // Layer world: round-trips the authored dict on the spec.
+    m = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"plain\" SET ASSETINFO.VERSION = \"9\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        UsdPrim plain = stage->GetPrimAtPath(SdfPath("/World/plain"));
+        CHECK(plain.GetAssetInfoByKey(TfToken("version")).UncheckedGet<std::string>() == "9");
+    }
+
+    // DEPENDENCIES stays read-only (list semantics); HAS_ASSETINFO is a gate.
+    ExpectCompileError("UPDATE USDPRIM WHERE HAS_ASSETINFO SET ASSETINFO.DEPENDENCIES = \"x\"",
+                       "not writable");
+    ExpectCompileError("UPDATE USDPRIM WHERE HAS_ASSETINFO SET HAS_ASSETINFO = false",
                        "not writable");
 }
 
@@ -1603,16 +1638,243 @@ static void TestCustomData() {
         CHECK(spec && !spec->HasInfo(SdfFieldKeys->CustomData));
     }
 
-    // Binder catalog: bare CUSTOMDATA gets per-key guidance; prim-only lvalue;
-    // set-field operator rules still apply to KEYS.
+    // Whole-dict replace (M3c): SET CUSTOMDATA = {…} replaces the authored dict,
+    // colon keys nest, values typed by spelling.
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"hero\" SET CUSTOMDATA = "
+                  "{\"assetType\": \"prop\", \"pipeline:reviewState\": \"approved\", "
+                  "\"pipeline:priority\": 5, \"weight\": 1.5}",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    // Replace semantics: the pre-existing "locked" key is gone.
+    CHECK(hero.GetCustomDataByKey(TfToken("locked")).IsEmpty());
+    v = hero.GetCustomDataByKey(TfToken("assetType"));
+    CHECK(v.IsHolding<std::string>() && v.UncheckedGet<std::string>() == "prop");
+    v = hero.GetCustomDataByKey(TfToken("pipeline:reviewState"));
+    CHECK(v.IsHolding<std::string>() && v.UncheckedGet<std::string>() == "approved");
+    v = hero.GetCustomDataByKey(TfToken("pipeline:priority"));
+    CHECK_MSG(v.IsHolding<int64_t>() && v.UncheckedGet<int64_t>() == 5, v.GetTypeName());
+    v = hero.GetCustomDataByKey(TfToken("weight"));
+    CHECK(v.IsHolding<double>());
+
+    // SET CUSTOMDATA = NULL clears the whole authored dict.
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"hero\" SET CUSTOMDATA = NULL", ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    CHECK(!hero.HasAuthoredCustomData());
+
+    // Layer world whole-dict replace on the spec.
+    m = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"plain\" SET CUSTOMDATA = {\"tag\": \"final\"}",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        SdfPrimSpecHandle spec =
+            stage->GetRootLayer()->GetPrimAtPath(SdfPath("/World/plain"));
+        const VtValue cd = spec->GetInfo(SdfFieldKeys->CustomData);
+        CHECK(cd.IsHolding<VtDictionary>() &&
+              cd.UncheckedGet<VtDictionary>().size() == 1);
+    }
+
+    // Binder catalog: bare CUSTOMDATA gets whole-dict/per-key guidance for a
+    // scalar; prim-only lvalue; set-field operator rules still apply to KEYS.
     ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET CUSTOMDATA = \"x\"",
-                       "writes per key");
+                       "writes per key or the whole dict");
     ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"x\" "
                        "SET CUSTOMDATA[\"k\"] = 1",
+                       "prim entities");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"x\" "
+                       "SET CUSTOMDATA = {\"k\": 1}",
                        "prim entities");
     ExpectCompileError("FIND USDPRIM WHERE CUSTOMDATA[\"k\"] CONTAINS \"x\"",
                        "single value");
     ExpectCompileError("FIND USDPRIM WHERE CUSTOMDATA[\"\"] = 1", "non-empty");
+    // M3c dict-literal parse/binder catalog: empty dict, NULL inside, nesting,
+    // dict on a scalar field, whole-dict on assetInfo.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET CUSTOMDATA = {}",
+                       "is empty");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET CUSTOMDATA = {\"k\": NULL}",
+                       "omit the key");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE "
+                       "SET CUSTOMDATA = {\"k\": {\"nested\": 1}}",
+                       "Nested dict");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET ACTIVE = {\"k\": 1}",
+                       "dict literal applies to SET CUSTOMDATA");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET ASSETINFO = {\"name\": \"x\"}",
+                       "scalar sub-fields");
+}
+
+// ------------------------------------ generic METADATA["key"] (metadata M3b)
+
+static void TestMetadataField() {
+    UsdStageRefPtr stage = UsdStage::CreateInMemory("metadata_test.usda");
+    stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
+    UsdPrim hero = stage->DefinePrim(SdfPath("/World/hero"), TfToken("Xform"));
+    hero.SetMetadata(TfToken("documentation"), VtValue(std::string("the hero prim")));
+    hero.SetMetadata(TfToken("hidden"), VtValue(true));
+    UsdPrim plain = stage->DefinePrim(SdfPath("/World/plain"), TfToken("Xform"));
+    UsdAttribute size = plain.CreateAttribute(TfToken("size"), SdfValueTypeNames->Double);
+    size.SetMetadata(TfToken("documentation"), VtValue(std::string("attr doc")));
+    UsdRelationship binding = plain.CreateRelationship(TfToken("binding"));
+    binding.SetMetadata(TfToken("documentation"), VtValue(std::string("rel doc")));
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // Read: authored-only (schema fallbacks excluded), string compare + RETURN.
+    utql::UtqlResult r = RunFind(
+        "FIND USDPRIM WHERE METADATA[\"documentation\"] = \"the hero prim\" RETURN PATH",
+        ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/hero"));
+
+    // Bare bool flag form on a bool metadatum.
+    r = RunFind("FIND USDPRIM WHERE METADATA[\"hidden\"]", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+
+    // IS NOT NULL is the per-key existence test; authored-only ⇒ plain excluded.
+    r = RunFind("FIND USDPRIM WHERE METADATA[\"documentation\"] IS NOT NULL", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+
+    // Attribute + relationship entities read the same field.
+    r = RunFind("FIND USDATTRIBUTE WHERE METADATA[\"documentation\"] = \"attr doc\" "
+                "RETURN PATH",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/plain.size"));
+    r = RunFind("FIND USDRELATIONSHIP WHERE METADATA[\"documentation\"] = \"rel doc\" "
+                "RETURN PATH",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/plain.binding"));
+
+    // Layer world: the spec's own authored opinion.
+    r = RunFind("FIND SDFPRIM IN LAYER \"" + rootId +
+                "\" WHERE METADATA[\"documentation\"] = \"the hero prim\"",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+
+    // Write (Stage world): coerced to the registered type. String → documentation.
+    utql::UtqlResult m = RunUpdate(
+        "UPDATE USDPRIM WHERE NAME = \"plain\" SET METADATA[\"documentation\"] = \"set doc\"",
+        ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        VtValue dv;
+        CHECK(plain.GetMetadata(TfToken("documentation"), &dv) &&
+              dv.IsHolding<std::string>() && dv.UncheckedGet<std::string>() == "set doc");
+    }
+
+    // Bool metadatum write (coerced to bool, not the customData intLike path).
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"plain\" SET METADATA[\"hidden\"] = true", ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        VtValue hv;
+        CHECK(plain.GetMetadata(TfToken("hidden"), &hv) && hv.IsHolding<bool>() &&
+              hv.UncheckedGet<bool>());
+    }
+
+    // NULL clears the authored opinion.
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"hero\" SET METADATA[\"documentation\"] = NULL",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    CHECK(!hero.HasAuthoredMetadata(TfToken("documentation")));
+
+    // Layer world write (comment metadatum on the spec).
+    m = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"hero\" SET METADATA[\"comment\"] = \"a comment\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        SdfPrimSpecHandle spec = stage->GetRootLayer()->GetPrimAtPath(SdfPath("/World/hero"));
+        CHECK(spec && spec->HasInfo(TfToken("comment")));
+    }
+
+    // Attribute + relationship writes.
+    m = RunUpdate("UPDATE USDATTRIBUTE WHERE NAME = \"size\" "
+                  "SET METADATA[\"documentation\"] = \"attr doc 2\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    m = RunUpdate("UPDATE USDRELATIONSHIP WHERE NAME = \"binding\" "
+                  "SET METADATA[\"documentation\"] = \"rel doc 2\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        VtValue rv;
+        CHECK(binding.GetMetadata(TfToken("documentation"), &rv) &&
+              rv.UncheckedGet<std::string>() == "rel doc 2");
+    }
+
+    // Layer world on properties: authored spec reads + writes (SDFATTRIBUTE /
+    // SDFRELATIONSHIP paths — SdfSpecMetadataValue + PerformSdfMetadataWrite).
+    r = RunFind("FIND SDFATTRIBUTE IN LAYER \"" + rootId +
+                "\" WHERE METADATA[\"documentation\"] = \"attr doc 2\" RETURN PATH",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    r = RunFind("FIND SDFRELATIONSHIP IN LAYER \"" + rootId +
+                "\" WHERE METADATA[\"documentation\"] = \"rel doc 2\" RETURN PATH",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    m = RunUpdate("UPDATE SDFATTRIBUTE IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"size\" SET METADATA[\"comment\"] = \"sdf attr\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        SdfAttributeSpecHandle a =
+            stage->GetRootLayer()->GetAttributeAtPath(SdfPath("/World/plain.size"));
+        CHECK(a && a->HasInfo(TfToken("comment")));
+    }
+    m = RunUpdate("UPDATE SDFRELATIONSHIP IN LAYER \"" + rootId +
+                  "\" WHERE NAME = \"binding\" SET METADATA[\"comment\"] = \"sdf rel\"",
+                  ctx);
+    CHECK_MSG(m.changed == 1, m.message);
+    {
+        SdfRelationshipSpecHandle rs =
+            stage->GetRootLayer()->GetRelationshipAtPath(SdfPath("/World/plain.binding"));
+        CHECK(rs && rs->HasInfo(TfToken("comment")));
+    }
+
+    // Type mismatch is a per-row skip (hidden is bool; a string cannot coerce).
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"plain\" "
+                  "SET METADATA[\"hidden\"] = \"notabool\"",
+                  ctx);
+    CHECK_MSG(m.changed == 0 && m.skipped >= 1, m.message);
+    // The prior true survives the failed write.
+    {
+        VtValue hv;
+        CHECK(plain.GetMetadata(TfToken("hidden"), &hv) && hv.UncheckedGet<bool>());
+    }
+
+    // Dry run authors nothing.
+    utql::UtqlContext dry = ctx;
+    dry.dryRun = true;
+    m = RunUpdate("UPDATE USDPRIM WHERE NAME = \"plain\" "
+                  "SET METADATA[\"documentation\"] = \"unwritten\"",
+                  dry);
+    CHECK_MSG(m.changed == 1 && m.dryRun, m.message);
+    {
+        VtValue dv;
+        plain.GetMetadata(TfToken("documentation"), &dv);
+        CHECK(dv.UncheckedGet<std::string>() == "set doc"); // unchanged
+    }
+
+    // Binder catalog: unregistered key, redirect table, dict / list-op keys,
+    // LAYER entity deferral, bare METADATA, empty key.
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"nosuchkey\"] = 1",
+                       "not a registered metadata key");
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"kind\"] = \"component\"",
+                       "dedicated field");
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"customData\"] IS NOT NULL",
+                       "dedicated field");
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"assetInfo\"] IS NOT NULL",
+                       "dedicated field");
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"references\"] IS NOT NULL",
+                       "list-op");
+    ExpectCompileError("FIND LAYER WHERE METADATA[\"documentation\"] IS NOT NULL",
+                       "LAYER entity");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET METADATA = \"x\"",
+                       "writes per key");
+    ExpectCompileError("FIND USDPRIM WHERE METADATA[\"\"] = 1", "non-empty");
 }
 
 // -------------------------------- spline / clips gates (animation, A8, v0.20)
@@ -2181,6 +2443,7 @@ int main() {
     TestTargetIsMissing();
     TestTypeIsA();
     TestCustomData();
+    TestMetadataField();
     TestSplineClipGates();
     TestRenameReparentBinder();
     TestRenameReparent();
