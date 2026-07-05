@@ -86,6 +86,11 @@ void SetAddonBool(const std::string &addonId, const std::string &key, bool value
 std::string GetAddonString(const std::string &addonId, const std::string &key, const std::string &defaultValue = "");
 void SetAddonString(const std::string &addonId, const std::string &key, const std::string &value);
 
+/// Write the settings (including the per-addon values set above) to the config
+/// file now. Settings are otherwise only persisted on a clean shutdown, so call
+/// this after a Set* that must survive a crash/force-quit (e.g. an Apply button).
+void PersistSettings();
+
 // ---------------------------------------------------------------- internal
 // Called by Editor on construction / destruction. Not for addon use.
 void _RegisterEditor(Editor *editor);

@@ -1,5 +1,8 @@
 #include "LLMBackend.h"
 
+#include "AnthropicBackend.h"
+#include "OpenAIBackend.h"
+
 #include <utility>
 
 namespace UsdAgent {
@@ -49,12 +52,20 @@ Message Message::ToolResult(std::string id,
     return m;
 }
 
-// Factory definition is intentionally deferred: it will be filled in once the
-// concrete backends compile and HTTP support lands (Step 3+).
-std::unique_ptr<LLMBackend> LLMBackend::Create(const std::string&,
-                                               const std::string&,
-                                               const std::string&,
-                                               const std::string&) {
+// Factory: maps a backend type string to a concrete backend.
+//   "anthropic"          -> AnthropicBackend (fixed Messages API endpoint)
+//   "openai" / "ollama"  -> OpenAIBackend against `baseUrl` (Ollama speaks the
+//                           OpenAI Chat Completions wire format)
+std::unique_ptr<LLMBackend> LLMBackend::Create(const std::string& backendType,
+                                               const std::string& apiKey,
+                                               const std::string& model,
+                                               const std::string& baseUrl) {
+    if (backendType == "anthropic") {
+        return std::make_unique<AnthropicBackend>(apiKey, model);
+    }
+    if (backendType == "openai" || backendType == "ollama") {
+        return std::make_unique<OpenAIBackend>(apiKey, model, baseUrl);
+    }
     return nullptr;
 }
 

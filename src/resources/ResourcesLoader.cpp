@@ -317,10 +317,14 @@ void ResourcesLoader::ScaleUI(float scaleValue) {
     ImGui::GetStyle().FontScaleMain = scaleValue;
 }
 
-ResourcesLoader::~ResourcesLoader() {
-    // Save the configuration file when the application closes the resources
+void ResourcesLoader::SaveSettings() {
     const std::string configFilePath = GetConfigFilePath();
     ImGui::SaveIniSettingsToDisk(configFilePath.c_str());
+}
+
+ResourcesLoader::~ResourcesLoader() {
+    // Save the configuration file when the application closes the resources
+    SaveSettings();
     ImGui::DestroyContext();
 }
 

@@ -27,4 +27,11 @@ HttpResponse HttpPostJson(const std::string&             url,
                           const std::string&             jsonBody,
                           int                            timeoutSeconds = 60);
 
+// One-shot GET. Used to enumerate models from a provider (e.g. Ollama's
+// /api/tags or an OpenAI-compatible /v1/models). Same URL/scheme handling and
+// error semantics as HttpPostJson.
+HttpResponse HttpGetJson(const std::string&             url,
+                         const std::vector<HttpHeader>& headers,
+                         int                            timeoutSeconds = 30);
+
 } // namespace UsdAgent

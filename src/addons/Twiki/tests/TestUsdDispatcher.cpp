@@ -10,8 +10,10 @@
 #include <pxr/base/tf/token.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/usd/editTarget.h>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/stage.h>
 
 #include <CommandStack.h>
@@ -1226,6 +1228,179 @@ void TestRunQuerySdf(UsdToolDispatcher& d) {
     CHECK(out.find("[error]") == std::string::npos);
 }
 
+// run_query: the SUBLAYER family on the LAYER entity (A3-followup) — modelled on
+// REFERENCE/PAYLOAD. The shot layer sublayers the asset (resolves); a deliberately
+// broken path is injected to exercise SUBLAYER.IS_MISSING, plus the existential /
+// correlated semantics and entity-gating that the shared family machinery provides.
+void TestRunQuerySublayer() {
+    Section("run_query: SUBLAYER family (LAYER entity)");
+
+    SdfLayerRefPtr asset, shot;
+    UsdStageRefPtr stage = BuildFixture(&asset, &shot);
+    // shot already sublayers the (resolving) asset; append one that cannot resolve.
+    shot->SetSubLayerPaths({asset->GetIdentifier(), "does_not_exist.usda"});
+
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    // HAS_SUBLAYER gate: the shot layer has sublayers.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string("FIND LAYER WHERE HAS_SUBLAYER"))}}));
+    CHECK_CONTAINS(out, "matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // SUBLAYER.ASSET LIKE matches an authored sublayer path existentially.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND LAYER WHERE SUBLAYER.ASSET LIKE \"asset\""))}}));
+    CHECK_CONTAINS(out, "matched");
+    CHECK(out.find("[error]") == std::string::npos);
+
+    // SUBLAYER.IS_MISSING detects the broken sublayer; RETURN joins the arc paths.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND LAYER WHERE SUBLAYER.IS_MISSING RETURN IDENTIFIER, "
+            "SUBLAYER.ASSET"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "does_not_exist.usda");
+    CHECK_CONTAINS(out, "matched");
+
+    // Correlation (§3.2): a single arc must satisfy both leaves. The missing arc is
+    // not the asset and the asset arc is not missing, so nothing matches.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND LAYER WHERE SUBLAYER.IS_MISSING AND SUBLAYER.ASSET LIKE "
+            "\"asset\""))}}));
+    CHECK_CONTAINS(out, "no rows matched");
+
+    // Entity-gating: SUBLAYER is LAYER-only — a compile error on a prim entity.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE SUBLAYER.IS_MISSING"))}}));
+    CHECK_CONTAINS(out, "[error]");
+
+    // And a prim family (REFERENCE) is a compile error on the LAYER entity.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND LAYER WHERE REFERENCE.IS_MISSING"))}}));
+    CHECK_CONTAINS(out, "[error]");
+}
+
+// run_query: arc-field WITNESS narrowing. When a WHERE clause filters on an arc
+// family, RETURN of an arc field shows only the arcs that matched (the witness)
+// instead of joining every arc of the row. Covers the three documented rules:
+// positive predicate narrows, no same-family predicate falls back to join-all, and
+// a negated predicate (NOT) yields no witness so it also falls back.
+void TestRunQueryWitness() {
+    Section("run_query: arc witness narrowing (REFERENCE.ASSET)");
+
+    // Library layer with two referenceable prims.
+    SdfLayerRefPtr lib = SdfLayer::CreateAnonymous("lib.usda");
+    lib->ImportFromString("#usda 1.0\n"
+                          "def Xform \"A\" {}\n"
+                          "def Xform \"B\" {}\n");
+
+    SdfLayerRefPtr main = SdfLayer::CreateAnonymous("main.usda");
+    main->ImportFromString("#usda 1.0\n");
+    UsdStageRefPtr stage = UsdStage::Open(main);
+
+    // /Hero: one RESOLVING reference (lib:/A) + one MISSING reference (missing.usda).
+    UsdPrim hero = stage->DefinePrim(SdfPath("/Hero"), TfToken("Xform"));
+    hero.GetReferences().AddReference(lib->GetIdentifier(), SdfPath("/A"));
+    hero.GetReferences().AddReference(SdfReference("missing.usda", SdfPath("/X")));
+
+    // /Clean: two RESOLVING references — never missing.
+    UsdPrim clean = stage->DefinePrim(SdfPath("/Clean"), TfToken("Xform"));
+    clean.GetReferences().AddReference(lib->GetIdentifier(), SdfPath("/A"));
+    clean.GetReferences().AddReference(lib->GetIdentifier(), SdfPath("/B"));
+
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    // (1) Positive predicate narrows: WHERE REFERENCE.IS_MISSING shows ONLY the
+    // missing asset, not Hero's resolving (lib) reference.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE REFERENCE.IS_MISSING RETURN PATH, "
+            "REFERENCE.ASSET"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "missing.usda");
+    CHECK(out.find("lib") == std::string::npos); // resolving ref narrowed out
+
+    // (2) No same-family predicate ⇒ join-all: Hero's row shows BOTH references.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE NAME = \"Hero\" RETURN REFERENCE.ASSET"))}}));
+    CHECK_CONTAINS(out, "missing.usda");
+    CHECK_CONTAINS(out, "lib"); // both arcs joined, no narrowing
+
+    // (3) Negated predicate ⇒ no positive witness ⇒ join-all: /Clean shows BOTH
+    // resolving references (by prim path) even with NOT REFERENCE.IS_MISSING.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDPRIM WHERE NAME = \"Clean\" AND NOT REFERENCE.IS_MISSING "
+            "RETURN REFERENCE.PRIM_PATH"))}}));
+    CHECK_CONTAINS(out, "/A");
+    CHECK_CONTAINS(out, "/B"); // both, not narrowed to one
+}
+
+// run_query: IS_IN_VARIANT / VARIANT_SELECTIONS — the SDF-only variant-nesting
+// fields. A spec authored inside a variant scope has a variant selection on its
+// path; one outside does not.
+void TestRunQueryVariant() {
+    Section("run_query: IS_IN_VARIANT / VARIANT_SELECTIONS");
+
+    SdfLayerRefPtr root = SdfLayer::CreateAnonymous("variant.usda");
+    root->ImportFromString(
+        "#usda 1.0\n"
+        "def Xform \"Hero\" (\n"
+        "    prepend variantSets = \"look\"\n"
+        "    variants = { string look = \"red\" }\n"
+        ")\n"
+        "{\n"
+        "    float outsideAttr = 1.0\n"
+        "    variantSet \"look\" = {\n"
+        "        \"red\" {\n"
+        "            def Mesh \"RedThing\"\n"
+        "            {\n"
+        "                color3f insideAttr = (1, 0, 0)\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "}\n");
+    UsdStageRefPtr stage = UsdStage::Open(root);
+    UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
+
+    // (1) SDFATTRIBUTE WHERE IS_IN_VARIANT matches the attr authored inside the
+    // variant; RETURN VARIANT_SELECTIONS shows the "{set=value}" scope. The attr
+    // authored outside the variant is excluded.
+    std::string out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFATTRIBUTE WHERE IS_IN_VARIANT RETURN PATH, "
+            "VARIANT_SELECTIONS"))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "insideAttr");
+    CHECK_CONTAINS(out, "{look=red}");
+    CHECK(out.find("outsideAttr") == std::string::npos);
+
+    // (2) The set field is queryable with CONTAINS.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFATTRIBUTE WHERE VARIANT_SELECTIONS CONTAINS \"{look=red}\""))}}));
+    CHECK_CONTAINS(out, "insideAttr");
+
+    // (3) SDFPRIM WHERE IS_IN_VARIANT matches the prim spec inside the variant.
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND SDFPRIM WHERE IS_IN_VARIANT"))}}));
+    CHECK_CONTAINS(out, "RedThing");
+
+    // (4) A composed-stage path has no variant components — IS_IN_VARIANT is a
+    // binder error on USD* entities (Stage world).
+    out = d.Dispatch("run_query",
+        Args({{"query", JsValue(std::string(
+            "FIND USDATTRIBUTE WHERE IS_IN_VARIANT"))}}));
+    CHECK_CONTAINS(out, "[error]");
+}
+
 int main() {
     SdfLayerRefPtr asset, shot;
     UsdStageRefPtr stage = BuildFixture(&asset, &shot);
@@ -1250,6 +1425,9 @@ int main() {
     TestRunQueryChaining  (dispatcher);
     TestRunQueryComposedFrom(dispatcher);
     TestRunQuerySdf       (dispatcher);
+    TestRunQuerySublayer  ();
+    TestRunQueryWitness   ();
+    TestRunQueryVariant   ();
     TestFindPrimsNamePattern(dispatcher);
     TestFindPrimsNameTokens(dispatcher);
     TestGetNameVocabulary (dispatcher);

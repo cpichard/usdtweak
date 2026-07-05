@@ -24,7 +24,7 @@ jobs:
         id: cache-key
         run: |
           XCODE_VER=$(xcodebuild -version | head -1 | awk '{print $2}')
-          echo "value=usd-macos-${{ env.USD_VERSION }}-xcode${XCODE_VER}-py${{ env.PYTHON_VERSION }}" >> $GITHUB_OUTPUT
+          echo "value=usd-macos-${{ env.USD_VERSION }}-xcode${XCODE_VER}-py${{ env.PYTHON_VERSION }}-tbb2" >> $GITHUB_OUTPUT
 
       - name: Cache USD
         id: cache-usd
@@ -35,7 +35,12 @@ jobs:
 
       - name: Install build dependencies
         if: steps.cache-usd.outputs.cache-hit != 'true'
-        run: brew install cmake ninja tbb glew
+        # Do NOT install tbb here: build_usd.py builds its own (classic) TBB with an
+        # @rpath install id. If homebrew's oneTBB is present, embree's find_package(TBB)
+        # prefers it (it ships TBBConfig.cmake) and bakes in the absolute install id
+        # /opt/homebrew/opt/tbb/lib/libtbb.12.dylib, which is neither bundled nor present
+        # on end-user machines, so hdEmbree.dylib fails to dlopen.
+        run: brew install cmake ninja glew
 
       - name: Install Python Jinja2
         if: steps.cache-usd.outputs.cache-hit != 'true'
@@ -86,14 +91,16 @@ jobs:
           key: ${{ needs.build-usd.outputs.cache-key }}
 
       - name: Install dependencies
-        run: brew install tbb glew
+        # No tbb: usdtweak links TBB::tbb via pxrConfig.cmake, which points at the TBB
+        # inside the cached USD install (with an @rpath install id), not homebrew's.
+        run: brew install glew
 
       - name: Configure
         run: |
           cmake -G Ninja \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }};$(brew --prefix tbb);$(brew --prefix glew)" \
+            "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }};$(brew --prefix glew)" \
             -Dpxr_DIR=${{ github.workspace }}/${{ env.USD_INSTALL_DIR }} \
             -DBUILD_TWIKI=ON \
             -B build

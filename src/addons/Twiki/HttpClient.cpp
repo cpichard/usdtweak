@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 
 #include <chrono>
+#include <map>
+#include <memory>
+#include <mutex>
 
 namespace UsdAgent {
 
@@ -57,6 +60,43 @@ const char* _ResolveCaBundle() {
     return nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// Persistent, keep-alive clients keyed by "scheme://host:port".
+//
+// Previously every request created and destroyed its own httplib::Client,
+// opening a brand-new TCP connection each time. The agent's ReAct loop fires
+// several requests per turn, so a session churned through many short-lived
+// connections; on Windows each closed client socket lingers in TIME_WAIT for
+// minutes, and under contention (e.g. another process also hammering the same
+// server) the ephemeral-port pool runs dry and connect() starts failing with
+// "Could not establish connection".
+//
+// Reusing one keep-alive client per host collapses a whole session onto a
+// single reused socket. httplib transparently reconnects if the server drops
+// the idle connection. All HTTP goes through g_clientsMu, which also makes the
+// non-thread-safe httplib::Client safe to share (requests are serialized — the
+// agent never issues two at once).
+std::mutex g_clientsMu;
+std::map<std::string, std::unique_ptr<httplib::Client>> g_clients;
+
+httplib::Client& _AcquireClient(const std::string& schemeHost, int timeoutSeconds) {
+    std::unique_ptr<httplib::Client>& slot = g_clients[schemeHost];
+    if (!slot) {
+        slot = std::make_unique<httplib::Client>(schemeHost);
+        slot->set_keep_alive(true);
+        slot->enable_server_certificate_verification(true);
+        slot->set_follow_location(true);
+        if (const char* caBundle = _ResolveCaBundle()) {
+            slot->set_ca_cert_path(caBundle);
+        }
+    }
+    // Timeouts can differ per call (fast model-list GET vs slow chat POST).
+    slot->set_connection_timeout(std::chrono::seconds(timeoutSeconds));
+    slot->set_read_timeout      (std::chrono::seconds(timeoutSeconds));
+    slot->set_write_timeout     (std::chrono::seconds(timeoutSeconds));
+    return *slot;
+}
+
 } // namespace
 
 HttpResponse HttpPostJson(const std::string&             url,
@@ -71,14 +111,33 @@ HttpResponse HttpPostJson(const std::string&             url,
         return out;
     }
 
-    httplib::Client client(schemeHost);
-    client.set_connection_timeout(std::chrono::seconds(timeoutSeconds));
-    client.set_read_timeout      (std::chrono::seconds(timeoutSeconds));
-    client.set_write_timeout     (std::chrono::seconds(timeoutSeconds));
-    client.enable_server_certificate_verification(true);
-    client.set_follow_location(true);
-    if (const char* caBundle = _ResolveCaBundle()) {
-        client.set_ca_cert_path(caBundle);
+    httplib::Headers httpHeaders;
+    for (const HttpHeader& h : headers) {
+        httpHeaders.emplace(h.name, h.value);
+    }
+
+    std::lock_guard<std::mutex> lock(g_clientsMu);
+    httplib::Client& client = _AcquireClient(schemeHost, timeoutSeconds);
+
+    auto result = client.Post(path, httpHeaders, jsonBody, "application/json");
+    if (!result) {
+        out.error = "request failed: " + httplib::to_string(result.error());
+        return out;
+    }
+    out.status = result->status;
+    out.body   = result->body;
+    return out;
+}
+
+HttpResponse HttpGetJson(const std::string&             url,
+                         const std::vector<HttpHeader>& headers,
+                         int                            timeoutSeconds) {
+    HttpResponse out;
+
+    std::string schemeHost, path;
+    if (!_SplitUrl(url, schemeHost, path)) {
+        out.error = "malformed URL: " + url;
+        return out;
     }
 
     httplib::Headers httpHeaders;
@@ -86,7 +145,10 @@ HttpResponse HttpPostJson(const std::string&             url,
         httpHeaders.emplace(h.name, h.value);
     }
 
-    auto result = client.Post(path, httpHeaders, jsonBody, "application/json");
+    std::lock_guard<std::mutex> lock(g_clientsMu);
+    httplib::Client& client = _AcquireClient(schemeHost, timeoutSeconds);
+
+    auto result = client.Get(path, httpHeaders);
     if (!result) {
         out.error = "request failed: " + httplib::to_string(result.error());
         return out;

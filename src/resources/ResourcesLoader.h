@@ -15,6 +15,12 @@ class ResourcesLoader {
     static EditorSettings &GetEditorSettings();
     static ViewportSettings &GetViewportSettings();
 
+    // Persist the current settings (including addon settings) to the config file
+    // immediately. Settings are otherwise only written on a clean shutdown (see
+    // the destructor), so anything that must survive a crash/kill should call
+    // this right after mutating a setting.
+    static void SaveSettings();
+
     // The following getter/setter should ultimately move to ApplicationSettings
     static int GetApplicationWidth();
     static int GetApplicationHeight();

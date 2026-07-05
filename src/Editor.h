@@ -58,6 +58,12 @@ class Editor {
     /// Not for general use — prefer the typed addon accessors in addons/Api.h.
     EditorSettings &GetSettingsForAddons() { return _settings; }
 
+    /// Flush the current settings to the config file immediately. Settings are
+    /// otherwise only written on a clean shutdown, so this exists for changes
+    /// (e.g. an addon's Apply button) that must survive a crash or force-quit.
+    /// Syncs the editor's working copy into the shared store, then writes it.
+    void PersistSettings() const;
+
     /// Returns the selected primspec
     /// There should be one selected primspec per layer ideally, so it's very likely this function will move
     Selection &GetSelection() { return _selection; }

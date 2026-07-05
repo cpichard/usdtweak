@@ -46,6 +46,9 @@ set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/resources/app.ico")
 #set(CPACK_NSIS_MUI_WELCOMEFINISHPAGE_BITMAP "${PROJECT_SOURCE_DIR}/src/resources/test.bmp")
 #set(CPACK_NSIS_MUI_HEADERIMAGE_BITMAP "${PROJECT_SOURCE_DIR}/src/resources/test.bmp")
 set(CPACK_NSIS_CONTACT "cpichard.github@gmail.com")
+# Uninstall any previously installed usdtweak before installing this one, so old
+# USD dlls / plugins left over from a prior version don't linger next to the new build.
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_PACKAGE_EXECUTABLES "usdtweak" "UsdTweak")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 #set(CPACK_CREATE_DESKTOP_LINKS "usdtweak")
