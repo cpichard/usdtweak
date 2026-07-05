@@ -108,7 +108,7 @@ jobs:
           dnf install -y dnf-plugins-core epel-release
           dnf config-manager --set-enabled crb
           dnf install -y \
-            gcc gcc-c++ make cmake ninja-build git tar gzip which \
+            gcc gcc-c++ make cmake ninja-build git tar gzip which patch \
             perl perl-FindBin perl-IPC-Cmd perl-Data-Dumper \
             tbb-devel glew-devel \
             mesa-libGL-devel mesa-libGLU-devel \
