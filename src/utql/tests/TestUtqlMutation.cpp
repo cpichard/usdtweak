@@ -31,6 +31,7 @@
 #include <pxr/usd/sdf/relationshipSpec.h>
 #include <pxr/usd/usd/attribute.h>
 #include <pxr/usd/usd/clipsAPI.h>
+#include <pxr/usd/usd/editContext.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/relationship.h>
@@ -105,6 +106,22 @@ static utql::UtqlResult RunUpdate(const std::string &query, const utql::UtqlCont
     utql::MutationPlan plan = utql::PlanUpdate(bound, ctx);
     utql::ApplyUpdate(bound, plan, ctx);
     return plan.manifest;
+}
+
+/// Compile and execute a read query (used to verify write results and the
+/// read-side fields exercised alongside them).
+static utql::UtqlResult RunFind(const std::string &query, const utql::UtqlContext &ctx) {
+    utql::BoundQuery bound;
+    std::string error;
+    if (!Compile(query, bound, error)) {
+        CHECK_MSG(false, query + " → " + error);
+        utql::UtqlResult r;
+        r.status = utql::UtqlStatus::CompileError;
+        r.message = error;
+        return r;
+    }
+    std::atomic<bool> cancel{false};
+    return utql::Execute(bound, ctx, cancel);
 }
 
 /// A small test stage: /World, two debug prims, a light-ish prim with typed
@@ -290,12 +307,54 @@ static void TestAttrValueCoercion() {
     a.Get(&at42, UsdTimeCode(42));
     CHECK(at42 == 7.f);
 
-    // BLOCK authors a value block.
+    // BLOCK authors a value block — and reads back as VALUE.IS_BLOCKED (the
+    // write literal and the read gate share the BLOCK name, housekeeping
+    // rename of the old VALUE.IS_NONE).
     const utql::UtqlResult r5 = RunUpdate(
         "UPDATE USDATTRIBUTE WHERE NAME = \"inputs:color\" SET VALUE = BLOCK", ctx);
     CHECK_MSG(r5.changed == 1, r5.message);
     GfVec3f blocked;
     CHECK(!stage->GetAttributeAtPath(SdfPath("/World/key.inputs:color")).Get(&blocked));
+    const utql::UtqlResult r6 = RunFind(
+        "FIND USDATTRIBUTE WHERE VALUE.IS_BLOCKED AND NAME LIKE \"inputs\"", ctx);
+    CHECK_MSG(r6.rows.size() == 1, r6.message);
+    if (r6.rows.size() == 1)
+        CHECK(r6.rows[0].path == SdfPath("/World/key.inputs:color"));
+    // The old spelling is gone, with the field-list hint.
+    ExpectCompileError("FIND USDATTRIBUTE WHERE VALUE.IS_NONE", "VALUE.IS_BLOCKED");
+}
+
+static void TestBaseName() {
+    UsdStageRefPtr stage = MakeStage();
+    utql::UtqlContext ctx = MakeCtx(stage);
+
+    // BASENAME strips the namespace: the "find intensity without knowing the
+    // inputs: prefix" idiom (nl-examples #67).
+    utql::UtqlResult r = RunFind("FIND USDATTRIBUTE WHERE BASENAME = \"intensity\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].path == SdfPath("/World/key.inputs:intensity"));
+    // Un-namespaced names are their own basename.
+    r = RunFind("FIND USDATTRIBUTE WHERE BASENAME = \"weights\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    // Layer world + relationships share the field.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunFind("FIND SDFATTRIBUTE IN LAYER \"" + rootId +
+                    "\" WHERE BASENAME = \"displayColor\" RETURN BASENAME, NAMESPACE",
+                ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    if (r.rows.size() == 1) {
+        CHECK(r.rows[0].columns[0].ToDisplay() == "displayColor");
+        CHECK(r.rows[0].columns[1].ToDisplay() == "primvars");
+    }
+    stage->GetPrimAtPath(SdfPath("/World/debug_a"))
+        .CreateRelationship(TfToken("material:binding"));
+    r = RunFind("FIND USDRELATIONSHIP WHERE BASENAME = \"binding\"", ctx);
+    CHECK_MSG(r.rows.size() == 1, r.message);
+    // Read-only.
+    ExpectCompileError("UPDATE SDFATTRIBUTE IN LAYER \"a\" WHERE BASENAME = "
+                       "\"uv\" SET BASENAME = \"st\"",
+                       "not writable");
 }
 
 static void TestLayerWorld() {
@@ -1250,20 +1309,6 @@ static void TestComposingIntoDelete() {
 // ------------------------------------------- assetInfo read fields (metadata-M1)
 
 /// Compile and run a FIND through the read path (Execute).
-static utql::UtqlResult RunFind(const std::string &query, const utql::UtqlContext &ctx) {
-    utql::BoundQuery bound;
-    std::string error;
-    if (!Compile(query, bound, error)) {
-        CHECK_MSG(false, query + " → " + error);
-        utql::UtqlResult r;
-        r.status = utql::UtqlStatus::CompileError;
-        r.message = error;
-        return r;
-    }
-    std::atomic<bool> cancel{false};
-    return utql::Execute(bound, ctx, cancel);
-}
-
 static void TestAssetInfoFields() {
     UsdStageRefPtr stage = UsdStage::CreateInMemory("assetinfo_test.usda");
     stage->DefinePrim(SdfPath("/World"), TfToken("Xform"));
@@ -1668,6 +1713,306 @@ static void TestSplineClipGates() {
         "not writable");
 }
 
+static void TestRenameReparentBinder() {
+    // Stage world is deferred (M-R2) — pointed at the SDF spelling.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET NAME = \"x\"",
+                       "authored-only");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET PARENT = \"/x\"",
+                       "SDFPRIM");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"a\" SET NAME = \"x\"",
+                       "SDFATTRIBUTE");
+    // PATH stays read-only forever.
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE SET PATH = \"/x\"",
+                       "PATH is not writable");
+    // Property reparent is deferred.
+    ExpectCompileError(
+        "UPDATE SDFATTRIBUTE IN LAYER \"a\" WHERE NAME = \"a\" SET PARENT = \"/x\"",
+        "prim entities");
+    // Namespace SET cannot mix with other clauses.
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                       "SET NAME = \"x\", ACTIVE = false",
+                       "cannot be combined");
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                       "SET NAME = \"x\" ADD REFERENCE \"b.usda\"",
+                       "cannot be combined");
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                       "SET NAME = \"x\", NAME = \"y\"",
+                       "twice");
+    // Literal validation at bind time.
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE SET NAME = \"3x\"",
+                       "not a valid prim name");
+    ExpectCompileError("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE SET NAME = true",
+                       "quoted name");
+    ExpectCompileError(
+        "UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE SET PARENT = \"rel/path\"",
+        "absolute prim path");
+    ExpectCompileError("UPDATE LAYER IN LAYER \"a\" SET NAME = \"x\"",
+                       "not writable on LAYER");
+    // NAME + PARENT together is the one allowed pair; property names may be
+    // namespaced.
+    {
+        utql::BoundQuery bound;
+        std::string error;
+        CHECK_MSG(Compile("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                          "SET PARENT = \"/x\", NAME = \"y\"",
+                          bound, error),
+                  error);
+        CHECK_MSG(Compile("UPDATE SDFATTRIBUTE IN LAYER \"a\" WHERE "
+                          "NAME = \"primvars:uv\" SET NAME = \"primvars:st\"",
+                          bound, error),
+                  error);
+        CHECK_MSG(Compile("UPDATE SDFRELATIONSHIP IN LAYER \"a\" WHERE "
+                          "NAME = \"proxyPrim\" SET NAME = \"renamed\"",
+                          bound, error),
+                  error);
+        // "/" is a valid reparent destination (promote to root prim).
+        CHECK_MSG(Compile("UPDATE SDFPRIM IN LAYER \"a\" WHERE ACTIVE "
+                          "SET PARENT = \"/\"",
+                          bound, error),
+                  error);
+    }
+}
+
+static void TestRenameReparent() {
+    UsdStageRefPtr stage = MakeStage();
+    utql::UtqlContext ctx = MakeCtx(stage);
+    const SdfLayerRefPtr root = SdfLayerRefPtr(stage->GetRootLayer());
+    const std::string rootId = root->GetIdentifier();
+
+    // Readable PARENT, both worlds.
+    utql::UtqlResult r = RunFind("FIND USDPRIM WHERE PARENT = \"/World\" RETURN PARENT", ctx);
+    CHECK_MSG(r.rows.size() == 3, r.message);
+    r = RunFind("FIND SDFATTRIBUTE IN LAYER \"" + rootId +
+                    "\" WHERE PARENT = \"/World/key\"",
+                ctx);
+    CHECK_MSG(r.rows.size() == 2, r.message);
+
+    // Prim rename; the prim's properties travel with it, and the manifest
+    // carries old path → new path.
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"debug_a\" SET NAME = \"debug_z\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(!root->GetPrimAtPath(SdfPath("/World/debug_a")));
+    CHECK(root->GetPrimAtPath(SdfPath("/World/debug_z")));
+    CHECK(root->GetAttributeAtPath(SdfPath("/World/debug_z.primvars:displayColor")));
+    if (r.rows.size() == 1) {
+        // Columns: PATH, LAYER, FIELD, OLD, NEW.
+        CHECK(r.rows[0].columns[2].ToDisplay() == "NAME");
+        CHECK(r.rows[0].columns[3].ToDisplay() == "/World/debug_a");
+        CHECK(r.rows[0].columns[4].ToDisplay() == "/World/debug_z");
+    }
+
+    // Property rename across prims — the primvar-retarget idiom.
+    stage->GetPrimAtPath(SdfPath("/World/debug_z"))
+        .CreateAttribute(TfToken("primvars:uv"), SdfValueTypeNames->Float2Array);
+    stage->GetPrimAtPath(SdfPath("/World/debug_b"))
+        .CreateAttribute(TfToken("primvars:uv"), SdfValueTypeNames->Float2Array);
+    r = RunUpdate("UPDATE SDFATTRIBUTE IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"primvars:uv\" SET NAME = \"primvars:st\"",
+                  ctx);
+    CHECK_MSG(r.changed == 2, r.message);
+    CHECK(root->GetAttributeAtPath(SdfPath("/World/debug_z.primvars:st")));
+    CHECK(root->GetAttributeAtPath(SdfPath("/World/debug_b.primvars:st")));
+
+    // Relationship rename.
+    stage->GetPrimAtPath(SdfPath("/World/debug_b"))
+        .CreateRelationship(TfToken("proxyPrim"));
+    r = RunUpdate("UPDATE SDFRELATIONSHIP IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"proxyPrim\" SET NAME = \"renamedRel\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(root->GetRelationshipAtPath(SdfPath("/World/debug_b.renamedRel")));
+
+    // Reparent (multi-row, keep names). Destination must exist in the layer.
+    stage->DefinePrim(SdfPath("/World/Group"), TfToken("Scope"));
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME LIKE \"debug\" SET PARENT = \"/World/Group\"",
+                  ctx);
+    CHECK_MSG(r.changed == 2, r.message);
+    CHECK(root->GetPrimAtPath(SdfPath("/World/Group/debug_z")));
+    CHECK(root->GetPrimAtPath(SdfPath("/World/Group/debug_b")));
+
+    // Missing destination parent = per-row skip with the CanApply reason.
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"debug_b\" SET PARENT = \"/World/Nowhere\"",
+                  ctx);
+    CHECK_MSG(r.changed == 0 && r.skipped == 1, r.message);
+    CHECK(root->GetPrimAtPath(SdfPath("/World/Group/debug_b")));
+
+    // Same-parent rename collision: first row wins, second is an apply-time
+    // skip (plan-time CanApply cannot see the first row's edit).
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME LIKE \"debug\" SET NAME = \"same\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1 && r.skipped == 1, r.message);
+
+    // No-op rename is a counted skip, not a write (idempotent re-runs).
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"same\" SET NAME = \"same\"",
+                  ctx);
+    CHECK_MSG(r.changed == 0 && r.skipped == 1, r.message);
+
+    // Move + rename in one statement = one namespace edit; "/" promotes to a
+    // root prim.
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"same\" SET PARENT = \"/\", NAME = \"archived\"",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(root->GetPrimAtPath(SdfPath("/archived")));
+    if (r.rows.size() == 1)
+        CHECK(r.rows[0].columns[2].ToDisplay() == "PARENT,NAME");
+
+    // Nested matches apply deepest-first: the child renames under its old
+    // parent before the parent itself moves.
+    stage->DefinePrim(SdfPath("/World/n1/n2"), TfToken("Scope"));
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME IN (\"n1\", \"n2\") SET NAME = \"renamed\"",
+                  ctx);
+    CHECK_MSG(r.changed == 2, r.message);
+    CHECK(root->GetPrimAtPath(SdfPath("/World/renamed/renamed")));
+
+    // Rows inside a variant scope are skipped (SdfNamespaceEdit cannot cross
+    // variant boundaries).
+    UsdPrim vprim = stage->DefinePrim(SdfPath("/World/vprim"));
+    UsdVariantSet vs = vprim.GetVariantSets().AddVariantSet("look");
+    vs.AddVariant("red");
+    vs.SetVariantSelection("red");
+    {
+        UsdEditContext ec(vs.GetVariantEditContext());
+        stage->DefinePrim(SdfPath("/World/vprim/inner"), TfToken("Scope"));
+    }
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"inner\" SET NAME = \"outer\"",
+                  ctx);
+    CHECK_MSG(r.matched == 1 && r.changed == 0 && r.skipped == 1, r.message);
+
+    // Dry run: full manifest, nothing renamed.
+    utql::UtqlContext dry = ctx;
+    dry.dryRun = true;
+    r = RunUpdate("UPDATE SDFPRIM IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"archived\" SET NAME = \"gone\"",
+                  dry);
+    CHECK_MSG(r.dryRun && r.changed == 1 && r.rows.size() == 1, r.message);
+    CHECK(root->GetPrimAtPath(SdfPath("/archived")));
+    CHECK(!root->GetPrimAtPath(SdfPath("/gone")));
+}
+
+static void TestSamplesBinder() {
+    // The map carries its own times — statement AT TIME is a contradiction.
+    ExpectCompileError("UPDATE USDATTRIBUTE AT TIME 5 WHERE NAME = \"a\" "
+                       "SET VALUE = SAMPLES {1: 0}",
+                       "carries its own times");
+    // Attribute VALUE only.
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE SET KIND = SAMPLES {1: 0}",
+                       "attribute VALUE only");
+    // Parser guards: empty map, nesting, malformed entries.
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"a\" SET VALUE = "
+                       "SAMPLES {}",
+                       "empty");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"a\" SET VALUE = "
+                       "SAMPLES {1: SAMPLES {2: 3}}",
+                       "cannot nest");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"a\" SET VALUE = "
+                       "SAMPLES {1 0}",
+                       "Expected ':'");
+    ExpectCompileError("UPDATE USDATTRIBUTE WHERE NAME = \"a\" SET VALUE = "
+                       "SAMPLES {\"a\": 1}",
+                       "numeric time");
+    ExpectCompileError("UPDATE USDPRIM WHERE ACTIVE CREATE ATTRIBUTE \"x\" "
+                       "TYPE \"float\" VALUE SAMPLES {1: 0}",
+                       "follow-up UPDATE");
+}
+
+static void TestSamples() {
+    UsdStageRefPtr stage = MakeStage();
+    utql::UtqlContext ctx = MakeCtx(stage);
+    const SdfPath intensity("/World/key.inputs:intensity");
+
+    // Batch write: three keyframes in one statement / one manifest row.
+    // Deliberately no spaces after ':' in one entry to lock the lexing.
+    utql::UtqlResult r = RunUpdate(
+        "UPDATE USDATTRIBUTE WHERE NAME = \"inputs:intensity\" "
+        "SET VALUE = SAMPLES {1:10, 12: 45.5, 24: 90}",
+        ctx);
+    CHECK_MSG(r.changed == 1 && r.rows.size() == 1, r.message);
+    UsdAttribute a = stage->GetAttributeAtPath(intensity);
+    CHECK(a.GetNumTimeSamples() == 3);
+    float v = 0.f;
+    a.Get(&v, UsdTimeCode(12));
+    CHECK(v == 45.5f);
+    // The default opinion is untouched — SAMPLES writes samples only.
+    a.Get(&v, UsdTimeCode::Default());
+    CHECK(v == 5000.f);
+    if (r.rows.size() == 1) // NEW column is the compact summary
+        CHECK_MSG(r.rows[0].columns[4].ToDisplay().find("3 samples") !=
+                      std::string::npos,
+                  r.rows[0].columns[4].ToDisplay());
+
+    // Per-entry NULL erases one keyframe (§3.5's first slice); fractional /
+    // negative times are legal.
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE NAME = \"inputs:intensity\" "
+                  "SET VALUE = SAMPLES {12: NULL, -2.5: 7}",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(a.GetNumTimeSamples() == 3); // -2.5 added, 12 erased
+    CHECK(!a.Get(&v, UsdTimeCode(12)) || v != 45.5f);
+    a.Get(&v, UsdTimeCode(-2.5));
+    CHECK(v == 7.f);
+
+    // Per-entry BLOCK blocks a single sample.
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE NAME = \"inputs:intensity\" "
+                  "SET VALUE = SAMPLES {24: BLOCK}",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    CHECK(!a.Get(&v, UsdTimeCode(24)));
+
+    // Array-valued entries key array attributes (animated points idiom).
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE PATH = "
+                  "\"/World/debug_a.primvars:displayColor\" "
+                  "SET VALUE = SAMPLES {1: [(0,0,0)], 2: [(1,0,0), (0,1,0)]}",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    VtArray<GfVec3f> colors;
+    stage->GetAttributeAtPath(SdfPath("/World/debug_a.primvars:displayColor"))
+        .Get(&colors, UsdTimeCode(2));
+    CHECK(colors.size() == 2);
+
+    // Row atomicity: one uncoercible entry skips the whole row — nothing of
+    // the batch lands, and the warning names the entry time.
+    const size_t before = a.GetNumTimeSamples();
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE NAME = \"inputs:intensity\" "
+                  "SET VALUE = SAMPLES {100: 1, 200: \"oops\"}",
+                  ctx);
+    CHECK_MSG(r.changed == 0 && r.skipped == 1, r.message);
+    CHECK(a.GetNumTimeSamples() == before);
+    bool named = false;
+    for (const std::string &wmsg : r.warnings)
+        if (wmsg.find("200") != std::string::npos)
+            named = true;
+    CHECK(named);
+
+    // Layer world: samples land on the authored spec's own layer.
+    const std::string rootId = stage->GetRootLayer()->GetIdentifier();
+    r = RunUpdate("UPDATE SDFATTRIBUTE IN LAYER \"" + rootId +
+                      "\" WHERE NAME = \"inputs:color\" "
+                      "SET VALUE = SAMPLES {5: (1, 0, 0)}",
+                  ctx);
+    CHECK_MSG(r.changed == 1, r.message);
+    VtValue sample;
+    CHECK(stage->GetRootLayer()->QueryTimeSample(
+        SdfPath("/World/key.inputs:color"), 5.0, &sample));
+
+    // Dry run: manifest only, nothing authored.
+    utql::UtqlContext dry = ctx;
+    dry.dryRun = true;
+    r = RunUpdate("UPDATE USDATTRIBUTE WHERE NAME = \"inputs:intensity\" "
+                  "SET VALUE = SAMPLES {500: 1}",
+                  dry);
+    CHECK_MSG(r.dryRun && r.changed == 1, r.message);
+    CHECK(a.GetNumTimeSamples() == before);
+}
+
 int main() {
     TestBinderErrors();
     TestExecuteRejectsWrites();
@@ -1703,6 +2048,11 @@ int main() {
     TestTypeIsA();
     TestCustomData();
     TestSplineClipGates();
+    TestRenameReparentBinder();
+    TestRenameReparent();
+    TestBaseName();
+    TestSamplesBinder();
+    TestSamples();
 
     if (gFailures == 0) {
         std::cout << "test_utql_mutation: all " << gChecks << " checks passed\n";

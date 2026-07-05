@@ -20,6 +20,9 @@ struct Token {
         RParen,  ///< )
         LBracket,///< [  (array literals, SET rvalues)
         RBracket,///< ]
+        LBrace,  ///< {  (SAMPLES map literal, SET rvalues)
+        RBrace,  ///< }
+        Colon,   ///< :  (SAMPLES map separator; word-internal ':' stays in the word)
         Comma,   ///< ,
         End,     ///< end of input
     };

@@ -14,13 +14,16 @@ namespace utql {
 
 // -------------------------------------------------------------------- literals
 
-/// A literal value as written in the query. Tuple, Block and Array exist only
-/// on the write side (SET rvalues, design-mutation §3.1): `(1, 0, 0)` for
-/// vec/color/quat types, BLOCK for an SdfValueBlock, and `[e1, e2, …]` for
-/// array-typed attributes (whole-array assignment, M1.5 — elements are
-/// scalars or tuples, no nesting); the binder rejects them anywhere else.
+/// A literal value as written in the query. Tuple, Block, Array and Samples
+/// exist only on the write side (SET rvalues, design-mutation §3.1/§14):
+/// `(1, 0, 0)` for vec/color/quat types, BLOCK for an SdfValueBlock,
+/// `[e1, e2, …]` for array-typed attributes (whole-array assignment, M1.5 —
+/// elements are scalars or tuples, no nesting), and `SAMPLES {t: v, …}` for
+/// batched keyframe writes (entries are any non-Samples SET literal, incl.
+/// NULL to erase and BLOCK to block one sample); the binder rejects them
+/// anywhere else.
 struct Literal {
-    enum class Kind { String, Number, Bool, Null, Tuple, Block, Array };
+    enum class Kind { String, Number, Bool, Null, Tuple, Block, Array, Samples };
     Kind        kind = Kind::String;
     std::string str;          ///< String literals
     double      number = 0.0; ///< Number literals
@@ -28,6 +31,10 @@ struct Literal {
     bool        boolean = false;
     std::vector<double> tuple;        ///< Tuple literals (SET rvalues only)
     std::vector<Literal> arrayElems;  ///< Array literals (SET rvalues only)
+    // SAMPLES entries in statement order, parallel vectors (std::pair would
+    // need a complete Literal; vector alone is fine in C++17).
+    std::vector<double>  sampleTimes;
+    std::vector<Literal> sampleValues;
 };
 
 // ---------------------------------------------------------------- WHERE clause

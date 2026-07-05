@@ -84,6 +84,9 @@ FieldInfo LookupPrimField(const std::string &f) {
     };
     if (f == "NAME")       return mk(FieldType::String, false);
     if (f == "PATH")           return mk(FieldType::String, false);
+    // Parent prim path ("/" for root prims). Readable in both worlds; also a
+    // writable Layer-world lvalue (reparent, design-mutation §13).
+    if (f == "PARENT")         return mk(FieldType::String, false);
     if (f == "TYPE")       return mk(FieldType::String, true);
     if (f == "KIND")           return mk(FieldType::String, true);
     if (f == "SPECIFIER")      return mk(FieldType::String, false);
@@ -157,7 +160,7 @@ FieldInfo LookupPrimField(const std::string &f) {
 
 // Prim fields valid in BOTH worlds (USDPRIM and SDFPRIM).
 const char *kPrimFieldListCommon =
-    "NAME, PATH, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
+    "NAME, PATH, PARENT, TYPE, KIND, SPECIFIER, ACTIVE, ABSTRACT, DEPTH, "
     "CHILD_COUNT, ATTRIBUTE_COUNT, SPEC_COUNT, HAS_REFERENCE, HAS_PAYLOAD, "
     "HAS_VARIANT, HAS_API, HAS_TIME_SAMPLES, HAS_SPLINE, HAS_CLIPS, INSTANCEABLE, "
     "HAS_RELATIONSHIP, RELATIONSHIPS, HAS_ASSETINFO, ASSETINFO.IDENTIFIER, "
@@ -180,6 +183,10 @@ FieldInfo LookupAttrField(const std::string &f) {
     if (f == "NAME")       return mk(FieldType::String, false);
     if (f == "TYPE")        return mk(FieldType::String, true);
     if (f == "NAMESPACE")  return mk(FieldType::String, true);
+    // Name after the final ':' ("inputs:intensity" → "intensity") — the NL
+    // trap fix: models routinely forget schema namespaces (nl-examples #67).
+    if (f == "BASENAME")   return mk(FieldType::String, false);
+    if (f == "PARENT")     return mk(FieldType::String, false); ///< owning prim path
     if (f == "VALUE.ARRAY_SIZE")      return mk(FieldType::Number, false);
     if (f == "VALUE.BYTE_SIZE")       return mk(FieldType::Number, false);
     if (f == "VALUE.IS_ARRAY")        return mk(FieldType::Bool, false);
@@ -189,7 +196,7 @@ FieldInfo LookupAttrField(const std::string &f) {
     // authored value source from timeSamples, so this does NOT overlap
     // VALUE.HAS_TIME_SAMPLES. Both worlds (authored fact, like the samples gate).
     if (f == "VALUE.HAS_SPLINE")      return mk(FieldType::Bool, false);
-    if (f == "VALUE.IS_NONE")         return mk(FieldType::Bool, false);
+    if (f == "VALUE.IS_BLOCKED")         return mk(FieldType::Bool, false);
     // VALUE.SCALAR (design A1) is type-polymorphic; its operator validity is decided
     // by ValidateScalarLeaf (the runtime value type is unknown at bind). Listed here
     // as nullable String so it is recognised, displayable in RETURN, and null-testable.
@@ -218,9 +225,9 @@ FieldInfo LookupAttrField(const std::string &f) {
 }
 
 const char *kAttrFieldList =
-    "NAME, TYPE, NAMESPACE, VALUE.ARRAY_SIZE, "
+    "NAME, TYPE, NAMESPACE, BASENAME, PARENT, VALUE.ARRAY_SIZE, "
     "VALUE.BYTE_SIZE, VALUE.IS_ARRAY, VALUE.HAS_TIME_SAMPLES, VALUE.SAMPLE_COUNT, "
-    "VALUE.HAS_SPLINE, VALUE.IS_NONE, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
+    "VALUE.HAS_SPLINE, VALUE.IS_BLOCKED, VALUE.SCALAR, VARIABILITY, INTERPOLATION, PATH, "
     "CONNECTION.SOURCE, HAS_CONNECTION, CONNECTION.COUNT, ASSET.IS_MISSING";
 
 // Authored variant-nesting facts — valid only on SDFATTRIBUTE (Layer world), like
@@ -234,6 +241,8 @@ FieldInfo LookupRelField(const std::string &f) {
     };
     if (f == "NAME")         return mk(FieldType::String, false);
     if (f == "NAMESPACE")    return mk(FieldType::String, true);
+    if (f == "BASENAME")     return mk(FieldType::String, false); ///< name after final ':'
+    if (f == "PARENT")       return mk(FieldType::String, false); ///< owning prim path
     if (f == "TARGET")       return mk(FieldType::String, false, /*set*/ true);
     if (f == "TARGET_COUNT") return mk(FieldType::Number, false);
     // Dangling-target gate: true iff some composed target path resolves to no
@@ -247,7 +256,7 @@ FieldInfo LookupRelField(const std::string &f) {
 }
 
 const char *kRelFieldList =
-    "NAME, NAMESPACE, TARGET, "
+    "NAME, NAMESPACE, BASENAME, PARENT, TARGET, "
     "TARGET_COUNT, PATH";
 
 // Composed-stage facts — valid only on USDRELATIONSHIP (see LookupRelField).
@@ -402,12 +411,14 @@ std::string WritableListFor(Category c, UtqlWorld world) {
                        ? "ACTIVE, INSTANCEABLE, KIND, TYPE, VARIANT[\"set\"], "
                          "CUSTOMDATA[\"key\"]"
                        : "ACTIVE, INSTANCEABLE, KIND, TYPE, SPECIFIER, "
-                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"]";
+                         "VARIANT[\"set\"], CUSTOMDATA[\"key\"], NAME, PARENT";
         case Category::Attribute:
             return world == UtqlWorld::Stage ? "VALUE, INTERPOLATION"
-                                             : "VALUE, INTERPOLATION, VARIABILITY";
+                                             : "VALUE, INTERPOLATION, VARIABILITY, NAME";
         case Category::Relationship:
-            return "(none — edit targets with ADD TARGET \"/p\" / REMOVE TARGET)";
+            return world == UtqlWorld::Stage
+                       ? "(none — edit targets with ADD TARGET \"/p\" / REMOVE TARGET)"
+                       : "NAME (targets via ADD TARGET \"/p\" / REMOVE TARGET)";
         case Category::Layer:
             return "DEFAULT_PRIM, UP_AXIS, START_TIME, END_TIME, "
                    "TIMECODES_PER_SECOND, FRAMES_PER_SECOND, METERS_PER_UNIT, MUTED";
@@ -1257,6 +1268,42 @@ class Binder {
             if (!ValidateAssignment(sa, world))
                 return false;
 
+        // SAMPLES carries its own times (design-mutation §14): a statement
+        // AT TIME would be a second time authority — a contradiction, not a
+        // merge.
+        if (q.hasAt)
+            for (const SetAssignment &sa : q.sets)
+                if (sa.value.kind == Literal::Kind::Samples) {
+                    Fail("SAMPLES {t: v, …} carries its own times — drop the "
+                         "statement's AT TIME.");
+                    return false;
+                }
+
+        // Namespace edits (rename/reparent, design-mutation §13) cannot mix
+        // with other mutation clauses — a field write would race the path
+        // change. NAME + PARENT together is the one allowed pair (it is a
+        // single namespace edit per row). Checked after the per-assignment
+        // pass so world/entity errors surface first.
+        int nsName = 0, nsParent = 0;
+        bool otherSet = false;
+        for (const SetAssignment &sa : q.sets) {
+            if (sa.field == "NAME") ++nsName;
+            else if (sa.field == "PARENT") ++nsParent;
+            else otherSet = true;
+        }
+        if (nsName + nsParent > 0) {
+            if (otherSet || !q.createProps.empty() || !q.arcMutations.empty()) {
+                Fail("SET NAME/PARENT cannot be combined with other mutation "
+                     "clauses in one statement. Split into two UPDATEs.");
+                return false;
+            }
+            if (nsName > 1 || nsParent > 1) {
+                Fail("SET NAME/PARENT appears twice — one rename/reparent per "
+                     "statement.");
+                return false;
+            }
+        }
+
         // CREATE ATTRIBUTE/RELATIONSHIP clauses (design-mutation §5, M2) —
         // per-row property creation, prim entities only.
         if (!q.createProps.empty() && _cat != Category::Prim) {
@@ -1286,6 +1333,12 @@ class Binder {
                                 cp.value.kind == Literal::Kind::Block)) {
                 Fail("VALUE on CREATE ATTRIBUTE authors an initial value; omit "
                      "VALUE instead of NULL/BLOCK.");
+                return false;
+            }
+            if (cp.hasValue && cp.value.kind == Literal::Kind::Samples) {
+                Fail("VALUE on CREATE ATTRIBUTE authors one initial value; "
+                     "key it with a follow-up UPDATE … SET VALUE = SAMPLES "
+                     "{…}.");
                 return false;
             }
         }
@@ -1382,10 +1435,61 @@ class Binder {
         const std::string &f = sa.field;
 
         // §9 catalog special cases, most specific first.
-        if (f == "NAME" || f == "PATH") {
-            Fail("Rename/reparent is not supported yet (namespace editing is "
-                 "deferred).");
+        if (f == "PATH") {
+            Fail("PATH is not writable. SET NAME renames, SET PARENT reparents "
+                 "(or both in one SET).");
             return false;
+        }
+        // Rename / reparent (design-mutation §13). Layer world only in v1 —
+        // the Sdf namespace-edit backend fixes paths within the destination
+        // layer; the Stage backend (UsdNamespaceEditor) is deferred (M-R2).
+        if (f == "NAME" || f == "PARENT") {
+            if (_cat == Category::Layer) {
+                Fail("Field " + f + " is not writable on LAYER. Writable: " +
+                     WritableListFor(_cat, world) + ".");
+                return false;
+            }
+            if (world == UtqlWorld::Stage) {
+                Fail("Rename/reparent is authored-only for now. UPDATE " +
+                     std::string(_cat == Category::Prim ? "SDFPRIM"
+                                 : _cat == Category::Attribute
+                                     ? "SDFATTRIBUTE"
+                                     : "SDFRELATIONSHIP") +
+                     " IN LAYER \"…\" SET " + f + " = ….");
+                return false;
+            }
+            if (f == "PARENT" && _cat != Category::Prim) {
+                Fail("SET PARENT applies to prim entities — moving a property "
+                     "to another prim is not supported yet. SET NAME renames "
+                     "it in place.");
+                return false;
+            }
+            if (sa.value.kind != Literal::Kind::String) {
+                Fail("SET " + f + " expects a quoted " +
+                     (f == "NAME" ? std::string("name.")
+                                  : std::string("prim path.")));
+                return false;
+            }
+            if (f == "NAME") {
+                const bool ok = _cat == Category::Prim
+                                    ? SdfPath::IsValidIdentifier(sa.value.str)
+                                    : SdfPath::IsValidNamespacedIdentifier(sa.value.str);
+                if (!ok) {
+                    Fail("\"" + sa.value.str + "\" is not a valid " +
+                         (_cat == Category::Prim ? "prim name."
+                                                 : "property name."));
+                    return false;
+                }
+            } else {
+                const SdfPath p(SdfPath::IsValidPathString(sa.value.str) ? sa.value.str : "");
+                if (p.IsEmpty() || !p.IsAbsolutePath() ||
+                    !(p.IsPrimPath() || p == SdfPath::AbsoluteRootPath())) {
+                    Fail("SET PARENT: \"" + sa.value.str + "\" is not an "
+                         "absolute prim path (\"/\" reparents to the root).");
+                    return false;
+                }
+            }
+            return true;
         }
         if (_cat == Category::Prim && (f == "VALUE" || StartsWith(f, "VALUE."))) {
             Fail("VALUE is an attribute field. UPDATE USDATTRIBUTE instead, or "
@@ -1490,6 +1594,16 @@ class Binder {
             case LK::Block:
                 if (wf.accepts != A::Value) {
                     Fail("BLOCK applies to attribute VALUE only.");
+                    return false;
+                }
+                return true;
+            case LK::Samples:
+                // Batched keyframes (design-mutation §14). Entry shapes were
+                // validated by the parser (no nesting, non-empty map).
+                if (wf.accepts != A::Value) {
+                    Fail("SAMPLES applies to attribute VALUE only (UPDATE "
+                         "USDATTRIBUTE / SDFATTRIBUTE … SET VALUE = SAMPLES "
+                         "{t: v, …}).");
                     return false;
                 }
                 return true;

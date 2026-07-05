@@ -35,7 +35,7 @@ bool IsReservedWord(const std::string &w) {
                                 // Write side (design-mutation). ADD/REMOVE reserved
                                 // ahead of M3 so fields never squat the clause names.
                                 "UPDATE", "CREATE", "DELETE", "SET", "ON", "ADD",
-                                "REMOVE", "BLOCK",
+                                "REMOVE", "BLOCK", "SAMPLES",
                                 // Schema-inheritance operator (design A7). One
                                 // token — the lexer folds '_' into words, so this
                                 // never collides with IS NULL.
@@ -492,12 +492,63 @@ class Parser {
         return true;
     }
 
-    // A SET rvalue: the WHERE literals plus BLOCK, tuple `(x, y, z)`, and
-    // array `[e1, e2, …]` (whole-array assignment, M1.5 — elements are
-    // scalars or tuples; `[]` authors an empty array).
+    // A SET rvalue: the WHERE literals plus BLOCK, tuple `(x, y, z)`, array
+    // `[e1, e2, …]` (whole-array assignment, M1.5 — elements are scalars or
+    // tuples; `[]` authors an empty array), and `SAMPLES {t: v, …}` (batched
+    // keyframes, design-mutation §14 — entries are any non-SAMPLES rvalue,
+    // NULL erases and BLOCK blocks the sample at t).
     bool ParseSetLiteral(Literal &lit) {
         if (CurIsKeyword("BLOCK")) {
             lit.kind = Literal::Kind::Block;
+            Advance();
+            return true;
+        }
+        if (CurIsKeyword("SAMPLES")) {
+            Advance();
+            if (Cur().kind != Token::Kind::LBrace) {
+                Fail("Expected '{' after SAMPLES: SAMPLES {1: 0.0, 24: 9.0}");
+                return false;
+            }
+            Advance();
+            lit.kind = Literal::Kind::Samples;
+            if (Cur().kind == Token::Kind::RBrace) {
+                // Deliberately rejected here, not the binder: {} as "clear all
+                // samples" is too destructive to hide in two characters.
+                Fail("SAMPLES {} is empty — list at least one t: value entry "
+                     "(clearing a whole animation is not a SAMPLES job)");
+                return false;
+            }
+            while (true) {
+                if (Cur().kind != Token::Kind::Number) {
+                    Fail("Expected a numeric time before ':' in SAMPLES "
+                         "{t: value, …}");
+                    return false;
+                }
+                lit.sampleTimes.push_back(Cur().number);
+                Advance();
+                if (Cur().kind != Token::Kind::Colon) {
+                    Fail("Expected ':' after the time in SAMPLES {t: value, …}");
+                    return false;
+                }
+                Advance();
+                if (CurIsKeyword("SAMPLES")) {
+                    Fail("SAMPLES cannot nest");
+                    return false;
+                }
+                Literal entry;
+                if (!ParseSetLiteral(entry))
+                    return false;
+                lit.sampleValues.push_back(std::move(entry));
+                if (Cur().kind == Token::Kind::Comma) {
+                    Advance();
+                    continue;
+                }
+                break;
+            }
+            if (Cur().kind != Token::Kind::RBrace) {
+                Fail("Expected '}' to close SAMPLES {…}");
+                return false;
+            }
             Advance();
             return true;
         }

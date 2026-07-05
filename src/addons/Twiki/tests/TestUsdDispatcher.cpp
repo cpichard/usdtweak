@@ -1307,6 +1307,25 @@ void TestRunMutation() {
     CHECK_CONTAINS(out, "1 changed");
     pump();
     CHECK(!stage->GetPrimAtPath(SdfPath("/World/Camera")).IsActive());
+
+    // Rename (design-mutation §13) rides the same pipeline: the namespace
+    // edit lands on the pump like any other queued mutation.
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE SDFPRIM IN LAYERSTACK WHERE NAME = \"Camera\" "
+            "SET NAME = \"RenderCam\""))}}));
+    std::fprintf(stdout, "%s\n", out.c_str());
+    CHECK_CONTAINS(out, "changed");
+    CHECK_CONTAINS(out, "/World/Camera");
+    pump();
+    CHECK(stage->GetPrimAtPath(SdfPath("/World/RenderCam")).IsValid());
+    CHECK(!stage->GetPrimAtPath(SdfPath("/World/Camera")).IsValid());
+    // Stage-world rename stays a guided compile error (M-R2).
+    out = d.Dispatch("run_mutation",
+        Args({{"statement", JsValue(std::string(
+            "UPDATE USDPRIM WHERE NAME = \"RenderCam\" SET NAME = \"Cam\""))}}));
+    CHECK_CONTAINS(out, "[error] compile");
+    CHECK_CONTAINS(out, "SDFPRIM");
 }
 
 // UsdSceneLock: the reader/writer gate enforcing USD's threading contract

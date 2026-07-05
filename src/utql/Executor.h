@@ -65,7 +65,9 @@ struct PlannedWrite {
     /// CreateProp one CREATE ATTRIBUTE/RELATIONSHIP clause; DeleteSpec removes
     /// the authored spec; CreatePrim is the one entry of a CREATE statement;
     /// ArcAdd/ArcRemove apply one ADD/REMOVE arc clause to one arc.
-    enum class Action { Set, CreateProp, DeleteSpec, CreatePrim, ArcAdd, ArcRemove };
+    /// NamespaceEdit is the row's single rename/reparent (design-mutation §13,
+    /// SET NAME/PARENT — one edit per row, not per assignment; Layer world).
+    enum class Action { Set, CreateProp, DeleteSpec, CreatePrim, ArcAdd, ArcRemove, NamespaceEdit };
     Action action = Action::Set;
 
     // Stage world targets.
@@ -86,6 +88,16 @@ struct PlannedWrite {
     size_t         propIndex = 0; ///< Action::CreateProp: index into createProps
     bool           existed = false; ///< CreateProp: property already existed
     VtValue        coerced;      ///< pre-coerced VALUE payload (attr VALUE only)
+    /// Action::Set with a SAMPLES rvalue (design-mutation §14): one entry per
+    /// map key, coerced at plan time (row atomicity — any failure skips the
+    /// whole row, so apply never sees a partial list).
+    struct CoercedSample {
+        enum class Op { Set, Erase, Block };
+        double  time = 0.0;
+        Op      op = Op::Set;
+        VtValue value; ///< Op::Set only
+    };
+    std::vector<CoercedSample> coercedSamples;
     // Action::ArcAdd/ArcRemove: which clause, and the arc's identity —
     // asset (REFERENCE/PAYLOAD asset, API schema, SUBLAYER path), path
     // (REFERENCE/PAYLOAD prim path, INHERIT/SPECIALIZE/TARGET/CONNECTION
@@ -94,6 +106,7 @@ struct PlannedWrite {
     std::string    arcAsset;
     SdfPath        arcPath;
     SdfLayerOffset arcOffset;
+    SdfPath        nsNewPath;    ///< Action::NamespaceEdit: the row's new path
     std::string    oldDisplay;
     std::string    newDisplay;
 };

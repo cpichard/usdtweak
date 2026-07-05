@@ -32,6 +32,7 @@
 #include <pxr/usd/sdf/layerOffset.h>
 #include <pxr/usd/sdf/layerUtils.h>
 #include <pxr/usd/sdf/listOp.h>
+#include <pxr/usd/sdf/namespaceEdit.h>
 #include <pxr/usd/sdf/payload.h>
 #include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/sdf/primSpec.h>
@@ -106,9 +107,10 @@ std::string LiteralToString(const Literal &l) {
         }
         // SET-only literal kinds (never produced inside WHERE; the display
         // form for manifests is LiteralDisplay below).
-        case Literal::Kind::Tuple:  return "(tuple)";
-        case Literal::Kind::Block:  return "BLOCK";
-        case Literal::Kind::Array:  return "[array]";
+        case Literal::Kind::Tuple:   return "(tuple)";
+        case Literal::Kind::Block:   return "BLOCK";
+        case Literal::Kind::Array:   return "[array]";
+        case Literal::Kind::Samples: return "SAMPLES{…}";
     }
     return "";
 }
@@ -579,6 +581,16 @@ UtqlValue NamespaceOf(const std::string &name) {
                                     : UtqlValue::String_(name.substr(0, pos));
 }
 
+/// BASENAME — the property name after the final namespace separator
+/// ("inputs:intensity" → "intensity"; un-namespaced names are their own
+/// basename). The complement of NAMESPACE, and the fix for the NL trap where
+/// a model asks for NAME = "intensity" and misses the inputs: prefix.
+UtqlValue BaseNameOf(const std::string &name) {
+    const auto pos = name.rfind(':');
+    return UtqlValue::String_(pos == std::string::npos ? name
+                                                       : name.substr(pos + 1));
+}
+
 std::string JoinPaths(const SdfPathVector &paths) {
     std::string out;
     for (size_t i = 0; i < paths.size(); ++i) {
@@ -902,6 +914,7 @@ const TfToken &ClipsToken() {
 UtqlValue GetUsdPrimField(const UsdPrim &prim, const std::string &f) {
     if (f == "NAME") return UtqlValue::String_(prim.GetName().GetString());
     if (f == "PATH")     return UtqlValue::String_(prim.GetPath().GetString());
+    if (f == "PARENT")   return UtqlValue::String_(prim.GetPath().GetParentPath().GetString());
     if (f == "TYPE") {
         const TfToken &t = prim.GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
@@ -975,6 +988,7 @@ double SdfApiCount(const SdfPrimSpecHandle &spec) {
 UtqlValue GetSdfPrimField(const SdfPrimSpecHandle &spec, const std::string &f) {
     if (f == "NAME") return UtqlValue::String_(spec->GetName());
     if (f == "PATH")     return UtqlValue::String_(spec->GetPath().GetString());
+    if (f == "PARENT")   return UtqlValue::String_(spec->GetPath().GetParentPath().GetString());
     if (f == "TYPE") {
         const TfToken t = spec->GetTypeName();
         return t.IsEmpty() ? UtqlValue::Null() : UtqlValue::String_(t.GetString());
@@ -1152,7 +1166,9 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
     };
     if (f == "NAME")      return UtqlValue::String_(attr.GetName().GetString());
     if (f == "PATH")                return UtqlValue::String_(attr.GetPath().GetString());
+    if (f == "PARENT")    return UtqlValue::String_(attr.GetPath().GetParentPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(attr.GetName().GetString());
+    if (f == "BASENAME")  return BaseNameOf(attr.GetName().GetString());
     if (f == "TYPE") {
         const SdfValueTypeName tn = attr.GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
@@ -1179,7 +1195,7 @@ UtqlValue GetUsdAttrField(const UsdAttribute &attr, UsdTimeCode time,
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.IS_NONE") {
+    if (f == "VALUE.IS_BLOCKED") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
@@ -1237,7 +1253,9 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
     };
     if (f == "NAME")      return UtqlValue::String_(spec->GetName());
     if (f == "PATH")                return UtqlValue::String_(spec->GetPath().GetString());
+    if (f == "PARENT")    return UtqlValue::String_(spec->GetPath().GetParentPath().GetString());
     if (f == "NAMESPACE") return NamespaceOf(spec->GetName());
+    if (f == "BASENAME")  return BaseNameOf(spec->GetName());
     if (f == "TYPE") {
         const SdfValueTypeName tn = spec->GetTypeName();
         return tn.GetAsToken().IsEmpty() ? UtqlValue::Null()
@@ -1266,7 +1284,7 @@ UtqlValue GetSdfAttrField(const SdfAttributeSpecHandle &spec, const SdfLayerHand
             return UtqlValue::Number_(static_cast<double>(vc.value.GetArraySize()));
         return UtqlValue::Number_(0.0);
     }
-    if (f == "VALUE.IS_NONE") {
+    if (f == "VALUE.IS_BLOCKED") {
         ensure();
         return UtqlValue::Bool(!vc.got || vc.value.IsHolding<SdfValueBlock>());
     }
@@ -1307,7 +1325,9 @@ UtqlValue GetRelScalarField(const std::string &name, const SdfPathVector &target
                             const SdfPath &path, const std::string &f) {
     if (f == "NAME")         return UtqlValue::String_(name);
     if (f == "PATH")         return UtqlValue::String_(path.GetString());
+    if (f == "PARENT")       return UtqlValue::String_(path.GetParentPath().GetString());
     if (f == "NAMESPACE")    return NamespaceOf(name);
+    if (f == "BASENAME")     return BaseNameOf(name);
     if (f == "TARGET_COUNT") return UtqlValue::Number_(static_cast<double>(targets.size()));
     if (f == "TARGET")
         return UtqlValue::String_(JoinPaths(targets)); // display form of the set
@@ -2836,6 +2856,25 @@ std::string LiteralDisplay(const Literal &l) {
             }
             return out + "]";
         }
+        case Literal::Kind::Samples: {
+            // Compact by design (§14): a dense key set echoed verbatim would
+            // blow the tool-result budget. "N samples (t0…tn)" + op counts.
+            size_t erased = 0, blocked = 0;
+            for (const Literal &e : l.sampleValues) {
+                if (e.kind == Literal::Kind::Null) ++erased;
+                else if (e.kind == Literal::Kind::Block) ++blocked;
+            }
+            double tmin = l.sampleTimes.front(), tmax = l.sampleTimes.front();
+            for (double t : l.sampleTimes) {
+                tmin = std::min(tmin, t);
+                tmax = std::max(tmax, t);
+            }
+            std::string out = std::to_string(l.sampleTimes.size()) + " samples (" +
+                              TfStringify(tmin) + "…" + TfStringify(tmax) + ")";
+            if (erased)  out += ", " + std::to_string(erased) + " erased";
+            if (blocked) out += ", " + std::to_string(blocked) + " blocked";
+            return out;
+        }
         default: return LiteralToString(l);
     }
 }
@@ -3011,6 +3050,36 @@ bool CoerceLiteral(const Literal &lit, const SdfValueTypeName &tn, VtValue &out,
     return CoerceScalarLiteral(lit, tn.GetDefaultValue(), typeStr, out, why);
 }
 
+/// Coerce every SAMPLES entry up front (design-mutation §14 row atomicity: a
+/// half-authored animation is worse than none, so one bad entry skips the
+/// whole row — `why` names the offending time). NULL / BLOCK entries become
+/// Erase / Block ops; everything else goes through CoerceLiteral like a plain
+/// SET VALUE.
+bool CoerceSamples(const Literal &lit, const SdfValueTypeName &tn,
+                   std::vector<PlannedWrite::CoercedSample> &out, std::string &why) {
+    using Op = PlannedWrite::CoercedSample::Op;
+    out.reserve(lit.sampleTimes.size());
+    for (size_t i = 0; i < lit.sampleTimes.size(); ++i) {
+        const Literal &e = lit.sampleValues[i];
+        PlannedWrite::CoercedSample cs;
+        cs.time = lit.sampleTimes[i];
+        if (e.kind == Literal::Kind::Null) {
+            cs.op = Op::Erase;
+        } else if (e.kind == Literal::Kind::Block) {
+            cs.op = Op::Block;
+        } else {
+            std::string ewhy;
+            if (!CoerceLiteral(e, tn, cs.value, ewhy)) {
+                why = "SAMPLES entry at time " + TfStringify(cs.time) + ": " +
+                      ewhy;
+                return false;
+            }
+        }
+        out.push_back(std::move(cs));
+    }
+    return true;
+}
+
 std::string VtValueDisplay(bool got, const VtValue &v) {
     if (!got || v.IsEmpty())
         return "";
@@ -3118,6 +3187,22 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
                 ectx.reset(new UsdEditContext(w.stage, UsdEditTarget(w.destLayer)));
             UsdAttribute &a = w.attr;
             if (f == "VALUE") {
+                // SAMPLES (§14): the whole batch on this attribute, entry ops
+                // pre-coerced at plan time. Erasing an absent sample is an
+                // idempotent no-op, not a failure.
+                if (lit.kind == Literal::Kind::Samples) {
+                    using Op = PlannedWrite::CoercedSample::Op;
+                    for (const PlannedWrite::CoercedSample &cs : w.coercedSamples) {
+                        const UsdTimeCode ct(cs.time);
+                        if (cs.op == Op::Erase)
+                            a.ClearAtTime(ct);
+                        else if (cs.op == Op::Block)
+                            a.Set(VtValue(SdfValueBlock()), ct);
+                        else if (!a.Set(cs.value, ct))
+                            return false;
+                    }
+                    return true;
+                }
                 // AT TIME t authors a time sample; no AT authors the default
                 // value (deliberate write-side asymmetry, design-mutation §3.1).
                 const UsdTimeCode t = q.hasAt ? UsdTimeCode(q.atTime) : UsdTimeCode::Default();
@@ -3139,6 +3224,19 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
             SdfAttributeSpecHandle &s = w.attrSpec;
             const SdfLayerHandle layer = s->GetLayer();
             if (f == "VALUE") {
+                if (lit.kind == Literal::Kind::Samples) {
+                    using Op = PlannedWrite::CoercedSample::Op;
+                    for (const PlannedWrite::CoercedSample &cs : w.coercedSamples) {
+                        if (cs.op == Op::Erase)
+                            layer->EraseTimeSample(s->GetPath(), cs.time);
+                        else
+                            layer->SetTimeSample(s->GetPath(), cs.time,
+                                                 cs.op == Op::Block
+                                                     ? VtValue(SdfValueBlock())
+                                                     : cs.value);
+                    }
+                    return true;
+                }
                 if (q.hasAt) {
                     if (isNull) { layer->EraseTimeSample(s->GetPath(), q.atTime); return true; }
                     layer->SetTimeSample(s->GetPath(), q.atTime,
@@ -3211,6 +3309,42 @@ bool PerformWrite(const BoundQuery &q, const SetAssignment &sa, PlannedWrite &w)
         default:
             return false; // relationship entities have no writable field in M1
     }
+}
+
+/// Apply one planned rename/reparent (design-mutation §13). One row = one
+/// single-edit batch: SdfLayer::Apply of a batch is all-or-nothing, so bigger
+/// batches would turn one bad row into a whole-statement failure. CanApply is
+/// re-checked here against the layer's current state — an earlier edit of this
+/// same statement may have created a collision plan time could not see — and
+/// its failure reason becomes the skip key. Within-layer target/connection
+/// backpointers are fixed by the Sdf machinery itself.
+bool PerformNamespaceEdit(PlannedWrite &w, std::string &why) {
+    // Deepest-first ordering keeps descendants ahead of their ancestors, so a
+    // row's own spec cannot have moved before its turn — but a resultset can
+    // hold rows an earlier statement edit removed.
+    if (!w.primSpec && !w.attrSpec && !w.relSpec) {
+        why = "stale row (moved or removed by an earlier edit)";
+        return false;
+    }
+    // Same keeps the sibling position on an in-place rename; a reparent
+    // arrives at the end of its new parent's children.
+    const SdfNamespaceEdit::Index index =
+        w.path.GetParentPath() == w.nsNewPath.GetParentPath()
+            ? SdfNamespaceEdit::Same
+            : SdfNamespaceEdit::AtEnd;
+    SdfBatchNamespaceEdit batch;
+    batch.Add(SdfNamespaceEdit(w.path, w.nsNewPath, index));
+    SdfNamespaceEditDetailVector details;
+    if (!w.layer->CanApply(batch, &details)) {
+        why = details.empty() ? "namespace edit rejected" : details.front().reason;
+        return false;
+    }
+    if (!w.layer->Apply(batch)) {
+        why = "namespace edit failed to apply";
+        return false;
+    }
+    w.path = w.nsNewPath; // manifest + click resolution follow the new location
+    return true;
 }
 
 /// Apply one CREATE ATTRIBUTE/RELATIONSHIP clause to a matched prim (design
@@ -3654,6 +3788,65 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
     auto addDest = [&](const SdfLayerHandle &l) {
         if (l && destSeen.insert(l->GetIdentifier()).second)
             plan.layers.push_back(l);
+    };
+
+    // Rename / reparent (design-mutation §13). The binder guarantees NAME /
+    // PARENT are the statement's only mutation clauses (Layer world), so one
+    // matched row plans exactly ONE namespace edit — not one per assignment.
+    bool nsHasName = false, nsHasParent = false;
+    std::string nsName;
+    SdfPath nsParent;
+    for (const SetAssignment &sa : q.sets) {
+        if (sa.field == "NAME") { nsHasName = true; nsName = sa.value.str; }
+        else if (sa.field == "PARENT") { nsHasParent = true; nsParent = SdfPath(sa.value.str); }
+    }
+    const bool nsStatement = nsHasName || nsHasParent;
+
+    // Plan one row's namespace edit. CanApply here (read-only) gives dry-run
+    // the real per-row answer; apply re-checks against post-earlier-edit
+    // state, where collisions between two planned rows first become visible.
+    auto planNamespaceEdit = [&](const SdfLayerRefPtr &layer, const std::string &source,
+                                 const SdfPath &cur,
+                                 const std::function<void(PlannedWrite &)> &fill) {
+        if (cur.ContainsPrimVariantSelection()) {
+            skip("target is inside a variant — namespace edits cannot cross "
+                 "variant scopes");
+            return;
+        }
+        SdfPath newPath;
+        if (cur.IsPrimPath()) {
+            const SdfPath base = nsHasParent ? nsParent : cur.GetParentPath();
+            newPath = base.AppendChild(TfToken(nsHasName ? nsName : cur.GetName()));
+        } else {
+            // Properties: rename only (SET PARENT is a binder error).
+            newPath = cur.GetParentPath().AppendProperty(TfToken(nsName));
+        }
+        if (newPath == cur) {
+            skip("already at " + cur.GetString() + " — nothing to do");
+            return;
+        }
+        SdfBatchNamespaceEdit batch;
+        batch.Add(SdfNamespaceEdit(
+            cur, newPath,
+            cur.GetParentPath() == newPath.GetParentPath() ? SdfNamespaceEdit::Same
+                                                           : SdfNamespaceEdit::AtEnd));
+        SdfNamespaceEditDetailVector details;
+        if (!layer->CanApply(batch, &details)) {
+            skip(details.empty() ? "namespace edit rejected" : details.front().reason);
+            return;
+        }
+        PlannedWrite w;
+        w.action = PlannedWrite::Action::NamespaceEdit;
+        w.layer = layer;
+        w.destLayer = SdfLayerHandle(layer);
+        w.source = source;
+        w.path = cur;
+        w.nsNewPath = newPath;
+        w.oldDisplay = cur.GetString();
+        w.newDisplay = newPath.GetString();
+        fill(w);
+        addDest(w.destLayer);
+        plan.writes.push_back(std::move(w));
     };
 
     // --------------------------------------------- CREATE statement (design §6)
@@ -4365,6 +4558,11 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             plan.writes.push_back(std::move(w));
             return;
         }
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.primSpec = spec; });
+            return;
+        }
         for (size_t i = 0; i < q.sets.size(); ++i) {
             const SetAssignment &sa = q.sets[i];
             PlannedWrite w;
@@ -4424,7 +4622,18 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             w.source = source;
             w.path = attr.GetPath();
             w.setIndex = i;
-            if (sa.field == "VALUE") {
+            if (sa.field == "VALUE" && sa.value.kind == Literal::Kind::Samples) {
+                // §14: coerce the whole batch now — any bad entry skips the
+                // row atomically. OLD = prior authored sample count.
+                std::string why;
+                if (!CoerceSamples(sa.value, attr.GetTypeName(), w.coercedSamples, why)) {
+                    skip(why);
+                    continue;
+                }
+                const size_t n = attr.GetNumTimeSamples();
+                w.oldDisplay = n ? std::to_string(n) + " samples" : "";
+                w.newDisplay = LiteralDisplay(sa.value);
+            } else if (sa.field == "VALUE") {
                 const Literal::Kind k = sa.value.kind;
                 if (k != Literal::Kind::Null && k != Literal::Kind::Block) {
                     std::string why;
@@ -4463,6 +4672,11 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
                               spec->GetPath());
             return;
         }
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.attrSpec = spec; });
+            return;
+        }
         const SdfLayerHandle dest(layer);
         for (size_t i = 0; i < q.sets.size(); ++i) {
             const SetAssignment &sa = q.sets[i];
@@ -4473,7 +4687,16 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
             w.source = source;
             w.path = spec->GetPath();
             w.setIndex = i;
-            if (sa.field == "VALUE") {
+            if (sa.field == "VALUE" && sa.value.kind == Literal::Kind::Samples) {
+                std::string why;
+                if (!CoerceSamples(sa.value, spec->GetTypeName(), w.coercedSamples, why)) {
+                    skip(why);
+                    continue;
+                }
+                const size_t n = layer->GetNumTimeSamplesForPath(spec->GetPath());
+                w.oldDisplay = n ? std::to_string(n) + " samples" : "";
+                w.newDisplay = LiteralDisplay(sa.value);
+            } else if (sa.field == "VALUE") {
                 const Literal::Kind k = sa.value.kind;
                 if (k != Literal::Kind::Null && k != Literal::Kind::Block) {
                     std::string why;
@@ -4539,6 +4762,11 @@ MutationPlan PlanUpdate(const BoundQuery &q, const UtqlContext &ctx) {
     auto planSdfRelWrites = [&](const SdfLayerRefPtr &layer, const std::string &source,
                                 const SdfRelationshipSpecHandle &spec,
                                 const std::vector<std::string> *memberWitness) {
+        if (nsStatement) {
+            planNamespaceEdit(layer, source, spec->GetPath(),
+                              [&](PlannedWrite &w) { w.relSpec = spec; });
+            return;
+        }
         planArcMutations(
             [&](const std::string &) {
                 SdfPathVector targets;
@@ -5136,6 +5364,18 @@ void ApplyUpdate(const BoundQuery &q, MutationPlan &plan, const UtqlContext &ctx
     if (m.status == UtqlStatus::CompileError)
         return;
 
+    // Rename/reparent rows apply deepest-first (as PrimReparent does), so a
+    // descendant row's own edit runs before a matched ancestor moves it out
+    // from under its handle. A namespace statement plans only NamespaceEdit
+    // writes (binder rule), so checking the first entry covers the batch.
+    if (!plan.writes.empty() &&
+        plan.writes.front().action == PlannedWrite::Action::NamespaceEdit)
+        std::stable_sort(plan.writes.begin(), plan.writes.end(),
+                         [](const PlannedWrite &a, const PlannedWrite &b) {
+                             return a.path.GetPathElementCount() >
+                                    b.path.GetPathElementCount();
+                         });
+
     {
         // One statement = one change block (design-mutation §8); the host wraps
         // this call in its undo recording over plan.layers. CREATE runs without
@@ -5205,6 +5445,22 @@ void ApplyUpdate(const BoundQuery &q, MutationPlan &plan, const UtqlContext &ctx
                     counter = &m.removed;
                     if (!ctx.dryRun)
                         ok = PerformArcRemove(q, am, w);
+                    break;
+                }
+                case A::NamespaceEdit: {
+                    for (const SetAssignment &sa : q.sets)
+                        fieldDisplay += (fieldDisplay.empty() ? "" : ",") + sa.field;
+                    counter = &m.changed;
+                    if (!ctx.dryRun) {
+                        // The CanApply reason is the skip key (collision with
+                        // an earlier row's edit, missing destination parent…).
+                        std::string why;
+                        ok = PerformNamespaceEdit(w, why);
+                        if (!ok) {
+                            ++plan.skips[why];
+                            continue;
+                        }
+                    }
                     break;
                 }
             }
