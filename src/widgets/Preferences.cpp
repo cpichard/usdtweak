@@ -44,6 +44,12 @@ void PreferencesModalDialog::Draw() {
         if (ImGui::BeginChild("##Viewport", prefContentSize)) {
             ViewportSettings &viewportSettings = ResourcesLoader::GetViewportSettings();
             ImGui::Checkbox("Texture On by default", &viewportSettings._useMaterials);
+            ImGui::Checkbox("Snap playback to whole frames", &viewportSettings._snapPlaybackToFrame);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("On (default): playback lands on whole frames, keeping topology-varying\n"
+                                  "meshes coherent. Off: fractional/subframe timecodes are sent to Hydra so\n"
+                                  "motion blur can be introspected between frames.");
+            }
             ImGui::EndChild();
         }
 

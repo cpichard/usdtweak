@@ -396,6 +396,11 @@ static void DrawUtqlSearchWidget() {
     if (ImGui::Button(ICON_FA_PLAY " Run"))
         run = true;
     ImGui::SameLine();
+    // Dry run applies to mutation statements (UPDATE/CREATE/DELETE): the
+    // manifest is computed and shown, nothing is authored. FIND ignores it.
+    static bool dryRun = false;
+    ImGui::Checkbox("Dry run", &dryRun);
+    ImGui::SameLine();
     if (engine.IsRunning())
         ImGui::TextDisabled("running" ICON_FA_ELLIPSIS_H);
     else
@@ -405,7 +410,7 @@ static void DrawUtqlSearchWidget() {
         // Lines starting with '#' are comments: kept in the editor, not run.
         const std::string effectiveQuery = StripUtqlComments(queryStr);
         if (effectiveQuery.find_first_not_of(" \t\r\n") != std::string::npos)
-            engine.Submit(effectiveQuery);
+            engine.Submit(effectiveQuery, dryRun);
     }
 
     ImGui::Separator();
@@ -416,9 +421,23 @@ static void DrawUtqlSearchWidget() {
     ImGui::TextColored(UtqlStatusColor(res.status), "%s", UtqlStatusLabel(res.status));
     if (res.status != UtqlStatus::CompileError && res.status != UtqlStatus::Running) {
         ImGui::SameLine();
-        ImGui::TextDisabled("· %llu matched / %llu scanned",
-                            (unsigned long long)res.matched,
-                            (unsigned long long)res.scanned);
+        if (res.isMutation) {
+            std::string counts = std::to_string(res.changed) + " changed";
+            if (res.created)
+                counts += " / " + std::to_string(res.created) + " created";
+            if (res.removed)
+                counts += " / " + std::to_string(res.removed) + " removed";
+            counts += " / " + std::to_string(res.matched) + " matched / " +
+                      std::to_string(res.skipped) + " skipped";
+            ImGui::TextDisabled("· %s", counts.c_str());
+        } else
+            ImGui::TextDisabled("· %llu matched / %llu scanned",
+                                (unsigned long long)res.matched,
+                                (unsigned long long)res.scanned);
+    }
+    if (res.isMutation && res.dryRun) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.55f, 0.75f, 0.95f, 1.f), "· dry run");
     }
     if (!res.message.empty())
         ImGui::TextWrapped("%s", res.message.c_str());

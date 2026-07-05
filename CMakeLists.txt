@@ -100,12 +100,31 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Remove warnings coming from usd and enable default multithreaded compilation on windows
+# /Zc:inline- is REQUIRED on MSVC: USD's TF_REGISTRY_FUNCTION / ARCH_CONSTRUCTOR
+# emit their registration entry as an unreferenced const in a custom .pxrctor
+# section. MSVC's default /Zc:inline drops unreferenced COMDAT data at *compile*
+# time, so the entry never reaches the object file and no addon registers (empty
+# Tools menu). clang/gcc protect it with __attribute__((used)); MSVC has no
+# equivalent, so we must keep the data with /Zc:inline-. Pairs with /OPT:NOREF
+# (below) which stops the linker from stripping it afterwards.
 target_compile_options(usdtweak PRIVATE
-	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996>
+	$<$<CXX_COMPILER_ID:MSVC>:/MP /wd4244 /wd4305 /wd4996 /Zc:inline->
 	$<$<CXX_COMPILER_ID:GNU>:-Wno-deprecated>)
 
 # NOMINMAX
 target_compile_definitions(usdtweak PRIVATE NOMINMAX)
+
+# Keep USD's TF_REGISTRY_FUNCTION / ARCH_CONSTRUCTOR entries alive on MSVC.
+# Those entries (used by addons to self-register) live in a custom .pxrctor
+# section that nothing else references. When linking an *executable*, MSVC's
+# /OPT:REF strips them as unreferenced, so no addon registers and the Tools
+# menu is empty. On Linux/macOS __attribute__((used)) protects them; MSVC has
+# no equivalent, so we disable reference elimination for this target. (USD's
+# own registry functions are unaffected: they live in the USD DLLs, whose
+# exported symbols keep the section.)
+if (MSVC)
+    target_link_options(usdtweak PRIVATE /OPT:NOREF)
+endif()
 
 # Remove TBB deprecation warnings
 add_compile_definitions(TBB_SUPPRESS_DEPRECATED_MESSAGES)

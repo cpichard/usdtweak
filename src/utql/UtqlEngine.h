@@ -9,14 +9,16 @@
 ///     CompileError immediately), then dispatches Execute() to a WorkDispatcher.
 ///   - Update()  (UI thread, once per frame): swaps a finished result in and
 ///     bumps a generation counter the widget compares against.
-///   - The worker only *reads* USD. Concurrent writes are handled by listening
-///     for SdfNotice::LayersDidChange (OnLayersDidChange): any layer mutation
-///     marks the active result stale and signals cancellation, so the worker
-///     observes _cancel and returns promptly rather than reading mid-write. The
-///     engine therefore needs no coupling to the command stack — it learns of
-///     every scene edit (command-driven or not) through the notice. Submit()
-///     also calls CancelRunningQuery() to stop any in-flight run before starting
-///     a new one.
+///   - The worker only *reads* USD, and holds the shared side of UsdSceneLock
+///     while it does (USD contract: parallel reads, single-thread write). A
+///     writer about to acquire the exclusive side fires the engine's
+///     registered pre-write hook — RequestCancel() — so a long scan aborts
+///     (result reported degraded) instead of stalling the UI; the lock, not
+///     the cancel, is what guarantees the worker never reads mid-write.
+///     SdfNotice::LayersDidChange (OnLayersDidChange) additionally marks the
+///     active result stale after any layer mutation. Submit() also calls
+///     CancelRunningQuery() to stop any in-flight run before starting a new
+///     one.
 ///
 class UtqlEngine;
 
@@ -49,7 +51,15 @@ class UtqlEngine : public TfWeakBase {
     /// Compile `query` and (if it compiles) launch background execution. Any
     /// running query is cancelled and joined first. A CompileError lands in the
     /// active result immediately.
-    void Submit(const std::string &query);
+    ///
+    /// A mutation statement (UPDATE/CREATE/DELETE) is not dispatched to the
+    /// worker: it is
+    /// queued through the command system and runs on the UI thread after the
+    /// current frame — plan (match pass) then apply inside one SdfChangeBlock,
+    /// recorded as a single undo entry (design-mutation §8). With `dryRun` the
+    /// full manifest is computed but nothing is authored (fork F4; ignored for
+    /// FIND). The manifest lands in the active result like any other run.
+    void Submit(const std::string &query, bool dryRun = false);
 
     /// Per-frame on the UI thread: swap a finished result into the active slot.
     /// Returns true if a swap happened (widgets should refresh).
@@ -58,6 +68,15 @@ class UtqlEngine : public TfWeakBase {
     /// Cancel and join any in-flight query. Cheap when nothing is running.
     /// Called before USD mutations so the worker never reads during a write.
     void CancelRunningQuery();
+
+    /// Signal cancellation WITHOUT joining. This is the UsdSceneLock pre-write
+    /// hook: it runs on the writer thread right before it blocks for the
+    /// exclusive lock, so it must never wait on the worker (the worker may be
+    /// blocked acquiring the read lock the writer is about to take).
+    void RequestCancel() {
+        if (_running.load())
+            _cancel.store(true);
+    }
 
     bool IsRunning() const { return _running.load(); }
     bool IsActiveStale() const { return _activeStale; }

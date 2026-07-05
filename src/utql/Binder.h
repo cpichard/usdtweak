@@ -17,6 +17,7 @@ namespace utql {
 
 /// A query that has passed binding and is ready to execute.
 struct BoundQuery {
+    StatementKind statement = StatementKind::Find;
     UtqlEntity entity = UtqlEntity::UsdPrim;
     UtqlWorld  world = UtqlWorld::Stage;
     ComposingInto composingInto; ///< composition inversion (design §4); .targetKind != None
@@ -33,6 +34,25 @@ struct BoundQuery {
     int         limit = 0;
     std::string asName;
     std::vector<std::string> warnings;
+
+    // UPDATE only (design-mutation M1/M2/M3): SET assignments, per-row
+    // CREATE ATTRIBUTE/RELATIONSHIP clauses, ADD/REMOVE arc clauses,
+    // ON LAYER retarget.
+    std::vector<SetAssignment>  sets;
+    std::vector<CreateProperty> createProps;
+    std::vector<ArcMutation>    arcMutations;
+    bool        hasOnLayer = false;
+    std::string onLayer;
+    // INSIDE VARIANT (§15): validated "{set=sel}" pairs, outermost first
+    // (nested contexts concatenate: "{model=sedan}{trim=sport}"). Empty =
+    // no variant context. Parallel vectors.
+    std::vector<std::string> insideVariantSets;
+    std::vector<std::string> insideVariantSels;
+
+    // CREATE statement only (design-mutation §6, M2).
+    std::string createPath;
+    std::string createType;
+    std::string createSpecifier; ///< empty = "def" (SDFPRIM only)
 };
 
 /// Bind `q` (consumed) into `out`. Returns false with a CompileError message in

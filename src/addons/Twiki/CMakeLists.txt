@@ -21,6 +21,9 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG        v0.15.3
 )
+# Don't let httplib add its own install() rules (headers + lib/cmake/httplib)
+# to our install prefix / app bundle — we only consume it as a header target.
+set(HTTPLIB_INSTALL                  OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_REQUIRE_OPENSSL          OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
@@ -64,6 +67,7 @@ usdtweak_add_addon(Twiki
         LLMBackend.cpp
         AnthropicBackend.cpp
         OpenAIBackend.cpp
+        ProviderCatalog.cpp
         HttpClient.cpp
         UsdToolDispatcher.cpp
         UsdTools.cpp
@@ -74,6 +78,7 @@ usdtweak_add_addon(Twiki
         LLMBackend.h
         AnthropicBackend.h
         OpenAIBackend.h
+        ProviderCatalog.h
         HttpClient.h
         UsdToolDispatcher.h
         UsdTools.h
@@ -99,6 +104,7 @@ set(_twiki_agent_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/LLMBackend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AnthropicBackend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OpenAIBackend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ProviderCatalog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdToolDispatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdTools.cpp
@@ -120,6 +126,7 @@ set(_twiki_command_sources_for_tests
     ${CMAKE_SOURCE_DIR}/src/commands/SdfLayerInstructions.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/SdfUndoRedoRecorder.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/UndoLayerStateDelegate.cpp
+    ${CMAKE_SOURCE_DIR}/src/commands/UsdSceneLock.cpp
     ${CMAKE_SOURCE_DIR}/src/commands/AttributeCommands.cpp
     ${CMAKE_SOURCE_DIR}/src/Selection.cpp
 )
@@ -148,14 +155,22 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
             ${CMAKE_SOURCE_DIR}/src
         )
         target_link_libraries(${name} PRIVATE ${PXR_LIBRARIES} ${_twiki_tls_libs})
-        target_compile_definitions(${name} PRIVATE ${_twiki_tls_define})
-        set_target_properties(${name} PROPERTIES FOLDER "addons/Twiki/tests")
+        # Mirror the compile environment of the main usdtweak target. NOMINMAX is
+        # essential on MSVC: without it windows.h's min/max macros break USD's
+        # robin_hash.h (error C1201). The /wd flags silence the same USD warnings.
+        target_compile_definitions(${name} PRIVATE
+            ${_twiki_tls_define} NOMINMAX TBB_SUPPRESS_DEPRECATED_MESSAGES)
+        target_compile_options(${name} PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/wd4244 /wd4305 /wd4996>)
+        set_target_properties(${name} PROPERTIES
+            FOLDER "addons/Twiki/tests"
+            CXX_STANDARD 17)
         add_custom_target(run_${name}
             COMMAND ${name}
             DEPENDS ${name}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         )
-        if (${add_to_check})
+        if (add_to_check)
             add_dependencies(check run_${name})
         endif()
     endfunction()
@@ -178,6 +193,11 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
     _twiki_add_test(test_live_tool_call FALSE
         ${_twiki_agent_sources}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestLiveToolCall.cpp
+    )
+
+    _twiki_add_test(test_live_ollama FALSE
+        ${_twiki_agent_sources}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestLiveOllama.cpp
     )
 
     _twiki_add_test(test_usd_dispatcher TRUE

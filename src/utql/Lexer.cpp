@@ -157,6 +157,14 @@ bool Lex(const std::string &src, std::vector<Token> &out, std::string &error, si
         // Punctuation
         if (c == '(') { push(Token::Kind::LParen, i); ++i; continue; }
         if (c == ')') { push(Token::Kind::RParen, i); ++i; continue; }
+        if (c == '[') { push(Token::Kind::LBracket, i); ++i; continue; }
+        if (c == ']') { push(Token::Kind::RBracket, i); ++i; continue; }
+        if (c == '{') { push(Token::Kind::LBrace, i);  ++i; continue; }
+        if (c == '}') { push(Token::Kind::RBrace, i);  ++i; continue; }
+        // A bare ':' (SAMPLES map). Colons inside letter-started words
+        // ("inputs:intensity") are consumed by the word scanner below and
+        // never reach here — this was a lex error before the map literal.
+        if (c == ':') { push(Token::Kind::Colon, i);   ++i; continue; }
         if (c == ',') { push(Token::Kind::Comma, i);  ++i; continue; }
 
         // Word

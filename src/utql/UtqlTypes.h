@@ -28,6 +28,36 @@ enum class UtqlStatus {
 /// The two worlds; fixed by the FIND entity (design §1).
 enum class UtqlWorld { Stage, Layer };
 
+/// CUSTOMDATA["key:path"] (metadata M2) — the keyed field rides the canonical
+/// field string with the key embedded verbatim (case-sensitive, colon-nested
+/// per USD's customData convention), e.g. CUSTOMDATA["pipeline:reviewState"].
+/// Embedding keeps every field-flow surface (RETURN columns, ORDERED BY, get
+/// lambdas, SET lvalues, manifests) working on plain strings; the parser builds
+/// this spelling, the binder/executor recognise and unpack it here.
+inline bool IsCustomDataField(const std::string &f) {
+    static const char kPrefix[] = "CUSTOMDATA[\"";
+    return f.size() > sizeof(kPrefix) + 1 && f.compare(0, sizeof(kPrefix) - 1, kPrefix) == 0 &&
+           f.compare(f.size() - 2, 2, "\"]") == 0;
+}
+
+inline std::string CustomDataKeyPath(const std::string &f) {
+    return IsCustomDataField(f) ? f.substr(12, f.size() - 14) : std::string();
+}
+
+/// METADATA["key"] (metadata M3b) — the generic registered-metadata accessor,
+/// same embedding trick as CUSTOMDATA["…"]. The key is a single registered
+/// field token (no colon nesting — registered metadata is flat). The binder
+/// validates the key against the Sdf schema + a redirect table at bind time.
+inline bool IsMetadataField(const std::string &f) {
+    static const char kPrefix[] = "METADATA[\"";
+    return f.size() > sizeof(kPrefix) + 1 && f.compare(0, sizeof(kPrefix) - 1, kPrefix) == 0 &&
+           f.compare(f.size() - 2, 2, "\"]") == 0;
+}
+
+inline std::string MetadataKeyPath(const std::string &f) {
+    return IsMetadataField(f) ? f.substr(10, f.size() - 12) : std::string();
+}
+
 /// The query entity. Phase 1 executes only UsdPrim / SdfPrim; the rest are
 /// declared so the binder can name them in messages and later phases fill in.
 enum class UtqlEntity {
@@ -112,6 +142,16 @@ struct UtqlResult {
     // Scan counters (design §8). scanned == 0 means a scope problem, not OkEmpty.
     uint64_t scanned = 0;
     uint64_t matched = 0;
+
+    // Mutation manifest (design-mutation §8). For a mutation statement, rows
+    // are per-change manifest entries (PATH, LAYER, FIELD, OLD, NEW — CREATE/
+    // DELETE default to PATH, LAYER) instead of match rows.
+    bool     isMutation = false;
+    bool     dryRun = false;  ///< true = manifest computed, nothing authored
+    uint64_t changed = 0;     ///< field writes applied (or would be, in a dry run)
+    uint64_t created = 0;     ///< prims/properties created (CREATE, M2)
+    uint64_t removed = 0;     ///< authored specs removed (DELETE, M2)
+    uint64_t skipped = 0;     ///< per-row soft skips (reasons in warnings)
 
     /// Stages traversed this query — kept alive so row selection can resolve a
     /// Stage-world source identifier back to its UsdStage.
