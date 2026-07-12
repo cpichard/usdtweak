@@ -2,6 +2,7 @@
 
 #include "HttpClient.h"
 #include "JsHelpers.h"
+#include "WireLog.h"
 
 #include <pxr/base/js/json.h>
 
@@ -59,6 +60,70 @@ JsValue _ToolResultBlock(const std::string& toolUseId,
     return JsValue(b);
 }
 
+// Is this content block an empty text block? Anthropic rejects cache_control
+// on an empty text block, so we must skip over such a block when choosing where
+// to place the moving breakpoint.
+bool _IsEmptyTextBlock(const JsValue& blockV) {
+    if (!blockV.IsObject()) return false;
+    const JsObject& b = blockV.GetJsObject();
+    auto typeIt = b.find("type");
+    if (typeIt == b.end() || !typeIt->second.IsString() ||
+        typeIt->second.GetString() != "text")
+        return false;
+    auto textIt = b.find("text");
+    return textIt == b.end() ||
+           (textIt->second.IsString() && textIt->second.GetString().empty());
+}
+
+// Attach a "moving" cache breakpoint to the last content block of the last
+// message. The static system and tools breakpoints only cache the front of the
+// request; without this, every step of a multi-step turn re-sends the whole
+// growing conversation at full input price. With it, each step re-reads the
+// conversation prefix from cache (~10× cheaper), so cost grows in
+// cache_read_input_tokens instead of input_tokens. Anthropic allows 4
+// breakpoints; we use 3 (tools, system, last message).
+//
+// Plain-string message content (user/assistant text) is converted to the
+// block-array form so cache_control can be attached; tool_result content is
+// already an array. If the chosen block is empty text (which Anthropic
+// rejects), we fall back to the previous block; if every block is empty text
+// we leave the message untagged.
+void _TagLastMessageForCaching(JsArray& messages) {
+    if (messages.empty()) return;
+    if (!messages.back().IsObject()) return;
+
+    JsObject lastMsg = messages.back().GetJsObject();
+    auto contentIt = lastMsg.find("content");
+    if (contentIt == lastMsg.end()) return;
+    const JsValue& content = contentIt->second;
+
+    if (content.IsString()) {
+        const std::string text = content.GetString();
+        if (text.empty()) return;  // cannot tag an empty block
+        JsObject block;
+        block["type"]          = JsValue(std::string("text"));
+        block["text"]          = JsValue(text);
+        block["cache_control"] = JsValue(_EphemeralCacheControl());
+        JsArray arr;
+        arr.push_back(JsValue(block));
+        contentIt->second = JsValue(arr);
+    } else if (content.IsArray()) {
+        JsArray blocks = content.GetJsArray();
+        int idx = int(blocks.size()) - 1;
+        while (idx >= 0 && _IsEmptyTextBlock(blocks[idx])) --idx;
+        if (idx < 0) return;  // nothing taggable
+        if (!blocks[idx].IsObject()) return;
+        JsObject block = blocks[idx].GetJsObject();
+        block["cache_control"] = JsValue(_EphemeralCacheControl());
+        blocks[idx]       = JsValue(block);
+        contentIt->second = JsValue(blocks);
+    } else {
+        return;
+    }
+
+    messages.back() = JsValue(lastMsg);
+}
+
 } // namespace
 
 AnthropicBackend::AnthropicBackend(std::string apiKey, std::string model) {
@@ -76,9 +141,16 @@ LLMResponse AnthropicBackend::Send(const Conversation& conv,
         {"anthropic-version", "2023-06-01"},
     };
 
+    if (_wireLog) _wireLog->Request("anthropic", _model, body);
+
     // Shared chat read timeout (see kChatTimeoutSeconds in LLMBackend.h).
     HttpResponse http = HttpPostJson("https://api.anthropic.com/v1/messages",
                                      headers, body, kChatTimeoutSeconds);
+
+    if (_wireLog)
+        _wireLog->Response(http.status,
+                           http.status == 0 ? "[transport error] " + http.error
+                                            : http.body);
 
     if (http.status == 0) {
         LLMResponse r;
@@ -186,6 +258,9 @@ JsObject AnthropicBackend::BuildRequest(const Conversation& conv,
         }
         }
     }
+
+    // Moving cache breakpoint on the last message (see helper above).
+    _TagLastMessageForCaching(messages);
 
     req["messages"] = JsValue(messages);
 

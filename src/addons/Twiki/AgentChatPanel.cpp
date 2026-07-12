@@ -464,11 +464,13 @@ bool AgentChatPanel::_RebuildBackend(std::string* errOut) {
                               "provider.";
         return false;
     }
+    backend->SetWireLog(&_wireLog);  // raw request/response logging (opt-in)
 
     // Replaces any previous orchestrator/backend; the dispatcher (and its
     // lists) is a panel member and survives the swap.
     _orchestrator = std::make_unique<AgentOrchestrator>(
         std::move(backend), _dispatcher, _ActiveToolDefs());
+    _orchestrator->SetWireLog(&_wireLog);  // tool call/result + turn markers
     _initialized = true;
     return true;
 }
@@ -550,6 +552,17 @@ void AgentChatPanel::_LoadSettings() {
             if (*m) _model = m;
         }
     }
+
+    // Raw-traffic debug log.
+    _wireLogPath = usdtweak::GetAddonString(id, "wirelog_path", "");
+    if (_wireLogPath.empty()) _wireLogPath = WireLog::DefaultPath();
+    _wireLogEnabled = usdtweak::GetAddonString(id, "wirelog_enabled", "") == "1";
+    if (_wireLogEnabled) {
+        std::string err;
+        if (!_wireLog.SetEnabled(true, _wireLogPath, &err)) {
+            _wireLogEnabled = false;   // couldn't open the file; stay off
+        }
+    }
 }
 
 void AgentChatPanel::_SaveSettings() const {
@@ -558,6 +571,8 @@ void AgentChatPanel::_SaveSettings() const {
     usdtweak::SetAddonString(id, "baseUrl",  _baseUrl);
     usdtweak::SetAddonString(id, "apiKey",   _apiKey);
     usdtweak::SetAddonString(id, "model",    _model);
+    usdtweak::SetAddonString(id, "wirelog_enabled", _wireLogEnabled ? "1" : "0");
+    usdtweak::SetAddonString(id, "wirelog_path",    _wireLogPath);
     // SetAddonString only updates the in-memory settings map; the config file is
     // otherwise written only on a clean shutdown. Flush now (syncs the editor's
     // working copy into the shared store, then writes it) so the choice survives
@@ -1231,6 +1246,39 @@ void AgentChatPanel::_DrawSettingsTab() {
         ImGui::EndChild();
         ImGui::TextDisabled("Twiki relies on tool-calling — prefer a model that "
                             "lists tool support.");
+    }
+
+    // ----- debug: raw wire log -------------------------------------------
+    ImGui::Spacing();
+    ImGui::SeparatorText("Debug logging");
+    {
+        bool wl = _wireLogEnabled;
+        if (ImGui::Checkbox("Log raw messages to disk", &wl)) {
+            std::string err;
+            if (_wireLog.SetEnabled(wl, _wireLogPath, &err)) {
+                _wireLogEnabled = wl;
+            } else {
+                _wireLogEnabled = false;   // open failed → stay off
+                _modelsStatus   = err;
+            }
+            _SaveSettings();
+        }
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputTextWithHint("##twiki_wirelog_path",
+                                     WireLog::DefaultPath().c_str(), &_wireLogPath,
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+            if (_wireLogEnabled) {
+                std::string err;
+                if (!_wireLog.SetEnabled(true, _wireLogPath, &err)) {
+                    _wireLogEnabled = false;
+                    _modelsStatus   = err;
+                }
+            }
+            _SaveSettings();
+        }
+        ImGui::TextDisabled("Appends every request/response body and each tool "
+                            "call + result. Press Enter to commit a new path; "
+                            "safe to tail -f while a turn runs.");
     }
 
     // ----- apply ----------------------------------------------------------

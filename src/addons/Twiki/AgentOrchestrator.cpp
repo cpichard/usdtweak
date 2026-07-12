@@ -1,6 +1,7 @@
 #include "AgentOrchestrator.h"
 
 #include "JsHelpers.h"
+#include "WireLog.h"
 
 #include <utility>
 
@@ -51,6 +52,8 @@ AgentOrchestrator::Run(const std::string&  systemPrompt,
         return result;
     }
 
+    if (_wireLog) _wireLog->Turn(userMessage);
+
     Conversation conv;
     if (!systemPrompt.empty()) {
         conv.push_back(Message::System(systemPrompt));
@@ -70,8 +73,10 @@ AgentOrchestrator::Run(const std::string&  systemPrompt,
         }
 
         // Tool call.
+        const std::string argsJson = JsToString(JsValue(r.toolArguments));
         _Trace(trace, "[tool_call " + r.toolName + " id=" + r.toolCallId
-                      + " args=" + JsToString(JsValue(r.toolArguments)) + "]");
+                      + " args=" + argsJson + "]");
+        if (_wireLog) _wireLog->ToolCall(r.toolName, argsJson);
 
         conv.push_back(Message::AssistantToolCall(
             r.toolCallId, r.toolName, r.toolArguments, r.content));
@@ -89,6 +94,7 @@ AgentOrchestrator::Run(const std::string&  systemPrompt,
                 "tools provided in this request.";
             _Trace(trace, "[tool_blocked " + r.toolName + " - not in active set]");
         }
+        if (_wireLog) _wireLog->ToolResult(r.toolName, toolResult);
 
         conv.push_back(Message::ToolResult(r.toolCallId, r.toolName, toolResult));
     }

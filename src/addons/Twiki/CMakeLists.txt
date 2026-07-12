@@ -71,6 +71,7 @@ usdtweak_add_addon(Twiki
         HttpClient.cpp
         UsdToolDispatcher.cpp
         UsdTools.cpp
+        WireLog.cpp
         AgentOrchestrator.cpp
         AgentChatPanel.cpp
         TwikiAddon.cpp
@@ -82,6 +83,7 @@ usdtweak_add_addon(Twiki
         HttpClient.h
         UsdToolDispatcher.h
         UsdTools.h
+        WireLog.h
         AgentOrchestrator.h
         AgentChatPanel.h
 )
@@ -108,6 +110,7 @@ set(_twiki_agent_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdToolDispatcher.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdTools.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WireLog.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/AgentOrchestrator.cpp
     # UTQL core (synchronous compile+execute path used by the run_query tool).
     # NOT UtqlEngine.cpp — that pulls in addons/Api.h / the Editor and is the

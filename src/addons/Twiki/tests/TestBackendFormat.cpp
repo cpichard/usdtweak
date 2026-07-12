@@ -149,12 +149,22 @@ void TestAnthropicRequest() {
         CHECK_EQ(JsGetString(tr, "content"),     std::string("type=Xform, kind=component"));
     }
 
-    // [3] user "And what's..."
+    // [3] user "And what's..." — the LAST message carries the moving cache
+    // breakpoint, so its plain-string content is promoted to a one-element
+    // block array with cache_control on that text block.
     {
         const JsObject& m = messages[3].GetJsObject();
         CHECK_EQ(JsGetString(m, "role"), std::string("user"));
-        CHECK_EQ(JsGetString(m, "content"),
+        const JsValue& cv = m.at("content");
+        CHECK(cv.IsArray());
+        const JsArray& blocks = cv.GetJsArray();
+        CHECK_EQ(blocks.size(), size_t(1));
+        const JsObject& b = blocks[0].GetJsObject();
+        CHECK_EQ(JsGetString(b, "type"), std::string("text"));
+        CHECK_EQ(JsGetString(b, "text"),
                  std::string("And what's its visibility?"));
+        JsObject cc = JsGetObject(b, "cache_control");
+        CHECK_EQ(JsGetString(cc, "type"), std::string("ephemeral"));
     }
 
     // Tools — converted shape. Last tool carries cache_control (prefix cache).
