@@ -12,6 +12,8 @@ PXR_NAMESPACE_USING_DIRECTIVE
 
 namespace UsdAgent {
 
+class WireLog;  // optional raw-traffic debug sink (WireLog.h)
+
 // One step in a chat conversation.
 //
 // Roles:
@@ -109,10 +111,17 @@ public:
                                               const std::string& apiKey,
                                               const std::string& model,
                                               const std::string& baseUrl = "");
+
+    // Attach (or clear with nullptr) an optional raw-traffic debug sink. When
+    // set, Send() logs the request body it POSTs and the response body it gets.
+    // The pointer is borrowed; the caller keeps the WireLog alive.
+    void SetWireLog(WireLog* log) { _wireLog = log; }
+
 protected:
     std::string _apiKey;
     std::string _model;
     std::string _baseUrl;
+    WireLog*    _wireLog = nullptr;
 };
 
 } // namespace UsdAgent

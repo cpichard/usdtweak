@@ -343,6 +343,7 @@ void TestNameVocabularyTokenization() {
     stage->DefinePrim(SdfPath("/Towel_1"),   TfToken("Xform"));
     stage->DefinePrim(SdfPath("/Towel_2"),   TfToken("Xform"));
     stage->DefinePrim(SdfPath("/Towel_3"),   TfToken("Xform"));
+    stage->DefinePrim(SdfPath("/Wall01Panel"), TfToken("Xform"));  // digit in the middle
     UsdToolDispatcher d(/*stageFn*/[&]() { return stage; });
 
     Section("get_name_vocabulary tokenization edge cases");
@@ -362,6 +363,13 @@ void TestNameVocabularyTokenization() {
     CHECK_CONTAINS(out, "towel (3)");
     CHECK(out.find("towel_1") == std::string::npos);
     CHECK(out.find("towel_2") == std::string::npos);
+    // Digit-strip guard: a digit in the middle splits AND is stripped, never
+    // appearing in any token ("Wall01Panel" -> wall, panel, wallpanel).
+    CHECK_CONTAINS(out, "wall ");
+    CHECK_CONTAINS(out, "panel ");
+    CHECK_CONTAINS(out, "wallpanel ");
+    CHECK(out.find("wall01")  == std::string::npos);
+    CHECK(out.find("01panel") == std::string::npos);
 }
 
 // Wide fixture with > kFindPrimsLimit matches: the footer must report the

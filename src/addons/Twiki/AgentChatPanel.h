@@ -4,6 +4,7 @@
 #include "LLMBackend.h"
 #include "ProviderCatalog.h"
 #include "UsdToolDispatcher.h"
+#include "WireLog.h"
 
 #include <future>
 #include <memory>
@@ -157,6 +158,13 @@ private:
     std::string               _selectedTool;    // shown in the details pane
     std::string               _lastSentToolSig; // active set last pushed to backend
     bool                      _toolStateReady = false;
+
+    // Raw-traffic debug log (Settings tab). The sink is a member so it outlives
+    // any in-flight turn (the backend + orchestrator borrow a pointer to it);
+    // _wireLogEnabled/_wireLogPath are the persisted config that drives it.
+    WireLog                   _wireLog;
+    bool                      _wireLogEnabled = false;
+    std::string               _wireLogPath;
 
     UsdToolDispatcher                _dispatcher;
     std::unique_ptr<AgentOrchestrator> _orchestrator;  // lazy

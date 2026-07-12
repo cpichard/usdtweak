@@ -59,6 +59,11 @@ public:
     // costs one cache write on the next turn.
     void SetTools(ToolDefs tools) { _tools = std::move(tools); }
 
+    // Attach (or clear) the optional raw-traffic debug sink. Logs the turn's
+    // user message and each tool call + tool result; the backend logs the raw
+    // request/response bodies. Borrowed pointer — caller keeps it alive.
+    void SetWireLog(WireLog* log) { _wireLog = log; }
+
 private:
     // True if `name` is in the currently-advertised tool set. The model can
     // emit a tool_use for a name that is NOT in _tools (e.g. one named only in
@@ -69,6 +74,7 @@ private:
     std::unique_ptr<LLMBackend> _backend;
     UsdToolDispatcher&          _dispatcher;
     ToolDefs                    _tools;
+    WireLog*                    _wireLog = nullptr;
 };
 
 } // namespace UsdAgent

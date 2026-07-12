@@ -3,6 +3,7 @@
 #include "HttpClient.h"
 #include "JsHelpers.h"
 #include "ProviderCatalog.h"   // OpenAiEndpoint
+#include "WireLog.h"
 
 #include <pxr/base/js/json.h>
 
@@ -59,7 +60,14 @@ LLMResponse OpenAIBackend::Send(const Conversation& conv,
     std::vector<HttpHeader> headers;
     if (!_apiKey.empty()) headers.push_back({"Authorization", "Bearer " + _apiKey});
 
+    if (_wireLog) _wireLog->Request("openai-compatible", _model, body);
+
     HttpResponse http = HttpPostJson(url, headers, body, kChatTimeoutSeconds);
+
+    if (_wireLog)
+        _wireLog->Response(http.status,
+                           http.status == 0 ? "[transport error] " + http.error
+                                            : http.body);
 
     if (http.status == 0) {
         LLMResponse r;

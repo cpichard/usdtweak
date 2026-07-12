@@ -191,13 +191,17 @@ std::string _ToLower(std::string s) {
 //   "Props"       -> {"props"}
 //   "TOwell"      -> {"towell"}                    (no lower->upper split)
 //
-// Splitting: on separators (_ - . : space) and on lower->upper transitions
-// only. The lower->upper-only rule keeps acronym-prefixed names like "TOwell"
-// whole (avoids emitting a junk "owell") while still splitting genuine
-// camelCase ("ProxyMesh" -> proxy, mesh).
+// Splitting: on separators (_ - . : space AND digits) and on lower->upper
+// transitions only. Digits are treated as separators so numbers are stripped
+// out entirely and never appear in a token ("Wall01" -> {"wall"},
+// "Wall01Panel" -> {"wallpanel","wall","panel"}); vocabulary tokens are
+// alphabetic stems. The lower->upper-only rule keeps acronym-prefixed names
+// like "TOwell" whole (avoids emitting a junk "owell") while still splitting
+// genuine camelCase ("ProxyMesh" -> proxy, mesh).
 std::vector<std::string> _TokenizeName(const std::string& name) {
     auto isSep = [](char c){
         return c == '_' || c == '-' || c == '.' || c == ':' ||
+               std::isdigit(static_cast<unsigned char>(c)) ||
                std::isspace(static_cast<unsigned char>(c));
     };
 
