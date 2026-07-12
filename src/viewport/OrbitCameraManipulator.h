@@ -19,6 +19,10 @@ class OrbitCameraManipulator : public CameraRig, public Manipulator {
     /// Set the type of movement
     void SetMovementType(MovementType mode) { _movementType = mode; }
 
+    /// Dolly the camera by a mouse wheel amount, in wheel ticks (positive zooms in).
+    /// Called from the hovering state, outside of any drag.
+    void Zoom(Viewport &, double wheelTicks);
+
   protected:
     /// Update the camera position depending on the Movement type
     bool Move(GfCamera &, const GfVec2d &delta);

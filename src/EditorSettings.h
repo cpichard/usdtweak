@@ -34,6 +34,13 @@ struct EditorSettings {
     bool _showHydraNoticeLogger = false;
     bool _showSearch = false;
     bool _showSplashScreen = true;
+
+    /// When true (default), the OS cursor is hidden and locked in place while navigating (camera
+    /// manipulators, connection editor pan/zoom). This relies on GLFW_CURSOR_DISABLED behaving well,
+    /// which needed the patches in patches/glfw-3.4. Turn it off if the cursor jumps on a platform or
+    /// window manager where those patches don't apply: navigation then keeps a normal visible cursor.
+    bool _hideCursorWhenNavigating = true;
+
     int _mainWindowWidth;
     int _mainWindowHeight;
     float _uiScale = 1.f;

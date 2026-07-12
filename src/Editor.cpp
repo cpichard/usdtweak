@@ -1054,17 +1054,25 @@ bool Editor::GetMouseCaptured() {
     return gMouseCaptured;
 }
 
+// True while the OS cursor is actually hidden, which only happens when the
+// _hideCursorWhenNavigating setting is on. Tracked separately from gMouseCaptured so
+// that toggling the setting mid-session can never leave the cursor hidden.
+static bool gCursorHidden = false;
+
 // The patched GLFW (patches/glfw-3.4) keeps the virtual cursor continuous
 // when entering GLFW_CURSOR_DISABLED and reports the restored position
 // through the cursor-pos callback when leaving it, so ImGui never
 // misinterprets a capture transition as mouse motion — no app-side delta
-// absorption is needed.
+// absorption is needed. The _hideCursorWhenNavigating setting turns the whole
+// mechanism off for platforms where the patched behaviour is not available:
+// navigation then runs with a plain visible cursor.
 void Editor::SetMouseCaptured(bool captured) {
     if (gMouseCaptured != captured) {
         gMouseCaptured = captured;
         if (auto window = glfwGetCurrentContext()) {
             ImGuiIO &io = ImGui::GetIO();
-            if (captured) {
+            const bool hideCursor = ResourcesLoader::GetEditorSettings()._hideCursorWhenNavigating;
+            if (captured && hideCursor) {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 // Bypasses the OS pointer acceleration curve, which otherwise
                 // amplifies fast flicks into large deltas. Supported on macOS
@@ -1072,11 +1080,13 @@ void Editor::SetMouseCaptured(bool captured) {
                 if (glfwRawMouseMotionSupported())
                     glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
-            } else {
+                gCursorHidden = true;
+            } else if (gCursorHidden) {
                 if (glfwRawMouseMotionSupported())
                     glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+                gCursorHidden = false;
             }
         }
     }
