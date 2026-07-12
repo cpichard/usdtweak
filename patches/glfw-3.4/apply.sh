@@ -23,7 +23,12 @@ if [ -z "$PATCH_DIR" ] || [ ! -d "$PATCH_DIR" ]; then
     exit 1
 fi
 
-for p in 0001-cursor-mode-transition-callback.patch ; do
+# Order matters: 0005 patches cocoa_window.m on top of 0002.
+for p in 0001-cursor-mode-transition-callback.patch \
+         0002-cocoa-skip-warp-on-disable.patch \
+         0003-win32-warp-event-guard.patch \
+         0004-x11-init-warp-guard.patch \
+         0005-cocoa-gcmouse-raw-motion.patch ; do
     echo "Applying $p"
     patch -p1 -i "$PATCH_DIR/$p"
 done

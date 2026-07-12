@@ -343,7 +343,13 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // While a popup (e.g. the node context menu) is open, the canvas must ignore
         // clicks — otherwise clicking a menu item also starts a region selection.
         const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
-        if (!popupOpen && (widgetBoundingBox.Contains(ImGui::GetMousePos()))) {
+        // During our own pan/zoom the OS cursor is locked, so io.MousePos is GLFW's virtual
+        // cursor position and keeps drifting past the panel rect. Bounds-testing it would
+        // cancel the drag mid-way, so only the button release below can end it. The test is
+        // on our own state, not on Editor::GetMouseCaptured(): the capture is global, and a
+        // viewport manipulator holding it must not let clicks through to this canvas.
+        const bool draggingCanvas = (state == States::CANVAS_PANING || state == States::CANVAS_ZOOMING);
+        if (!popupOpen && (draggingCanvas || widgetBoundingBox.Contains(ImGui::GetMousePos()))) {
             // Click on the canvas TODO test bounding box
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {

@@ -38,6 +38,13 @@ void PreferencesModalDialog::Draw() {
             }
             ImGui::Separator();
             ImGui::Checkbox("Show splash screen at startup", &editor.GetShowSplashScreen());
+            EditorSettings &editorSettings = ResourcesLoader::GetEditorSettings();
+            ImGui::Checkbox("Hide cursor when navigating", &editorSettings._hideCursorWhenNavigating);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("On (default): the cursor is hidden and stays put while orbiting the camera or\n"
+                                  "panning the connection editor. Off: the cursor stays visible and moves with the\n"
+                                  "mouse. Turn it off if the cursor jumps around when you start navigating.");
+            }
             ImGui::EndChild();
         }
     } else if (current_item == 1) {

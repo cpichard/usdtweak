@@ -5,6 +5,13 @@
 
 Manipulator *MouseHoverManipulator::OnUpdate(Viewport &viewport) {
     ImGuiIO &io = ImGui::GetIO();
+
+    // Mouse wheel dollies the camera. The fly camera has its own wheel binding (speed), so this
+    // only applies while hovering, and the orbit manipulator owns the dolly maths.
+    if (io.MouseWheel != 0.f) {
+        viewport.GetOrbitCameraManipulator().Zoom(viewport, io.MouseWheel);
+    }
+
     /// instead of IsMouseClicked(1), could also switch on click+drag, or click+[W/A/S/D]
     /// that way, regular right click can be used for other purposes
     if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {

@@ -52,6 +52,32 @@ Manipulator *OrbitCameraManipulator::OnUpdate(Viewport &viewport) {
     return this;
 }
 
+void OrbitCameraManipulator::Zoom(Viewport &viewport, double wheelTicks) {
+    SetViewportSize(viewport.GetViewportSize());
+
+    // Move() converts a mouse pixel delta into a dolly scale factor, so express one wheel tick as
+    // an equivalent horizontal drag. 40 pixels gives roughly 8% of distance per tick.
+    constexpr double pixelsPerWheelTick = 40.0;
+    const GfVec2d delta(wheelTicks * pixelsPerWheelTick, 0.0);
+
+    const MovementType previousMovement = _movementType;
+    SetMovementType(MovementType::Dolly);
+    GfCamera &currentCamera = viewport.GetEditableCamera();
+    const bool moved = Move(currentCamera, delta);
+    SetMovementType(previousMovement);
+
+    // The wheel is not a drag, so there is no OnBeginEdition/OnEndEdition span around it: when a
+    // stage camera is being edited, each wheel tick records its own edition.
+    if (moved && viewport.IsEditingStageCamera()) {
+        UsdGeomCamera stageCamera = UsdGeomCamera::Get(viewport.GetCurrentStage(), viewport.GetSelectedStageCameraPath());
+        if (stageCamera) {
+            BeginEdition(viewport.GetCurrentStage());
+            stageCamera.SetFromCamera(currentCamera, viewport.GetCurrentTimeCode());
+            EndEdition();
+        }
+    }
+}
+
 bool OrbitCameraManipulator::Move(GfCamera &camera, const GfVec2d &delta) {
     GfQuatd rotation;
     GfVec3d center;
