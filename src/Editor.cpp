@@ -1066,8 +1066,15 @@ void Editor::SetMouseCaptured(bool captured) {
             ImGuiIO &io = ImGui::GetIO();
             if (captured) {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                // Bypasses the OS pointer acceleration curve, which otherwise
+                // amplifies fast flicks into large deltas. Supported on macOS
+                // only thanks to patches/glfw-3.4/0005 (GameController/GCMouse).
+                if (glfwRawMouseMotionSupported())
+                    glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
             } else {
+                if (glfwRawMouseMotionSupported())
+                    glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
             }

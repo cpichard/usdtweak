@@ -1,0 +1,32 @@
+From: usdtweak <noreply@example.com>
+Subject: [PATCH 4/5] x11: initialize warpCursorPos sentinel on window creation
+
+The X11 path already implements the warpCursorPos guard pattern that
+patch 0002 ports to Win32.  This patch is a small audit fix: the
+warpCursorPosX/Y fields are zero-initialized via calloc, which
+coincides with the valid coordinate (0, 0).  If the user happens to
+move the cursor to the window's top-left pixel before any
+_glfwSetCursorPosX11 call has occurred, the MotionNotify warp guard
+would falsely match and silently swallow the event.
+
+In practice this is rare and benign (the next motion event would
+re-establish the position), but for parity with the Win32 fix in
+patch 0002 and as a defensive correctness improvement, we initialize
+both fields to INT_MIN explicitly in _glfwCreateWindowX11.
+
+--- a/src/x11_window.c
++++ b/src/x11_window.c
+@@ -1964,6 +1964,13 @@
+     Visual* visual = NULL;
+     int depth;
+
++    // Sentinel: no warp pending.  Avoids a false positive in the
++    // MotionNotify warp guard if the user happens to move the cursor to
++    // (0, 0) before any _glfwSetCursorPosX11 call (calloc-zero would
++    // otherwise coincide with the valid coordinate (0, 0)).
++    window->x11.warpCursorPosX = INT_MIN;
++    window->x11.warpCursorPosY = INT_MIN;
++
+     if (ctxconfig->client != GLFW_NO_API)
+     {
+         if (ctxconfig->source == GLFW_NATIVE_CONTEXT_API)

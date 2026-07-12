@@ -1,0 +1,226 @@
+From: usdtweak <noreply@example.com>
+Subject: [PATCH 5/5] cocoa: implement GLFW_RAW_MOUSE_MOTION via GameController
+
+GLFW_RAW_MOUSE_MOTION is GLFW_FEATURE_UNIMPLEMENTED on macOS in 3.4, so
+glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE) is a no-op and
+captured-mouse camera motion is subject to macOS pointer acceleration.
+
+Both [NSEvent deltaX] and CGEvent's kCGMouseEventDeltaX deliver the same
+*accelerated* values for trackpads — macOS applies acceleration below the
+CGEvent layer — and IOHIDManager does not observe trackpad X/Y values at
+all (the private gesture engine intercepts them before userspace). The
+only public API that yields unaccelerated relative motion is
+GameController.framework's GCMouse, which is also what SDL3 uses
+(Cocoa_SetGCMouseRelativeMode).
+
+  - Subscribes to GCMouseDidConnect/DidDisconnect notifications and
+    installs mouseInput.mouseMovedHandler.
+  - mouseMoved: returns early while rawMouseMotion is on, so accelerated
+    NSEvent deltas are not double-counted.
+  - _glfwRawMouseMotionSupportedCocoa runtime-checks NSClassFromString
+    (@"GCMouse") and reports support on macOS 11+.
+  - Linked with -weak_framework GameController so binaries still load on
+    macOS < 11.
+
+Measured: per-event deltas drop from 30-65 px to 1-15 px, peak flick delta
+from 100+ px to ~37 px. Depends on patch 0002 (applies to cocoa_window.m).
+
+--- a/src/cocoa_window.m
++++ b/src/cocoa_window.m
+@@ -31,6 +31,21 @@
+ #include <float.h>
+ #include <string.h>
+ 
++// GCMouse-based raw mouse motion (macOS 11+).  Provides unaccelerated
++// mouse deltas for both regular mice and trackpads, where neither the
++// NSEvent path nor IOHIDManager nor kCGMouseEventDeltaX can — those all
++// receive deltas after macOS pointer acceleration has been applied (in
++// the case of trackpads, acceleration is applied below the CGEvent
++// layer entirely).  The GameController framework was extended in
++// macOS 11 specifically to provide game-style relative mouse input,
++// and SDL3 uses the same API path (Cocoa_SetGCMouseRelativeMode).
++//
++// Linked weakly so a binary built on macOS 11+ still loads on macOS 10.x;
++// at runtime we check NSClassFromString(@"GCMouse") and silently
++// degrade to the accelerated NSEvent path if the framework isn't
++// available.
++#import <GameController/GameController.h>
++
+ // HACK: This enum value is missing from framework headers on OS X 10.11 despite
+ //       having been (according to documentation) added in Mac OS X 10.7
+ #define NSWindowCollectionBehaviorFullScreenNone (1 << 9)
+@@ -447,6 +462,12 @@
+ {
+     if (window->cursorMode == GLFW_CURSOR_DISABLED)
+     {
++        // When raw mouse motion is enabled, deltas are delivered by the
++        // GCMouse mouseMovedHandler installed in installGCMouseHandler().
++        // Skip the accelerated NSEvent path so we don't double-count motion.
++        if (window->rawMouseMotion)
++            return;
++
+         const double dx = [event deltaX] - window->ns.cursorWarpDeltaX;
+         const double dy = [event deltaY] - window->ns.cursorWarpDeltaY;
+ 
+@@ -1522,16 +1543,128 @@
+     [window->ns.object setAlphaValue:opacity];
+     } // autoreleasepool
+ }
++
++// Storage for the GCMouse connect/disconnect notification observers,
++// released in _glfwTerminateCocoa.
++static id sGCMouseConnectObserver = nil;
++static id sGCMouseDisconnectObserver = nil;
++static GLFWbool sGCMouseInitialized = GLFW_FALSE;
+ 
++
++// Install the mouseMovedHandler on a GCMouse instance.  The block
++// delivers unaccelerated deltas (raw HID values) into the disabled-
++// cursor window's virtualCursorPos.  GameController's mouse Y is
++// positive-up; GLFW's Y is positive-down — invert deltaY.
++static void installGCMouseHandler(id mouse) API_AVAILABLE(macos(11.0))
++{
++    if (!mouse)
++        return;
++
++    GCMouseInput *input = ((GCMouse *)mouse).mouseInput;
++    if (!input)
++        return;
++
++    input.mouseMovedHandler = ^(GCMouseInput *_input, float dx, float dy) {
++        _GLFWwindow *target = _glfw.ns.disabledCursorWindow;
++        if (!target || !target->rawMouseMotion)
++            return;
++        if (target->cursorMode != GLFW_CURSOR_DISABLED)
++            return;
++        if (dx == 0.0f && dy == 0.0f)
++            return;
++
++        _glfwInputCursorPos(target,
++                            target->virtualCursorPosX + (double)dx,
++                            target->virtualCursorPosY - (double)dy);
++    };
++}
++
++// Lazy one-shot setup: install the handler on every currently-connected
++// mouse and subscribe to connect/disconnect notifications.  Returns
++// FALSE if GameController is not available (macOS < 11), in which case
++// _glfwRawMouseMotionSupportedCocoa would already return FALSE so we
++// shouldn't be here.
++static GLFWbool initGCMouseObservers(void)
++{
++    if (sGCMouseInitialized)
++        return GLFW_TRUE;
++
++    Class GCMouseClass = NSClassFromString(@"GCMouse");
++    if (!GCMouseClass)
++        return GLFW_FALSE;
++
++    if (@available(macOS 11.0, *))
++    {
++        NSArray *mice = [GCMouseClass valueForKey:@"mice"];
++        for (GCMouse *mouse in mice)
++            installGCMouseHandler(mouse);
++
++        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
++        sGCMouseConnectObserver = [nc
++            addObserverForName:@"GCMouseDidConnectNotification"
++                        object:nil
++                         queue:[NSOperationQueue mainQueue]
++                    usingBlock:^(NSNotification *note) {
++                installGCMouseHandler(note.object);
++            }];
++
++        sGCMouseDisconnectObserver = [nc
++            addObserverForName:@"GCMouseDidDisconnectNotification"
++                        object:nil
++                         queue:[NSOperationQueue mainQueue]
++                    usingBlock:^(NSNotification *note) {
++                // Handler is cleared automatically when the GCMouse
++                // instance is released by the framework; no-op here.
++                (void)note;
++            }];
++
++        sGCMouseInitialized = GLFW_TRUE;
++        return GLFW_TRUE;
++    }
++
++    return GLFW_FALSE;
++}
++
+ void _glfwSetRawMouseMotionCocoa(_GLFWwindow *window, GLFWbool enabled)
+ {
+-    _glfwInputError(GLFW_FEATURE_UNIMPLEMENTED,
+-                    "Cocoa: Raw mouse motion not yet implemented");
++    (void)window;
++    if (enabled)
++    {
++        if (!initGCMouseObservers())
++        {
++            _glfwInputError(GLFW_PLATFORM_ERROR,
++                "Cocoa: GameController framework unavailable, raw mouse "
++                "motion will fall back to the accelerated NSEvent path");
++        }
++    }
++    // No teardown on disable — observers are cheap to keep around, and
++    // the per-window rawMouseMotion flag gates whether GCMouse deltas
++    // are consumed in installGCMouseHandler's block.
+ }
+ 
+ GLFWbool _glfwRawMouseMotionSupportedCocoa(void)
+ {
+-    return GLFW_FALSE;
++    // Requires macOS 11+ (GCMouse).  NSClassFromString check makes this
++    // a runtime test rather than a build-time one, so a binary linked
++    // against macOS 11+ still answers GLFW_FALSE if loaded on 10.x.
++    return NSClassFromString(@"GCMouse") ? GLFW_TRUE : GLFW_FALSE;
++}
++
++// Called from _glfwTerminateCocoa to release the notification observers
++// installed by initGCMouseObservers().
++void _glfwReleaseGCMouseObserversCocoa(void)
++{
++    if (sGCMouseConnectObserver)
++    {
++        [[NSNotificationCenter defaultCenter] removeObserver:sGCMouseConnectObserver];
++        sGCMouseConnectObserver = nil;
++    }
++    if (sGCMouseDisconnectObserver)
++    {
++        [[NSNotificationCenter defaultCenter] removeObserver:sGCMouseDisconnectObserver];
++        sGCMouseDisconnectObserver = nil;
++    }
++    sGCMouseInitialized = GLFW_FALSE;
+ }
+ 
+ void _glfwPollEventsCocoa(void)
+--- a/src/cocoa_init.m
++++ b/src/cocoa_init.m
+@@ -660,6 +660,11 @@
+         _glfw.ns.eventSource = NULL;
+     }
+ 
++    // Tear down GCMouse observers (installed by initGCMouseObservers in
++    // cocoa_window.m on first call to glfwSetInputMode(GLFW_RAW_MOUSE_MOTION)).
++    extern void _glfwReleaseGCMouseObserversCocoa(void);
++    _glfwReleaseGCMouseObserversCocoa();
++
+     if (_glfw.ns.delegate)
+     {
+         [NSApp setDelegate:nil];
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -151,10 +151,11 @@
+ if (GLFW_BUILD_COCOA)
+     target_link_libraries(glfw PRIVATE "-framework Cocoa"
+                                        "-framework IOKit"
+-                                       "-framework CoreFoundation")
++                                       "-framework CoreFoundation"
++                                       "-weak_framework GameController")
+ 
+     set(glfw_PKG_DEPS "")
+-    set(glfw_PKG_LIBS "-framework Cocoa -framework IOKit -framework CoreFoundation")
++    set(glfw_PKG_LIBS "-framework Cocoa -framework IOKit -framework CoreFoundation -weak_framework GameController")
+ endif()
+ 
+ if (GLFW_BUILD_WAYLAND)
