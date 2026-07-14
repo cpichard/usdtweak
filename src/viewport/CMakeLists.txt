@@ -30,6 +30,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Viewport.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportEngine.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/GLEngine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GLEngine.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportSettings.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportSettings.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ViewportCameras.cpp

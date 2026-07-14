@@ -138,6 +138,28 @@ void DrawImagingSettings(ViewportEngine &renderer, ImagingSettings &renderparams
 
     ImGui::Separator();
     ImGui::Checkbox("Highlight selection", &renderparams.highlight);
+    if (renderer.IsUsingGLEngine()) {
+        ImGui::BeginDisabled(!renderparams.highlight);
+        static const char *highlightModes[] = {"Outline", "Tint"};
+        int mode = renderer.GetSelectionHighlightMode() == SelectionHighlightMode::Tint ? 1 : 0;
+        if (ImGui::Combo("Highlight style", &mode, highlightModes, 2)) {
+            renderer.SetSelectionHighlightMode(mode == 1 ? SelectionHighlightMode::Tint
+                                                         : SelectionHighlightMode::Outline);
+        }
+        int radius = static_cast<int>(renderer.GetSelectionOutlineRadius());
+        ImGui::BeginDisabled(mode != 0);
+        if (ImGui::SliderInt("Outline radius", &radius, 1, 10)) {
+            renderer.SetSelectionOutlineRadius(static_cast<unsigned int>(radius));
+        }
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Separator();
+    bool useGLEngine = ViewportEngine::UseGLEngineByDefault();
+    if (ImGui::Checkbox("Use GLEngine (experimental)", &useGLEngine)) {
+        ViewportEngine::SetUseGLEngineByDefault(useGLEngine);
+    }
 
     ImGui::Separator();
     ImGui::Checkbox("Enable scene materials", &renderparams.enableSceneMaterials);

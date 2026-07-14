@@ -1,9 +1,16 @@
 #pragma once
 ///
-/// Facade around UsdImagingGLEngine. All the engine accesses from the viewport
-/// and the renderer settings UI go through this class so the scene dirtiness is
-/// tracked in a single place: the viewport re-renders the scene image only when
-/// NeedsRender() returns true, instead of once per application frame.
+/// Facade around the rendering engine. All the engine accesses from the
+/// viewport and the renderer settings UI go through this class so the scene
+/// dirtiness is tracked in a single place: the viewport re-renders the scene
+/// image only when NeedsRender() returns true, instead of once per application
+/// frame.
+///
+/// The facade owns one of two engine implementations, selected by the
+/// "Use GLEngine" viewport setting:
+///  - GLEngine, usdtweak's own composition of Hydra blocks (see GLEngine.h)
+///  - the stock UsdImagingGLEngine, kept during GLEngine's bring-up for A/B
+///    comparison
 ///
 #include <memory>
 
@@ -13,6 +20,8 @@
 #include <pxr/usd/usd/notice.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usdImaging/usdImagingGL/engine.h>
+
+#include "GLEngine.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -24,6 +33,12 @@ class ViewportEngine : public TfWeakBase {
     // Delete copy
     ViewportEngine(const ViewportEngine &) = delete;
     ViewportEngine &operator=(const ViewportEngine &) = delete;
+
+    /// Which engine implementation newly created ViewportEngines use.
+    /// Toggling it makes Viewport::Update() recreate the engines.
+    static bool UseGLEngineByDefault();
+    static void SetUseGLEngineByDefault(bool);
+    bool IsUsingGLEngine() const { return bool(_glEngine); }
 
     /// Frame state. Each setter compares with the last forwarded value and only
     /// an actual change marks the scene dirty, as the viewport pushes this state
@@ -53,6 +68,10 @@ class ViewportEngine : public TfWeakBase {
     // Selection highlighting
     void ClearSelected();
     void SetSelected(const SdfPathVector &paths);
+    SelectionHighlightMode GetSelectionHighlightMode() const { return _selectionHighlightMode; }
+    void SetSelectionHighlightMode(SelectionHighlightMode mode);
+    unsigned int GetSelectionOutlineRadius() const { return _selectionOutlineRadius; }
+    void SetSelectionOutlineRadius(unsigned int radius);
 
     // Picking
     bool TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
@@ -93,7 +112,10 @@ class ViewportEngine : public TfWeakBase {
     /// Called on any edit of the stage this engine renders
     void _OnObjectsChanged(const UsdNotice::ObjectsChanged &notice, const UsdStageWeakPtr &sender);
 
-    std::unique_ptr<UsdImagingGLEngine> _engine;
+    // One of the two is set, never both
+    std::unique_ptr<UsdImagingGLEngine> _stockEngine;
+    std::unique_ptr<GLEngine> _glEngine;
+
     UsdStageRefPtr _stage;
     TfNotice::Key _objectsChangedNoticeKey;
 
@@ -115,4 +137,8 @@ class ViewportEngine : public TfWeakBase {
     bool _cameraStateSet = false;
     UsdImagingGLRenderParams _renderParams;
     bool _renderParamsSet = false;
+    static SelectionHighlightMode _DefaultSelectionHighlightMode();
+    SelectionHighlightMode _selectionHighlightMode = _DefaultSelectionHighlightMode();
+    int _debugRenderCount = 0;
+    unsigned int _selectionOutlineRadius = 2;
 };

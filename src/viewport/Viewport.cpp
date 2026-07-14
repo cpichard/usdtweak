@@ -22,6 +22,9 @@
 #include "ViewportSettings.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
 namespace clk = std::chrono;
 
@@ -741,6 +744,29 @@ void Viewport::Render() {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
+
+    // Debug helper: USDTWEAK_DEBUG_SNAPSHOT=<dir> writes the composited
+    // viewport to <dir>/snapshot_NNNN.ppm every 30 frames, for debugging
+    // rendering issues without a human looking at the screen
+    static const char *snapshotDir = std::getenv("USDTWEAK_DEBUG_SNAPSHOT");
+    if (snapshotDir) {
+        static int snapshotFrame = 0;
+        if (++snapshotFrame % 30 == 0) {
+            std::vector<unsigned char> pixels(size_t(width) * height * 4);
+            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+            const std::string path = std::string(snapshotDir) + "/snapshot_" + std::to_string(snapshotFrame) + ".ppm";
+            if (FILE *f = fopen(path.c_str(), "wb")) {
+                fprintf(f, "P6\n%d %d\n255\n", width, height);
+                for (int y = height - 1; y >= 0; --y) {
+                    for (int x = 0; x < width; ++x) {
+                        fwrite(&pixels[(size_t(y) * width + x) * 4], 1, 3, f);
+                    }
+                }
+                fclose(f);
+            }
+        }
+    }
+
     _drawTarget->Unbind();
 }
 
@@ -751,6 +777,16 @@ void Viewport::Update() {
     if (GetCurrentStage()) {
         bool firstTimeStageLoaded = false;
         auto whichRenderer = _renderers.find(GetCurrentStage()); /// We expect a very limited number of opened stages
+        if (whichRenderer != _renderers.end() && whichRenderer->second != nullptr &&
+            whichRenderer->second->IsUsingGLEngine() != ViewportEngine::UseGLEngineByDefault()) {
+            // The engine implementation was toggled: recreate the engine for this stage
+            if (_renderer == whichRenderer->second) {
+                _renderer = nullptr;
+            }
+            delete whichRenderer->second;
+            _renderers.erase(whichRenderer);
+            whichRenderer = _renderers.end();
+        }
         if (whichRenderer == _renderers.end()) {
             firstTimeStageLoaded = true;
             if (_hydraDisabledStages.count(GetCurrentStage()) == 0) {
