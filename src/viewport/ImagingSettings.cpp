@@ -1,4 +1,5 @@
 #include "ImagingSettings.h"
+#include "ViewportEngine.h"
 #include "Constants.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
@@ -80,9 +81,9 @@ const GlfSimpleLightVector &ImagingSettings::GetLights() {
 // This is obviously not thread safe but supposed to work in the main rendering thread
 static std::map<TfToken, TfToken> aovSelection; // a vector might be faster
 
-static void SetAovSelection(UsdImagingGLEngine &renderer, TfToken aov) { aovSelection[renderer.GetCurrentRendererId()] = aov; }
+static void SetAovSelection(ViewportEngine &renderer, TfToken aov) { aovSelection[renderer.GetCurrentRendererId()] = aov; }
 
-static TfToken GetAovSelection(UsdImagingGLEngine &renderer) {
+static TfToken GetAovSelection(ViewportEngine &renderer) {
     auto aov = aovSelection.find(renderer.GetCurrentRendererId());
     if (aov == aovSelection.end()) {
         SetAovSelection(renderer, TfToken("color"));
@@ -92,9 +93,9 @@ static TfToken GetAovSelection(UsdImagingGLEngine &renderer) {
     }
 }
 
-void InitializeRendererAov(UsdImagingGLEngine &renderer) { renderer.SetRendererAov(GetAovSelection(renderer)); }
+void InitializeRendererAov(ViewportEngine &renderer) { renderer.SetRendererAov(GetAovSelection(renderer)); }
 
-void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+void DrawImagingSettings(ViewportEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     // General render parameters
     ImGui::ColorEdit4("Background color", renderparams.clearColor.data());
@@ -175,7 +176,7 @@ void DrawImagingSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     }
 }
 
-void DrawRendererSelectionCombo(UsdImagingGLEngine &renderer) {
+void DrawRendererSelectionCombo(ViewportEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
     std::string pluginName = renderer.GetRendererDisplayName(currentPlugin);
@@ -220,7 +221,7 @@ void DrawRendererSelectionList() {
     }
 }
 
-void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
+void DrawRendererSelectionList(ViewportEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     const auto currentPlugin = renderer.GetCurrentRendererId();
     auto plugins = renderer.GetRendererPlugins();
@@ -243,7 +244,7 @@ void DrawRendererSelectionList(UsdImagingGLEngine &renderer) {
     }
 }
 
-void DrawRendererControls(UsdImagingGLEngine &renderer) {
+void DrawRendererControls(ViewportEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (renderer.IsPauseRendererSupported()) {
         ImGui::Separator();
@@ -266,7 +267,7 @@ void DrawRendererControls(UsdImagingGLEngine &renderer) {
     }
 }
 
-void DrawRendererCommands(UsdImagingGLEngine &renderer) {
+void DrawRendererCommands(ViewportEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (ImGui::BeginMenu("Renderer Commands")) {
         HdCommandDescriptors commands = renderer.GetRendererCommandDescriptors();
@@ -281,7 +282,7 @@ void DrawRendererCommands(UsdImagingGLEngine &renderer) {
     }
 }
 
-void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+void DrawRendererSettings(ViewportEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     // Renderer settings
     for (auto setting : renderer.GetRendererSettingsList()) {
@@ -295,7 +296,7 @@ void DrawRendererSettings(UsdImagingGLEngine &renderer, ImagingSettings &renderp
     }
 }
 
-void DrawColorCorrection(UsdImagingGLEngine &renderer, ImagingSettings &renderparams) {
+void DrawColorCorrection(ViewportEngine &renderer, ImagingSettings &renderparams) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     if (renderer.IsColorCorrectionCapable() && GetAovSelection(renderer) == TfToken("color")) {
         ImGui::Separator();
@@ -317,7 +318,7 @@ void DrawColorCorrection(UsdImagingGLEngine &renderer, ImagingSettings &renderpa
     }
 }
 
-void DrawAovSettings(UsdImagingGLEngine &renderer) {
+void DrawAovSettings(ViewportEngine &renderer) {
     ScopedStyleColor defaultStyle(DefaultColorStyle);
     TfToken newSelection;
     const TfToken selectedAov = GetAovSelection(renderer);

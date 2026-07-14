@@ -89,6 +89,14 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _textureId = color->GetGlTextureName();
     _drawTarget->Unbind();
 
+    // The scene image has its own draw target so it is re-rendered only when needed;
+    // it is composited into _drawTarget with the per-frame overlays at every frame
+    _sceneDrawTarget = GlfDrawTarget::New(_textureSize, false);
+    _sceneDrawTarget->Bind();
+    _sceneDrawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
+    _sceneDrawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
+    _sceneDrawTarget->Unbind();
+
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
@@ -656,15 +664,8 @@ void Viewport::Render() {
         EndHydraUI();
     }
 
-    _drawTarget->Bind();
-    glEnable(GL_DEPTH_TEST);
-    glClearColor(_imagingSettings.clearColor[0], _imagingSettings.clearColor[1], _imagingSettings.clearColor[2],
-                 _imagingSettings.clearColor[3]);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glViewport(0, 0, width, height);
-
     if (_renderer && GetCurrentStage()) {
-        // Render hydra
+        // Push the frame state to the engine; only an actual change marks the scene dirty
         // Set camera and lighting state
         _imagingSettings.SetLightPositionFromCamera(GetCurrentCamera());
         _renderer->SetLightingState(_imagingSettings.GetLights(), _imagingSettings._material, _imagingSettings._ambient);
@@ -684,11 +685,7 @@ void Viewport::Render() {
         CameraUtilFraming framing(displayWindow, dataWindow);
         _renderer->SetRenderBufferSize(renderSize);
         _renderer->SetFraming(framing);
-#if PXR_VERSION <= 2311
-        _renderer->SetOverrideWindowPolicy(std::make_pair(true, CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally));
-#else
-        _renderer->SetOverrideWindowPolicy(std::make_optional(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally));
-#endif
+        _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
         // As of today, camera used for SetCameraPath are similar to GetViewportCamera.
         // This might change in the future and that could cause an issue for the computation
         // of the manipulator positions.
@@ -699,9 +696,37 @@ void Viewport::Render() {
         _renderer->SetCameraState(viewportCamera.GetFrustum().ComputeViewMatrix(),
                                   viewportCamera.GetFrustum().ComputeProjectionMatrix());
         //      }
-        _renderer->Render(GetCurrentStage()->GetPseudoRoot(), _imagingSettings);
+        _renderer->SetRenderParams(_imagingSettings);
+
+        // Re-render the scene image only when something changed or the image is still converging
+        if (_renderer->NeedsRender()) {
+            _sceneDrawTarget->Bind();
+            glEnable(GL_DEPTH_TEST);
+            glClearColor(_imagingSettings.clearColor[0], _imagingSettings.clearColor[1], _imagingSettings.clearColor[2],
+                         _imagingSettings.clearColor[3]);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glViewport(0, 0, width, height);
+            _renderer->Render(GetCurrentStage()->GetPseudoRoot());
+            _sceneDrawTarget->Unbind();
+        }
+
+        // Composite the scene image into the displayed target every frame, copying its depth
+        // so the grid and the scene object overlays below keep correct occlusion
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, _sceneDrawTarget->GetFramebufferId());
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _drawTarget->GetFramebufferId());
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        _drawTarget->Bind();
+        glEnable(GL_DEPTH_TEST);
+        glViewport(0, 0, width, height);
     } else {
+        _drawTarget->Bind();
+        glEnable(GL_DEPTH_TEST);
+        glClearColor(_imagingSettings.clearColor[0], _imagingSettings.clearColor[1], _imagingSettings.clearColor[2],
+                     _imagingSettings.clearColor[3]);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glViewport(0, 0, width, height);
     }
 
     // Draw grid. TODO: this should be in a usd render task
@@ -729,11 +754,7 @@ void Viewport::Update() {
         if (whichRenderer == _renderers.end()) {
             firstTimeStageLoaded = true;
             if (_hydraDisabledStages.count(GetCurrentStage()) == 0) {
-                //SdfPathVector excludedPaths;
-                UsdImagingGLEngine::Parameters parameters;
-                parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
-                parameters.rendererPluginId = GetDefaultRendererId();
-                _renderer = new UsdImagingGLEngine(parameters);
+                _renderer = new ViewportEngine(GetCurrentStage(), GetDefaultRendererId());
                 _renderers[GetCurrentStage()] = _renderer;
                 InitializeRendererAov(*_renderer);
             } else {
@@ -743,17 +764,15 @@ void Viewport::Update() {
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         } else if (whichRenderer->second == nullptr && _hydraDisabledStages.count(GetCurrentStage()) == 0) {
             // Hydra was re-enabled for this stage after being loaded without a renderer
-            //firstTimeStageLoaded = true;
-            //SdfPathVector excludedPaths;
-            UsdImagingGLEngine::Parameters parameters;
-            parameters.rootPath = GetCurrentStage()->GetPseudoRoot().GetPath();
-            parameters.rendererPluginId = GetDefaultRendererId();
-            _renderer = new UsdImagingGLEngine(parameters);
+            _renderer = new ViewportEngine(GetCurrentStage(), GetDefaultRendererId());
             _renderers[GetCurrentStage()] = _renderer;
             InitializeRendererAov(*_renderer);
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
         } else if (whichRenderer->second != _renderer) {
             _renderer = whichRenderer->second;
+            // The scene draw target still holds the previous stage's image; the engine state
+            // may otherwise compare clean and skip the re-render
+            _renderer->MarkDirty();
             // TODO: should reset the camera otherwise, depending on the position of the camera, the transform is incorrect
             _grid.SetZIsUp(UsdGeomGetStageUpAxis(GetCurrentStage()) == "Z");
             // TODO: the selection is also different per stage
@@ -795,6 +814,9 @@ void Viewport::Update() {
         _drawTarget->Bind();
         _drawTarget->SetSize(_textureSize);
         _drawTarget->Unbind();
+        _sceneDrawTarget->Bind();
+        _sceneDrawTarget->SetSize(_textureSize);
+        _sceneDrawTarget->Unbind();
     }
 
     if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {
