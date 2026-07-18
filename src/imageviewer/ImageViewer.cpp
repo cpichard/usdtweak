@@ -708,8 +708,10 @@ static void DrawTransport(int currentFrame) {
 
 // Pixel inspector: raw linear values of both slots under the cursor, in a
 // small overlay at the bottom of the canvas. imageMin/imageMax is the rect
-// the primary image occupies in canvas space.
-static void DrawPixelInspector(const ImVec2 &imageMin, const ImVec2 &imageMax, ImDrawList *drawList) {
+// of the reference slot; the other slot reads through the width-normalized
+// mapping the display uses.
+static void DrawPixelInspector(const ImVec2 &imageMin, const ImVec2 &imageMax, ImDrawList *drawList,
+                               int referenceSlot) {
     InfiniteCanvas &canvas = viewer.canvas;
     const ImVec2 mouse = ImGui::GetMousePos();
     if (canvas._popupOpen || !canvas.widgetBoundingBox.Contains(mouse)) return;
@@ -717,18 +719,27 @@ static void DrawPixelInspector(const ImVec2 &imageMin, const ImVec2 &imageMax, I
     if (canvasPos.x < imageMin.x || canvasPos.x >= imageMax.x || canvasPos.y < imageMin.y ||
         canvasPos.y >= imageMax.y)
         return;
-    // Normalized position over the image rect; both slots are sampled with it
-    // (they share the rect in the combined modes, stretched when sizes differ)
+    // Normalized position over the reference rect; the other slot is
+    // width-normalized and vertically centered like the display shader does
     const float u = (canvasPos.x - imageMin.x) / (imageMax.x - imageMin.x);
     const float v = (canvasPos.y - imageMin.y) / (imageMax.y - imageMin.y);
+    const bool bothValid = viewer.slots[0].HasValidImage() && viewer.slots[1].HasValidImage();
 
     char line[256];
     std::string text;
     for (int i = 0; i < 2; ++i) {
         if (!viewer.slots[i].HasValidImage()) continue;
         const ImageBuffer &image = *viewer.slots[i].image;
+        float sampleV = v;
+        if (i != referenceSlot && bothValid) {
+            const ImageBuffer &referenceImage = *viewer.slots[referenceSlot].image;
+            const float verticalScale = (static_cast<float>(image.height) * referenceImage.width) /
+                                        (static_cast<float>(image.width) * referenceImage.height);
+            sampleV = (v - 0.5f) / verticalScale + 0.5f;
+            if (sampleV < 0.f || sampleV >= 1.f) continue; // the cursor is outside this image
+        }
         const int x = std::min(image.width - 1, static_cast<int>(u * image.width));
-        const int y = std::min(image.height - 1, static_cast<int>(v * image.height));
+        const int y = std::min(image.height - 1, static_cast<int>(sampleV * image.height));
         const GfHalf *pixel = &image.pixels[(static_cast<size_t>(y) * image.width + x) * 4];
         snprintf(line, sizeof(line), "%s%c %d,%d  %.4f %.4f %.4f %.4f", i == 0 ? "" : "   ", 'A' + i, x, y,
                  float(pixel[0]), float(pixel[1]), float(pixel[2]), float(pixel[3]));
@@ -847,21 +858,42 @@ void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
             drawList->AddRect(canvas.CanvasToScreen(aMin), canvas.CanvasToScreen(aMax), IM_COL32(90, 90, 90, 255));
             drawList->AddRect(canvas.CanvasToScreen(bMin), canvas.CanvasToScreen(bMax), IM_COL32(90, 90, 90, 255));
         } else {
-            // Single rect: A (or B alone), wipe and difference all render at
-            // the primary resolution; the other image is sampled over the
-            // same rect (stretched when the sizes differ)
-            const ImVec2 imageMin(-primary->width / 2.f, -primary->height / 2.f);
-            const ImVec2 imageMax(primary->width / 2.f, primary->height / 2.f);
+            // Single rect. The displayed mode picks the reference image that
+            // owns the rect: B alone shows in its own frame and resolution,
+            // everything else uses A; in wipe and difference B is
+            // width-normalized into A's rect, keeping its pixel aspect
+            ImageBuffer *reference = (mode == CompareMode::B && imageB) ? imageB : primary;
+            const ImVec2 imageMin(-reference->width / 2.f, -reference->height / 2.f);
+            const ImVec2 imageMax(reference->width / 2.f, reference->height / 2.f);
             if (viewer.fitPending) {
                 canvas.FitToBBox(imageMin, imageMax, 20.f, canvas.zoomMin, canvas.zoomMax);
                 viewer.fitPending = false;
             }
             ImageCompositeParams drawParams = params;
             drawParams.mode = mode;
+            // Output texels per canvas unit: the composite renders at the
+            // density of the finer slot so a higher-resolution B keeps its
+            // own resolution (its vertical extent then lands on exactly its
+            // own pixel count)
+            int outputWidth = reference->width;
+            int outputHeight = reference->height;
+            float textureDensity = 1.f;
+            const bool combines = mode == CompareMode::Wipe || mode == CompareMode::Difference;
+            if (imageA && imageB && combines) {
+                drawParams.bVerticalScale =
+                    (static_cast<float>(imageB->height) * imageA->width) /
+                    (static_cast<float>(imageB->width) * imageA->height);
+                if (imageB->width > imageA->width) {
+                    textureDensity = static_cast<float>(imageB->width) / imageA->width;
+                    outputWidth = imageB->width;
+                    outputHeight = static_cast<int>(std::lround(imageA->height * textureDensity));
+                }
+            }
+            viewer.compositors[0].SetOutputFilter(canvas.zooming * framebufferScale >= textureDensity);
             const GLuint texA = imageA ? imageA->GetGLTexture() : imageB->GetGLTexture();
             const GLuint texB = imageB ? imageB->GetGLTexture() : 0;
             const GLuint composited =
-                viewer.compositors[0].Composite(texA, texB, primary->width, primary->height, drawParams);
+                viewer.compositors[0].Composite(texA, texB, outputWidth, outputHeight, drawParams);
             if (composited) {
                 drawList->AddImage((ImTextureID)((uintptr_t)composited), canvas.CanvasToScreen(imageMin),
                                    canvas.CanvasToScreen(imageMax));
@@ -871,7 +903,7 @@ void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
             if (mode == CompareMode::Wipe) {
                 HandleAndDrawWipe(imageMin, imageMax, drawList);
             }
-            DrawPixelInspector(imageMin, imageMax, drawList);
+            DrawPixelInspector(imageMin, imageMax, drawList, reference == imageB && imageB ? 1 : 0);
         }
 
         // X flips between A and B when both are loaded

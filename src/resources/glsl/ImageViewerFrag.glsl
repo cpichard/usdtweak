@@ -16,6 +16,9 @@ uniform int compareMode; // 0 A only, 1 B only, 2 wipe, 3 difference
 uniform float wipe;      // wipe position in [0,1], u space
 uniform int backgroundMode; // 0 checker, 1 black, 2 grey
 uniform int channelMode;    // 0 rgba, 1 r, 2 g, 3 b, 4 alpha, 5 luminance
+// B keeps its pixel aspect: normalized to A's width, centered vertically.
+// This is B's height relative to the output rect; outside it B is transparent.
+uniform float bVerticalScale;
 
 vec3 srgbEncode(vec3 c) {
     return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
@@ -23,7 +26,8 @@ vec3 srgbEncode(vec3 c) {
 
 void main() {
     vec4 a = texture(imageA, uv);
-    vec4 b = texture(imageB, uv);
+    vec2 uvB = vec2(uv.x, (uv.y - 0.5) / max(bVerticalScale, 0.0001) + 0.5);
+    vec4 b = (uvB.y < 0.0 || uvB.y > 1.0) ? vec4(0.0) : texture(imageB, uvB);
     vec3 la = a.rgb * exp2(exposureA);
     vec3 lb = b.rgb * exp2(exposureB);
 

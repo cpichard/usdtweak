@@ -33,10 +33,15 @@ struct ImageCompositeParams {
     float wipe = 0.5f;      // wipe position in [0,1]
     int backgroundMode = 0; // 0 checker, 1 black, 2 grey
     ChannelMode channelMode = ChannelMode::RGBA;
+    /// B stays pixel-square: normalized to A's width, this is its resulting
+    /// height relative to the output rect (1 = same aspect). Vertically
+    /// centered, transparent outside.
+    float bVerticalScale = 1.f;
 
     bool operator==(const ImageCompositeParams &other) const {
         return a == other.a && b == other.b && mode == other.mode && wipe == other.wipe &&
-               backgroundMode == other.backgroundMode && channelMode == other.channelMode;
+               backgroundMode == other.backgroundMode && channelMode == other.channelMode &&
+               bVerticalScale == other.bVerticalScale;
     }
     bool operator!=(const ImageCompositeParams &other) const { return !(*this == other); }
 };
@@ -82,6 +87,7 @@ class ImageCompositor {
     GLint _wipeUniform = -1;
     GLint _backgroundModeUniform = -1;
     GLint _channelModeUniform = -1;
+    GLint _bVerticalScaleUniform = -1;
     GLuint _framebuffer = 0;
     GLuint _outputTexture = 0;
     int _outputWidth = 0;
