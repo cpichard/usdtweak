@@ -50,6 +50,21 @@ struct RenderImageSource : ImageSource {
     /// Queue a frame range explicitly (the fire-and-forget batch)
     void QueueFrames(int firstFrame, int lastFrame);
 
+    /// Live mode: the displayed frame renders continuously, refining
+    /// progressively and restarting when the stage is edited (the engine's
+    /// dirty tracking detects the edits). Turning it on drops the pending
+    /// batch queue.
+    void SetInteractive(bool interactive);
+    bool IsInteractive() const { return _interactive; }
+
+    /// Pause suspends the ticks (and the delegate's background threads when
+    /// it supports it)
+    void SetPaused(bool paused);
+    bool IsPaused() const { return _paused; }
+
+    /// True when the live render has converged and its final readback is cached
+    bool IsLiveConverged() const { return _interactive && _finalReadbackDone; }
+
     bool IsSequence() const override { return _renderedFrames.size() > 1; }
     int FirstFrame() const override { return _renderedFrames.empty() ? 0 : *_renderedFrames.begin(); }
     int LastFrame() const override { return _renderedFrames.empty() ? 0 : *_renderedFrames.rbegin(); }
@@ -73,6 +88,9 @@ struct RenderImageSource : ImageSource {
     bool _SetupCameraAndFrame(int frame);
     void _ReadbackAndCache(ImageCache &cache);
     void _UpdateDisplayName();
+    void _CacheFailure(ImageCache &cache);
+    void _UpdateInteractive(ImageCache &cache);
+    void _UpdateBatch(ImageCache &cache);
 
     UsdStageWeakPtr _stage;
     RenderSetup _setup;
@@ -87,6 +105,11 @@ struct RenderImageSource : ImageSource {
     bool _currentValid = false;
     std::set<int> _renderedFrames; // frames available in the cache (any hash era)
     std::string _lastError;
+
+    bool _interactive = false;
+    bool _paused = false;
+    bool _finalReadbackDone = false;
+    double _lastReadbackSeconds = 0.0;
 };
 
 using RenderImageSourcePtr = std::shared_ptr<RenderImageSource>;

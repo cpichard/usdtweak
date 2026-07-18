@@ -1,6 +1,7 @@
 #include "RenderImageSource.h"
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 
 #include <pxr/base/gf/camera.h>
@@ -74,10 +75,35 @@ void RenderImageSource::QueueFrames(int firstFrame, int lastFrame) {
     }
 }
 
+void RenderImageSource::SetInteractive(bool interactive) {
+    if (interactive == _interactive) return;
+    _interactive = interactive;
+    _pending.clear();
+    _currentValid = false;
+    _finalReadbackDone = false;
+}
+
+void RenderImageSource::SetPaused(bool paused) {
+    if (paused == _paused) return;
+    _paused = paused;
+    if (_engine) {
+        if (paused && _engine->IsPauseRendererSupported()) {
+            _engine->PauseRenderer();
+        } else if (!paused && _engine->IsPauseRendererSupported()) {
+            _engine->ResumeRenderer();
+        }
+    }
+}
+
 void RenderImageSource::RequestFrame(int frame, ImageCache &cache) {
     // Fire-and-forget: frames render only when explicitly queued by the
-    // render buttons; displaying holds on the closest rendered frame. The
-    // interactive mode (phase 5) will queue the displayed frame here.
+    // render buttons; displaying holds on the closest rendered frame.
+    // Live mode follows the displayed frame instead.
+    if (!_interactive) return;
+    if (_currentValid && _currentFrame == frame) return;
+    _currentFrame = frame;
+    _currentValid = true;
+    _finalReadbackDone = false;
 }
 
 bool RenderImageSource::_EnsureEngine() {
@@ -155,7 +181,26 @@ void RenderImageSource::_ReadbackAndCache(ImageCache &cache) {
     _renderedFrames.insert(_currentFrame);
 }
 
+void RenderImageSource::_CacheFailure(ImageCache &cache) {
+    // Cache the failure so the slot shows the error instead of retrying forever
+    auto buffer = std::make_shared<ImageBuffer>();
+    buffer->sourceName = displayName;
+    buffer->error = _lastError.empty() ? "Render failed" : _lastError;
+    cache.Insert({sourceId, _currentFrame, _settingsHash}, buffer);
+    _currentValid = false;
+    _pending.clear();
+}
+
 void RenderImageSource::Update(ImageCache &cache) {
+    if (_paused) return;
+    if (_interactive) {
+        _UpdateInteractive(cache);
+    } else {
+        _UpdateBatch(cache);
+    }
+}
+
+void RenderImageSource::_UpdateBatch(ImageCache &cache) {
     if (!_currentValid) {
         if (_pending.empty()) return;
         _currentFrame = _pending.front();
@@ -163,13 +208,7 @@ void RenderImageSource::Update(ImageCache &cache) {
         _currentValid = true;
     }
     if (!_EnsureEngine() || !_SetupCameraAndFrame(_currentFrame)) {
-        // Cache the failure so the slot shows the error instead of retrying forever
-        auto buffer = std::make_shared<ImageBuffer>();
-        buffer->sourceName = displayName;
-        buffer->error = _lastError.empty() ? "Render failed" : _lastError;
-        cache.Insert({sourceId, _currentFrame, _settingsHash}, buffer);
-        _currentValid = false;
-        _pending.clear();
+        _CacheFailure(cache);
         return;
     }
 
@@ -187,5 +226,42 @@ void RenderImageSource::Update(ImageCache &cache) {
     _drawTarget->Unbind();
     if (converged) {
         _currentValid = false;
+    }
+}
+
+// Progressive readback pacing for the live mode, in seconds
+static constexpr double kInteractiveReadbackInterval = 0.25;
+
+void RenderImageSource::_UpdateInteractive(ImageCache &cache) {
+    if (!_currentValid) return;
+    if (!_EnsureEngine() || !_SetupCameraAndFrame(_currentFrame)) {
+        _CacheFailure(cache);
+        return;
+    }
+
+    // The facade's dirty tracking drives the loop: NeedsRender() is true when
+    // the frame state changed, a stage edit invalidated the image, or the
+    // delegate has not converged yet
+    if (!_engine->NeedsRender()) return;
+    _finalReadbackDone = false;
+
+    UsdStageRefPtr stage(_stage);
+    _drawTarget->Bind();
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glViewport(0, 0, _setup.resolution[0], _setup.resolution[1]);
+    _engine->Render(stage->GetPseudoRoot());
+    _drawTarget->Unbind();
+
+    // Refine progressively into the cache entry: throttled while converging,
+    // always on convergence
+    const bool converged = _engine->IsConverged();
+    const double now =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (converged || now - _lastReadbackSeconds > kInteractiveReadbackInterval) {
+        _ReadbackAndCache(cache);
+        _lastReadbackSeconds = now;
+        if (converged) _finalReadbackDone = true;
     }
 }

@@ -415,10 +415,20 @@ static void DrawRenderSetup(const UsdStageRefPtr &stage, int currentFrame) {
     if (ImGui::DragInt2("##RenderResolution", resolution, 4.f, 16, 16384)) {
         setup.resolution = GfVec2i(resolution[0], resolution[1]);
     }
-    // Render buttons
+    // The live source of the current setup, when it exists and is live
+    RenderImageSourcePtr liveSource;
+    for (const auto &source : viewer.store) {
+        if (auto renderSource = std::dynamic_pointer_cast<RenderImageSource>(source)) {
+            if (renderSource->IsInteractive()) liveSource = renderSource;
+        }
+    }
+
+    // Render buttons.
+    // TODO(UI): Frame/Range/Live always target slot A; they should act on the
+    // slot holding the render source instead (see doc/ImageViewer.md backlog)
     ImGui::SameLine();
     const bool canRender = !setup.cameraPath.IsEmpty();
-    ImGui::BeginDisabled(!canRender);
+    ImGui::BeginDisabled(!canRender || bool(liveSource));
     if (ImGui::Button(ICON_FA_CAMERA " Frame")) {
         RenderImageSourcePtr renderSource = FindOrCreateRenderSource(stage);
         renderSource->QueueFrames(currentFrame, currentFrame);
@@ -437,6 +447,33 @@ static void DrawRenderSetup(const UsdStageRefPtr &stage, int currentFrame) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100.f);
     ImGui::DragInt2("##RenderRange", viewer.renderRange, 0.2f);
+
+    // Live mode: render the displayed frame continuously, restarting on edits
+    ImGui::SameLine();
+    bool live = bool(liveSource);
+    ImGui::BeginDisabled(!canRender && !live);
+    if (ImGui::Checkbox("Live", &live)) {
+        if (live) {
+            RenderImageSourcePtr renderSource = FindOrCreateRenderSource(stage);
+            renderSource->SetInteractive(true);
+            AssignSourceToSlot(0, renderSource);
+        } else if (liveSource) {
+            liveSource->SetInteractive(false);
+            liveSource->SetPaused(false);
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Render the displayed frame continuously, restarting on stage edits");
+    if (liveSource) {
+        ImGui::SameLine();
+        bool paused = liveSource->IsPaused();
+        if (ImGui::Button(paused ? ICON_FA_PLAY "##LivePause" : ICON_FA_PAUSE "##LivePause")) {
+            liveSource->SetPaused(!paused);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(paused ? "Resume the live render" : "Pause the live render");
+    }
+
     // Render status
     int pendingRenders = 0;
     std::string renderError;
@@ -446,7 +483,15 @@ static void DrawRenderSetup(const UsdStageRefPtr &stage, int currentFrame) {
             if (renderError.empty()) renderError = renderSource->GetLastError();
         }
     }
-    if (pendingRenders > 0) {
+    // No dangling SameLine when there is no status to show: the canvas is
+    // drawn right after this row and must start on its own line
+    if (liveSource && liveSource->IsPaused()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("paused");
+    } else if (liveSource) {
+        ImGui::SameLine();
+        ImGui::TextDisabled(liveSource->IsLiveConverged() ? "converged" : "rendering...");
+    } else if (pendingRenders > 0) {
         ImGui::SameLine();
         ImGui::TextDisabled("Rendering, %d frame%s left...", pendingRenders, pendingRenders > 1 ? "s" : "");
     } else if (!renderError.empty()) {
