@@ -43,3 +43,7 @@ using ImageSequenceSourcePtr = std::shared_ptr<ImageSequenceSource>;
 /// and at least one sibling frame exists on disk, the source is the whole
 /// sequence; otherwise it is that single image.
 ImageSequenceSourcePtr CreateImageSource(const std::string &filePath);
+
+/// Path of the lowest-numbered tile of a "<UDIM>" asset path, or the path
+/// unchanged when it has no token or no tile exists on disk.
+std::string FindFirstUdimTile(const std::string &assetPath);

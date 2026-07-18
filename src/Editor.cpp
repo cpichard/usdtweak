@@ -1281,6 +1281,10 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+    // An open request (mini-button menu, drag and drop) shows the panel
+    if (ImageViewerConsumeShowRequest()) {
+        _settings._showImageViewer = true;
+    }
     if (_settings._showImageViewer) {
         // NoScrollWithMouse: the canvas handles the mouse wheel itself (zoom)
         ImGui::Begin(ImageViewerWindowTitle, &_settings._showImageViewer, ImGuiWindowFlags_NoScrollWithMouse);

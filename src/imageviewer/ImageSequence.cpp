@@ -55,6 +55,29 @@ static bool FindFrameDigits(const std::string &filename, size_t &digitsBegin, si
     return false;
 }
 
+// Collect every file in directory matching <prefix><digits><suffix>, keyed
+// by the number the digits encode
+static void CollectNumberedSiblings(const fs::path &directoryPath, const std::string &prefix,
+                                    const std::string &suffix, std::map<int, std::string> &out) {
+    try {
+        for (const auto &entry : fs::directory_iterator(directoryPath)) {
+            if (!entry.is_regular_file()) continue;
+            const std::string sibling = entry.path().filename().string();
+            if (sibling.size() <= prefix.size() + suffix.size()) continue;
+            if (sibling.compare(0, prefix.size(), prefix) != 0) continue;
+            if (sibling.compare(sibling.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
+            const std::string digits = sibling.substr(prefix.size(), sibling.size() - prefix.size() - suffix.size());
+            if (digits.empty() ||
+                !std::all_of(digits.begin(), digits.end(),
+                             [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }))
+                continue;
+            out[std::atoi(digits.c_str())] = entry.path().string();
+        }
+    } catch (const fs::filesystem_error &) {
+        out.clear();
+    }
+}
+
 ImageSequenceSourcePtr CreateImageSource(const std::string &filePath) {
     auto source = std::make_shared<ImageSequenceSource>();
     source->sourceId = NextSourceId();
@@ -69,24 +92,7 @@ ImageSequenceSourcePtr CreateImageSource(const std::string &filePath) {
     if (FindFrameDigits(filename, digitsBegin, digitsEnd)) {
         const std::string prefix = filename.substr(0, digitsBegin);
         const std::string suffix = filename.substr(digitsEnd);
-        // Collect every sibling matching <prefix><digits><suffix>
-        try {
-            for (const auto &entry : fs::directory_iterator(directoryPath)) {
-                if (!entry.is_regular_file()) continue;
-                const std::string sibling = entry.path().filename().string();
-                if (sibling.size() <= prefix.size() + suffix.size()) continue;
-                if (sibling.compare(0, prefix.size(), prefix) != 0) continue;
-                if (sibling.compare(sibling.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
-                const std::string digits = sibling.substr(prefix.size(), sibling.size() - prefix.size() - suffix.size());
-                if (digits.empty() ||
-                    !std::all_of(digits.begin(), digits.end(),
-                                 [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }))
-                    continue;
-                source->framePaths[std::atoi(digits.c_str())] = entry.path().string();
-            }
-        } catch (const fs::filesystem_error &) {
-            source->framePaths.clear();
-        }
+        CollectNumberedSiblings(directoryPath, prefix, suffix, source->framePaths);
         if (source->framePaths.size() >= 2) {
             source->isSequence = true;
             const std::string padding(digitsEnd - digitsBegin, '#');
@@ -104,4 +110,17 @@ ImageSequenceSourcePtr CreateImageSource(const std::string &filePath) {
     source->displayName = filename;
     source->identity = filePath;
     return source;
+}
+
+std::string FindFirstUdimTile(const std::string &assetPath) {
+    static const std::string token = "<UDIM>";
+    const fs::path path(assetPath);
+    const std::string filename = path.filename().string();
+    const size_t tokenPos = filename.find(token);
+    if (tokenPos == std::string::npos) return assetPath;
+    const fs::path directoryPath = path.parent_path().empty() ? fs::path(".") : path.parent_path();
+    std::map<int, std::string> tiles;
+    CollectNumberedSiblings(directoryPath, filename.substr(0, tokenPos), filename.substr(tokenPos + token.size()),
+                            tiles);
+    return tiles.empty() ? assetPath : tiles.begin()->second;
 }

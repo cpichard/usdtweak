@@ -9,7 +9,9 @@
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/pcp/primIndex.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include "FileImageSource.h"
 #include "Gui.h"
+#include "ImageViewer.h"
 #include "UsdPrimEditor.h"
 #include "VtValueEditor.h"
 #include "Constants.h"
@@ -357,6 +359,21 @@ template <> void DrawMenuEditConnection(UsdAttribute &attribute) {
     }
 }
 
+// Open in image viewer, for asset attributes pointing at a readable image
+// (textures typically). "<UDIM>" paths open on their first tile.
+template <typename UsdPropertyT> void DrawMenuOpenInImageViewer(UsdPropertyT &property, UsdTimeCode currentTime) {}
+template <> void DrawMenuOpenInImageViewer(UsdAttribute &attribute, UsdTimeCode currentTime) {
+    if (attribute.GetTypeName() != SdfValueTypeNames->Asset) return;
+    SdfAssetPath assetPath;
+    if (!attribute.Get(&assetPath, currentTime)) return;
+    const std::string &path =
+        assetPath.GetResolvedPath().empty() ? assetPath.GetAssetPath() : assetPath.GetResolvedPath();
+    if (path.empty() || !IsSupportedImageFile(path)) return;
+    if (ImGui::MenuItem(ICON_FA_IMAGE " Open in image viewer")) {
+        ImageViewerOpenAsset(path);
+    }
+}
+
 
 template <typename UsdPropertyT> void DrawMenuCreateValue(UsdPropertyT &property){};
 
@@ -387,6 +404,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
         DrawMenuBlockValues(property);
         DrawMenuRemoveProperty(property);
         DrawMenuEditConnection(property);
+        DrawMenuOpenInImageViewer(property, currentTime);
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
         }

@@ -72,6 +72,8 @@ bool ImageCompositor::_CompileProgramIfNeeded() {
 
 void ImageCompositor::_ResizeOutputIfNeeded(int width, int height) {
     if (_outputTexture && width == _outputWidth && height == _outputHeight) return;
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
     if (!_outputTexture) glGenTextures(1, &_outputTexture);
     glBindTexture(GL_TEXTURE_2D, _outputTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -79,7 +81,7 @@ void ImageCompositor::_ResizeOutputIfNeeded(int width, int height) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, previousTexture);
     _outputWidth = width;
     _outputHeight = height;
     if (!_framebuffer) glGenFramebuffers(1, &_framebuffer);
@@ -90,9 +92,11 @@ void ImageCompositor::SetOutputFilter(bool nearest) {
     if (nearest == _outputFilterNearest) return;
     _outputFilterNearest = nearest;
     if (_outputTexture) {
+        GLint previousTexture = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
         glBindTexture(GL_TEXTURE_2D, _outputTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, nearest ? GL_NEAREST : GL_LINEAR);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, previousTexture);
     }
 }
 
@@ -105,12 +109,27 @@ GLuint ImageCompositor::Composite(GLuint textureA, GLuint textureB, int width, i
     if (textureA != _lastTextureA || textureB != _lastTextureB || params != _lastParams) _dirty = true;
     if (!_dirty) return _outputTexture;
 
-    // This runs while the ImGui frame is being built: save and restore the GL
-    // state we touch, the backends expect it untouched.
+    // This runs while the ImGui frame is being built: save and restore every
+    // piece of GL state we touch so the pass is invisible to the rest of the
+    // frame. Restoring the *previous* bindings (not 0) matters: leaving VAO 0
+    // bound makes USD's Metal interop state capture (glGetVertexAttribiv with
+    // no VAO) raise GL_INVALID_OPERATION warnings on the next frame.
     GLint previousFramebuffer = 0;
     GLint previousViewport[4];
+    GLint previousProgram = 0, previousVao = 0, previousActiveTexture = GL_TEXTURE0;
+    GLint previousTexture0 = 0, previousTexture1 = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
     glGetIntegerv(GL_VIEWPORT, previousViewport);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVao);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture0);
+    glActiveTexture(GL_TEXTURE1);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture1);
+    const GLboolean previousBlend = glIsEnabled(GL_BLEND);
+    const GLboolean previousDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    const GLboolean previousScissorTest = glIsEnabled(GL_SCISSOR_TEST);
 
     glBindFramebuffer(GL_FRAMEBUFFER, _framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _outputTexture, 0);
@@ -137,13 +156,18 @@ GLuint ImageCompositor::Composite(GLuint textureA, GLuint textureB, int width, i
     glBindTexture(GL_TEXTURE_2D, textureA);
     glBindVertexArray(_emptyVao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindVertexArray(0);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glUseProgram(0);
 
+    // Restore the previous state
+    glBindVertexArray(previousVao);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, previousTexture1);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, previousTexture0);
+    glActiveTexture(previousActiveTexture);
+    glUseProgram(previousProgram);
+    if (previousBlend) glEnable(GL_BLEND);
+    if (previousDepthTest) glEnable(GL_DEPTH_TEST);
+    if (previousScissorTest) glEnable(GL_SCISSOR_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
     glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
 

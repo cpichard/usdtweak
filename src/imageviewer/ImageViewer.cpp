@@ -79,7 +79,21 @@ static void OpenPathInSlot(int slot, const std::string &filePath) {
     AssignSourceToSlot(slot, source);
 }
 
-void ImageViewerOpenFile(const std::string &filePath, int slot) { OpenPathInSlot(slot == 0 ? 0 : 1, filePath); }
+// Set when an open request wants the panel visible, consumed by the editor
+static bool showRequested = false;
+
+void ImageViewerOpenFile(const std::string &filePath, int slot) {
+    OpenPathInSlot(slot == 0 ? 0 : 1, filePath);
+    showRequested = true;
+}
+
+void ImageViewerOpenAsset(const std::string &assetPath) { ImageViewerOpenFile(FindFirstUdimTile(assetPath), 0); }
+
+bool ImageViewerConsumeShowRequest() {
+    const bool requested = showRequested;
+    showRequested = false;
+    return requested;
+}
 
 struct OpenImageModalDialog : public ModalDialog {
     OpenImageModalDialog(int slot) : slot(slot) { SetValidExtensions(GetImageFileExtensions()); }
