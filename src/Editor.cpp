@@ -6,6 +6,8 @@
 #include "UtqlEngine.h"
 #include "Commands.h"
 #include "ConnectionEditor.h"
+#include "FileImageSource.h"
+#include "ImageViewer.h"
 #include "ContentBrowser.h"
 #include "Debug.h"
 #include "FileBrowser.h"
@@ -74,6 +76,7 @@ namespace clk = std::chrono;
 #define UsdStageHierarchyWindowTitle "Stage outliner"
 #define UsdPrimPropertiesWindowTitle "Stage property editor"
 #define UsdConnectionEditorWindowTitle "Connection editor"
+#define ImageViewerWindowTitle "Image viewer"
 #define SdfLayerHierarchyWindowTitle "Layer hierarchy"
 #define SdfLayerStackWindowTitle "Stage layer editor"
 #define SdfPrimPropertiesWindowTitle "Layer property editor"
@@ -516,7 +519,11 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
         if (editor && count) {
             for (int i = 0; i < count; ++i) {
                 // make a drop event ?
-                if (ArchGetFileLength(paths[i]) == 0) {
+                if (IsSupportedImageFile(paths[i])) {
+                    // Images go to the image viewer, not the layer editors
+                    ImageViewerOpenFile(paths[i]);
+                    editor->_settings._showImageViewer = true;
+                } else if (ArchGetFileLength(paths[i]) == 0) {
                     // if the file is empty, this is considered a new file
                     editor->CreateStage(std::string(paths[i]));
                 } else {
@@ -1013,6 +1020,7 @@ void Editor::DrawMainMenuBar() {
             ImGui::MenuItem(UsdStageHierarchyWindowTitle, nullptr, &_settings._showOutliner);
             ImGui::MenuItem(UsdPrimPropertiesWindowTitle, nullptr, &_settings._showPropertyEditor);
             ImGui::MenuItem(UsdConnectionEditorWindowTitle, nullptr, &_settings._showUsdConnectionEditor);
+            ImGui::MenuItem(ImageViewerWindowTitle, nullptr, &_settings._showImageViewer);
             ImGui::MenuItem(SdfLayerHierarchyWindowTitle, nullptr, &_settings._showLayerHierarchyEditor);
             ImGui::MenuItem(SdfLayerStackWindowTitle, nullptr, &_settings._showLayerStackEditor);
             ImGui::MenuItem(SdfPrimPropertiesWindowTitle, nullptr, &_settings._showPrimSpecEditor);
@@ -1267,6 +1275,14 @@ void Editor::Draw() {
         if (GetCurrentStage()) {
             DrawConnectionEditor(GetCurrentStage(), _selection);
         }
+        ImGui::End();
+    }
+
+    if (_settings._showImageViewer) {
+        // NoScrollWithMouse: the canvas handles the mouse wheel itself (zoom)
+        ImGui::Begin(ImageViewerWindowTitle, &_settings._showImageViewer, ImGuiWindowFlags_NoScrollWithMouse);
+        TRACE_SCOPE(ImageViewerWindowTitle);
+        DrawImageViewer();
         ImGui::End();
     }
 

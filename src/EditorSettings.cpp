@@ -88,6 +88,8 @@ void EditorSettings::ParseLine(const char *line) {
         _showValidator = static_cast<bool>(value);
     } else if (sscanf(line, "ShowConnectionEditor=%i", &value) == 1) {
         _showUsdConnectionEditor = static_cast<bool>(value);
+    } else if (sscanf(line, "ShowImageViewer=%i", &value) == 1) {
+        _showImageViewer = static_cast<bool>(value);
     } else if (sscanf(line, "ShowSearch=%i", &value) == 1) {
         _showSearch = static_cast<bool>(value);
     } else if (sscanf(line, "ShowSplashScreen=%i", &value) == 1) {
@@ -139,6 +141,7 @@ void EditorSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("ShowHydraNoticeLogger=%d\n", _showHydraNoticeLogger);
     buf->appendf("ShowValidator=%d\n", _showValidator);
     buf->appendf("ShowConnectionEditor=%d\n", _showUsdConnectionEditor);
+    buf->appendf("ShowImageViewer=%d\n", _showImageViewer);
     buf->appendf("ShowSearch=%d\n", _showSearch);
     buf->appendf("ShowSplashScreen=%d\n", _showSplashScreen);
     buf->appendf("HideCursorWhenNavigating=%d\n", _hideCursorWhenNavigating);

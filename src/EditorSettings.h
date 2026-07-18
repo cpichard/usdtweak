@@ -30,6 +30,7 @@ struct EditorSettings {
     bool _textEditor = false;
     bool _showSdfAttributeEditor = false;
     bool _showUsdConnectionEditor = false;
+    bool _showImageViewer = false;
     bool _showHydraBrowser = false;
     bool _showHydraNoticeLogger = false;
     bool _showSearch = false;

@@ -37,6 +37,7 @@ add_subdirectory(search)
 add_subdirectory(texteditor)
 add_subdirectory(utql)
 add_subdirectory(widgets)
+add_subdirectory(imageviewer)
 add_subdirectory(viewport)
 add_subdirectory(addons)
 

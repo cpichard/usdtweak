@@ -18,6 +18,8 @@ list(APPEND GLSL_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/GridFrag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/SceneObjectVert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/SceneObjectFrag.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/ImageViewerVert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/ImageViewerFrag.glsl
 )
 
 # target_sources won't take the generated files for a target outside of the current directory
