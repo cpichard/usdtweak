@@ -30,10 +30,15 @@ struct RenderSetup {
     SdfPath productPath; // selected UsdRenderProduct, empty = synthesized default
     SdfPath cameraPath;
     GfVec2i resolution = GfVec2i(1280, 720);
+    /// Which AOV the delegate presents (color, depth, primId, normals...).
+    /// Empty means color. Non-color AOVs read back the delegate's
+    /// visualization of the AOV, not the raw values.
+    TfToken aov;
 
     bool operator==(const RenderSetup &other) const {
         return stage == other.stage && rendererPluginId == other.rendererPluginId &&
-               productPath == other.productPath && cameraPath == other.cameraPath && resolution == other.resolution;
+               productPath == other.productPath && cameraPath == other.cameraPath &&
+               resolution == other.resolution && aov == other.aov;
     }
     bool operator!=(const RenderSetup &other) const { return !(*this == other); }
 
@@ -48,6 +53,10 @@ struct RenderImageSource : ImageSource {
 
     /// Store-deduplication identity of a source rendering this setup
     static std::string MakeIdentity(const RenderSetup &setup);
+
+    /// The AOVs the delegate offers; "color" until the engine exists
+    /// (rendering once populates the real list)
+    TfTokenVector GetAvailableAovs() const;
 
     /// Changing the setup re-keys the cache entries (new settings hash) and
     /// drops the pending renders; already-rendered frames stay cached under

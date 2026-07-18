@@ -23,16 +23,20 @@ struct ImageDisplayParams {
     bool operator!=(const ImageDisplayParams &other) const { return !(*this == other); }
 };
 
+/// Channel isolation applied after the compare, before the display transform
+enum class ChannelMode : int { RGBA = 0, Red, Green, Blue, Alpha, Luminance };
+
 struct ImageCompositeParams {
     ImageDisplayParams a;
     ImageDisplayParams b;
     CompareMode mode = CompareMode::A;
     float wipe = 0.5f;      // wipe position in [0,1]
     int backgroundMode = 0; // 0 checker, 1 black, 2 grey
+    ChannelMode channelMode = ChannelMode::RGBA;
 
     bool operator==(const ImageCompositeParams &other) const {
         return a == other.a && b == other.b && mode == other.mode && wipe == other.wipe &&
-               backgroundMode == other.backgroundMode;
+               backgroundMode == other.backgroundMode && channelMode == other.channelMode;
     }
     bool operator!=(const ImageCompositeParams &other) const { return !(*this == other); }
 };
@@ -77,6 +81,7 @@ class ImageCompositor {
     GLint _compareModeUniform = -1;
     GLint _wipeUniform = -1;
     GLint _backgroundModeUniform = -1;
+    GLint _channelModeUniform = -1;
     GLuint _framebuffer = 0;
     GLuint _outputTexture = 0;
     int _outputWidth = 0;

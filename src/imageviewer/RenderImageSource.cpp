@@ -28,12 +28,21 @@ uint64_t RenderSetup::Hash() const {
     hash = HashCombine(hash, std::hash<std::string>()(cameraPath.GetString()));
     hash = HashCombine(hash, static_cast<uint64_t>(resolution[0]));
     hash = HashCombine(hash, static_cast<uint64_t>(resolution[1]));
+    hash = HashCombine(hash, std::hash<std::string>()(aov.GetString()));
     return hash;
 }
 
 std::string RenderImageSource::MakeIdentity(const RenderSetup &setup) {
     return "render|" + setup.StageIdentifier() + "|" + setup.rendererPluginId.GetString() + "|" +
-           setup.productPath.GetString();
+           setup.productPath.GetString() + "|" + setup.aov.GetString();
+}
+
+TfTokenVector RenderImageSource::GetAvailableAovs() const {
+    if (_engine) {
+        TfTokenVector aovs = _engine->GetRendererAovs();
+        if (!aovs.empty()) return aovs;
+    }
+    return {HdAovTokens->color};
 }
 
 RenderImageSource::RenderImageSource(const RenderSetup &setup) {
@@ -43,6 +52,15 @@ RenderImageSource::RenderImageSource(const RenderSetup &setup) {
     _imagingSettings.colorCorrectionMode = TfToken("disabled");
     _imagingSettings.clearColor = GfVec4f(0.f, 0.f, 0.f, 0.f);
     _imagingSettings.showGizmos = false;
+    // Render-view fidelity, unlike the viewport defaults: materials and
+    // textures on, render-purpose geometry on, no guides, and never the
+    // selection highlight
+    _imagingSettings.enableSceneMaterials = true;
+    _imagingSettings.showRender = true;
+    _imagingSettings.showGuides = false;
+    _imagingSettings.highlight = false;
+    // TODO: the camera light should be optional (scene lights only); see the
+    // lighting note in doc/ImageViewer.md
     SetSetup(setup);
 }
 
@@ -53,6 +71,7 @@ void RenderImageSource::SetSetup(const RenderSetup &setup) {
     const bool stageChanged = setup.stage != _setup.stage;
     const bool delegateChanged = !_engine || setup.rendererPluginId != _setup.rendererPluginId;
     const bool resolutionChanged = !_drawTarget || setup.resolution != _setup.resolution;
+    const bool aovChanged = setup.aov != _setup.aov;
     _setup = setup;
     _stage = setup.stage;
     _settingsHash = _setup.Hash();
@@ -61,6 +80,9 @@ void RenderImageSource::SetSetup(const RenderSetup &setup) {
     _currentValid = false;
     if (delegateChanged || stageChanged) _engine.reset();
     if (resolutionChanged) _drawTarget = nullptr;
+    if (_engine && aovChanged) {
+        _engine->SetRendererAov(_setup.aov.IsEmpty() ? HdAovTokens->color : _setup.aov);
+    }
     _UpdateDisplayName();
 }
 
@@ -71,6 +93,9 @@ void RenderImageSource::_UpdateDisplayName() {
     const std::string stageName = stagePtr ? stagePtr->GetRootLayer()->GetDisplayName() : "<expired stage>";
     displayName = "Render " + stageName + " " + delegate + " " + product + " " +
                   std::to_string(_setup.resolution[0]) + "x" + std::to_string(_setup.resolution[1]);
+    if (!_setup.aov.IsEmpty() && _setup.aov != HdAovTokens->color) {
+        displayName += " [" + _setup.aov.GetString() + "]";
+    }
 }
 
 int RenderImageSource::ResolveFrame(int frame) const {
@@ -130,7 +155,7 @@ bool RenderImageSource::_EnsureEngine() {
     if (!_engine) {
         _engine = std::make_unique<ViewportEngine>(stage, _setup.rendererPluginId);
         // Without an AOV selection the engine has nothing to present
-        _engine->SetRendererAov(HdAovTokens->color);
+        _engine->SetRendererAov(_setup.aov.IsEmpty() ? HdAovTokens->color : _setup.aov);
     }
     if (!_drawTarget) {
         _drawTarget = GlfDrawTarget::New(_setup.resolution, false);

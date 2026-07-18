@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include <pxr/imaging/hd/tokens.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stageCache.h>
 #include <pxr/usd/usdGeom/camera.h>
@@ -124,6 +125,26 @@ void ImageViewerShutdown() {
     viewer.slotDraft[0] = RenderSetup();
     viewer.slotDraft[1] = RenderSetup();
 }
+
+struct SaveImageModalDialog : public ModalDialog {
+    SaveImageModalDialog(ImageBufferPtr image) : image(image) { SetValidExtensions(GetImageFileExtensions()); }
+    ~SaveImageModalDialog() override {}
+    void Draw() override {
+        DrawFileBrowser(RemainingHeight(2));
+        EnsureFileBrowserDefaultExtension("exr");
+        auto filePath = GetFileBrowserFilePath();
+        ImGui::Text("%s", filePath.c_str());
+        DrawModalButtonsOkCancel([&]() {
+            if (!filePath.empty()) {
+                const std::string error = SaveImageFile(image, filePath);
+                if (!error.empty()) saveError = error; // shown in the slot? keep silent for now
+            }
+        });
+    }
+    const char *DialogId() const override { return "Save image"; }
+    ImageBufferPtr image;
+    std::string saveError;
+};
 
 struct OpenImageModalDialog : public ModalDialog {
     OpenImageModalDialog(int slot) : slot(slot) { SetValidExtensions(GetImageFileExtensions()); }
@@ -265,7 +286,15 @@ static RenderSetup GetSlotSetup(int slotIndex) {
 static void SetSlotSetup(int slotIndex, const RenderSetup &setup) {
     // The draft follows so a future source starts from the last edited setup
     viewer.slotDraft[slotIndex] = setup;
-    if (RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex)) {
+    RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex);
+    if (!renderSource) return;
+    if (renderSource == viewer.slots[1 - slotIndex].source) {
+        // Both slots show the same source: edits split this slot onto its own
+        // copy, e.g. comparing the beauty and the depth of one setup
+        auto clone = std::make_shared<RenderImageSource>(setup);
+        viewer.store.push_back(clone);
+        AssignSourceToSlot(slotIndex, clone);
+    } else {
         renderSource->SetSetup(setup);
     }
 }
@@ -352,6 +381,25 @@ static void DrawSlotRenderSetupPopup(int slotIndex) {
         }
         ImGui::EndCombo();
     }
+    // AOV: the delegate's list once an engine exists, color before that
+    ImGui::SetNextItemWidth(220.f);
+    const RenderImageSourcePtr slotRenderSource = GetSlotRenderSource(slotIndex);
+    const char *aovPreview = setup.aov.IsEmpty() ? "color" : setup.aov.GetText();
+    if (ImGui::BeginCombo("AOV", aovPreview)) {
+        const TfTokenVector aovs =
+            slotRenderSource ? slotRenderSource->GetAvailableAovs() : TfTokenVector{HdAovTokens->color};
+        for (const TfToken &aov : aovs) {
+            const bool selected = aov == setup.aov || (setup.aov.IsEmpty() && aov == HdAovTokens->color);
+            if (ImGui::Selectable(aov.GetText(), selected)) {
+                setup.aov = aov;
+                changed = true;
+            }
+        }
+        if (!slotRenderSource) {
+            ImGui::TextDisabled("render once to list the delegate AOVs");
+        }
+        ImGui::EndCombo();
+    }
     setupStage = UsdStageRefPtr(setup.stage);
     if (setupStage) {
         // Render product (enumerated only while the combo is open)
@@ -414,7 +462,7 @@ static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr 
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled(slotIndex == 0 ? "A" : "B");
     ImGui::SameLine();
-    const float buttonsWidth = 2.f * (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
+    const float buttonsWidth = 3.f * (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
     ImGui::SetNextItemWidth(std::max(60.f, ImGui::GetContentRegionAvail().x - buttonsWidth));
     const char *preview = slot.source ? slot.source->displayName.c_str() : "<none>";
     if (ImGui::BeginCombo("##Source", preview)) {
@@ -431,6 +479,13 @@ static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr 
         DrawModalDialog<OpenImageModalDialog>(slotIndex);
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Open an image or sequence in this slot");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!slot.HasValidImage());
+    if (ImGui::Button(ICON_FA_SAVE)) {
+        DrawModalDialog<SaveImageModalDialog>(slot.image);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save the displayed image to disk (.exr)");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_COG)) {
         ImGui::OpenPopup("##SlotRenderSetup");
@@ -512,6 +567,13 @@ static void DrawMiddleControls() {
     ImGui::SetNextItemWidth(-FLT_MIN);
     static const char *backgroundModes[] = {"Checker", "Black", "Grey"};
     ImGui::Combo("##Background", &params.backgroundMode, backgroundModes, 3);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    static const char *channelModes[] = {"RGBA", "Red", "Green", "Blue", "Alpha", "Luminance"};
+    int channel = static_cast<int>(params.channelMode);
+    if (ImGui::Combo("##Channel", &channel, channelModes, 6)) {
+        params.channelMode = static_cast<ChannelMode>(channel);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Channel isolation (keys R G B A L over the canvas)");
     if (ImGui::Button(ICON_FA_EXPAND " Fit")) {
         viewer.fitPending = true;
     }
@@ -644,6 +706,44 @@ static void DrawTransport(int currentFrame) {
     }
 }
 
+// Pixel inspector: raw linear values of both slots under the cursor, in a
+// small overlay at the bottom of the canvas. imageMin/imageMax is the rect
+// the primary image occupies in canvas space.
+static void DrawPixelInspector(const ImVec2 &imageMin, const ImVec2 &imageMax, ImDrawList *drawList) {
+    InfiniteCanvas &canvas = viewer.canvas;
+    const ImVec2 mouse = ImGui::GetMousePos();
+    if (canvas._popupOpen || !canvas.widgetBoundingBox.Contains(mouse)) return;
+    const ImVec2 canvasPos = canvas.ScreenToCanvas(mouse);
+    if (canvasPos.x < imageMin.x || canvasPos.x >= imageMax.x || canvasPos.y < imageMin.y ||
+        canvasPos.y >= imageMax.y)
+        return;
+    // Normalized position over the image rect; both slots are sampled with it
+    // (they share the rect in the combined modes, stretched when sizes differ)
+    const float u = (canvasPos.x - imageMin.x) / (imageMax.x - imageMin.x);
+    const float v = (canvasPos.y - imageMin.y) / (imageMax.y - imageMin.y);
+
+    char line[256];
+    std::string text;
+    for (int i = 0; i < 2; ++i) {
+        if (!viewer.slots[i].HasValidImage()) continue;
+        const ImageBuffer &image = *viewer.slots[i].image;
+        const int x = std::min(image.width - 1, static_cast<int>(u * image.width));
+        const int y = std::min(image.height - 1, static_cast<int>(v * image.height));
+        const GfHalf *pixel = &image.pixels[(static_cast<size_t>(y) * image.width + x) * 4];
+        snprintf(line, sizeof(line), "%s%c %d,%d  %.4f %.4f %.4f %.4f", i == 0 ? "" : "   ", 'A' + i, x, y,
+                 float(pixel[0]), float(pixel[1]), float(pixel[2]), float(pixel[3]));
+        text += line;
+    }
+    if (text.empty()) return;
+
+    const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+    const ImVec2 pos(canvas.widgetBoundingBox.Min.x + 6.f,
+                     canvas.widgetBoundingBox.Max.y - textSize.y - 6.f);
+    drawList->AddRectFilled(pos - ImVec2(4.f, 2.f), pos + textSize + ImVec2(4.f, 2.f), IM_COL32(15, 15, 18, 220),
+                            3.f);
+    drawList->AddText(pos, IM_COL32(220, 220, 220, 255), text.c_str());
+}
+
 // The draggable wipe line over the image rect
 static void HandleAndDrawWipe(const ImVec2 &imageMin, const ImVec2 &imageMax, ImDrawList *drawList) {
     InfiniteCanvas &canvas = viewer.canvas;
@@ -771,6 +871,7 @@ void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
             if (mode == CompareMode::Wipe) {
                 HandleAndDrawWipe(imageMin, imageMax, drawList);
             }
+            DrawPixelInspector(imageMin, imageMax, drawList);
         }
 
         // X flips between A and B when both are loaded
@@ -795,6 +896,18 @@ void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
     if (!canvas._popupOpen && ImGui::IsKeyPressed(ImGuiKey_F) &&
         canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
         viewer.fitPending = true;
+    }
+    // Channel isolation keys: R G B A L toggle the channel, back to RGBA on
+    // the second press
+    if (!canvas._popupOpen && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+        auto toggleChannel = [&](ChannelMode channel) {
+            params.channelMode = params.channelMode == channel ? ChannelMode::RGBA : channel;
+        };
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) toggleChannel(ChannelMode::Red);
+        if (ImGui::IsKeyPressed(ImGuiKey_G)) toggleChannel(ChannelMode::Green);
+        if (ImGui::IsKeyPressed(ImGuiKey_B)) toggleChannel(ChannelMode::Blue);
+        if (ImGui::IsKeyPressed(ImGuiKey_A)) toggleChannel(ChannelMode::Alpha);
+        if (ImGui::IsKeyPressed(ImGuiKey_L)) toggleChannel(ChannelMode::Luminance);
     }
 
     canvas.UpdateNavigation(!viewer.draggingWipe);

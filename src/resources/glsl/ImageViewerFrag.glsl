@@ -15,6 +15,7 @@ uniform float gammaB;
 uniform int compareMode; // 0 A only, 1 B only, 2 wipe, 3 difference
 uniform float wipe;      // wipe position in [0,1], u space
 uniform int backgroundMode; // 0 checker, 1 black, 2 grey
+uniform int channelMode;    // 0 rgba, 1 r, 2 g, 3 b, 4 alpha, 5 luminance
 
 vec3 srgbEncode(vec3 c) {
     return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
@@ -46,6 +47,24 @@ void main() {
         lin = la;
         alpha = a.a;
         gamma = gammaA;
+    }
+
+    // Channel isolation, shown as greyscale (alpha view ignores the background)
+    if (channelMode == 1) {
+        lin = vec3(lin.r);
+        alpha = 1.0;
+    } else if (channelMode == 2) {
+        lin = vec3(lin.g);
+        alpha = 1.0;
+    } else if (channelMode == 3) {
+        lin = vec3(lin.b);
+        alpha = 1.0;
+    } else if (channelMode == 4) {
+        lin = vec3(clamp(alpha, 0.0, 1.0));
+        alpha = 1.0;
+    } else if (channelMode == 5) {
+        lin = vec3(dot(lin, vec3(0.2126, 0.7152, 0.0722)));
+        alpha = 1.0;
     }
 
     lin = pow(max(lin, vec3(0.0)), vec3(1.0 / max(gamma, 0.01)));

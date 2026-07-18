@@ -22,6 +22,11 @@ std::future<ImageBufferPtr> LoadImageFileAsync(const std::string &filePath);
 /// True when a Hio plugin can read this file.
 bool IsSupportedImageFile(const std::string &filePath);
 
+/// Write a buffer to disk through HioImage (EXR half-float recommended, the
+/// format follows the file extension). Returns an empty string on success,
+/// the error message otherwise.
+std::string SaveImageFile(const ImageBufferPtr &buffer, const std::string &filePath);
+
 /// Extensions offered in the open-image file dialog. The set of formats that
 /// actually load depends on the Hio plugins of the USD build; unsupported
 /// files are reported through the ImageBuffer error field.

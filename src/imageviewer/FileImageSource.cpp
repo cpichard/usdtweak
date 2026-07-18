@@ -116,6 +116,21 @@ std::future<ImageBufferPtr> LoadImageFileAsync(const std::string &filePath) {
     return std::async(std::launch::async, LoadImageFile, filePath);
 }
 
+std::string SaveImageFile(const ImageBufferPtr &buffer, const std::string &filePath) {
+    if (!buffer || !buffer->IsValid()) return "No image to save";
+    HioImageSharedPtr image = HioImage::OpenForWriting(filePath);
+    if (!image) return "Cannot write this image format (try .exr)";
+    HioImage::StorageSpec spec;
+    spec.width = buffer->width;
+    spec.height = buffer->height;
+    spec.depth = 1;
+    spec.format = HioFormatFloat16Vec4;
+    spec.flipped = false; // buffer row 0 = top
+    spec.data = const_cast<GfHalf *>(buffer->pixels.data());
+    if (!image->Write(spec)) return "Image write failed";
+    return {};
+}
+
 bool IsSupportedImageFile(const std::string &filePath) { return HioImage::IsSupportedImageFile(filePath); }
 
 const std::vector<std::string> &GetImageFileExtensions() {

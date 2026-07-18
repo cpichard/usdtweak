@@ -77,6 +77,7 @@ bool ImageCompositor::_CompileProgramIfNeeded() {
     _compareModeUniform = glGetUniformLocation(_program, "compareMode");
     _wipeUniform = glGetUniformLocation(_program, "wipe");
     _backgroundModeUniform = glGetUniformLocation(_program, "backgroundMode");
+    _channelModeUniform = glGetUniformLocation(_program, "channelMode");
 
     glGenVertexArrays(1, &_emptyVao);
     return true;
@@ -162,6 +163,7 @@ GLuint ImageCompositor::Composite(GLuint textureA, GLuint textureB, int width, i
     glUniform1i(_compareModeUniform, static_cast<int>(shaderMode));
     glUniform1f(_wipeUniform, params.wipe);
     glUniform1i(_backgroundModeUniform, params.backgroundMode);
+    glUniform1i(_channelModeUniform, static_cast<int>(params.channelMode));
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, textureB ? textureB : textureA);
     glActiveTexture(GL_TEXTURE0);
