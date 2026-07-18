@@ -58,8 +58,12 @@ bool ImageCompositor::_CompileProgramIfNeeded() {
         _programFailed = true;
         return false;
     }
-    _exposureUniform = glGetUniformLocation(_program, "exposure");
-    _gammaUniform = glGetUniformLocation(_program, "gamma");
+    _exposureAUniform = glGetUniformLocation(_program, "exposureA");
+    _exposureBUniform = glGetUniformLocation(_program, "exposureB");
+    _gammaAUniform = glGetUniformLocation(_program, "gammaA");
+    _gammaBUniform = glGetUniformLocation(_program, "gammaB");
+    _compareModeUniform = glGetUniformLocation(_program, "compareMode");
+    _wipeUniform = glGetUniformLocation(_program, "wipe");
     _backgroundModeUniform = glGetUniformLocation(_program, "backgroundMode");
 
     glGenVertexArrays(1, &_emptyVao);
@@ -92,12 +96,13 @@ void ImageCompositor::SetOutputFilter(bool nearest) {
     }
 }
 
-GLuint ImageCompositor::Composite(GLuint imageTexture, int width, int height, const ImageDisplayParams &params) {
-    if (!imageTexture || width <= 0 || height <= 0) return 0;
+GLuint ImageCompositor::Composite(GLuint textureA, GLuint textureB, int width, int height,
+                                  const ImageCompositeParams &params) {
+    if (!textureA || width <= 0 || height <= 0) return 0;
     if (!_CompileProgramIfNeeded()) return 0;
 
     _ResizeOutputIfNeeded(width, height);
-    if (imageTexture != _lastImageTexture || params != _lastParams) _dirty = true;
+    if (textureA != _lastTextureA || textureB != _lastTextureB || params != _lastParams) _dirty = true;
     if (!_dirty) return _outputTexture;
 
     // This runs while the ImGui frame is being built: save and restore the GL
@@ -115,22 +120,35 @@ GLuint ImageCompositor::Composite(GLuint imageTexture, int width, int height, co
     glDisable(GL_SCISSOR_TEST);
 
     glUseProgram(_program);
-    glUniform1i(glGetUniformLocation(_program, "image"), 0);
-    glUniform1f(_exposureUniform, params.exposure);
-    glUniform1f(_gammaUniform, params.gamma);
+    glUniform1i(glGetUniformLocation(_program, "imageA"), 0);
+    glUniform1i(glGetUniformLocation(_program, "imageB"), 1);
+    glUniform1f(_exposureAUniform, params.a.exposure);
+    glUniform1f(_exposureBUniform, params.b.exposure);
+    glUniform1f(_gammaAUniform, params.a.gamma);
+    glUniform1f(_gammaBUniform, params.b.gamma);
+    // The shader only knows single-texture modes plus wipe/difference
+    const CompareMode shaderMode = params.mode == CompareMode::SideBySide ? CompareMode::A : params.mode;
+    glUniform1i(_compareModeUniform, static_cast<int>(shaderMode));
+    glUniform1f(_wipeUniform, params.wipe);
     glUniform1i(_backgroundModeUniform, params.backgroundMode);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, textureB ? textureB : textureA);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, imageTexture);
+    glBindTexture(GL_TEXTURE_2D, textureA);
     glBindVertexArray(_emptyVao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glUseProgram(0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
     glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
 
-    _lastImageTexture = imageTexture;
+    _lastTextureA = textureA;
+    _lastTextureB = textureB;
     _lastParams = params;
     _dirty = false;
     return _outputTexture;

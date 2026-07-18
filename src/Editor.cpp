@@ -517,11 +517,14 @@ void Editor::DropCallback(GLFWwindow *window, int count, const char **paths) {
         Editor *editor = static_cast<Editor *>(userPointer);
         // TODO: Create a task, add a callback
         if (editor && count) {
+            int imageCount = 0;
             for (int i = 0; i < count; ++i) {
                 // make a drop event ?
                 if (IsSupportedImageFile(paths[i])) {
-                    // Images go to the image viewer, not the layer editors
-                    ImageViewerOpenFile(paths[i]);
+                    // Images go to the image viewer, not the layer editors:
+                    // the first dropped image to slot A, the following to B
+                    ImageViewerOpenFile(paths[i], imageCount == 0 ? 0 : 1);
+                    imageCount++;
                     editor->_settings._showImageViewer = true;
                 } else if (ArchGetFileLength(paths[i]) == 0) {
                     // if the file is empty, this is considered a new file
