@@ -21,9 +21,9 @@
 #include <pxr/base/gf/range2f.h>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
-#include <pxr/usdImaging/usdImagingGL/engine.h>
 
 #include <ImagingSettings.h>
+#include <ViewportEngine.h>
 
 class Viewport final {
   public:
@@ -181,13 +181,18 @@ class Viewport final {
 
     // Renderer
     GLuint _textureId = 0;
-    std::map<UsdStageRefPtr, UsdImagingGLEngine *> _renderers;
-    UsdImagingGLEngine *_renderer = nullptr;
+    std::map<UsdStageRefPtr, ViewportEngine *> _renderers;
+    ViewportEngine *_renderer = nullptr;
 
     /// Stages for which Hydra rendering is disabled. Static: shared across all Viewport instances.
     static std::set<UsdStageRefPtr> _hydraDisabledStages;
     ImagingSettings _imagingSettings;
     SceneObjectDrawer _sceneObjectDrawer;
+    /// The scene image rendered by Hydra, updated only when the engine reports it
+    /// is needed (scene edit, camera move, unconverged renderer, ...)
+    GlfDrawTargetRefPtr _sceneDrawTarget;
+    /// The displayed image: the scene image composited with the per-frame overlays
+    /// (grid, camera/light guides, manipulators HUD), shown as an ImGui image
     GlfDrawTargetRefPtr _drawTarget;
 };
 
