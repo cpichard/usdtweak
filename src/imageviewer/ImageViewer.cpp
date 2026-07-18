@@ -1,38 +1,49 @@
 #include "ImageViewer.h"
 
-#include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "FileBrowser.h"
 #include "FileImageSource.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
+#include "ImageCache.h"
 #include "ImageCompositor.h"
+#include "ImageSequence.h"
 #include "InfiniteCanvas.h"
 #include "ModalDialogs.h"
 
-// One image slot: what is loaded and what is being loaded. The latest request
-// made while a load is in flight is queued.
+// One image slot: which source of the store it shows and the last buffer
+// resolved from the cache (kept displayed while the current frame loads)
 struct ViewerSlot {
+    ImageSequenceSourcePtr source;
     ImageBufferPtr image;
-    std::future<ImageBufferPtr> pendingLoad;
-    std::string queuedPath;
 
     bool HasValidImage() const { return image && image->IsValid(); }
 };
 
-// The viewer is unique by design: one canvas, two compared slots (A/B),
-// living for the whole application session.
+// The viewer is unique by design: one canvas, two compared slots (A/B), a
+// store of every source opened or dropped, and the frame cache, living for
+// the whole application session.
 struct ImageViewerState {
     InfiniteCanvas canvas;
     ViewerSlot slots[2];
+    std::vector<ImageSequenceSourcePtr> store;
+    ImageCache cache;
     // compositors[0] renders A (and the combined wipe/difference modes),
     // compositors[1] renders B for the side-by-side mode
     ImageCompositor compositors[2];
     ImageCompositeParams params;
     bool linkedDisplay = true; // B follows A's exposure/gamma
+
+    // Frame selection: locked on the editor timeline, or the viewer transport
+    bool lockToTimeline = true;
+    int transportFrame = 0;
+    bool playing = false;
+    double playbackAccumulator = 0.0;
 
     bool fitPending = false;
     bool draggingWipe = false;
@@ -46,35 +57,29 @@ struct ImageViewerState {
 
 static ImageViewerState viewer;
 
-static void RequestImageLoad(int slot, const std::string &filePath) {
-    ViewerSlot &s = viewer.slots[slot];
-    if (s.pendingLoad.valid()) {
-        s.queuedPath = filePath;
-    } else {
-        s.pendingLoad = LoadImageFileAsync(filePath);
-    }
+// Read-ahead depth during sequence display, in frames
+static constexpr int kReadAheadFrames = 4;
+
+static void AssignSourceToSlot(int slot, const ImageSequenceSourcePtr &source) {
+    viewer.slots[slot].source = source;
+    viewer.slots[slot].image = nullptr;
+    viewer.fitPending = true;
 }
 
-void ImageViewerOpenFile(const std::string &filePath, int slot) {
-    RequestImageLoad(slot == 0 ? 0 : 1, filePath);
-}
-
-static void UpdatePendingLoads() {
-    for (int i = 0; i < 2; ++i) {
-        ViewerSlot &slot = viewer.slots[i];
-        if (slot.pendingLoad.valid() &&
-            slot.pendingLoad.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            slot.image = slot.pendingLoad.get();
-            viewer.compositors[0].MarkDirty();
-            viewer.compositors[1].MarkDirty();
-            viewer.fitPending |= slot.image->IsValid();
-            if (!slot.queuedPath.empty()) {
-                slot.pendingLoad = LoadImageFileAsync(slot.queuedPath);
-                slot.queuedPath.clear();
-            }
+// Open a path in a slot: reuse the store source covering it or create one
+static void OpenPathInSlot(int slot, const std::string &filePath) {
+    ImageSequenceSourcePtr source = CreateImageSource(filePath);
+    for (const auto &existing : viewer.store) {
+        if (existing->identity == source->identity) {
+            AssignSourceToSlot(slot, existing);
+            return;
         }
     }
+    viewer.store.push_back(source);
+    AssignSourceToSlot(slot, source);
 }
+
+void ImageViewerOpenFile(const std::string &filePath, int slot) { OpenPathInSlot(slot == 0 ? 0 : 1, filePath); }
 
 struct OpenImageModalDialog : public ModalDialog {
     OpenImageModalDialog(int slot) : slot(slot) { SetValidExtensions(GetImageFileExtensions()); }
@@ -89,7 +94,7 @@ struct OpenImageModalDialog : public ModalDialog {
         ImGui::Text("%s", filePath.c_str());
         DrawModalButtonsOkCancel([&]() {
             if (!filePath.empty() && FilePathExists()) {
-                RequestImageLoad(slot, filePath);
+                OpenPathInSlot(slot, filePath);
             }
         });
     }
@@ -111,6 +116,104 @@ static void SwapSlots() {
     viewer.compositors[1].MarkDirty();
 }
 
+static bool AnySequenceLoaded() {
+    return (viewer.slots[0].source && viewer.slots[0].source->IsSequence()) ||
+           (viewer.slots[1].source && viewer.slots[1].source->IsSequence());
+}
+
+// Union frame range over the slot sequences
+static void GetSequenceRange(int &first, int &last) {
+    first = INT_MAX;
+    last = INT_MIN;
+    for (const ViewerSlot &slot : viewer.slots) {
+        if (slot.source && slot.source->IsSequence()) {
+            first = std::min(first, slot.source->FirstFrame());
+            last = std::max(last, slot.source->LastFrame());
+        }
+    }
+    if (first > last) {
+        first = 0;
+        last = 0;
+    }
+}
+
+static double PlaybackFps(const UsdStageRefPtr &stage) {
+    if (stage) {
+        const double fps = stage->GetFramesPerSecond();
+        if (fps > 0.0) return fps;
+    }
+    return 24.0;
+}
+
+static int CurrentViewerFrame(UsdTimeCode currentTimeCode) {
+    if (viewer.lockToTimeline) {
+        return static_cast<int>(currentTimeCode.GetValue());
+    }
+    return viewer.transportFrame;
+}
+
+// Advance the transport when playing, looping over the union range
+static void UpdatePlayback(const UsdStageRefPtr &stage) {
+    if (!viewer.playing || viewer.lockToTimeline) return;
+    int first, last;
+    GetSequenceRange(first, last);
+    if (last <= first) return;
+    viewer.playbackAccumulator += ImGui::GetIO().DeltaTime * PlaybackFps(stage);
+    const int advance = static_cast<int>(viewer.playbackAccumulator);
+    if (advance > 0) {
+        viewer.playbackAccumulator -= advance;
+        viewer.transportFrame += advance;
+        if (viewer.transportFrame > last) {
+            viewer.transportFrame = first;
+        }
+    }
+}
+
+// Resolve the slot images for the current frame through the cache, keeping
+// the previous buffer displayed while the new frame loads
+static void ResolveSlotImages(int frame) {
+    for (ViewerSlot &slot : viewer.slots) {
+        if (!slot.source) continue;
+        const int resolved = slot.source->ResolveFrame(frame);
+        const ImageCacheKey key{slot.source->sourceId, resolved, 0};
+        if (ImageBufferPtr buffer = viewer.cache.Get(key)) {
+            if (buffer != slot.image) {
+                slot.image = buffer;
+                // GL texture ids can be recycled after an eviction, so the
+                // compositors' id-based dirty check is not enough
+                viewer.compositors[0].MarkDirty();
+                viewer.compositors[1].MarkDirty();
+            }
+        } else {
+            viewer.cache.RequestLoad(key, slot.source->PathForFrame(resolved));
+        }
+        // Read-ahead the next frames of a sequence
+        if (slot.source->IsSequence()) {
+            std::map<int, std::string>::const_iterator begin, end;
+            slot.source->NextFrames(resolved, kReadAheadFrames, begin, end);
+            for (auto it = begin; it != end; ++it) {
+                viewer.cache.RequestLoad({slot.source->sourceId, it->first, 0}, it->second);
+            }
+        }
+    }
+}
+
+static void DrawSourceCombo(int slotIndex) {
+    ViewerSlot &slot = viewer.slots[slotIndex];
+    const char *label = slotIndex == 0 ? "##SourceA" : "##SourceB";
+    const char *preview = slot.source ? slot.source->displayName.c_str() : "<none>";
+    ImGui::SetNextItemWidth(220.f);
+    if (ImGui::BeginCombo(label, preview)) {
+        for (const auto &source : viewer.store) {
+            const bool selected = slot.source == source;
+            if (ImGui::Selectable(source->displayName.c_str(), selected)) {
+                AssignSourceToSlot(slotIndex, source);
+            }
+        }
+        ImGui::EndCombo();
+    }
+}
+
 static void DrawToolbar() {
     ImageCompositeParams &params = viewer.params;
 
@@ -125,9 +228,7 @@ static void DrawToolbar() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(110.f);
     static const char *compareModes[] = {"A", "B", "Wipe", "Difference", "Side by side"};
-    int mode = static_cast<int>(params.mode == CompareMode::SideBySide ? CompareMode::SideBySide
-                                                                       : params.mode);
-    // Combo order: A, B, Wipe, Difference, Side by side (matches CompareMode)
+    int mode = static_cast<int>(params.mode);
     if (ImGui::Combo("##CompareMode", &mode, compareModes, 5)) {
         params.mode = static_cast<CompareMode>(mode);
     }
@@ -153,12 +254,12 @@ static void DrawToolbar() {
     }
     ImGui::SameLine();
     ImGui::Text("%.0f%%", viewer.canvas.zooming * framebufferScale * 100.0);
-    if (viewer.slots[0].pendingLoad.valid() || viewer.slots[1].pendingLoad.valid()) {
+    if (viewer.cache.HasPendingLoads()) {
         ImGui::SameLine();
         ImGui::TextDisabled("Loading...");
     }
 
-    // Second row: display transform
+    // Second row: display transform and slot sources
     ImGui::SetNextItemWidth(140.f);
     ImGui::SliderFloat("##ExposureA", &params.a.exposure, -10.f, 10.f,
                        viewer.linkedDisplay ? "Exp %.2f" : "Exp A %.2f");
@@ -179,18 +280,90 @@ static void DrawToolbar() {
     } else {
         params.b = params.a;
     }
-    // Image names at the end of the row
-    for (int i = 0; i < 2; ++i) {
-        if (viewer.slots[i].HasValidImage()) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%c: %dx%d %s", 'A' + i, viewer.slots[i].image->width,
-                                viewer.slots[i].image->height, viewer.slots[i].image->sourceName.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("A");
+    ImGui::SameLine();
+    DrawSourceCombo(0);
+    ImGui::SameLine();
+    ImGui::TextDisabled("B");
+    ImGui::SameLine();
+    DrawSourceCombo(1);
+}
+
+// Transport row and cached-frames bar, shown when a sequence is loaded
+static void DrawTransport(int currentFrame) {
+    int first, last;
+    GetSequenceRange(first, last);
+
+    ImGui::Checkbox("Timeline", &viewer.lockToTimeline);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Follow the editor timeline instead of the viewer transport");
+    ImGui::SameLine();
+    if (viewer.lockToTimeline) {
+        viewer.playing = false;
+        ImGui::TextDisabled("frame %d", currentFrame);
+    } else {
+        if (ImGui::Button(ICON_FA_STEP_BACKWARD)) {
+            viewer.transportFrame = std::max(first, viewer.transportFrame - 1);
         }
+        ImGui::SameLine();
+        if (ImGui::Button(viewer.playing ? ICON_FA_PAUSE : ICON_FA_PLAY)) {
+            viewer.playing = !viewer.playing;
+            viewer.playbackAccumulator = 0.0;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_STEP_FORWARD)) {
+            viewer.transportFrame = std::min(last, viewer.transportFrame + 1);
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(240.f);
+        viewer.transportFrame = std::max(first, std::min(viewer.transportFrame, last));
+        ImGui::SliderInt("##TransportFrame", &viewer.transportFrame, first, last);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("cache %zu/%zu MB", viewer.cache.GetUsedBytes() / (1024 * 1024),
+                        viewer.cache.GetBudgetBytes() / (1024 * 1024));
+
+    // Cached-frames bar: one row per sequence slot, colored where resident
+    ImDrawList *drawList = ImGui::GetWindowDrawList();
+    const float barWidth = ImGui::GetContentRegionAvail().x;
+    constexpr float rowHeight = 4.f;
+    const int frameCount = last - first + 1;
+    ImVec2 barOrigin = ImGui::GetCursorScreenPos();
+    int rows = 0;
+    for (int i = 0; i < 2; ++i) {
+        const ImageSequenceSourcePtr &source = viewer.slots[i].source;
+        if (!source || !source->IsSequence()) continue;
+        const float y = barOrigin.y + rows * (rowHeight + 1.f);
+        drawList->AddRectFilled(ImVec2(barOrigin.x, y), ImVec2(barOrigin.x + barWidth, y + rowHeight),
+                                IM_COL32(45, 45, 50, 255));
+        // Merge consecutive cached frames into single rectangles
+        int runStart = -1;
+        for (int f = first; f <= last + 1; ++f) {
+            const bool cached = f <= last && source->HasFrame(f) &&
+                                viewer.cache.Contains({source->sourceId, f, 0});
+            if (cached && runStart < 0) runStart = f;
+            if (!cached && runStart >= 0) {
+                const float x0 = barOrigin.x + barWidth * (runStart - first) / frameCount;
+                const float x1 = barOrigin.x + barWidth * (f - first) / frameCount;
+                drawList->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + rowHeight),
+                                        i == 0 ? IM_COL32(90, 160, 90, 255) : IM_COL32(90, 120, 170, 255));
+                runStart = -1;
+            }
+        }
+        rows++;
+    }
+    if (rows > 0) {
+        // Current frame marker over the bar(s)
+        const float barHeight = rows * (rowHeight + 1.f);
+        const float markerX =
+            barOrigin.x + barWidth * (std::max(first, std::min(currentFrame, last)) - first + 0.5f) / frameCount;
+        drawList->AddLine(ImVec2(markerX, barOrigin.y), ImVec2(markerX, barOrigin.y + barHeight),
+                          IM_COL32(255, 200, 60, 255));
+        ImGui::Dummy(ImVec2(barWidth, barHeight + 2.f));
     }
 }
 
-// The draggable wipe line over the image rect. Returns true when the mouse is
-// interacting with it so the caller can keep other click handling away.
+// The draggable wipe line over the image rect
 static void HandleAndDrawWipe(const ImVec2 &imageMin, const ImVec2 &imageMax, ImDrawList *drawList) {
     InfiniteCanvas &canvas = viewer.canvas;
     ImageCompositeParams &params = viewer.params;
@@ -201,7 +374,7 @@ static void HandleAndDrawWipe(const ImVec2 &imageMin, const ImVec2 &imageMax, Im
     const ImVec2 mouse = ImGui::GetMousePos();
     const bool overLine = mouse.x > top.x - 6.f && mouse.x < top.x + 6.f && mouse.y > top.y - 6.f &&
                           mouse.y < bottom.y + 6.f && canvas.widgetBoundingBox.Contains(mouse);
-    if (!viewer.draggingWipe && overLine && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+    if (!viewer.draggingWipe && overLine && !canvas._popupOpen && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
         !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
         viewer.draggingWipe = true;
     }
@@ -222,9 +395,16 @@ static void HandleAndDrawWipe(const ImVec2 &imageMin, const ImVec2 &imageMax, Im
     drawList->AddCircleFilled(ImVec2(top.x, (top.y + bottom.y) / 2.f), highlight ? 7.f : 5.f, color);
 }
 
-void DrawImageViewer() {
-    UpdatePendingLoads();
+void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
+    viewer.cache.Update();
+    UpdatePlayback(stage);
+    const int currentFrame = CurrentViewerFrame(currentTimeCode);
+    ResolveSlotImages(currentFrame);
+
     DrawToolbar();
+    if (AnySequenceLoaded()) {
+        DrawTransport(currentFrame);
+    }
 
     InfiniteCanvas &canvas = viewer.canvas;
     ImageCompositeParams &params = viewer.params;
@@ -309,7 +489,7 @@ void DrawImageViewer() {
         }
 
         // X flips between A and B when both are loaded
-        if (imageA && imageB && ImGui::IsKeyPressed(ImGuiKey_X) &&
+        if (imageA && imageB && !canvas._popupOpen && ImGui::IsKeyPressed(ImGuiKey_X) &&
             canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
             if (params.mode == CompareMode::A) {
                 params.mode = CompareMode::B;
@@ -327,7 +507,8 @@ void DrawImageViewer() {
         drawList->AddText(textPos, IM_COL32(140, 140, 140, 255), message);
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_F) && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
+    if (!canvas._popupOpen && ImGui::IsKeyPressed(ImGuiKey_F) &&
+        canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
         viewer.fitPending = true;
     }
 

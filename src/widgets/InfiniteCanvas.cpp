@@ -24,9 +24,11 @@ void InfiniteCanvas::Begin(ImDrawList *drawList_) {
     widgetBoundingBox.Max = widgetOrigin + widgetSize;
     drawList->PushClipRect(widgetBoundingBox.Min, widgetBoundingBox.Max);
 
-    // While a popup (e.g. a context menu) is open, the canvas must ignore
-    // clicks — otherwise clicking a menu item also clicks through the canvas.
-    const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+    // While a popup (e.g. a context menu or a modal) is open, the canvas must
+    // ignore clicks — otherwise clicking a menu item also clicks through the
+    // canvas. HandleWheelZoom() reuses the flag for the mouse wheel.
+    _popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+    const bool popupOpen = _popupOpen;
     // During our own pan/zoom the OS cursor is locked, so io.MousePos is GLFW's virtual
     // cursor position and keeps drifting past the panel rect. Bounds-testing it would
     // cancel the drag mid-way, so only the button release below can end it. The test is
@@ -87,7 +89,9 @@ void InfiniteCanvas::UpdateNavigation(bool allowStart) {
 }
 
 void InfiniteCanvas::HandleWheelZoom() {
-    // Mouse-wheel zoom, anchored under the cursor.
+    // Mouse-wheel zoom, anchored under the cursor. While a popup is open the
+    // wheel belongs to it (e.g. scrolling a file browser over the canvas).
+    if (_popupOpen) return;
     const float wheel = ImGui::GetIO().MouseWheel;
     if (wheel != 0.f && widgetBoundingBox.Contains(ImGui::GetMousePos())) {
         ZoomAtScreenPosition(ImGui::GetMousePos(), powf(1.1f, wheel));

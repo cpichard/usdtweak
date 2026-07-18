@@ -3,6 +3,10 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FileImageSource.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImageBuffer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ImageBuffer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ImageCache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ImageCache.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ImageSequence.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ImageSequence.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImageCompositor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ImageCompositor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ImageViewer.cpp

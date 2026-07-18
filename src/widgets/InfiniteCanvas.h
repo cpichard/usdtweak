@@ -116,4 +116,7 @@ struct InfiniteCanvas {
     // Alt-click seen by Begin(), pending until UpdateNavigation() decides
     bool _panRequested = false;
     bool _zoomRequested = false;
+    // A popup (modal, context menu) is open this frame: the canvas must not
+    // react to the mouse at all, its input belongs to the popup
+    bool _popupOpen = false;
 };
