@@ -15,6 +15,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraNoticeLogger.h
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraWidgets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/HydraWidgets.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/InfiniteCanvas.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/InfiniteCanvas.h
     ${CMAKE_CURRENT_SOURCE_DIR}/TableLayouts.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfLayerEditor.h

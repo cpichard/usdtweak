@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
+#include "InfiniteCanvas.h"
 #include "Commands.h"
 #include <pxr/usd/usdShade/nodeGraph.h>
 #include <pxr/usd/usdShade/material.h>
@@ -286,100 +287,56 @@ static NodeConnectionEditorData editorData;
 
 
 
-struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
-    
+struct ConnectionsEditorCanvas : public InfiniteCanvas {
+
     // Testing with event and state machine
     uint8_t state = 0; // current edition state of the canvas, (selecting, moving node, zoom/pan?)
     uint8_t event = 0; // events on the current rendered frame
-    
+
     // ??? events we need
     enum Events : uint8_t {
         IDLE = 0,
         CANVAS_CLICKED,
-        CANVAS_CLICKED_PANNING,
-        CANVAS_CLICKED_ZOOMING,
         NODE_CLICKED,
         CONNECTOR_CLICKED,
         CLICK_RELEASED,
         SELECT_PRIM_CLICKED,
         CONNECTION_CLICKED,
     };
-    
+
     // ???
     enum States : uint8_t {
         HOVERING_CANVAS, //
         SELECTING_REGION,
-        CANVAS_ZOOMING,
-        CANVAS_PANING,
         SELECTING_NODE,
         MOVING_NODE,
         CONNECTING_NODES,
     };
-    
+
     void Begin(ImDrawList* drawList_) {
-        
+
         // Reset state
-        event  = Events::IDLE; // reset event
         hasSelectedNodes = false; // reset selected nodes
         openNodeContextMenu = false; // reset right-click menu request
 
-        drawList = drawList_;
-        ImGuiContext& g = *GImGui;
-        // Current widget position, in absolute coordinates. (relative to the main window)
-        widgetOrigin = ImGui::GetCursorScreenPos(); // canvasOrigin, canvasSize
-        // WindowSize returns the size of the whole window, including tabs that we have to remove to get the widget size.
-        // GetCursorPos gives the current position in window coordinates
-        widgetSize = ImGui::GetWindowSize() - ImGui::GetCursorPos() - g.Style.WindowPadding; // Should also add the borders
-        originOffset = (widgetSize / 2.f); // in window Coordinates
-        drawList->ChannelsSplit(2); // Foreground and background
-        // TODO: we might want to use only widgetBB and get rid of widgetOrigin and widgetSize
-        widgetBoundingBox.Min = widgetOrigin;
-        widgetBoundingBox.Max = widgetOrigin + widgetSize;
-        drawList->PushClipRect(widgetBoundingBox.Min, widgetBoundingBox.Max);
-        // There is no overlapping of widgets unfortunateluy
-        //if (ImGui::InvisibleButton("canvas", widgetBoundingBox.GetSize())) {
-        //    std::cout << "Canvas clicked" << std::endl;
-        //}
-        // While a popup (e.g. the node context menu) is open, the canvas must ignore
-        // clicks — otherwise clicking a menu item also starts a region selection.
-        const bool popupOpen = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
-        // During our own pan/zoom the OS cursor is locked, so io.MousePos is GLFW's virtual
-        // cursor position and keeps drifting past the panel rect. Bounds-testing it would
-        // cancel the drag mid-way, so only the button release below can end it. The test is
-        // on our own state, not on Editor::GetMouseCaptured(): the capture is global, and a
-        // viewport manipulator holding it must not let clicks through to this canvas.
-        const bool draggingCanvas = (state == States::CANVAS_PANING || state == States::CANVAS_ZOOMING);
-        if (!popupOpen && (draggingCanvas || widgetBoundingBox.Contains(ImGui::GetMousePos()))) {
-            // Click on the canvas TODO test bounding box
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-                    event = Events::CANVAS_CLICKED_PANNING;
-                } else {
-                    event = Events::CANVAS_CLICKED;
-                }
-            } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                if (ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-                    event = Events::CANVAS_CLICKED_ZOOMING;
-                    ImGuiIO& io = ImGui::GetIO();
-                    zoomClick = io.MouseClickedPos[ImGuiMouseButton_Right];
-                }
-            } else if (ImGui::IsMouseReleased(0) || ImGui::IsMouseReleased(1)) { // TODO Should be any button ??
-                event = Events::CLICK_RELEASED;
-            }
-        } else {
+        InfiniteCanvas::Begin(drawList_);
+
+        // Map the canvas input to this editor's event. DrawNode/DrawSheet may
+        // override it later in the frame with a more specific target (node,
+        // connector, connection); alt-clicks stay pending in the canvas until
+        // UpdateNavigation decides whether they start a pan/zoom.
+        event = Events::IDLE;
+        if (leftClicked) {
+            event = Events::CANVAS_CLICKED;
+        } else if (clickReleased) {
             event = Events::CLICK_RELEASED;
         }
     }
-    
-    void End() {
-        drawList->ChannelsMerge();
-        drawList->PopClipRect();
-    };
 
     // Adjust zoom and scroll so all nodes are visible in the current widget.
     // Must be called after Begin() so widgetSize is up to date.
     void FitView(const ConnectionsSheet &sheet, bool selectedOnly = false) {
-        if (sheet.nodes.empty() || widgetSize.x <= 0.f || widgetSize.y <= 0.f) return;
+        if (sheet.nodes.empty()) return;
 
         constexpr float fitPadding  = 40.f; // screen-space margin around the graph
         constexpr float headerHeight = 50.f;
@@ -398,108 +355,11 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
             bboxMax.y = std::max(bboxMax.y, nodeMax.y);
         }
 
-        const float bboxW = bboxMax.x - bboxMin.x;
-        const float bboxH = bboxMax.y - bboxMin.y;
-        if (bboxW <= 0.f || bboxH <= 0.f) return;
-
-        // Compute zoom to fit, then clamp to a reasonable range.
-        const float fitZoomX = (widgetSize.x - 2.f * fitPadding) / bboxW;
-        const float fitZoomY = (widgetSize.y - 2.f * fitPadding) / bboxH;
-        zooming = std::max(0.05f, std::min(std::min(fitZoomX, fitZoomY), 5.f));
-
-        // Set scroll so the bbox center maps to the widget center.
-        // CanvasToWindow(pos) = pos*zoom + scroll + originOffset
-        // We want CanvasToWindow(center) = originOffset  →  scroll = -center*zoom
-        const ImVec2 bboxCenter = (bboxMin + bboxMax) * 0.5f;
-        scrolling = bboxCenter * (-zooming);
+        FitToBBox(bboxMin, bboxMax, fitPadding);
     }
 
-    // What we call canvas is the infinite normalized region
-    inline ImVec2 CanvasToWindow(const ImVec2 &posInCanvas) {
-        return posInCanvas * zooming + scrolling + originOffset;
-    }
-
-    inline ImVec2 WindowToCanvas(const ImVec2 &posInWindow) {
-        return  (posInWindow - scrolling - originOffset) / zooming;
-    }
-    
-    inline ImVec2 WindowToScreen(const ImVec2 &posInWindow) {
-        return posInWindow + widgetOrigin;
-    }
-    
-    inline ImVec2 ScreenToWindow(const ImVec2 &posInScreen) {
-        return posInScreen - widgetOrigin;
-    }
-
-    // The imgui draw functions are expressed in absolute screen coordinates.
-    inline ImVec2 CanvasToScreen(const ImVec2 &posInCanvas) {
-        return WindowToScreen(CanvasToWindow(posInCanvas));
-    }
-    
-    inline ImVec2 ScreenToCanvas(const ImVec2 &posInScreen) {
-        return WindowToCanvas(ScreenToWindow(posInScreen));
-    }
-
-    // Zoom by a multiplicative factor while keeping posInScreen anchored under the cursor.
-    // Used by the mouse-wheel zoom.
-    inline void ZoomAtScreenPosition(const ImVec2 &posInScreen, float factor) {
-        const ImVec2 posInCanvas = ScreenToCanvas(posInScreen);
-        zooming = std::max(0.01f, std::min(zooming * factor, 50.f));
-        // Re-anchor: shift scrolling so posInCanvas maps back to posInScreen.
-        scrolling -= CanvasToScreen(posInCanvas) - posInScreen;
-    }
-
-    // Zoom using posInScreen as the origin of the zoom
-    inline void ZoomFromPosition(const ImVec2 &posInScreen, const ImVec2 &deltaInScreen) {
-        // Offset, zoom, -offset
-        auto posInCanvas = ScreenToCanvas(posInScreen);
-        auto zoomDelta = -0.002 * (deltaInScreen.x + deltaInScreen.y);
-        zooming *= 1.f + zoomDelta;
-        auto posInCanvasAfterZoom = ScreenToCanvas(posInScreen);
-        auto diff = CanvasToScreen(posInCanvas) - CanvasToScreen(posInCanvasAfterZoom);
-        scrolling -= diff;
-        // Debug: check the zoom origin position remains the same
-        drawList->AddCircle(CanvasToScreen(posInCanvas), 10, IM_COL32(255, 0, 255, 255));
-    }
-    
     // TODO Clipping of nodes (do not draw them in the first place)
-    
-    
-    // For debugging the widget size
-    void DrawBoundaries() {
-        // Test the center of the virtual canvas
-        ImVec2 centerScreen = CanvasToScreen(ImVec2(0.F, 0.f));
-        drawList->AddCircle(centerScreen, 10, 0xFFFFFFFF);
-        drawList->AddLine(widgetOrigin, ImVec2(0, widgetSize.y) + widgetOrigin, 0xFFFFFFFF);
-        drawList->AddLine(widgetOrigin, ImVec2(widgetSize.x, 0) + widgetOrigin, 0xFFFFFFFF);
-        drawList->AddLine(ImVec2(0, widgetSize.y) + widgetOrigin, ImVec2(widgetSize.x, 0) + widgetOrigin, 0xFFFFFFFF);
-        drawList->AddLine(ImVec2(0, widgetSize.y) + widgetOrigin, ImVec2(widgetSize.x, widgetSize.y) + widgetOrigin, 0xFFFFFFFF);
-        drawList->AddLine(ImVec2(widgetSize.x, widgetSize.y) + widgetOrigin, ImVec2(widgetSize.x, 0) + widgetOrigin, 0xFFFFFFFF);
-    }
-    
-    void DrawGrid() {
-        drawList->ChannelsSetCurrent(0); // Background
-        const float gridSpacing = 50.f;
-        const ImU32 gridColor = IM_COL32(200, 200, 200, 40);
-        // Find the first visible line of the grid
-        auto gridOrigin = ScreenToCanvas(widgetOrigin);
-        gridOrigin = ImVec2(ceilf(gridOrigin.x/gridSpacing)*gridSpacing, ceilf(gridOrigin.y/gridSpacing)*gridSpacing);
-        gridOrigin = CanvasToScreen(gridOrigin);
-        auto gridSize0 = CanvasToScreen(ImVec2(0.f, 0.f));
-        auto gridSize1 = CanvasToScreen(ImVec2(gridSpacing, gridSpacing));
-        auto gridSize = gridSize1 - gridSize0;
-        
-        // Draw in screen space
-        for (float x = gridOrigin.x; x<widgetOrigin.x+widgetSize.x; x+=gridSize.x) {
-            drawList->AddLine(ImVec2(x, widgetOrigin.y),
-                              ImVec2(x, widgetOrigin.y+widgetSize.y), gridColor);
-        }
-        for (float y = gridOrigin.y; y<widgetOrigin.y+widgetSize.y; y+=gridSize.y) {
-            drawList->AddLine(ImVec2(0.f, y),
-                              ImVec2(widgetOrigin.x+widgetSize.x, y), gridColor);
-        }
-    }
-    
+
     static ImU32 GetNodeHeaderColor(const UsdPrim &prim) {
         static const TfToken materialToken("Material");
         static const TfToken shaderToken("Shader");
@@ -879,7 +739,10 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
     // Update the editing state given the last event and the current state
     // Not very readable, but it works
     void UpdateState() {
-        ImGuiIO& io = ImGui::GetIO();
+        // The pan/zoom lives in InfiniteCanvas; an alt-click only starts it
+        // when nothing more specific (node, connector, connection) claimed
+        // this frame's click.
+        UpdateNavigation(state == States::HOVERING_CANVAS && event == Events::IDLE);
         if (state ==States::HOVERING_CANVAS) {
             if (event == CONNECTION_CLICKED) {
                 // Selection already set in DrawSheet; just stay in HOVERING_CANVAS
@@ -894,12 +757,6 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 selectedConnections.clear();
                 state = SELECTING_REGION; // Region selection
                 selectionOrigin = ImGui::GetMousePos();
-            } else if (event == CANVAS_CLICKED_PANNING) {
-                state = CANVAS_PANING;
-                Editor::SetMouseCaptured(true);
-            } else if (event == CANVAS_CLICKED_ZOOMING) {
-                state = CANVAS_ZOOMING;
-                Editor::SetMouseCaptured(true);
             } else if (event == CLICK_RELEASED) {
                 state = HOVERING_CANVAS;
             } else if (event == CONNECTOR_CLICKED) {
@@ -919,23 +776,6 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
             } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.f)) {
                 state = MOVING_NODE;
                 // TODO Store position ??
-            }
-        } else if (state == CANVAS_PANING) {
-            if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-                state = HOVERING_CANVAS;
-                Editor::SetMouseCaptured(false);
-            }
-            // Update scrolling
-            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.f)) {
-                scrolling = scrolling + io.MouseDelta;
-            }
-        } else if (state == CANVAS_ZOOMING) {
-            if (event == CLICK_RELEASED || !ImGui::IsKeyDown(ImGuiKey_LeftAlt)) {
-                state = HOVERING_CANVAS;
-                Editor::SetMouseCaptured(false);
-            }
-            else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.f)) {
-                ZoomFromPosition(zoomClick, io.MouseDelta);
             }
         } else if (state == MOVING_NODE) {
             if (event == CLICK_RELEASED) {
@@ -973,19 +813,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         return ImRect(Min, Max);
     }
     
-    // We want the origin to be at the center of the canvas
-    // so we apply an offset which depends on the canvas size
-    ImVec2 originOffset = ImVec2(0.0f, 0.0f);
-    ImVec2 scrolling = ImVec2(0.0f, 0.0f); // expressed in screen space
-    // Zooming starting at 1 means we have an equivalence between screen and canvas unit, this
-    // is probably not what we want.
-    // Zooming 10 means 10 times bigger than the pixel size
-    float zooming = 1.f; // TODO: make sure zooming is never 0
-    ImVec2 zoomClick = ImVec2(0.0f, 0.0f); // Zoom origin
-    ImVec2 selectionOrigin; // TODO this could be union with zoom click (origin)
-    ImVec2 widgetOrigin = ImVec2(0.0f, 0.0f);  // canvasOrigin, canvasSize in screen coordinates
-    ImVec2 widgetSize = ImVec2(0.0f, 0.0f);
-    ImRect widgetBoundingBox;
+    ImVec2 selectionOrigin; // region selection origin, in screen space
     UsdPrimNode *nodeClicked = nullptr;
 
     // Right-click node context menu (opened in DrawNode, consumed in DrawConnectionEditor)
@@ -1007,9 +835,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
 
     bool hasSelectedNodes = false; // computed at each frame
     bool mouseOverAnyNode = false; // reset each frame; true when mouse is inside any node bounding box
-    
-    ImDrawList* drawList = nullptr;
-    
+
     UsdStageWeakPtr currentStage;
 };
 
@@ -1308,11 +1134,7 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage, const Selection &selectio
             pendingFitView = false;
             pendingFitViewSelected = false;
         }
-        // Mouse-wheel zoom, anchored under the cursor.
-        const float wheel = ImGui::GetIO().MouseWheel;
-        if (wheel != 0.f && canvas.widgetBoundingBox.Contains(ImGui::GetMousePos())) {
-            canvas.ZoomAtScreenPosition(ImGui::GetMousePos(), powf(1.1f, wheel));
-        }
+        canvas.HandleWheelZoom();
         canvas.DrawGrid();
         canvas.DrawSheet(sheet);
         //canvas.DrawBoundaries(); // for debugging
