@@ -6,12 +6,19 @@
 #include <utility>
 #include <vector>
 
+#include <pxr/base/tf/stringUtils.h>
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stageCache.h>
 #include <pxr/usd/usdGeom/camera.h>
+#include <pxr/usd/usdGeom/scope.h>
 #include <pxr/usd/usdRender/product.h>
+#include <pxr/usd/usdRender/settings.h>
+#include <pxr/usd/usdRender/tokens.h>
+#include <pxr/usd/usdRender/var.h>
 #include <pxr/usd/usdUtils/stageCache.h>
+
+#include "Commands.h"
 
 #include "FileBrowser.h"
 #include "FileImageSource.h"
@@ -338,6 +345,58 @@ static void ApplyProductToSetup(RenderSetup &setup, const UsdStageRefPtr &stage,
     }
 }
 
+// First free /parent/base, /parent/base1, ... prim path on the stage
+static SdfPath FindFreePrimPath(const UsdStageRefPtr &stage, const SdfPath &parent, const std::string &base) {
+    SdfPath path = parent.AppendChild(TfToken(base));
+    int suffix = 1;
+    while (stage->GetPrimAtPath(path)) {
+        path = parent.AppendChild(TfToken(base + std::to_string(suffix++)));
+    }
+    return path;
+}
+
+// Author the session render setup as RenderSettings/RenderProduct/RenderVar
+// prims under /Render, through the command system (undoable). Returns the
+// product path the setup can point at.
+static SdfPath AuthorRenderSetupToStage(const RenderSetup &setup) {
+    UsdStageRefPtr stage(setup.stage);
+    if (!stage) return {};
+    const TfToken aov = setup.aov.IsEmpty() ? HdAovTokens->color : setup.aov;
+    // The paths are decided now so the UI can point at the product immediately
+    static const SdfPath renderScopePath("/Render");
+    const SdfPath settingsPath = FindFreePrimPath(stage, renderScopePath, "Settings");
+    const SdfPath productPath = FindFreePrimPath(stage, renderScopePath, "Product");
+    const SdfPath varPath = productPath.AppendChild(TfToken(TfMakeValidIdentifier(aov.GetString())));
+    const SdfPath cameraPath = setup.cameraPath;
+    const GfVec2i resolution = setup.resolution;
+    const std::string aovSourceName = aov.GetString();
+
+    ExecuteAfterDraw(
+        [=](UsdStageRefPtr stage) {
+            UsdGeomScope::Define(stage, renderScopePath);
+            UsdRenderSettings settings = UsdRenderSettings::Define(stage, settingsPath);
+            UsdRenderProduct product = UsdRenderProduct::Define(stage, productPath);
+            UsdRenderVar renderVar = UsdRenderVar::Define(stage, varPath);
+            settings.CreateResolutionAttr(VtValue(resolution));
+            settings.CreateProductsRel().SetTargets({productPath});
+            product.CreateResolutionAttr(VtValue(resolution));
+            product.CreateOrderedVarsRel().SetTargets({varPath});
+            if (!cameraPath.IsEmpty()) {
+                settings.CreateCameraRel().SetTargets({cameraPath});
+                product.CreateCameraRel().SetTargets({cameraPath});
+            }
+            renderVar.CreateSourceNameAttr(VtValue(aovSourceName));
+            // Make these the stage's render settings when none are set yet
+            std::string currentSettingsPath;
+            if (!stage->GetMetadata(UsdRenderTokens->renderSettingsPrimPath, &currentSettingsPath) ||
+                currentSettingsPath.empty()) {
+                stage->SetMetadata(UsdRenderTokens->renderSettingsPrimPath, settingsPath.GetString());
+            }
+        },
+        stage);
+    return productPath;
+}
+
 // The per-slot render setup popup: stage, delegate, product, camera, resolution
 static void DrawSlotRenderSetupPopup(int slotIndex) {
     if (!ImGui::BeginPopup("##SlotRenderSetup")) return;
@@ -445,6 +504,22 @@ static void DrawSlotRenderSetupPopup(int slotIndex) {
     }
     ImGui::SetNextItemWidth(220.f);
     ImGui::DragInt2("Range", viewer.slotRenderRange[slotIndex], 0.2f);
+
+    // Report the session setup onto the stage as authored render settings
+    ImGui::Separator();
+    ImGui::BeginDisabled(!setupStage);
+    if (ImGui::Button(ICON_FA_FILE_EXPORT " Author to stage")) {
+        const SdfPath newProductPath = AuthorRenderSetupToStage(setup);
+        if (!newProductPath.IsEmpty()) {
+            setup.productPath = newProductPath;
+            changed = true;
+        }
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Create RenderSettings, RenderProduct and RenderVar prims under /Render\n"
+                          "from this setup (undoable); the slot then points at the new product");
 
     if (changed) {
         SetSlotSetup(slotIndex, setup);
