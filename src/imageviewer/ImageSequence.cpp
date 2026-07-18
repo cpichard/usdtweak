@@ -1,9 +1,10 @@
 #include "ImageSequence.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <cstdlib>
+
+#include "ImageCache.h"
 
 #if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -13,6 +14,9 @@ namespace fs = std::filesystem;
 #include <ghc/filesystem.hpp>
 namespace fs = ghc::filesystem;
 #endif
+
+// Read-ahead depth during sequence display, in frames
+static constexpr int kReadAheadFrames = 4;
 
 int ImageSequenceSource::ResolveFrame(int frame) const {
     if (framePaths.empty()) return 0;
@@ -26,33 +30,18 @@ std::string ImageSequenceSource::PathForFrame(int frame) const {
     return framePaths.at(ResolveFrame(frame));
 }
 
-void ImageSequenceSource::NextFrames(int frame, int count, std::map<int, std::string>::const_iterator &begin,
-                                     std::map<int, std::string>::const_iterator &end) const {
-    begin = framePaths.upper_bound(frame);
-    end = begin;
-    for (int i = 0; i < count && end != framePaths.end(); ++i) ++end;
-}
-
-static uint64_t NextSourceId() {
-    static std::atomic<uint64_t> counter{1};
-    return counter++;
-}
-
-// Last run of digits in the filename: render.0010.exr -> prefix "render.",
-// digits "0010", suffix ".exr". Returns false when there is no digit.
-static bool FindFrameDigits(const std::string &filename, size_t &digitsBegin, size_t &digitsEnd) {
-    size_t end = filename.size();
-    while (end > 0) {
-        if (std::isdigit(static_cast<unsigned char>(filename[end - 1]))) {
-            size_t begin = end;
-            while (begin > 0 && std::isdigit(static_cast<unsigned char>(filename[begin - 1]))) --begin;
-            digitsBegin = begin;
-            digitsEnd = end;
-            return true;
+void ImageSequenceSource::RequestFrame(int frame, ImageCache &cache) {
+    const int resolved = ResolveFrame(frame);
+    auto it = framePaths.find(resolved);
+    if (it == framePaths.end()) return;
+    cache.RequestLoad({sourceId, resolved, SettingsHash()}, it->second);
+    // Read-ahead the next frames of a sequence
+    if (isSequence) {
+        auto ahead = framePaths.upper_bound(resolved);
+        for (int i = 0; i < kReadAheadFrames && ahead != framePaths.end(); ++i, ++ahead) {
+            cache.RequestLoad({sourceId, ahead->first, SettingsHash()}, ahead->second);
         }
-        --end;
     }
-    return false;
 }
 
 // Collect every file in directory matching <prefix><digits><suffix>, keyed
@@ -78,9 +67,26 @@ static void CollectNumberedSiblings(const fs::path &directoryPath, const std::st
     }
 }
 
-ImageSequenceSourcePtr CreateImageSource(const std::string &filePath) {
+// Last run of digits in the filename: render.0010.exr -> prefix "render.",
+// digits "0010", suffix ".exr". Returns false when there is no digit.
+static bool FindFrameDigits(const std::string &filename, size_t &digitsBegin, size_t &digitsEnd) {
+    size_t end = filename.size();
+    while (end > 0) {
+        if (std::isdigit(static_cast<unsigned char>(filename[end - 1]))) {
+            size_t begin = end;
+            while (begin > 0 && std::isdigit(static_cast<unsigned char>(filename[begin - 1]))) --begin;
+            digitsBegin = begin;
+            digitsEnd = end;
+            return true;
+        }
+        --end;
+    }
+    return false;
+}
+
+ImageSourcePtr CreateImageSource(const std::string &filePath) {
     auto source = std::make_shared<ImageSequenceSource>();
-    source->sourceId = NextSourceId();
+    source->sourceId = NextImageSourceId();
 
     const fs::path path(filePath);
     const std::string filename = path.filename().string();

@@ -51,6 +51,9 @@ class ImageCache {
 
     bool HasPendingLoads() const { return !_inflight.empty() || !_queued.empty(); }
 
+    /// Insert a produced buffer (e.g. a finished render readback) under a key
+    void Insert(const ImageCacheKey &key, const ImageBufferPtr &buffer) { _Insert(key, buffer); }
+
     /// Collect finished loads, insert them, evict over budget. Call once per
     /// frame from the UI thread.
     void Update();
