@@ -58,6 +58,10 @@ class ImageCache {
     /// frame from the UI thread.
     void Update();
 
+    /// Drop every entry and wait for the in-flight loads. Called at shutdown
+    /// while the worker threads can still be joined safely.
+    void Clear();
+
     size_t GetUsedBytes() const { return _usedBytes; }
     size_t GetBudgetBytes() const { return _budgetBytes; }
     void SetBudgetBytes(size_t bytes);

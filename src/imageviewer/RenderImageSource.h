@@ -20,26 +20,34 @@
 
 class ViewportEngine;
 
-/// What to render, resolved by the render setup UI. Session-only; authoring
-/// back to the stage as RenderSettings prims is a later phase.
+/// What to render, resolved by the per-slot render setup UI: the stage (any
+/// stage open in the editor), delegate, product, camera and resolution.
+/// Session-only; authoring back to the stage as RenderSettings prims is a
+/// later phase.
 struct RenderSetup {
+    UsdStageWeakPtr stage;
     TfToken rendererPluginId;
     SdfPath productPath; // selected UsdRenderProduct, empty = synthesized default
     SdfPath cameraPath;
     GfVec2i resolution = GfVec2i(1280, 720);
 
     bool operator==(const RenderSetup &other) const {
-        return rendererPluginId == other.rendererPluginId && productPath == other.productPath &&
-               cameraPath == other.cameraPath && resolution == other.resolution;
+        return stage == other.stage && rendererPluginId == other.rendererPluginId &&
+               productPath == other.productPath && cameraPath == other.cameraPath && resolution == other.resolution;
     }
     bool operator!=(const RenderSetup &other) const { return !(*this == other); }
 
+    /// Root layer identifier of the stage, empty when it expired
+    std::string StageIdentifier() const;
     uint64_t Hash() const;
 };
 
 struct RenderImageSource : ImageSource {
-    RenderImageSource(UsdStageRefPtr stage, const RenderSetup &setup);
+    RenderImageSource(const RenderSetup &setup);
     ~RenderImageSource() override;
+
+    /// Store-deduplication identity of a source rendering this setup
+    static std::string MakeIdentity(const RenderSetup &setup);
 
     /// Changing the setup re-keys the cache entries (new settings hash) and
     /// drops the pending renders; already-rendered frames stay cached under

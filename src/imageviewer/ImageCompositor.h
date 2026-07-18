@@ -59,6 +59,11 @@ class ImageCompositor {
     /// Nearest-neighbour magnification above 1:1 zoom keeps pixels crisp
     void SetOutputFilter(bool nearest);
 
+    /// Delete the GL objects while the context is still alive; the destructor
+    /// then has nothing left to do (the viewer state is a static whose
+    /// destructor runs after the context is gone)
+    void ReleaseGLResources();
+
   private:
     bool _CompileProgramIfNeeded();
     void _ResizeOutputIfNeeded(int width, int height);

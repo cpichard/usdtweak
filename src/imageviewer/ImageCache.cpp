@@ -50,6 +50,19 @@ void ImageCache::Update() {
     _EvictOverBudget();
 }
 
+void ImageCache::Clear() {
+    // Future destructors of std::async tasks join their worker
+    for (PendingLoad &load : _inflight) {
+        if (load.future.valid()) load.future.wait();
+    }
+    _inflight.clear();
+    _queued.clear();
+    _requested.clear();
+    _lru.clear();
+    _entries.clear();
+    _usedBytes = 0;
+}
+
 void ImageCache::SetBudgetBytes(size_t bytes) {
     _budgetBytes = bytes;
     _EvictOverBudget();

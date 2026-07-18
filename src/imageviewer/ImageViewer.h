@@ -26,3 +26,8 @@ void ImageViewerOpenAsset(const std::string &assetPath);
 /// True once after an open request wanted the viewer panel visible; the
 /// editor consumes this to show the window
 bool ImageViewerConsumeShowRequest();
+
+/// Release the render engines, worker loads and GL resources. Must be called
+/// before the GL context and USD are torn down (the editor destructor does);
+/// the viewer state is a static and cannot clean these up at program exit.
+void ImageViewerShutdown();

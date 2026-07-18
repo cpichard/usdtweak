@@ -16,8 +16,14 @@ static uint64_t HashCombine(uint64_t seed, uint64_t value) {
     return seed ^ (value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2));
 }
 
+std::string RenderSetup::StageIdentifier() const {
+    UsdStageRefPtr stagePtr(stage);
+    return stagePtr ? stagePtr->GetRootLayer()->GetIdentifier() : std::string();
+}
+
 uint64_t RenderSetup::Hash() const {
-    uint64_t hash = std::hash<std::string>()(rendererPluginId.GetString());
+    uint64_t hash = std::hash<std::string>()(StageIdentifier());
+    hash = HashCombine(hash, std::hash<std::string>()(rendererPluginId.GetString()));
     hash = HashCombine(hash, std::hash<std::string>()(productPath.GetString()));
     hash = HashCombine(hash, std::hash<std::string>()(cameraPath.GetString()));
     hash = HashCombine(hash, static_cast<uint64_t>(resolution[0]));
@@ -25,9 +31,13 @@ uint64_t RenderSetup::Hash() const {
     return hash;
 }
 
-RenderImageSource::RenderImageSource(UsdStageRefPtr stage, const RenderSetup &setup) : _stage(stage) {
+std::string RenderImageSource::MakeIdentity(const RenderSetup &setup) {
+    return "render|" + setup.StageIdentifier() + "|" + setup.rendererPluginId.GetString() + "|" +
+           setup.productPath.GetString();
+}
+
+RenderImageSource::RenderImageSource(const RenderSetup &setup) {
     sourceId = NextImageSourceId();
-    identity = "render|" + setup.rendererPluginId.GetString() + "|" + setup.productPath.GetString();
     // The readback must be linear: the viewer display shader owns the
     // exposure/gamma/sRGB transform
     _imagingSettings.colorCorrectionMode = TfToken("disabled");
@@ -40,13 +50,16 @@ RenderImageSource::~RenderImageSource() = default;
 
 void RenderImageSource::SetSetup(const RenderSetup &setup) {
     if (_engine && setup == _setup) return;
+    const bool stageChanged = setup.stage != _setup.stage;
     const bool delegateChanged = !_engine || setup.rendererPluginId != _setup.rendererPluginId;
     const bool resolutionChanged = !_drawTarget || setup.resolution != _setup.resolution;
     _setup = setup;
+    _stage = setup.stage;
     _settingsHash = _setup.Hash();
+    identity = MakeIdentity(_setup);
     _pending.clear();
     _currentValid = false;
-    if (delegateChanged) _engine.reset();
+    if (delegateChanged || stageChanged) _engine.reset();
     if (resolutionChanged) _drawTarget = nullptr;
     _UpdateDisplayName();
 }
@@ -54,8 +67,10 @@ void RenderImageSource::SetSetup(const RenderSetup &setup) {
 void RenderImageSource::_UpdateDisplayName() {
     const std::string delegate = ViewportEngine::GetRendererDisplayName(_setup.rendererPluginId);
     const std::string product = _setup.productPath.IsEmpty() ? "default" : _setup.productPath.GetName();
-    displayName = "Render " + delegate + " " + product + " " + std::to_string(_setup.resolution[0]) + "x" +
-                  std::to_string(_setup.resolution[1]);
+    UsdStageRefPtr stagePtr(_setup.stage);
+    const std::string stageName = stagePtr ? stagePtr->GetRootLayer()->GetDisplayName() : "<expired stage>";
+    displayName = "Render " + stageName + " " + delegate + " " + product + " " +
+                  std::to_string(_setup.resolution[0]) + "x" + std::to_string(_setup.resolution[1]);
 }
 
 int RenderImageSource::ResolveFrame(int frame) const {

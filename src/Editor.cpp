@@ -571,6 +571,9 @@ Editor::Editor()
 }
 
 Editor::~Editor() {
+    // The image viewer state is a static: its engines, worker loads and GL
+    // resources must be released now, while GL and USD are still alive
+    ImageViewerShutdown();
     _settings._lastFileBrowserDirectory = GetFileBrowserDirectory();
     SaveSettings();
     usdtweak::_RegisterEditor(nullptr);

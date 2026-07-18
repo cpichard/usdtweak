@@ -7,8 +7,10 @@
 #include <vector>
 
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/stageCache.h>
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usd/usdRender/product.h>
+#include <pxr/usd/usdUtils/stageCache.h>
 
 #include "FileBrowser.h"
 #include "FileImageSource.h"
@@ -40,12 +42,12 @@ struct ImageViewerState {
     ViewerSlot slots[2];
     std::vector<ImageSourcePtr> store;
     ImageCache cache;
-    // Session render setup driving new renders (phase authoring to the stage
-    // comes later)
-    RenderSetup renderSetup;
-    bool renderSetupInitialized = false;
-    int renderRange[2] = {1, 24};
-    bool renderRangeInitialized = false;
+    // Per-slot render setup drafts, used until the slot holds a render source
+    // (which then owns the setup). Session-only; authoring to the stage as
+    // RenderSettings prims comes later.
+    RenderSetup slotDraft[2];
+    bool slotDraftInitialized[2] = {false, false};
+    int slotRenderRange[2][2] = {{1, 24}, {1, 24}};
     // compositors[0] renders A (and the combined wipe/difference modes),
     // compositors[1] renders B for the side-by-side mode
     ImageCompositor compositors[2];
@@ -103,6 +105,24 @@ bool ImageViewerConsumeShowRequest() {
     const bool requested = showRequested;
     showRequested = false;
     return requested;
+}
+
+void ImageViewerShutdown() {
+    // Order matters: slots and store first (render sources destroy their
+    // Hydra engines and draw targets), then the cache (joins the worker
+    // loads, frees the buffers' GL textures), then the compositors.
+    for (ViewerSlot &slot : viewer.slots) {
+        slot.source = nullptr;
+        slot.image = nullptr;
+    }
+    viewer.store.clear();
+    viewer.cache.Clear();
+    viewer.compositors[0].ReleaseGLResources();
+    viewer.compositors[1].ReleaseGLResources();
+    // The drafts hold USD handles (stage pointer, paths) that must not
+    // outlive the USD teardown
+    viewer.slotDraft[0] = RenderSetup();
+    viewer.slotDraft[1] = RenderSetup();
 }
 
 struct OpenImageModalDialog : public ModalDialog {
@@ -215,12 +235,189 @@ static void ResolveSlotImages(int frame) {
     }
 }
 
-static void DrawSourceCombo(int slotIndex) {
-    ViewerSlot &slot = viewer.slots[slotIndex];
-    const char *label = slotIndex == 0 ? "##SourceA" : "##SourceB";
-    const char *preview = slot.source ? slot.source->displayName.c_str() : "<none>";
+static RenderImageSourcePtr GetSlotRenderSource(int slotIndex) {
+    return std::dynamic_pointer_cast<RenderImageSource>(viewer.slots[slotIndex].source);
+}
+
+static void InitializeSlotDraftIfNeeded(int slotIndex, const UsdStageRefPtr &defaultStage) {
+    if (viewer.slotDraftInitialized[slotIndex] || !defaultStage) return;
+    viewer.slotDraftInitialized[slotIndex] = true;
+    RenderSetup &setup = viewer.slotDraft[slotIndex];
+    setup.stage = defaultStage;
+    setup.rendererPluginId = GetDefaultRendererId();
+    // Default camera: the first one on the stage
+    for (const UsdPrim &prim : defaultStage->Traverse()) {
+        if (prim.IsA<UsdGeomCamera>()) {
+            setup.cameraPath = prim.GetPath();
+            break;
+        }
+    }
+    viewer.slotRenderRange[slotIndex][0] = static_cast<int>(defaultStage->GetStartTimeCode());
+    viewer.slotRenderRange[slotIndex][1] = static_cast<int>(defaultStage->GetEndTimeCode());
+}
+
+// The setup the slot edits: the render source's when it holds one, the draft otherwise
+static RenderSetup GetSlotSetup(int slotIndex) {
+    if (RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex)) return renderSource->GetSetup();
+    return viewer.slotDraft[slotIndex];
+}
+
+static void SetSlotSetup(int slotIndex, const RenderSetup &setup) {
+    // The draft follows so a future source starts from the last edited setup
+    viewer.slotDraft[slotIndex] = setup;
+    if (RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex)) {
+        renderSource->SetSetup(setup);
+    }
+}
+
+// The render source of the slot: the one it holds, a store source with the
+// same identity, or a new one. Assigned to the slot.
+static RenderImageSourcePtr EnsureSlotRenderSource(int slotIndex) {
+    const RenderSetup setup = GetSlotSetup(slotIndex);
+    if (RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex)) {
+        renderSource->SetSetup(setup);
+        return renderSource;
+    }
+    const std::string identity = RenderImageSource::MakeIdentity(setup);
+    for (const auto &existing : viewer.store) {
+        if (existing->identity == identity) {
+            if (auto renderSource = std::dynamic_pointer_cast<RenderImageSource>(existing)) {
+                renderSource->SetSetup(setup);
+                AssignSourceToSlot(slotIndex, renderSource);
+                return renderSource;
+            }
+        }
+    }
+    auto renderSource = std::make_shared<RenderImageSource>(setup);
+    viewer.store.push_back(renderSource);
+    AssignSourceToSlot(slotIndex, renderSource);
+    return renderSource;
+}
+
+// Apply the product's authored resolution and camera to the setup
+static void ApplyProductToSetup(RenderSetup &setup, const UsdStageRefPtr &stage, const SdfPath &productPath) {
+    setup.productPath = productPath;
+    UsdRenderProduct product(stage->GetPrimAtPath(productPath));
+    if (!product) return;
+    GfVec2i resolution;
+    if (product.GetResolutionAttr() && product.GetResolutionAttr().Get(&resolution)) {
+        setup.resolution = resolution;
+    }
+    SdfPathVector cameraTargets;
+    if (product.GetCameraRel() && product.GetCameraRel().GetTargets(&cameraTargets) && !cameraTargets.empty()) {
+        setup.cameraPath = cameraTargets[0];
+    }
+}
+
+// The per-slot render setup popup: stage, delegate, product, camera, resolution
+static void DrawSlotRenderSetupPopup(int slotIndex) {
+    if (!ImGui::BeginPopup("##SlotRenderSetup")) return;
+    RenderSetup setup = GetSlotSetup(slotIndex);
+    bool changed = false;
+
+    // Stage: any stage open in the editor
+    UsdStageRefPtr setupStage(setup.stage);
+    const std::string stagePreview = setupStage ? setupStage->GetRootLayer()->GetDisplayName() : "<no stage>";
     ImGui::SetNextItemWidth(220.f);
-    if (ImGui::BeginCombo(label, preview)) {
+    if (ImGui::BeginCombo("Stage", stagePreview.c_str())) {
+        for (const UsdStageRefPtr &openStage : UsdUtilsStageCache::Get().GetAllStages()) {
+            if (!openStage) continue;
+            const bool selected = openStage == setupStage;
+            if (ImGui::Selectable(openStage->GetRootLayer()->GetIdentifier().c_str(), selected) && !selected) {
+                setup.stage = openStage;
+                // The product and camera belong to the previous stage
+                setup.productPath = SdfPath();
+                setup.cameraPath = SdfPath();
+                for (const UsdPrim &prim : openStage->Traverse()) {
+                    if (prim.IsA<UsdGeomCamera>()) {
+                        setup.cameraPath = prim.GetPath();
+                        break;
+                    }
+                }
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    // Delegate
+    ImGui::SetNextItemWidth(220.f);
+    const std::string delegateName = ViewportEngine::GetRendererDisplayName(setup.rendererPluginId);
+    if (ImGui::BeginCombo("Delegate", delegateName.c_str())) {
+        for (const TfToken &plugin : ViewportEngine::GetRendererPlugins()) {
+            if (ImGui::Selectable(ViewportEngine::GetRendererDisplayName(plugin).c_str(),
+                                  plugin == setup.rendererPluginId)) {
+                setup.rendererPluginId = plugin;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    setupStage = UsdStageRefPtr(setup.stage);
+    if (setupStage) {
+        // Render product (enumerated only while the combo is open)
+        ImGui::SetNextItemWidth(220.f);
+        const std::string productPreview =
+            setup.productPath.IsEmpty() ? "<default product>" : setup.productPath.GetName();
+        if (ImGui::BeginCombo("Product", productPreview.c_str())) {
+            if (ImGui::Selectable("<default product>", setup.productPath.IsEmpty())) {
+                setup.productPath = SdfPath();
+                changed = true;
+            }
+            for (const UsdPrim &prim : setupStage->Traverse()) {
+                if (prim.IsA<UsdRenderProduct>()) {
+                    if (ImGui::Selectable(prim.GetPath().GetString().c_str(), prim.GetPath() == setup.productPath)) {
+                        ApplyProductToSetup(setup, setupStage, prim.GetPath());
+                        changed = true;
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        // Camera
+        ImGui::SetNextItemWidth(220.f);
+        const std::string cameraPreview = setup.cameraPath.IsEmpty() ? "<no camera>" : setup.cameraPath.GetName();
+        if (ImGui::BeginCombo("Camera", cameraPreview.c_str())) {
+            for (const UsdPrim &prim : setupStage->Traverse()) {
+                if (prim.IsA<UsdGeomCamera>()) {
+                    if (ImGui::Selectable(prim.GetPath().GetString().c_str(), prim.GetPath() == setup.cameraPath)) {
+                        setup.cameraPath = prim.GetPath();
+                        changed = true;
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+    // Resolution
+    ImGui::SetNextItemWidth(220.f);
+    int resolution[2] = {setup.resolution[0], setup.resolution[1]};
+    if (ImGui::DragInt2("Resolution", resolution, 4.f, 16, 16384)) {
+        setup.resolution = GfVec2i(resolution[0], resolution[1]);
+        changed = true;
+    }
+    ImGui::SetNextItemWidth(220.f);
+    ImGui::DragInt2("Range", viewer.slotRenderRange[slotIndex], 0.2f);
+
+    if (changed) {
+        SetSlotSetup(slotIndex, setup);
+    }
+    ImGui::EndPopup();
+}
+
+// One slot strip: source picker, open/setup buttons, render controls, status
+static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr &defaultStage) {
+    ImGui::PushID(slotIndex);
+    InitializeSlotDraftIfNeeded(slotIndex, defaultStage);
+    ViewerSlot &slot = viewer.slots[slotIndex];
+
+    // Line 1: slot letter, source combo, open file, render setup
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled(slotIndex == 0 ? "A" : "B");
+    ImGui::SameLine();
+    const float buttonsWidth = 2.f * (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetNextItemWidth(std::max(60.f, ImGui::GetContentRegionAvail().x - buttonsWidth));
+    const char *preview = slot.source ? slot.source->displayName.c_str() : "<none>";
+    if (ImGui::BeginCombo("##Source", preview)) {
         for (const auto &source : viewer.store) {
             const bool selected = slot.source == source;
             if (ImGui::Selectable(source->displayName.c_str(), selected)) {
@@ -229,36 +426,92 @@ static void DrawSourceCombo(int slotIndex) {
         }
         ImGui::EndCombo();
     }
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FOLDER_OPEN)) {
+        DrawModalDialog<OpenImageModalDialog>(slotIndex);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Open an image or sequence in this slot");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_COG)) {
+        ImGui::OpenPopup("##SlotRenderSetup");
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render setup of this slot: stage, delegate, camera...");
+    DrawSlotRenderSetupPopup(slotIndex);
+
+    // Line 2: render controls, acting on this slot
+    RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex);
+    const RenderSetup setup = GetSlotSetup(slotIndex);
+    const bool live = renderSource && renderSource->IsInteractive();
+    const bool canRender = !setup.cameraPath.IsEmpty() && bool(UsdStageRefPtr(setup.stage));
+    ImGui::BeginDisabled(!canRender || live);
+    if (ImGui::Button(ICON_FA_CAMERA " Frame")) {
+        EnsureSlotRenderSource(slotIndex)->QueueFrames(currentFrame, currentFrame);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render the current frame into this slot");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FILM " Range")) {
+        EnsureSlotRenderSource(slotIndex)
+            ->QueueFrames(std::min(viewer.slotRenderRange[slotIndex][0], viewer.slotRenderRange[slotIndex][1]),
+                          std::max(viewer.slotRenderRange[slotIndex][0], viewer.slotRenderRange[slotIndex][1]));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render the frame range into this slot");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    bool liveToggle = live;
+    ImGui::BeginDisabled(!canRender && !live);
+    if (ImGui::Checkbox("Live", &liveToggle)) {
+        if (liveToggle) {
+            EnsureSlotRenderSource(slotIndex)->SetInteractive(true);
+        } else if (renderSource) {
+            renderSource->SetInteractive(false);
+            renderSource->SetPaused(false);
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Render the displayed frame continuously, restarting on stage edits");
+    if (renderSource && live) {
+        ImGui::SameLine();
+        const bool paused = renderSource->IsPaused();
+        if (ImGui::Button(paused ? ICON_FA_PLAY "##Pause" : ICON_FA_PAUSE "##Pause")) {
+            renderSource->SetPaused(!paused);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(paused ? "Resume the live render" : "Pause the live render");
+    }
+
+    // Line 3: status
+    if (renderSource && renderSource->IsPaused()) {
+        ImGui::TextDisabled("paused");
+    } else if (renderSource && renderSource->IsInteractive()) {
+        ImGui::TextDisabled(renderSource->IsLiveConverged() ? "converged" : "rendering...");
+    } else if (renderSource && renderSource->PendingCount() > 0) {
+        ImGui::TextDisabled("rendering, %d left...", renderSource->PendingCount());
+    } else if (renderSource && !renderSource->GetLastError().empty()) {
+        ImGui::TextDisabled("%s", renderSource->GetLastError().c_str());
+    } else if (slot.HasValidImage()) {
+        ImGui::TextDisabled("%dx%d", slot.image->width, slot.image->height);
+    } else {
+        ImGui::TextDisabled(" ");
+    }
+    ImGui::PopID();
 }
 
-static void DrawToolbar() {
+// The middle column between the slot strips: compare mode and view controls
+static void DrawMiddleControls() {
     ImageCompositeParams &params = viewer.params;
-
-    // First row: sources and compare mode
-    if (ImGui::Button(ICON_FA_FOLDER_OPEN " A")) {
-        DrawModalDialog<OpenImageModalDialog>(0);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_FOLDER_OPEN " B")) {
-        DrawModalDialog<OpenImageModalDialog>(1);
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.f);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     static const char *compareModes[] = {"A", "B", "Wipe", "Difference", "Side by side"};
     int mode = static_cast<int>(params.mode);
     if (ImGui::Combo("##CompareMode", &mode, compareModes, 5)) {
         params.mode = static_cast<CompareMode>(mode);
     }
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_EXCHANGE_ALT " Swap")) {
+    if (ImGui::Button(ICON_FA_EXCHANGE_ALT " Swap", ImVec2(-FLT_MIN, 0.f))) {
         SwapSlots();
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Swap the A and B images");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(90.f);
+    ImGui::SetNextItemWidth(-FLT_MIN);
     static const char *backgroundModes[] = {"Checker", "Black", "Grey"};
     ImGui::Combo("##Background", &params.backgroundMode, backgroundModes, 3);
-    ImGui::SameLine();
     if (ImGui::Button(ICON_FA_EXPAND " Fit")) {
         viewer.fitPending = true;
     }
@@ -272,11 +525,30 @@ static void DrawToolbar() {
     ImGui::SameLine();
     ImGui::Text("%.0f%%", viewer.canvas.zooming * framebufferScale * 100.0);
     if (viewer.cache.HasPendingLoads()) {
-        ImGui::SameLine();
         ImGui::TextDisabled("Loading...");
     }
+}
 
-    // Second row: display transform and slot sources
+// The toolbar: A strip on the left, view controls in the middle, B strip on
+// the right, then the display transform row underneath
+static void DrawToolbar(const UsdStageRefPtr &defaultStage, int currentFrame) {
+    ImageCompositeParams &params = viewer.params;
+
+    if (ImGui::BeginTable("##ViewerSlots", 3, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("##SlotA", ImGuiTableColumnFlags_WidthStretch, 1.f);
+        ImGui::TableSetupColumn("##Middle", ImGuiTableColumnFlags_WidthFixed, 150.f);
+        ImGui::TableSetupColumn("##SlotB", ImGuiTableColumnFlags_WidthStretch, 1.f);
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        DrawSlotStrip(0, currentFrame, defaultStage);
+        ImGui::TableSetColumnIndex(1);
+        DrawMiddleControls();
+        ImGui::TableSetColumnIndex(2);
+        DrawSlotStrip(1, currentFrame, defaultStage);
+        ImGui::EndTable();
+    }
+
+    // Display transform row
     ImGui::SetNextItemWidth(140.f);
     ImGui::SliderFloat("##ExposureA", &params.a.exposure, -10.f, 10.f,
                        viewer.linkedDisplay ? "Exp %.2f" : "Exp A %.2f");
@@ -296,207 +568,6 @@ static void DrawToolbar() {
         ImGui::SliderFloat("##GammaB", &params.b.gamma, 0.2f, 4.f, "Gamma B %.2f");
     } else {
         params.b = params.a;
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled("A");
-    ImGui::SameLine();
-    DrawSourceCombo(0);
-    ImGui::SameLine();
-    ImGui::TextDisabled("B");
-    ImGui::SameLine();
-    DrawSourceCombo(1);
-}
-
-// Find or create the render source matching the current setup, keeping its
-// rendered history when only the settings changed
-static RenderImageSourcePtr FindOrCreateRenderSource(const UsdStageRefPtr &stage) {
-    const std::string identity = "render|" + viewer.renderSetup.rendererPluginId.GetString() + "|" +
-                                 viewer.renderSetup.productPath.GetString();
-    for (const auto &existing : viewer.store) {
-        if (existing->identity == identity) {
-            auto renderSource = std::dynamic_pointer_cast<RenderImageSource>(existing);
-            if (renderSource) {
-                renderSource->SetSetup(viewer.renderSetup);
-                return renderSource;
-            }
-        }
-    }
-    auto renderSource = std::make_shared<RenderImageSource>(stage, viewer.renderSetup);
-    viewer.store.push_back(renderSource);
-    return renderSource;
-}
-
-// Apply the product's authored resolution and camera to the setup
-static void ApplyProductToSetup(const UsdStageRefPtr &stage, const SdfPath &productPath) {
-    viewer.renderSetup.productPath = productPath;
-    UsdRenderProduct product(stage->GetPrimAtPath(productPath));
-    if (!product) return;
-    GfVec2i resolution;
-    if (product.GetResolutionAttr() && product.GetResolutionAttr().Get(&resolution)) {
-        viewer.renderSetup.resolution = resolution;
-    }
-    SdfPathVector cameraTargets;
-    if (product.GetCameraRel() && product.GetCameraRel().GetTargets(&cameraTargets) && !cameraTargets.empty()) {
-        viewer.renderSetup.cameraPath = cameraTargets[0];
-    }
-}
-
-static void InitializeRenderSetupIfNeeded(const UsdStageRefPtr &stage) {
-    if (viewer.renderSetupInitialized || !stage) return;
-    viewer.renderSetupInitialized = true;
-    viewer.renderSetup.rendererPluginId = GetDefaultRendererId();
-    // Default camera: the first one on the stage
-    for (const UsdPrim &prim : stage->Traverse()) {
-        if (prim.IsA<UsdGeomCamera>()) {
-            viewer.renderSetup.cameraPath = prim.GetPath();
-            break;
-        }
-    }
-    if (!viewer.renderRangeInitialized) {
-        viewer.renderRange[0] = static_cast<int>(stage->GetStartTimeCode());
-        viewer.renderRange[1] = static_cast<int>(stage->GetEndTimeCode());
-        viewer.renderRangeInitialized = true;
-    }
-}
-
-// Session render setup: delegate, product, camera, resolution and the render
-// buttons. Renders land in the store and slot A.
-static void DrawRenderSetup(const UsdStageRefPtr &stage, int currentFrame) {
-    InitializeRenderSetupIfNeeded(stage);
-    RenderSetup &setup = viewer.renderSetup;
-
-    // Delegate
-    ImGui::SetNextItemWidth(110.f);
-    const std::string delegateName = ViewportEngine::GetRendererDisplayName(setup.rendererPluginId);
-    if (ImGui::BeginCombo("##RenderDelegate", delegateName.c_str())) {
-        for (const TfToken &plugin : ViewportEngine::GetRendererPlugins()) {
-            if (ImGui::Selectable(ViewportEngine::GetRendererDisplayName(plugin).c_str(),
-                                  plugin == setup.rendererPluginId)) {
-                setup.rendererPluginId = plugin;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    // Render product (enumerated only while the combo is open)
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(160.f);
-    const std::string productPreview = setup.productPath.IsEmpty() ? "<default product>" : setup.productPath.GetName();
-    if (ImGui::BeginCombo("##RenderProduct", productPreview.c_str())) {
-        if (ImGui::Selectable("<default product>", setup.productPath.IsEmpty())) {
-            setup.productPath = SdfPath();
-        }
-        for (const UsdPrim &prim : stage->Traverse()) {
-            if (prim.IsA<UsdRenderProduct>()) {
-                if (ImGui::Selectable(prim.GetPath().GetString().c_str(), prim.GetPath() == setup.productPath)) {
-                    ApplyProductToSetup(stage, prim.GetPath());
-                }
-            }
-        }
-        ImGui::EndCombo();
-    }
-    // Camera
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(140.f);
-    const std::string cameraPreview = setup.cameraPath.IsEmpty() ? "<no camera>" : setup.cameraPath.GetName();
-    if (ImGui::BeginCombo("##RenderCamera", cameraPreview.c_str())) {
-        for (const UsdPrim &prim : stage->Traverse()) {
-            if (prim.IsA<UsdGeomCamera>()) {
-                if (ImGui::Selectable(prim.GetPath().GetString().c_str(), prim.GetPath() == setup.cameraPath)) {
-                    setup.cameraPath = prim.GetPath();
-                }
-            }
-        }
-        ImGui::EndCombo();
-    }
-    // Resolution
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.f);
-    int resolution[2] = {setup.resolution[0], setup.resolution[1]};
-    if (ImGui::DragInt2("##RenderResolution", resolution, 4.f, 16, 16384)) {
-        setup.resolution = GfVec2i(resolution[0], resolution[1]);
-    }
-    // The live source of the current setup, when it exists and is live
-    RenderImageSourcePtr liveSource;
-    for (const auto &source : viewer.store) {
-        if (auto renderSource = std::dynamic_pointer_cast<RenderImageSource>(source)) {
-            if (renderSource->IsInteractive()) liveSource = renderSource;
-        }
-    }
-
-    // Render buttons.
-    // TODO(UI): Frame/Range/Live always target slot A; they should act on the
-    // slot holding the render source instead (see doc/ImageViewer.md backlog)
-    ImGui::SameLine();
-    const bool canRender = !setup.cameraPath.IsEmpty();
-    ImGui::BeginDisabled(!canRender || bool(liveSource));
-    if (ImGui::Button(ICON_FA_CAMERA " Frame")) {
-        RenderImageSourcePtr renderSource = FindOrCreateRenderSource(stage);
-        renderSource->QueueFrames(currentFrame, currentFrame);
-        AssignSourceToSlot(0, renderSource);
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render the current frame into slot A");
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_FILM " Range")) {
-        RenderImageSourcePtr renderSource = FindOrCreateRenderSource(stage);
-        renderSource->QueueFrames(std::min(viewer.renderRange[0], viewer.renderRange[1]),
-                                  std::max(viewer.renderRange[0], viewer.renderRange[1]));
-        AssignSourceToSlot(0, renderSource);
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render the frame range into slot A");
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(100.f);
-    ImGui::DragInt2("##RenderRange", viewer.renderRange, 0.2f);
-
-    // Live mode: render the displayed frame continuously, restarting on edits
-    ImGui::SameLine();
-    bool live = bool(liveSource);
-    ImGui::BeginDisabled(!canRender && !live);
-    if (ImGui::Checkbox("Live", &live)) {
-        if (live) {
-            RenderImageSourcePtr renderSource = FindOrCreateRenderSource(stage);
-            renderSource->SetInteractive(true);
-            AssignSourceToSlot(0, renderSource);
-        } else if (liveSource) {
-            liveSource->SetInteractive(false);
-            liveSource->SetPaused(false);
-        }
-    }
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Render the displayed frame continuously, restarting on stage edits");
-    if (liveSource) {
-        ImGui::SameLine();
-        bool paused = liveSource->IsPaused();
-        if (ImGui::Button(paused ? ICON_FA_PLAY "##LivePause" : ICON_FA_PAUSE "##LivePause")) {
-            liveSource->SetPaused(!paused);
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(paused ? "Resume the live render" : "Pause the live render");
-    }
-
-    // Render status
-    int pendingRenders = 0;
-    std::string renderError;
-    for (const auto &source : viewer.store) {
-        if (auto renderSource = std::dynamic_pointer_cast<RenderImageSource>(source)) {
-            pendingRenders += renderSource->PendingCount();
-            if (renderError.empty()) renderError = renderSource->GetLastError();
-        }
-    }
-    // No dangling SameLine when there is no status to show: the canvas is
-    // drawn right after this row and must start on its own line
-    if (liveSource && liveSource->IsPaused()) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("paused");
-    } else if (liveSource) {
-        ImGui::SameLine();
-        ImGui::TextDisabled(liveSource->IsLiveConverged() ? "converged" : "rendering...");
-    } else if (pendingRenders > 0) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("Rendering, %d frame%s left...", pendingRenders, pendingRenders > 1 ? "s" : "");
-    } else if (!renderError.empty()) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", renderError.c_str());
     }
 }
 
@@ -615,10 +686,7 @@ void DrawImageViewer(const UsdStageRefPtr &stage, UsdTimeCode currentTimeCode) {
     }
     ResolveSlotImages(currentFrame);
 
-    DrawToolbar();
-    if (stage) {
-        DrawRenderSetup(stage, currentFrame);
-    }
+    DrawToolbar(stage, currentFrame);
     if (AnySequenceLoaded()) {
         DrawTransport(currentFrame);
     }

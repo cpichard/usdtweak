@@ -4,11 +4,23 @@
 
 #include "GlslCode.h"
 
-ImageCompositor::~ImageCompositor() {
+ImageCompositor::~ImageCompositor() { ReleaseGLResources(); }
+
+void ImageCompositor::ReleaseGLResources() {
     if (_program) glDeleteProgram(_program);
     if (_emptyVao) glDeleteVertexArrays(1, &_emptyVao);
     if (_framebuffer) glDeleteFramebuffers(1, &_framebuffer);
     if (_outputTexture) glDeleteTextures(1, &_outputTexture);
+    _program = 0;
+    _emptyVao = 0;
+    _framebuffer = 0;
+    _outputTexture = 0;
+    _outputWidth = 0;
+    _outputHeight = 0;
+    _lastTextureA = 0;
+    _lastTextureB = 0;
+    _dirty = true;
+    _programFailed = false;
 }
 
 static GLuint CompileShaderStage(GLenum stage, const char *source) {
