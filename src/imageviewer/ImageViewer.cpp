@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +32,7 @@
 #include "InfiniteCanvas.h"
 #include "ModalDialogs.h"
 #include "RenderImageSource.h"
+#include "SnapshotImageSource.h"
 #include "ViewportEngine.h"
 
 // One image slot: which source of the store it shows and the last buffer
@@ -282,6 +284,43 @@ static void InitializeSlotDraftIfNeeded(int slotIndex, const UsdStageRefPtr &def
     }
     viewer.slotRenderRange[slotIndex][0] = static_cast<int>(defaultStage->GetStartTimeCode());
     viewer.slotRenderRange[slotIndex][1] = static_cast<int>(defaultStage->GetEndTimeCode());
+}
+
+// Capture the slot's displayed image as an immutable catalog entry: appended
+// to the store (never rebinding the slot) so the user can later pull it into
+// either slot and compare against newer renders. Name = origin + timestamp.
+static void SnapshotSlot(int slotIndex, int currentFrame) {
+    const ViewerSlot &slot = viewer.slots[slotIndex];
+    if (!slot.source || !slot.HasValidImage()) return;
+    auto snapshot = std::make_shared<SnapshotImageSource>(slot.image);
+    snapshot->sourceId = NextImageSourceId();
+    // Snapshots are unique by construction, no store deduplication
+    snapshot->identity = "snapshot:" + std::to_string(snapshot->sourceId);
+
+    char timestamp[32];
+    const std::time_t now = std::time(nullptr);
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+
+    std::string origin = slot.source->displayName;
+    std::string details;
+    if (RenderImageSourcePtr renderSource = GetSlotRenderSource(slotIndex)) {
+        const RenderSetup setup = renderSource->GetSetup();
+        if (UsdStageRefPtr setupStage{setup.stage}) {
+            origin = setupStage->GetRootLayer()->GetDisplayName();
+        }
+        if (!setup.cameraPath.IsEmpty()) {
+            origin += " " + setup.cameraPath.GetName();
+        }
+        details = "\ndelegate " + ViewportEngine::GetRendererDisplayName(setup.rendererPluginId);
+        if (!setup.aov.IsEmpty()) {
+            details += ", aov " + setup.aov.GetString();
+        }
+    }
+    snapshot->displayName = origin + " " + timestamp;
+    const int frame = slot.source->ResolveFrame(currentFrame);
+    snapshot->tooltip = "Snapshot of " + slot.source->displayName + ", frame " + std::to_string(frame) + "\n" +
+                        std::to_string(slot.image->width) + "x" + std::to_string(slot.image->height) + details;
+    viewer.store.push_back(snapshot);
 }
 
 // The setup the slot edits: the render source's when it holds one, the draft otherwise
@@ -537,7 +576,7 @@ static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr 
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled(slotIndex == 0 ? "A" : "B");
     ImGui::SameLine();
-    const float buttonsWidth = 3.f * (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
+    const float buttonsWidth = 4.f * (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x);
     ImGui::SetNextItemWidth(std::max(60.f, ImGui::GetContentRegionAvail().x - buttonsWidth));
     const char *preview = slot.source ? slot.source->displayName.c_str() : "<none>";
     if (ImGui::BeginCombo("##Source", preview)) {
@@ -545,6 +584,9 @@ static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr 
             const bool selected = slot.source == source;
             if (ImGui::Selectable(source->displayName.c_str(), selected)) {
                 AssignSourceToSlot(slotIndex, source);
+            }
+            if (ImGui::IsItemHovered() && !source->tooltip.empty()) {
+                ImGui::SetTooltip("%s", source->tooltip.c_str());
             }
         }
         ImGui::EndCombo();
@@ -561,6 +603,15 @@ static void DrawSlotStrip(int slotIndex, int currentFrame, const UsdStageRefPtr 
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save the displayed image to disk (.exr)");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!slot.HasValidImage());
+    if (ImGui::Button(ICON_FA_CAMERA_RETRO)) {
+        SnapshotSlot(slotIndex, currentFrame);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Snapshot the displayed image into the source list,\n"
+                          "to compare against later renders");
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_COG)) {
         ImGui::OpenPopup("##SlotRenderSetup");

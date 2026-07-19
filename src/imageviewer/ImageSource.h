@@ -21,6 +21,9 @@ struct ImageSource {
     std::string displayName;
     /// Identity for deduplication in the store
     std::string identity;
+    /// Optional details shown as a tooltip in the source combos (snapshots
+    /// record their origin here)
+    std::string tooltip;
 
     virtual bool IsSequence() const = 0;
     virtual int FirstFrame() const = 0;
