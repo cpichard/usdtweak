@@ -1290,7 +1290,8 @@ void Editor::Draw() {
     }
     if (_settings._showImageViewer) {
         // NoScrollWithMouse: the canvas handles the mouse wheel itself (zoom)
-        ImGui::Begin(ImageViewerWindowTitle, &_settings._showImageViewer, ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::Begin(ImageViewerWindowTitle, &_settings._showImageViewer,
+                     ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_MenuBar);
         TRACE_SCOPE(ImageViewerWindowTitle);
         DrawImageViewer(GetCurrentStage(), _viewport1.GetCurrentTimeCode());
         ImGui::End();

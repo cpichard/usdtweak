@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 class ImageCache;
 
@@ -32,6 +33,12 @@ struct ImageSource {
     /// The frame this source would show for a requested frame (held on the
     /// closest existing one)
     virtual int ResolveFrame(int frame) const = 0;
+
+    /// The frames this source can produce, sorted. Consumers must iterate
+    /// these, never the [FirstFrame, LastFrame] integer range: photo-style
+    /// numbering makes that range arbitrarily large (frame numbers are
+    /// whatever the filenames encode)
+    virtual std::vector<int> GetFrameNumbers() const { return {0}; }
 
     /// Part of the cache key: 0 for files, the render-settings hash for renders
     virtual uint64_t SettingsHash() const { return 0; }

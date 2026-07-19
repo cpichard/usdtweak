@@ -25,6 +25,8 @@ struct ImageSequenceSource : ImageSource {
     /// previous frame, else the first
     int ResolveFrame(int frame) const override;
 
+    std::vector<int> GetFrameNumbers() const override;
+
     /// Schedules the decode of the frame plus a few frames of read-ahead
     void RequestFrame(int frame, ImageCache &cache) override;
 
@@ -36,6 +38,25 @@ struct ImageSequenceSource : ImageSource {
 /// sequence; otherwise it is that single image.
 ImageSourcePtr CreateImageSource(const std::string &filePath);
 
-/// Path of the lowest-numbered tile of a "<UDIM>" asset path, or the path
-/// unchanged when it has no token or no tile exists on disk.
-std::string FindFirstUdimTile(const std::string &assetPath);
+/// The UDIM source: all the tiles of a "<UDIM>" asset path displayed as one
+/// image laid out on the UDIM grid (1001 at the bottom left, u increasing to
+/// the right, v stacking upward, ten columns). Tiles decode through the
+/// cache worker loads, the mosaic is composed once they are all in.
+struct UdimImageSource : ImageSource {
+    /// UDIM tile number (1001...) -> resolved tile path
+    std::map<int, std::string> tilePaths;
+
+    bool IsSequence() const override { return false; }
+    int FirstFrame() const override { return 0; }
+    int LastFrame() const override { return 0; }
+    bool HasFrame(int frame) const override { return frame == 0; }
+    int ResolveFrame(int) const override { return 0; }
+
+    /// Schedules the tile decodes, then composes and caches the mosaic
+    void RequestFrame(int frame, ImageCache &cache) override;
+};
+
+/// Build a UDIM source from a "<UDIM>" pattern path (anchored/absolute; the
+/// tiles are resolved through UsdShadeUdimUtils). A pattern with no tile on
+/// disk still returns a source, which displays an error.
+ImageSourcePtr CreateUdimImageSource(const std::string &udimPattern);

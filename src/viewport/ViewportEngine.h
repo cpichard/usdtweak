@@ -43,6 +43,11 @@ class ViewportEngine : public TfWeakBase {
     /// Render() call or the renderer has not converged yet.
     bool NeedsRender() const;
 
+    /// True only when something changed since the last Render() call, without
+    /// considering convergence: a delegate refining in its own background
+    /// threads keeps NeedsRender() true while IsSceneDirty() stays false.
+    bool IsSceneDirty() const { return _sceneDirty; }
+
     /// Force a scene re-render on the next frame. Used when the scene image is
     /// invalidated for a reason the engine cannot see, like the viewport showing
     /// a different stage while the render buffer size is unchanged.

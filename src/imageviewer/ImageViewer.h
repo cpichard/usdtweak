@@ -20,7 +20,7 @@ void DrawImageViewer(const PXR_NS::UsdStageRefPtr &stage, PXR_NS::UsdTimeCode cu
 void ImageViewerOpenFile(const std::string &filePath, int slot = 0);
 
 /// Open a resolved asset path in slot A, e.g. a texture from a prim
-/// attribute. "<UDIM>" paths open on their first existing tile.
+/// attribute. "<UDIM>" patterns open as the mosaic of all their tiles.
 void ImageViewerOpenAsset(const std::string &assetPath);
 
 /// True once after an open request wanted the viewer panel visible; the

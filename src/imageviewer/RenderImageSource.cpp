@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <functional>
 
 #include <pxr/base/gf/camera.h>
@@ -64,7 +65,11 @@ RenderImageSource::RenderImageSource(const RenderSetup &setup) {
     SetSetup(setup);
 }
 
-RenderImageSource::~RenderImageSource() = default;
+RenderImageSource::~RenderImageSource() {
+    if (_pixelBuffer) {
+        glDeleteBuffers(1, &_pixelBuffer);
+    }
+}
 
 void RenderImageSource::SetSetup(const RenderSetup &setup) {
     if (_engine && setup == _setup) return;
@@ -78,6 +83,7 @@ void RenderImageSource::SetSetup(const RenderSetup &setup) {
     identity = MakeIdentity(_setup);
     _pending.clear();
     _currentValid = false;
+    _readbackPending = false;
     if (delegateChanged || stageChanged) _engine.reset();
     if (resolutionChanged) _drawTarget = nullptr;
     if (_engine && aovChanged) {
@@ -121,6 +127,7 @@ void RenderImageSource::SetInteractive(bool interactive) {
     _pending.clear();
     _currentValid = false;
     _finalReadbackDone = false;
+    _readbackPending = false;
 }
 
 void RenderImageSource::SetPaused(bool paused) {
@@ -144,6 +151,8 @@ void RenderImageSource::RequestFrame(int frame, ImageCache &cache) {
     _currentFrame = frame;
     _currentValid = true;
     _finalReadbackDone = false;
+    // A pending image belongs to the previous frame, drop it
+    _readbackPending = false;
 }
 
 bool RenderImageSource::_EnsureEngine() {
@@ -160,7 +169,9 @@ bool RenderImageSource::_EnsureEngine() {
     if (!_drawTarget) {
         _drawTarget = GlfDrawTarget::New(_setup.resolution, false);
         _drawTarget->Bind();
-        _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
+        // Half-float color: an unsized GL_RGBA internal format resolves to
+        // RGBA8 and quantizes/clips the linear HDR values before readback
+        _drawTarget->AddAttachment("color", GL_RGBA, GL_HALF_FLOAT, GL_RGBA16F);
         _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
         _drawTarget->Unbind();
     }
@@ -196,29 +207,96 @@ bool RenderImageSource::_SetupCameraAndFrame(int frame) {
 void RenderImageSource::_ReadbackAndCache(ImageCache &cache) {
     const int width = _setup.resolution[0];
     const int height = _setup.resolution[1];
-    std::vector<float> floatPixels(static_cast<size_t>(width) * height * 4);
+    // The attachment is RGBA16F, so the half-float read is a raw copy with no
+    // driver-side format conversion (a GL_FLOAT read of the same buffer
+    // stalled for ~100ms at 1080p on GL-on-Metal)
+    std::vector<GfHalf> halfPixels(static_cast<size_t>(width) * height * 4);
 
     GLint previousFramebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, _drawTarget->GetFramebufferId());
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, floatPixels.data());
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_HALF_FLOAT, halfPixels.data());
     glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
 
     auto buffer = std::make_shared<ImageBuffer>();
     buffer->width = width;
     buffer->height = height;
     buffer->sourceName = displayName + " frame " + std::to_string(_currentFrame);
-    buffer->pixels.resize(floatPixels.size());
+    buffer->pixels.resize(halfPixels.size());
     // GL reads rows bottom-up; ImageBuffer expects row 0 at the top
+    const size_t rowSize = static_cast<size_t>(width) * 4;
     for (int y = 0; y < height; ++y) {
-        const float *sourceRow = &floatPixels[static_cast<size_t>(height - 1 - y) * width * 4];
-        GfHalf *destinationRow = &buffer->pixels[static_cast<size_t>(y) * width * 4];
-        for (int x = 0; x < width * 4; ++x) {
-            destinationRow[x] = GfHalf(sourceRow[x]);
-        }
+        memcpy(&buffer->pixels[static_cast<size_t>(y) * rowSize],
+               &halfPixels[static_cast<size_t>(height - 1 - y) * rowSize], rowSize * sizeof(GfHalf));
     }
     cache.Insert({sourceId, _currentFrame, _settingsHash}, buffer);
     _renderedFrames.insert(_currentFrame);
+}
+
+void RenderImageSource::_StartAsyncReadback() {
+    const int width = _setup.resolution[0];
+    const int height = _setup.resolution[1];
+    const size_t bytes = static_cast<size_t>(width) * height * 4 * sizeof(GfHalf);
+
+    // Mid-frame GL: restore the previous bindings, never bind 0 (Metal
+    // interop warnings otherwise, see the plan doc)
+    GLint previousPixelBuffer = 0, previousFramebuffer = 0;
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &previousPixelBuffer);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+
+    if (_pixelBuffer && _pixelBufferBytes != bytes) {
+        glDeleteBuffers(1, &_pixelBuffer);
+        _pixelBuffer = 0;
+    }
+    if (!_pixelBuffer) {
+        glGenBuffers(1, &_pixelBuffer);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, _pixelBuffer);
+        glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+        _pixelBufferBytes = bytes;
+    } else {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, _pixelBuffer);
+    }
+
+    // With a pack buffer bound the read is enqueued GPU-side and returns
+    // immediately: no pipeline stall on the CPU
+    glBindFramebuffer(GL_FRAMEBUFFER, _drawTarget->GetFramebufferId());
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_HALF_FLOAT, nullptr);
+    glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, previousPixelBuffer);
+    _readbackPending = true;
+}
+
+void RenderImageSource::_FinishAsyncReadback(ImageCache &cache) {
+    _readbackPending = false;
+    const int width = _setup.resolution[0];
+    const int height = _setup.resolution[1];
+    const size_t rowSize = static_cast<size_t>(width) * 4;
+    if (_pixelBufferBytes != rowSize * height * sizeof(GfHalf)) return;
+
+    GLint previousPixelBuffer = 0;
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &previousPixelBuffer);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, _pixelBuffer);
+    // The copy out of the mapped pointer reads uncached shared memory and is
+    // the remaining cost of the readback (~22ms at 1080p; glGetBufferSubData
+    // was measured 3x slower)
+    const GfHalf *mapped =
+        static_cast<const GfHalf *>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, _pixelBufferBytes, GL_MAP_READ_BIT));
+    if (mapped) {
+        auto buffer = std::make_shared<ImageBuffer>();
+        buffer->width = width;
+        buffer->height = height;
+        buffer->sourceName = displayName + " frame " + std::to_string(_currentFrame);
+        buffer->pixels.resize(rowSize * height);
+        // GL reads rows bottom-up; ImageBuffer expects row 0 at the top
+        for (int y = 0; y < height; ++y) {
+            memcpy(&buffer->pixels[static_cast<size_t>(y) * rowSize],
+                   &mapped[static_cast<size_t>(height - 1 - y) * rowSize], rowSize * sizeof(GfHalf));
+        }
+        cache.Insert({sourceId, _currentFrame, _settingsHash}, buffer);
+        _renderedFrames.insert(_currentFrame);
+    }
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, previousPixelBuffer);
 }
 
 void RenderImageSource::_CacheFailure(ImageCache &cache) {
@@ -282,7 +360,32 @@ void RenderImageSource::_UpdateInteractive(ImageCache &cache) {
     // The facade's dirty tracking drives the loop: NeedsRender() is true when
     // the frame state changed, a stage edit invalidated the image, or the
     // delegate has not converged yet
-    if (!_engine->NeedsRender()) return;
+    if (!_engine->NeedsRender() && !_readbackPending) return;
+
+    // The rendered image is only visible after a readback, so while the
+    // delegate merely refines in its own threads (scene not dirty) there is
+    // no point presenting more often than the readback cadence: skip the
+    // tick. An actual edit renders immediately so the delegate restarts on
+    // the new scene without waiting out the interval.
+    const double now =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const bool timeToPresent = now - _lastReadbackSeconds > kInteractiveReadbackInterval;
+    if (!_engine->IsSceneDirty() && !timeToPresent) return;
+
+    // Consume the readback enqueued on an earlier tick first: the GPU
+    // finished the copy long ago so mapping the pixel buffer is a plain copy
+    // (a synchronous glReadPixels stalled ~65ms at 1080p on GL-on-Metal,
+    // even when reading content presented ticks earlier)
+    if (_readbackPending && timeToPresent) {
+        _FinishAsyncReadback(cache);
+        _lastReadbackSeconds = now;
+        // The consumed image was the delegate's final one: done until the
+        // next edit
+        if (!_engine->NeedsRender()) {
+            _finalReadbackDone = true;
+            return;
+        }
+    }
     _finalReadbackDone = false;
 
     UsdStageRefPtr stage(_stage);
@@ -294,14 +397,17 @@ void RenderImageSource::_UpdateInteractive(ImageCache &cache) {
     _engine->Render(stage->GetPseudoRoot());
     _drawTarget->Unbind();
 
-    // Refine progressively into the cache entry: throttled while converging,
-    // always on convergence
+    // Enqueue the readback of what was just presented. On convergence it is
+    // consumed immediately (a one-time sync per convergence: imperceptible
+    // for a path tracer, and it keeps a raster delegate's same-tick edit
+    // feedback); while converging it waits for the next paced tick.
     const bool converged = _engine->IsConverged();
-    const double now =
-        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (converged || now - _lastReadbackSeconds > kInteractiveReadbackInterval) {
-        _ReadbackAndCache(cache);
-        _lastReadbackSeconds = now;
-        if (converged) _finalReadbackDone = true;
+    if (converged || timeToPresent) {
+        _StartAsyncReadback();
+        if (converged) {
+            _FinishAsyncReadback(cache);
+            _lastReadbackSeconds = now;
+            _finalReadbackDone = true;
+        }
     }
 }

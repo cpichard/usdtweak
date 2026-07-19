@@ -9,6 +9,7 @@
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/pcp/primIndex.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/udimUtils.h>
 #include "FileImageSource.h"
 #include "Gui.h"
 #include "ImageViewer.h"
@@ -360,14 +361,21 @@ template <> void DrawMenuEditConnection(UsdAttribute &attribute) {
 }
 
 // Open in image viewer, for asset attributes pointing at a readable image
-// (textures typically). "<UDIM>" paths open on their first tile.
+// (textures typically). "<UDIM>" paths open as the mosaic of their tiles.
 template <typename UsdPropertyT> void DrawMenuOpenInImageViewer(UsdPropertyT &property, UsdTimeCode currentTime) {}
 template <> void DrawMenuOpenInImageViewer(UsdAttribute &attribute, UsdTimeCode currentTime) {
     if (attribute.GetTypeName() != SdfValueTypeNames->Asset) return;
     SdfAssetPath assetPath;
     if (!attribute.Get(&assetPath, currentTime)) return;
-    const std::string &path =
-        assetPath.GetResolvedPath().empty() ? assetPath.GetAssetPath() : assetPath.GetResolvedPath();
+    std::string path = assetPath.GetResolvedPath().empty() ? assetPath.GetAssetPath() : assetPath.GetResolvedPath();
+    if (UsdShadeUdimUtils::IsUdimIdentifier(assetPath.GetAssetPath())) {
+        // A "<UDIM>" pattern never resolves as a literal file: anchor the
+        // authored pattern to the layer holding the strongest opinion, so
+        // the viewer receives an absolute pattern it can enumerate
+        const SdfPropertySpecHandleVector propertyStack = attribute.GetPropertyStack(currentTime);
+        const SdfLayerHandle anchor = propertyStack.empty() ? SdfLayerHandle() : propertyStack.front()->GetLayer();
+        path = UsdShadeUdimUtils::ResolveUdimPath(assetPath.GetAssetPath(), anchor);
+    }
     if (path.empty() || !IsSupportedImageFile(path)) return;
     if (ImGui::MenuItem(ICON_FA_IMAGE " Open in image viewer")) {
         ImageViewerOpenAsset(path);

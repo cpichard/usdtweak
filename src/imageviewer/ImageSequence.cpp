@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
+
+#include <pxr/usd/usdShade/udimUtils.h>
 
 #include "ImageCache.h"
 
@@ -28,6 +32,13 @@ int ImageSequenceSource::ResolveFrame(int frame) const {
 std::string ImageSequenceSource::PathForFrame(int frame) const {
     if (framePaths.empty()) return {};
     return framePaths.at(ResolveFrame(frame));
+}
+
+std::vector<int> ImageSequenceSource::GetFrameNumbers() const {
+    std::vector<int> frames;
+    frames.reserve(framePaths.size());
+    for (const auto &entry : framePaths) frames.push_back(entry.first);
+    return frames;
 }
 
 void ImageSequenceSource::RequestFrame(int frame, ImageCache &cache) {
@@ -60,7 +71,10 @@ static void CollectNumberedSiblings(const fs::path &directoryPath, const std::st
                 !std::all_of(digits.begin(), digits.end(),
                              [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }))
                 continue;
-            out[std::atoi(digits.c_str())] = entry.path().string();
+            // strtoll, not atoi: date-style digit runs overflow int (UB)
+            const long long value = std::strtoll(digits.c_str(), nullptr, 10);
+            if (value > std::numeric_limits<int>::max()) continue;
+            out[static_cast<int>(value)] = entry.path().string();
         }
     } catch (const fs::filesystem_error &) {
         out.clear();
@@ -94,8 +108,12 @@ ImageSourcePtr CreateImageSource(const std::string &filePath) {
     const fs::path directoryPath = path.parent_path().empty() ? fs::path(".") : path.parent_path();
     const std::string directory = directoryPath.string();
 
+    // Longer digit runs are dates or timestamps (IMG_20260719_090001.jpg),
+    // not frame numbers: those files are photos, not sequence members
+    constexpr size_t kMaxFrameDigits = 7;
+
     size_t digitsBegin = 0, digitsEnd = 0;
-    if (FindFrameDigits(filename, digitsBegin, digitsEnd)) {
+    if (FindFrameDigits(filename, digitsBegin, digitsEnd) && digitsEnd - digitsBegin <= kMaxFrameDigits) {
         const std::string prefix = filename.substr(0, digitsBegin);
         const std::string suffix = filename.substr(digitsEnd);
         CollectNumberedSiblings(directoryPath, prefix, suffix, source->framePaths);
@@ -118,15 +136,91 @@ ImageSourcePtr CreateImageSource(const std::string &filePath) {
     return source;
 }
 
-std::string FindFirstUdimTile(const std::string &assetPath) {
-    static const std::string token = "<UDIM>";
-    const fs::path path(assetPath);
-    const std::string filename = path.filename().string();
-    const size_t tokenPos = filename.find(token);
-    if (tokenPos == std::string::npos) return assetPath;
-    const fs::path directoryPath = path.parent_path().empty() ? fs::path(".") : path.parent_path();
-    std::map<int, std::string> tiles;
-    CollectNumberedSiblings(directoryPath, filename.substr(0, tokenPos), filename.substr(tokenPos + token.size()),
-                            tiles);
-    return tiles.empty() ? assetPath : tiles.begin()->second;
+// The mosaic of the loaded tiles on the UDIM grid: cell size is the largest
+// tile, missing tiles and the gap under smaller tiles stay transparent
+// black. Tiles sit at the bottom left of their cell (the UV origin).
+static ImageBufferPtr ComposeUdimMosaic(const std::vector<std::pair<int, ImageBufferPtr>> &tiles,
+                                        const std::string &name) {
+    auto composite = std::make_shared<ImageBuffer>();
+    composite->sourceName = name;
+
+    int cellWidth = 0, cellHeight = 0, maxU = 0, maxV = 0, validCount = 0;
+    for (const auto &entry : tiles) {
+        const ImageBufferPtr &tile = entry.second;
+        const int index = entry.first - 1001;
+        if (!tile->IsValid() || index < 0) continue;
+        ++validCount;
+        cellWidth = std::max(cellWidth, tile->width);
+        cellHeight = std::max(cellHeight, tile->height);
+        maxU = std::max(maxU, index % 10);
+        maxV = std::max(maxV, index / 10);
+    }
+    if (validCount == 0) {
+        composite->error = "No readable UDIM tile";
+        for (const auto &entry : tiles) {
+            if (!entry.second->error.empty()) {
+                composite->error += ": " + entry.second->error;
+                break;
+            }
+        }
+        return composite;
+    }
+
+    composite->width = (maxU + 1) * cellWidth;
+    composite->height = (maxV + 1) * cellHeight;
+    composite->pixels.assign(static_cast<size_t>(composite->width) * composite->height * 4, GfHalf(0.f));
+    for (const auto &entry : tiles) {
+        const ImageBufferPtr &tile = entry.second;
+        const int index = entry.first - 1001;
+        if (!tile->IsValid() || index < 0) continue;
+        const size_t x0 = static_cast<size_t>(index % 10) * cellWidth;
+        // Rows are top-down: the tile's bottom lands on its cell's bottom
+        const int yTop = (maxV - index / 10) * cellHeight + (cellHeight - tile->height);
+        for (int row = 0; row < tile->height; ++row) {
+            memcpy(&composite->pixels[((static_cast<size_t>(yTop) + row) * composite->width + x0) * 4],
+                   &tile->pixels[static_cast<size_t>(row) * tile->width * 4],
+                   static_cast<size_t>(tile->width) * 4 * sizeof(GfHalf));
+        }
+    }
+    return composite;
+}
+
+void UdimImageSource::RequestFrame(int, ImageCache &cache) {
+    const ImageCacheKey compositeKey{sourceId, 0, SettingsHash()};
+    if (cache.Contains(compositeKey)) return;
+    // Collect the decoded tiles, scheduling the missing loads; the tile
+    // entries live under the tile number as frame (1001+, disjoint from the
+    // mosaic's frame 0) and age out of the LRU once the mosaic is composed
+    bool allLoaded = true;
+    std::vector<std::pair<int, ImageBufferPtr>> tiles;
+    tiles.reserve(tilePaths.size());
+    for (const auto &entry : tilePaths) {
+        const ImageCacheKey tileKey{sourceId, entry.first, SettingsHash()};
+        if (ImageBufferPtr tile = cache.Get(tileKey)) {
+            tiles.emplace_back(entry.first, tile);
+        } else {
+            cache.RequestLoad(tileKey, entry.second);
+            allLoaded = false;
+        }
+    }
+    if (!allLoaded) return; // recalled next frame until every decode landed
+    cache.Insert(compositeKey, ComposeUdimMosaic(tiles, displayName));
+}
+
+ImageSourcePtr CreateUdimImageSource(const std::string &udimPattern) {
+    auto source = std::make_shared<UdimImageSource>();
+    source->sourceId = NextImageSourceId();
+    source->identity = "udim:" + udimPattern;
+    // The pattern reaching here is already anchored (resolved by the caller
+    // against the authoring layer), no layer needed
+    for (const auto &resolved : UsdShadeUdimUtils::ResolveUdimTilePaths(udimPattern, SdfLayerHandle())) {
+        const long long tile = std::strtoll(resolved.second.c_str(), nullptr, 10);
+        if (tile >= 1001 && tile <= 9999) {
+            source->tilePaths[static_cast<int>(tile)] = resolved.first;
+        }
+    }
+    const std::string filename = fs::path(udimPattern).filename().string();
+    source->displayName = filename + " (" + std::to_string(source->tilePaths.size()) + " tiles)";
+    source->tooltip = udimPattern;
+    return source;
 }

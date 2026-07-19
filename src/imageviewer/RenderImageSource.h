@@ -30,6 +30,10 @@ struct RenderSetup {
     SdfPath productPath; // selected UsdRenderProduct, empty = synthesized default
     SdfPath cameraPath;
     GfVec2i resolution = GfVec2i(1280, 720);
+    /// Without a product: the width drives the resolution, the height is
+    /// computed from the camera aperture ratio (square pixels). A selected
+    /// product provides the resolution instead.
+    bool conformToCamera = true;
     /// Which AOV the delegate presents (color, depth, primId, normals...).
     /// Empty means color. Non-color AOVs read back the delegate's
     /// visualization of the AOV, not the raw values.
@@ -38,7 +42,7 @@ struct RenderSetup {
     bool operator==(const RenderSetup &other) const {
         return stage == other.stage && rendererPluginId == other.rendererPluginId &&
                productPath == other.productPath && cameraPath == other.cameraPath &&
-               resolution == other.resolution && aov == other.aov;
+               resolution == other.resolution && aov == other.aov && conformToCamera == other.conformToCamera;
     }
     bool operator!=(const RenderSetup &other) const { return !(*this == other); }
 
@@ -87,6 +91,9 @@ struct RenderImageSource : ImageSource {
     int LastFrame() const override { return _renderedFrames.empty() ? 0 : *_renderedFrames.rbegin(); }
     bool HasFrame(int frame) const override { return _renderedFrames.count(frame) > 0; }
     int ResolveFrame(int frame) const override;
+    std::vector<int> GetFrameNumbers() const override {
+        return std::vector<int>(_renderedFrames.begin(), _renderedFrames.end());
+    }
     uint64_t SettingsHash() const override { return _settingsHash; }
 
     /// Queues a render of the frame when it is not cached or in flight
@@ -108,6 +115,12 @@ struct RenderImageSource : ImageSource {
     void _CacheFailure(ImageCache &cache);
     void _UpdateInteractive(ImageCache &cache);
     void _UpdateBatch(ImageCache &cache);
+    /// Async readback pair for the live mode: start enqueues a GPU-side copy
+    /// of the draw target into the pixel buffer and returns immediately,
+    /// finish maps the buffer (a plain copy once the GPU caught up) and
+    /// caches it as the frame's image
+    void _StartAsyncReadback();
+    void _FinishAsyncReadback(ImageCache &cache);
 
     UsdStageWeakPtr _stage;
     RenderSetup _setup;
@@ -126,6 +139,12 @@ struct RenderImageSource : ImageSource {
     bool _interactive = false;
     bool _paused = false;
     bool _finalReadbackDone = false;
+    /// A readback of the draw target is enqueued in _pixelBuffer and not
+    /// consumed yet (live mode maps it on a later tick so the synchronous
+    /// glReadPixels stall never happens)
+    bool _readbackPending = false;
+    unsigned int _pixelBuffer = 0; // GL_PIXEL_PACK_BUFFER for the async readback
+    size_t _pixelBufferBytes = 0;
     double _lastReadbackSeconds = 0.0;
 };
 
