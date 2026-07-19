@@ -111,7 +111,34 @@ std::string ViewportEngine::GetRendererDisplayName(const TfToken &id) {
 
 bool ViewportEngine::SetRendererPlugin(const TfToken &id) {
     _sceneDirty = true;
-    return _engine->SetRendererPlugin(id);
+    if (!_engine->SetRendererPlugin(id)) {
+        return false;
+    }
+    // The switch gives the engine a blank task controller (it only restores
+    // root transform, visibility and selection itself), so every cached state
+    // must be pushed again: the compare-before-set guards above would
+    // otherwise skip it and the new delegate renders black until an actual
+    // state change, e.g. a viewport resize.
+    if (_lightingStateSet) {
+        _engine->SetLightingState(_lights, _material, _ambient);
+    }
+    if (_renderBufferSize != GfVec2i(0)) {
+        _engine->SetRenderBufferSize(_renderBufferSize);
+    }
+    if (_framing.IsValid()) {
+        _engine->SetFraming(_framing);
+    }
+    if (_windowPolicySet) {
+#if PXR_VERSION <= 2311
+        _engine->SetOverrideWindowPolicy(std::make_pair(true, _windowPolicy));
+#else
+        _engine->SetOverrideWindowPolicy(std::make_optional(_windowPolicy));
+#endif
+    }
+    if (_cameraStateSet) {
+        _engine->SetCameraState(_viewMatrix, _projectionMatrix);
+    }
+    return true;
 }
 
 TfTokenVector ViewportEngine::GetRendererAovs() const { return _engine->GetRendererAovs(); }
