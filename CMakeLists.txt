@@ -28,11 +28,20 @@ else ()
     # GLFW patches fixing the cursor jump on GLFW_CURSOR_DISABLED transitions
     # (see patches/glfw-3.4/ and repro/)
     set(GLFW_PATCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/patches/glfw-3.4)
-    FetchContent_Declare(
-        glfw
-        URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
-        PATCH_COMMAND sh ${GLFW_PATCH_DIR}/apply.sh ${GLFW_PATCH_DIR}
-    )
+    set(GLFW_FETCH_ARGS URL https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip)
+    # apply.sh needs a POSIX sh and patch(1). On Windows these only exist if Git
+    # for Windows' usr/bin (not just cmd/ or mingw64/bin) is on PATH. Fall back to
+    # an unpatched GLFW rather than failing the whole configure/build.
+    find_program(GLFW_SH_EXECUTABLE sh)
+    find_program(GLFW_PATCH_EXECUTABLE patch)
+    if (GLFW_SH_EXECUTABLE AND GLFW_PATCH_EXECUTABLE)
+        list(APPEND GLFW_FETCH_ARGS PATCH_COMMAND ${GLFW_SH_EXECUTABLE} ${GLFW_PATCH_DIR}/apply.sh ${GLFW_PATCH_DIR})
+    else ()
+        message(WARNING "sh and/or patch not found: building GLFW WITHOUT the cursor-jump patches "
+                         "(see patches/glfw-3.4/). On Windows, add C:/Program Files/Git/usr/bin to PATH "
+                         "to enable patching.")
+    endif ()
+    FetchContent_Declare(glfw ${GLFW_FETCH_ARGS})
     set(GLFW_BUILD_EXAMPLES OFF)
     set(GLFW_BUILD_TESTS OFF)
     set(GLFW_BUILD_DOCS OFF)
