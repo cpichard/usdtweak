@@ -1,10 +1,12 @@
 #pragma once
 #include <pxr/imaging/glf/simpleLight.h>
+#include <pxr/imaging/glf/simpleMaterial.h>
 #include <pxr/usd/usdGeom/camera.h>
-#include <pxr/usdImaging/usdImagingGL/engine.h>
 #include <pxr/usdImaging/usdImagingGL/renderParams.h>
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+class ViewportEngine;
 
 struct ImagingSettings : UsdImagingGLRenderParams {
 
@@ -34,18 +36,18 @@ struct ImagingSettings : UsdImagingGLRenderParams {
 
 /// We keep track of the selected AOV in the UI, unfortunately the selected AOV is not awvailable in
 /// UsdImagingGLEngine, so we need the initialize the UI data with this function
-void InitializeRendererAov(UsdImagingGLEngine &);
+void InitializeRendererAov(ViewportEngine &);
 
 ///
-void DrawRendererSelectionCombo(UsdImagingGLEngine &);
-void DrawRendererSelectionList(UsdImagingGLEngine &);
+void DrawRendererSelectionCombo(ViewportEngine &);
+void DrawRendererSelectionList(ViewportEngine &);
 void DrawRendererSelectionList();
-void DrawRendererControls(UsdImagingGLEngine &);
-void DrawRendererCommands(UsdImagingGLEngine &);
-void DrawRendererSettings(UsdImagingGLEngine &, ImagingSettings &);
-void DrawImagingSettings(UsdImagingGLEngine &, ImagingSettings &);
-void DrawAovSettings(UsdImagingGLEngine &);
-void DrawColorCorrection(UsdImagingGLEngine &, ImagingSettings &);
+void DrawRendererControls(ViewportEngine &);
+void DrawRendererCommands(ViewportEngine &);
+void DrawRendererSettings(ViewportEngine &, ImagingSettings &);
+void DrawImagingSettings(ViewportEngine &, ImagingSettings &);
+void DrawAovSettings(ViewportEngine &);
+void DrawColorCorrection(ViewportEngine &, ImagingSettings &);
 
 void SetDefaultRendererId(const TfToken &renderDelegateId);
 const TfToken & GetDefaultRendererId();
