@@ -23,7 +23,6 @@
 #include "Constants.h"
 #include "FileBrowser.h"
 #include "ImGuiHelpers.h"
-#include "ModalDialogs.h"
 #include "UsdHelpers.h"
 #include "EditListSelector.h"
 #include "SdfLayerEditor.h"
@@ -34,6 +33,7 @@
 #include "VariantEditor.h"
 #include "VtDictionaryEditor.h"
 #include "VtValueEditor.h"
+#include "AssetPathBrowserDialog.h" // includes ModalDialog
 
 #define SdfPrimEditorSeed 6353032
 #define IdOf ToImGuiID<SdfPrimEditorSeed, size_t>
@@ -654,6 +654,14 @@ inline void DrawThirdColumn<AttributeRow>(const int rowId, const SdfAttributeSpe
     bool selected = selection.IsSelected(attribute);
     if (ImGui::Selectable("##select", selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
         ExecuteAfterDraw<EditorSelectAttributePath>(attribute->GetPath());
+    }
+    
+    if (attribute->GetTypeName() == SdfValueTypeNames->Asset) {
+        // Display a mini button that opens a modal dialog
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_FILE)) {
+            DrawModalDialog<AssetPathBrowserDialog>(attribute);
+        }
     }
     ImGui::SameLine();
     if (attribute->HasDefaultValue()) {

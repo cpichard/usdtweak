@@ -14,9 +14,9 @@
 #include "VtValueEditor.h"
 #include "Constants.h"
 #include "Commands.h"
-#include "ModalDialogs.h"
 #include "ImGuiHelpers.h"
 #include "TableLayouts.h"
+#include "AssetPathBrowserDialog.h" // includes ModalDialogs.h
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -155,6 +155,13 @@ static VtValue DrawAttributeValue(const std::string &label, UsdAttribute &attrib
         // BeginEdition/EndEdition
         // It needs some refactoring to know when the widgets starts and stop edition
         return DrawColorValue(label, value);
+    }
+    // Asset path values get a mini file browser button anchored to the current edit target.
+    if (value.IsHolding<SdfAssetPath>()) {
+        if (ImGui::Button(ICON_FA_FILE)) {
+            DrawModalDialog<AssetPathBrowserDialog>(attribute);
+        }
+        ImGui::SameLine();
     }
     return DrawVtValue(label, value);
 }
