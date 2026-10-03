@@ -110,7 +110,7 @@ GfMatrix4d ScaleManipulator::ComputeManipulatorToWorldTransform(const Viewport &
         const GfMatrix4d toManipulator = rotMat * pivotMat * transMat * parentToWorld;
         return toManipulator.GetOrthonormalized();
     }
-    return GfMatrix4d();
+    return GfMatrix4d(1.0);
 }
 
 template <int Axis> inline ImColor AxisColor(int selectedAxis) {
