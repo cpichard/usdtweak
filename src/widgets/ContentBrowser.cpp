@@ -228,9 +228,10 @@ void DrawLayerSet(UsdStageCache &cache, SdfLayerHandleSet &layerSet, SdfLayerHan
                         for (int i = 0; i < layerCount; ++i)
                             layerMultiSelection.insert(sortedLayerList[i]->GetUniqueIdentifier());
                 } else if (req.Type == ImGuiSelectionRequestType_SetRange) {
-                    int first = static_cast<int>(req.RangeFirstItem);
-                    int last  = static_cast<int>(req.RangeLastItem);
-                    if (first > last) std::swap(first, last);
+                    int first = 0;
+                    int last = 0;
+                    if (!GetClampedSelectionRange(req, layerCount, first, last))
+                        continue;
                     for (int i = first; i <= last; ++i) {
                         if (req.Selected) layerMultiSelection.insert(sortedLayerList[i]->GetUniqueIdentifier());
                         else              layerMultiSelection.erase(sortedLayerList[i]->GetUniqueIdentifier());
