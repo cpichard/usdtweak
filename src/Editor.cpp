@@ -750,7 +750,7 @@ void Editor::TogglePlayback() {
 
 void Editor::HydraRender() {
 
-    if (_isPlaying) {
+    if (_isPlaying && GetCurrentStage()) {
         auto current = clk::steady_clock::now();
         const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
         const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
