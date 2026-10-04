@@ -1,6 +1,7 @@
 #include "SearchWidget.h"
 #include "StringSearchIndex.h"
 #include "UtqlEngine.h"
+#include "UtqlHelp.h"
 
 #include "Commands.h"
 #include "Constants.h"
@@ -378,9 +379,20 @@ static std::string StripUtqlComments(const std::string &src) {
     return out;
 }
 
+// The query editor's text. At file scope so the help window can load an example
+// into it, and the help window's visibility, which DrawUtqlHelpWindow reads.
+static std::string sUtqlQuery = "FIND USDPRIM WHERE TYPE = \"Mesh\"";
+static bool        sShowUtqlHelp = false;
+
+/// Submit a query, skipping the comment lines and empty queries.
+static void SubmitUtqlQuery(const std::string &query, bool dryRun) {
+    const std::string effectiveQuery = StripUtqlComments(query);
+    if (effectiveQuery.find_first_not_of(" \t\r\n") != std::string::npos)
+        UtqlEngine::GetInstance().Submit(effectiveQuery, dryRun);
+}
+
 static void DrawUtqlSearchWidget() {
-    static std::string queryStr =
-        "FIND USDPRIM WHERE TYPE = \"Mesh\"";
+    std::string &queryStr = sUtqlQuery;
 
     UtqlEngine &engine = UtqlEngine::GetInstance();
 
@@ -401,17 +413,19 @@ static void DrawUtqlSearchWidget() {
     static bool dryRun = false;
     ImGui::Checkbox("Dry run", &dryRun);
     ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_QUESTION_CIRCLE))
+        sShowUtqlHelp = !sShowUtqlHelp;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("UTQL help and examples");
+    ImGui::SameLine();
     if (engine.IsRunning())
         ImGui::TextDisabled("running" ICON_FA_ELLIPSIS_H);
     else
         ImGui::TextDisabled("Ctrl+Enter to run");
 
-    if (run) {
-        // Lines starting with '#' are comments: kept in the editor, not run.
-        const std::string effectiveQuery = StripUtqlComments(queryStr);
-        if (effectiveQuery.find_first_not_of(" \t\r\n") != std::string::npos)
-            engine.Submit(effectiveQuery, dryRun);
-    }
+    // Lines starting with '#' are comments: kept in the editor, not run.
+    if (run)
+        SubmitUtqlQuery(queryStr, dryRun);
 
     ImGui::Separator();
 
@@ -507,6 +521,14 @@ static void DrawUtqlSearchWidget() {
 // ---------------------------------------------------------------------------
 // DrawSearchWidget — tabbed switch between string search and query language
 // ---------------------------------------------------------------------------
+
+void DrawUtqlHelp() {
+    DrawUtqlHelpWindow(&sShowUtqlHelp, [](const std::string &query, bool run) {
+        sUtqlQuery = query;
+        if (run)
+            SubmitUtqlQuery(query, /*dryRun=*/false);
+    });
+}
 
 void DrawSearchWidget() {
     if (ImGui::BeginTabBar("##searchMode")) {

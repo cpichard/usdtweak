@@ -287,7 +287,8 @@ ToolDefs BuildReadOnlyToolDefinitions() {
             "RESULTSET \"name\".  COMPOSING INTO <target> = \"/composed/path\" | "
             "(\"/p1\",\"/p2\") | RESULTSET \"name\" (target replaces IN). "
             "<scope> = STAGE \"id\" | STAGES \"*\" | "
-            "RESULTSET \"name\" (default = current stage).\n"
+            "RESULTSET \"name\" (no IN = every open stage / loaded layer; use "
+            "STAGE \"id\" or LAYER \"id\" to keep a query local).\n"
             "Only FIND is required; clauses must appear in that order; keywords "
             "are case-insensitive; string literals use \"double quotes\".\n"
             "ENTITIES (this tool): two parallel families. COMPOSED (Stage world): "
@@ -1455,8 +1456,8 @@ ToolDefs BuildEditToolDefinitions() {
             "plans every statement.");
         tools.push_back(JsValue(_Tool(
             "run_mutation",
-            "Runs a UTQL WRITE statement — UPDATE / CREATE / DELETE — against "
-            "the current stage: the write complement to run_query. Reach for "
+            "Runs a UTQL WRITE statement — UPDATE / CREATE / DELETE — the "
+            "write complement to run_query. Reach for "
             "it whenever the edit is criteria-shaped ('deactivate every prim "
             "whose…', 'clamp all intensities over…', 'remove the broken "
             "references wherever authored', 'switch every lod variant to "
@@ -1474,7 +1475,10 @@ ToolDefs BuildEditToolDefinitions() {
             "write (PATH | LAYER | FIELD | OLD | NEW) — and applies as ONE "
             "undoable edit on the next frame. Rows that cannot apply (type "
             "mismatch, stale, read-only layer) are counted skips with "
-            "reasons, not errors. PROTOCOL: for broad or destructive changes "
+            "reasons, not errors. SCOPE: a statement with no IN clause matches "
+            "across EVERY open stage / loaded layer, not just the one in view — "
+            "add IN STAGE \"id\" / IN LAYER \"id\" whenever the edit is meant to "
+            "stay local. PROTOCOL: for broad or destructive changes "
             "(DELETE, bare REMOVE, many rows, or any doubt) call with "
             "dry_run=true first, show the user the manifest, and apply only "
             "after they confirm. A compile error is recoverable — read the "

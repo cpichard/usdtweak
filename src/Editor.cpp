@@ -1301,6 +1301,7 @@ void Editor::Draw() {
         ImGui::Begin(FindWindowTitle, &_settings._showSearch);
         DrawSearchWidget();
         ImGui::End();
+        DrawUtqlHelp();
     }
 
     if (_settings._showHydraBrowser) {
