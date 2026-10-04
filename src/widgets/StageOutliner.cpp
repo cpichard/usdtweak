@@ -366,7 +366,13 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    ImGui::Text("%s", stage->GetEditTarget().GetLayer()->GetDisplayName().c_str());
+    const SdfLayerHandle &layer = stage->GetEditTarget().GetLayer();
+    if (layer) {
+        ImGui::Text("%s", stage->GetEditTarget().GetLayer()->GetDisplayName().c_str());
+    } else {
+        ImGui::Text("No edit target");
+    }
+
     if (unfolded) {
         ImGui::TreePop();
     }

@@ -899,8 +899,13 @@ static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &sele
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    const std::string editTargetName = stage ? stage->GetEditTarget().GetLayer()->GetDisplayName() : "";
-    ImGui::Text("%s", editTargetName.c_str());
+    if (stage) {
+        const SdfLayerHandle &layer = stage->GetEditTarget().GetLayer();
+        if (layer) {
+            const std::string editTargetName = stage ? stage->GetEditTarget().GetLayer()->GetDisplayName() : "";
+            ImGui::Text("%s", editTargetName.c_str());
+        }
+    }
 }
 
 void Editor::DrawMainMenuBar() {
