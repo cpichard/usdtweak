@@ -1,6 +1,7 @@
 #include <pxr/imaging/garch/glApi.h>
 #include <pxr/imaging/cameraUtil/conformWindow.h>
 #include <pxr/base/gf/range2f.h>
+#include <pxr/base/gf/ray.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/boundable.h>
@@ -784,6 +785,10 @@ void Viewport::Render() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
     _drawTarget->Unbind();
+}
+
+const GLuint Viewport::GetSceneDepthTexture() const {
+    return _renderer && GetCurrentStage() ? _sceneDrawTarget->GetAttachment("depth")->GetGlTextureName() : 0;
 }
 
 void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) { _imagingSettings.frame = tc; }

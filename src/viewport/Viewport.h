@@ -150,6 +150,9 @@ class Viewport final {
     void HandleManipulationEvents();
     void HandleKeyboardShortcut();
 
+    /// Get viewport GL depth texture
+    const GLuint GetSceneDepthTexture() const;
+
   private:
     void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
 
