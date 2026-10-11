@@ -412,9 +412,15 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
     int buttonID = 0;
     if (!prim.HasVariantSets())
         return false;
+
+    const UsdEditTarget editTarget = prim.GetStage()->GetEditTarget();
+    if (!editTarget.GetLayer()) {
+        ImGui::Text("No edit target");
+        return false;
+    }
+
     auto variantSets = prim.GetVariantSets();
 
-    const auto &editTarget = prim.GetStage()->GetEditTarget();
     const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
     const bool editingInVariant = targetPath.ContainsPrimVariantSelection();
 

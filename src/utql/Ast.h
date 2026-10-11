@@ -93,7 +93,7 @@ struct WhereExpr {
 
 struct ScopeSpec {
     enum class Kind {
-        Default,    ///< no IN — current stage / its layers
+        Default,    ///< no IN — every open stage / every loaded layer
         Stage,      ///< IN STAGE "id"
         Stages,     ///< IN STAGES "a;b"
         StagesAll,  ///< IN STAGES "*"
@@ -125,8 +125,8 @@ struct ComposingInto {
 /// spec origin, return the composed (Stage-world) objects it feeds into. The FIND
 /// entity is the USD side (USDPRIM/USDATTRIBUTE/USDRELATIONSHIP); the origin names
 /// an SDF spec — a precise `LAYER "id" PATH "/p"`, a layer-agnostic path, or a
-/// Layer-world RESULTSET. Bounded by the stage scope (IN STAGE/STAGES; default the
-/// current stage).
+/// Layer-world RESULTSET. Bounded by the stage scope (IN STAGE/STAGES; defaults to
+/// all open stages).
 struct ComposedFrom {
     enum class Kind { None, Resultset, Paths };
     Kind                     kind = Kind::None;

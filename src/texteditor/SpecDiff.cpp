@@ -27,9 +27,9 @@ bool IsPrimMetadataField(const TfToken &field) {
         return false;
     }
     return IsBaseMetadataField(SdfSpecTypePrim, field) || field == SdfFieldKeys->Payload ||
-           field == SdfFieldKeys->References || field == SdfFieldKeys->Relocates ||
-           field == SdfFieldKeys->InheritPaths || field == SdfFieldKeys->Specializes ||
-           field == SdfFieldKeys->VariantSetNames || field == SdfFieldKeys->VariantSelection;
+           field == SdfFieldKeys->References || field == SdfFieldKeys->InheritPaths ||
+           field == SdfFieldKeys->Specializes || field == SdfFieldKeys->VariantSetNames ||
+           field == SdfFieldKeys->VariantSelection;
 }
 
 bool IsAttributeMetadataField(const TfToken &field) {
@@ -81,7 +81,7 @@ struct ApplyState {
     }
 };
 
-void ApplyMetadataToSpec(const ParsedMetadata &parsed, SdfSpec spec, const SdfPath &path,
+void ApplyMetadataToSpec(const ParsedMetadata &parsed, SdfSpec spec,
                          bool (*isMetadataField)(const TfToken &), ApplyState &state,
                          bool isLayer = false) {
     // Clear authored metadata absent from the text (unknown fields untouched)
@@ -97,15 +97,7 @@ void ApplyMetadataToSpec(const ParsedMetadata &parsed, SdfSpec spec, const SdfPa
     }
     // Set differing fields
     for (const auto &entry : parsed.fields) {
-        VtValue value = entry.second;
-        if (entry.first == SdfFieldKeys->Relocates && value.IsHolding<SdfRelocatesMap>()) {
-            SdfRelocatesMap anchored;
-            for (const auto &relocate : value.UncheckedGet<SdfRelocatesMap>()) {
-                anchored[relocate.first.MakeAbsolutePath(path)] =
-                    relocate.second.MakeAbsolutePath(path);
-            }
-            value = VtValue(anchored);
-        }
+        const VtValue &value = entry.second;
         if (spec.GetField(entry.first) != value && !state.dryRun) {
             spec.SetField(entry.first, value);
         }
@@ -242,7 +234,7 @@ void ApplyPropertyContent(const ParsedProperty &parsed, const SdfPropertySpecHan
         spec.ClearField(SdfFieldKeys->Spline);
     }
 
-    ApplyMetadataToSpec(parsed.metadata, spec, path,
+    ApplyMetadataToSpec(parsed.metadata, spec,
                         isRelationship ? IsRelationshipMetadataField : IsAttributeMetadataField,
                         state);
 }
@@ -465,7 +457,7 @@ void ApplyPrimBody(const ParsedPrim &parsed, const SdfPrimSpecHandle &spec, Appl
             }
             const SdfPrimSpecHandle variantPrim = variantSpec->GetPrimSpec();
             ApplyMetadataToSpec(parsedVariant.body->metadata, variantPrim.GetSpec(),
-                                variantPrim->GetPath(), IsPrimMetadataField, state);
+                                IsPrimMetadataField, state);
             ApplyPrimBody(*parsedVariant.body, variantPrim, state);
         }
         if (setSpec && !state.dryRun) {
@@ -526,7 +518,7 @@ void ApplyPrim(const ParsedPrim &parsed, const SdfPrimSpecHandle &spec, bool all
         rawSpec.ClearField(SdfFieldKeys->TypeName);
     }
 
-    ApplyMetadataToSpec(parsed.metadata, rawSpec, path, IsPrimMetadataField, state);
+    ApplyMetadataToSpec(parsed.metadata, rawSpec, IsPrimMetadataField, state);
     ApplyPrimBody(parsed, spec, state);
 }
 
@@ -569,7 +561,7 @@ bool ApplyParsedLayerToLayer(const ParsedLayer &parsed, const SdfLayerRefPtr &la
     state.errors = errors;
 
     const SdfPrimSpecHandle pseudoRoot = layer->GetPseudoRoot();
-    ApplyMetadataToSpec(parsed.metadata, pseudoRoot.GetSpec(), SdfPath::AbsoluteRootPath(),
+    ApplyMetadataToSpec(parsed.metadata, pseudoRoot.GetSpec(),
                         IsLayerMetadataField, state, /* isLayer = */ true);
 
     const std::vector<TfToken> &rootOrder = layer->GetRootPrimOrder();

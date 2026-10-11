@@ -100,6 +100,16 @@ float GetMiniButtonSize() {
     return g.FontSize * 1.4;
 }
 
+/// Read the bounds of a SetRange request, ordered and clamped to [0, itemCount - 1].
+inline bool GetClampedSelectionRange(const ImGuiSelectionRequest &req, int itemCount, int &first, int &last) {
+    first = static_cast<int>(req.RangeFirstItem);
+    last = static_cast<int>(req.RangeLastItem);
+    if (first > last) std::swap(first, last);
+    first = std::max(first, 0);
+    last = std::min(last, itemCount - 1);
+    return first <= last;
+}
+
 /// Apply ImGui multi-select IO requests to a Selection object.
 /// Call once after BeginMultiSelect() (for SetAll/SetRange from keyboard) and once after EndMultiSelect()
 /// (for the click/range requests produced by the frame).
@@ -115,9 +125,10 @@ inline void ApplyMultiSelectRequests(ImGuiMultiSelectIO *msIO, Selection &select
                     selection.AddSelected(owner, indexToPath(i));
             }
         } else if (req.Type == ImGuiSelectionRequestType_SetRange) {
-            int first = static_cast<int>(req.RangeFirstItem);
-            int last  = static_cast<int>(req.RangeLastItem);
-            if (first > last) std::swap(first, last);
+            int first = 0;
+            int last = 0;
+            if (!GetClampedSelectionRange(req, itemCount, first, last))
+                continue;
             for (int i = first; i <= last; ++i) {
                 if (req.Selected)
                     selection.AddSelected(owner, indexToPath(i));

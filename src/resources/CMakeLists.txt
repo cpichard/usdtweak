@@ -55,6 +55,24 @@ file(WRITE "${GENERATED_DIR}/GlslCode.h" "#pragma once\n
 ${glsl_header}"
 )
 
+# The UTQL help page (src/search/help/UtqlHelp.md) is embedded as a const char *,
+# so editing the markdown is all it takes to change the help shown in the app.
+# It is embedded here, and not in src/search, because the generated cpp has to be
+# added to the `resources` target, which is defined in this directory.
+set(utql_help_md  ${CMAKE_SOURCE_DIR}/src/search/help/UtqlHelp.md)
+set(utql_help_cpp ${GENERATED_DIR}/UtqlHelpDoc.cpp)
+add_custom_command(
+    OUTPUT "${utql_help_cpp}"
+    DEPENDS "${utql_help_md}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_markdown.cmake"
+    COMMAND "${CMAKE_COMMAND}"
+            "-DSOURCE_FILE=${utql_help_md}"
+            "-DDESTINATION_FILE=${utql_help_cpp}"
+            "-DVARIABLE_NAME=UtqlHelpDoc"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/embed_markdown.cmake"
+    COMMENT "Embedding ${utql_help_md}"
+)
+target_sources(resources PRIVATE ${utql_help_cpp})
+
 # Default ini file is also embedded
 set(default_ini_file ${CMAKE_CURRENT_SOURCE_DIR}/ini/imgui.ini)
 set(default_ini_header ${GENERATED_DIR}/DefaultImGuiIni.h)

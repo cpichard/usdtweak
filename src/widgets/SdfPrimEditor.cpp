@@ -147,7 +147,7 @@ struct CreateAttributeDialog : public ModalDialog {
 
     const char *DialogId() const override { return "Create attribute"; }
 
-    const SdfPrimSpecHandle &_sdfPrim;
+    const SdfPrimSpecHandle _sdfPrim;
     std::string _attributeName;
     SdfVariability _variability = SdfVariabilityVarying;
     SdfValueTypeName _typeName = SdfValueTypeNames->Bool;
@@ -244,7 +244,7 @@ struct CreateRelationDialog : public ModalDialog {
     }
     const char *DialogId() const override { return "Create relationship"; }
 
-    const SdfPrimSpecHandle &_sdfPrim;
+    const SdfPrimSpecHandle _sdfPrim;
     std::string _relationName;
     std::string _targetPath;
     SdfListOpType _operation = SdfListOpTypeExplicit;

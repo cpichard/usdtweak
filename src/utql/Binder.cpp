@@ -780,7 +780,7 @@ class Binder {
         //     origin → the composed objects it feeds. Returns Stage-world objects,
         //     so USD* entities only; mutually exclusive with COMPOSING/CONNECTED.
         //     Unlike COMPOSING INTO it keeps IN to bound the stage scope (default
-        //     the current stage); layer / resultset scopes are rejected.
+        //     all open stages); layer / resultset scopes are rejected.
         const bool composedFrom = q.composedFrom.kind != ComposedFrom::Kind::None;
         if (composedFrom) {
             if (composing || connected) {
@@ -797,7 +797,7 @@ class Binder {
             if (q.scope.kind != K::Default && q.scope.kind != K::Stage &&
                 q.scope.kind != K::Stages && q.scope.kind != K::StagesAll) {
                 Fail("COMPOSED FROM searches composed prims; bound it with a stage "
-                     "scope (IN STAGE/STAGES, or omit IN for the current stage).");
+                     "scope (IN STAGE/STAGES; omitting IN searches all open stages).");
                 return false;
             }
         }
@@ -907,7 +907,7 @@ class Binder {
         using K = ScopeSpec::Kind;
         if (s.kind == K::BareStage) {
             Fail("IN STAGE requires an id. Use IN STAGE \"id\", IN STAGES "
-                 "\"a;b\", IN STAGES \"*\", or omit IN for the current stage.");
+                 "\"a;b\", IN STAGES \"*\", or omit IN to search all open stages.");
             return false;
         }
         const bool layerScope = (s.kind == K::Layer || s.kind == K::Layers ||

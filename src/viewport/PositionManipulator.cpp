@@ -126,7 +126,7 @@ GfMatrix4d PositionManipulator::ComputeManipulatorToWorldTransform(const Viewpor
         const GfMatrix4d toManipulator = /* pivotMat * */ transMat * parentToWorld; // TODO pivot ?? or not pivot ???
         return toManipulator.GetOrthonormalized();
     }
-    return GfMatrix4d();
+    return GfMatrix4d(1.0);
 }
 
 inline void DrawArrow(ImDrawList *drawList, ImVec2 ori, ImVec2 tip, const ImVec4 &color, float thickness) {
