@@ -5,6 +5,7 @@
 /// has grown too much and doing too many thing
 ///
 #include "FlyCameraManipulator.h"
+#include "Framebuffer.h"
 #include "Grid.h"
 #include "SceneObjectDrawer.h"
 #include "Manipulator.h"
@@ -19,7 +20,7 @@
 #include <map>
 #include <set>
 #include <pxr/base/gf/range2f.h>
-#include <pxr/imaging/glf/drawTarget.h>
+#include <memory>
 #include <pxr/usd/usd/stage.h>
 
 #include <ImagingSettings.h>
@@ -180,7 +181,6 @@ class Viewport final {
     UsdStageRefPtr _stage;
 
     // Renderer
-    GLuint _textureId = 0;
     std::map<UsdStageRefPtr, ViewportEngine *> _renderers;
     ViewportEngine *_renderer = nullptr;
 
@@ -190,10 +190,10 @@ class Viewport final {
     SceneObjectDrawer _sceneObjectDrawer;
     /// The scene image rendered by Hydra, updated only when the engine reports it
     /// is needed (scene edit, camera move, unconverged renderer, ...)
-    GlfDrawTargetRefPtr _sceneDrawTarget;
+    std::unique_ptr<Framebuffer> _sceneDrawTarget;
     /// The displayed image: the scene image composited with the per-frame overlays
     /// (grid, camera/light guides, manipulators HUD), shown as an ImGui image
-    GlfDrawTargetRefPtr _drawTarget;
+    std::unique_ptr<Framebuffer> _drawTarget;
 };
 
 template <> inline Manipulator *Viewport::GetManipulator<PositionManipulator>() { return &_positionManipulator; }

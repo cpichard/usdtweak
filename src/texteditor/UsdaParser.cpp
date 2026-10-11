@@ -601,7 +601,7 @@ bool UsdaParser::ParseReferenceListOp(VtValue *out, bool isPayload, const std::s
     return true;
 }
 
-bool UsdaParser::ParseRelocates(SdfRelocatesMap *out) {
+bool UsdaParser::ParseRelocates(SdfRelocates *out) {
     if (!Expect("=") || !Expect("{")) {
         return false;
     }
@@ -618,7 +618,7 @@ bool UsdaParser::ParseRelocates(SdfRelocatesMap *out) {
         if (!ExpectType(UsdaTokenType::PathRef, "relocate target", &target)) {
             return false;
         }
-        (*out)[PathFromToken(source.text)] = PathFromToken(target.text);
+        out->emplace_back(PathFromToken(source.text), PathFromToken(target.text));
         Accept(",");
     }
     return true;
@@ -913,19 +913,17 @@ bool UsdaParser::ParseMetadataEntry(ParsedMetadata *out, MetadataContext context
         return true;
     }
     if (name == "relocates") {
-        SdfRelocatesMap relocates;
+        // Prim relocates were removed from Sdf in USD 26.11, only layer relocates remain
+        if (context != MetadataContext::Layer) {
+            ErrorAt(&nameToken, "relocates is only valid in layer metadata");
+            return false;
+        }
+        // layer relocates are an ORDERED vector, paths as written
+        SdfRelocates relocates;
         if (!ParseRelocates(&relocates)) {
             return false;
         }
-        if (context == MetadataContext::Layer) {
-            // layer relocates are an ORDERED vector, paths as written
-            SdfRelocates ordered(relocates.begin(), relocates.end());
-            out->fields[SdfFieldKeys->LayerRelocates] = VtValue(ordered);
-        } else {
-            // NOTE: paths are as written (prim-relative); the comparer/applier
-            // re-anchors them to the prim path
-            out->fields[SdfFieldKeys->Relocates] = VtValue(relocates);
-        }
+        out->fields[SdfFieldKeys->LayerRelocates] = VtValue(relocates);
         return true;
     }
     if (name == "prefixSubstitutions" || name == "suffixSubstitutions") {

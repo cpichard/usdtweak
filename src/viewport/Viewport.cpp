@@ -81,21 +81,11 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _orbitCameraManipulator.ResetPosition(GetEditableCamera());
     _flyCameraManipulator.ResetPosition(GetEditableCamera());
 
-    _drawTarget = GlfDrawTarget::New(_textureSize, false);
-    _drawTarget->Bind();
-    _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-    _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-    auto color = _drawTarget->GetAttachment("color");
-    _textureId = color->GetGlTextureName();
-    _drawTarget->Unbind();
+    _drawTarget = std::make_unique<Framebuffer>(_textureSize);
 
     // The scene image has its own draw target so it is re-rendered only when needed;
     // it is composited into _drawTarget with the per-frame overlays at every frame
-    _sceneDrawTarget = GlfDrawTarget::New(_textureSize, false);
-    _sceneDrawTarget->Bind();
-    _sceneDrawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-    _sceneDrawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-    _sceneDrawTarget->Unbind();
+    _sceneDrawTarget = std::make_unique<Framebuffer>(_textureSize);
 
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
@@ -146,9 +136,9 @@ void Viewport::Draw() {
     const auto cursorPos = ImGui::GetCursorPos();
     _textureSize = GfVec2i(std::max(1.f, wsize[0]), std::max(1.f, wsize[1] - cursorPos.y));
 
-    if (_textureId) {
+    if (const unsigned int textureId = _drawTarget->GetColorTextureId()) {
         // Get the size of the child (i.e. the whole draw size of the windows).
-        ImGui::Image((ImTextureID)((uintptr_t)_textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image((ImTextureID)((uintptr_t)textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
         // if (ImGui::BeginPopupContextItem()) {
@@ -811,12 +801,8 @@ void Viewport::Update() {
 
     const GfVec2i &currentSize = _drawTarget->GetSize();
     if (currentSize != _textureSize) {
-        _drawTarget->Bind();
         _drawTarget->SetSize(_textureSize);
-        _drawTarget->Unbind();
-        _sceneDrawTarget->Bind();
         _sceneDrawTarget->SetSize(_textureSize);
-        _sceneDrawTarget->Unbind();
     }
 
     if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {

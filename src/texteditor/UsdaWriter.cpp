@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cstdarg>
 #include <sstream>
+#include <type_traits>
 
+#include <pxr/base/arch/pragmas.h>
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/base/ts/spline.h>
 #include <pxr/base/ts/types.h>
@@ -29,6 +31,9 @@
 #include <pxr/usd/sdf/types.h>
 #include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/sdf/variantSpec.h>
+#if PXR_VERSION >= 2611
+#include <pxr/base/gf/duration.h>
+#endif
 
 std::string UsdaFoldedPlaceholder(size_t elementCount) {
     return TfStringPrintf("[\xe2\x80\xa6 %zu values \xe2\x80\xa6]", elementCount);
@@ -310,6 +315,9 @@ std::string StringFromValue(const SdfAssetPath &assetPath) {
     return StringFromAssetPath(assetPath.GetAuthoredPath());
 }
 std::string StringFromValue(const SdfPathExpression &pathExpr) { return Quote(pathExpr.GetText()); }
+#if PXR_VERSION >= 2611
+std::string StringFromValue(const GfDuration &duration) { return TfStringify(duration); }
+#endif
 
 template <class T> void StringFromVtArray(std::string *valueStr, const VtArray<T> &valArray) {
     valueStr->append("[");
@@ -333,6 +341,13 @@ template <class T> void StringFromVtArrayEdit(std::string *valueStr, const VtArr
 
 template <class T>
 bool StringFromVtValueHelper(std::string *valueStr, const VtValue &value, Out &out) {
+#if PXR_VERSION >= 2611
+    if constexpr (std::is_same_v<T, GfDuration>) {
+        if (value.IsHolding<T>() || value.IsHolding<VtArray<T>>() || value.IsHolding<VtArrayEdit<T>>()) {
+            out.RequestVersion(1, 4); // GfDuration requires usda 1.4
+        }
+    }
+#endif
     if (value.IsHolding<T>()) {
         *valueStr = StringFromValue(value.UncheckedGet<T>());
         return true;
@@ -357,6 +372,11 @@ std::string StringFromVtValue(const VtValue &value, Out &out) {
         StringFromVtValueHelper<SdfPathExpression>(&s, value, out)) {
         return s;
     }
+#if PXR_VERSION >= 2611
+    if (StringFromVtValueHelper<GfDuration>(&s, value, out)) {
+        return s;
+    }
+#endif
 
     if (value.IsHolding<char>()) {
         return TfStringify(static_cast<int>(value.UncheckedGet<char>()));
@@ -792,8 +812,7 @@ void WriteListOp(Out &out, size_t indent, const TfToken &fieldName, const ListOp
 
 // --- Relocates ---------------------------------------------------------------
 
-template <class RelocatesContainer>
-bool WriteRelocatesImpl(Out &out, size_t indent, bool multiLine, const RelocatesContainer &relocates) {
+bool WriteRelocatesImpl(Out &out, size_t indent, bool multiLine, const SdfRelocates &relocates) {
     Write(out, indent, "relocates = %s", multiLine ? "{\n" : "{ ");
     size_t itemCount = relocates.size();
     for (const auto &relocate : relocates) {
@@ -824,6 +843,10 @@ void WriteSplineExtrapolation(Out &out, size_t indent, const char *label, const 
     if (extrap.mode == TsExtrapSloped) {
         Write(out, indent + 1, "%s: %s(%s),\n", label, Stringify(extrap.mode),
               TfStringify(extrap.slope).c_str());
+    } else if (extrap.IsLooping() && extrap.loopBoundaryTime.has_value()) {
+        out.RequestVersion(1, 3); // loopBoundaryTime requires usda 1.3
+        Write(out, indent + 1, "%s: %s(%s),\n", label, Stringify(extrap.mode),
+              TfStringify(extrap.loopBoundaryTime.value()).c_str());
     } else {
         Write(out, indent + 1, "%s: %s,\n", label, Stringify(extrap.mode));
     }
@@ -904,12 +927,16 @@ void WriteSpline(Out &out, const size_t indent, const TsSpline &spline) {
     WriteSplineExtrapolation(out, indent, "pre", spline.GetPreExtrapolation());
     WriteSplineExtrapolation(out, indent, "post", spline.GetPostExtrapolation());
 
+    // Inner looping is deprecated since USD 26.11 but still has to be written out
+    ARCH_PRAGMA_PUSH
+    ARCH_PRAGMA_DEPRECATED
     if (spline.GetInnerLoopParams() != TsLoopParams()) {
         const TsLoopParams lp = spline.GetInnerLoopParams();
         Write(out, indent + 1, "loop: (%s, %s, %d, %d, %s),\n", TfStringify(lp.protoStart).c_str(),
               TfStringify(lp.protoEnd).c_str(), lp.numPreLoops, lp.numPostLoops,
               TfStringify(lp.valueOffset).c_str());
     }
+    ARCH_PRAGMA_POP
 
     TsDispatchToValueTypeTemplate<SplineKnotWriter>(spline.GetValueType(), std::ref(out), indent,
                                                     std::ref(knotMap), spline.GetCurveType());
@@ -1020,9 +1047,9 @@ struct IsPrimMetadataField : public IsMetadataField {
             return false;
         }
         return (IsMetadataField::operator()(field) || field == SdfFieldKeys->Payload ||
-                field == SdfFieldKeys->References || field == SdfFieldKeys->Relocates ||
-                field == SdfFieldKeys->InheritPaths || field == SdfFieldKeys->Specializes ||
-                field == SdfFieldKeys->VariantSetNames || field == SdfFieldKeys->VariantSelection);
+                field == SdfFieldKeys->References || field == SdfFieldKeys->InheritPaths ||
+                field == SdfFieldKeys->Specializes || field == SdfFieldKeys->VariantSetNames ||
+                field == SdfFieldKeys->VariantSelection);
     }
 };
 
@@ -1097,16 +1124,6 @@ bool WritePrimMetadata(const SdfPrimSpec &prim, Out &out, size_t indent) {
         } else if (field == SdfFieldKeys->Specializes) {
             const VtValue v = prim.GetField(field);
             WriteIfListOp<SdfPathListOp>(out, indent + 1, TfToken("specializes"), v);
-        } else if (field == SdfFieldKeys->Relocates) {
-            // Relativize all paths in the relocates
-            SdfPath primPath = prim.GetPath();
-            SdfRelocatesMap finalRelocates;
-            const SdfRelocatesMapProxy relocates = prim.GetRelocates();
-            for (const auto &relocate : relocates) {
-                finalRelocates[relocate.first.MakeRelativePath(primPath)] =
-                    relocate.second.MakeRelativePath(primPath);
-            }
-            WriteRelocatesImpl(out, indent + 1, multiLine, finalRelocates);
         } else if (field == SdfFieldKeys->PrefixSubstitutions) {
             VtDictionary prefixSubstitutions = prim.GetPrefixSubstitutions();
             Puts(out, indent + 1, "prefixSubstitutions = ");
