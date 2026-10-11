@@ -101,6 +101,7 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
     _imagingSettings.camFlySpeed = _defaultSettings._camFlySpeed;
+    _cameras.SetAutoClipEnabled(_defaultSettings._autoClip);
 }
 
 Viewport::~Viewport() {
@@ -331,7 +332,6 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
         for (const auto &primPath : selection.GetSelectedPaths(GetCurrentStage())) {
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         FrameCameraManipulatorsOnBBox(GetEditableCamera(), bbox);
     }
 }
@@ -339,32 +339,69 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
 /// Frame the viewport using the bounding box of the root prim
 void Viewport::FrameCameraOnRootPrim() {
     if (GetCurrentStage()) {
-        UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        if (defaultPrim) {
-            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
-        } else {
-            auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
-        }
+        FrameCameraManipulatorsOnBBox(GetEditableCamera(), GetStageBBox());
     }
 }
 
 void Viewport::FrameAllCameras() {
     if (GetCurrentStage()) {
-        UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        if (defaultPrim) {
-            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
-                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
-            }
-        } else {
-            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
-                auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
-            }
+        const GfBBox3d &stageBBox = GetStageBBox();
+        for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
+            FrameCameraManipulatorsOnBBox(*camera, stageBBox);
         }
     }
+}
+
+GfBBox3d Viewport::ComputeStageWorldBound() const {
+    if (!GetCurrentStage()) {
+        return GfBBox3d();
+    }
+    UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
+    const UsdPrim defaultPrim = GetCurrentStage()->GetDefaultPrim();
+    const GfBBox3d bbox =
+        bboxcache.ComputeWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPrimAtPath(SdfPath("/")));
+
+    // An infinite bound gives meaningless clipping planes, treat it as empty. Same guard as usdview's
+    // StageView._isInfiniteBBox
+    const GfRange3d &range = bbox.GetRange();
+    if (range.IsEmpty() || std::isinf(range.GetMin().GetLength()) || std::isinf(range.GetMax().GetLength())) {
+        return GfBBox3d();
+    }
+    return bbox;
+}
+
+const GfBBox3d &Viewport::GetStageBBox() {
+    // Each edit of the stage invalidates its bounds. While a transform manipulator is dragged that is
+    // every frame, so keep the previous bounds until the drag ends: usdview also recomputes them only
+    // once an edit is complete.
+    if (IsDraggingTransformManipulator() && _stageBounds.stage == GetCurrentStage()) {
+        return _stageBounds.bbox;
+    }
+    // Without an engine there is no edit notification, so the bounds can't be trusted and are always
+    // recomputed. This only happens when Hydra is disabled, and nothing calls this per frame then.
+    const size_t editCount = _renderer ? _renderer->GetStageEditCount() : 0;
+    const bool upToDate = _renderer && _stageBounds.stage == GetCurrentStage() &&
+                          _stageBounds.timeCode == GetCurrentTimeCode() && _stageBounds.editCount == editCount;
+    if (!upToDate) {
+        _stageBounds.bbox = ComputeStageWorldBound();
+        _stageBounds.stage = GetCurrentStage();
+        _stageBounds.timeCode = GetCurrentTimeCode();
+        _stageBounds.editCount = editCount;
+    }
+    return _stageBounds.bbox;
+}
+
+bool Viewport::FindClosestPointToCamera(const GfFrustum &pickFrustum, GfVec3d &outHitPoint) const {
+    if (!_renderer || !GetCurrentStage()) {
+        return false;
+    }
+    return _renderer->FindPointNearestToCamera(pickFrustum.ComputeViewMatrix(), pickFrustum.ComputeProjectionMatrix(),
+                                               GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint);
+}
+
+bool Viewport::IsDraggingTransformManipulator() const {
+    return _currentEditingState == &_positionManipulator || _currentEditingState == &_rotationManipulator ||
+           _currentEditingState == &_scaleManipulator;
 }
 
 GfVec2d Viewport::GetPickingBoundarySize() const {
@@ -454,6 +491,11 @@ void Viewport::HandleKeyboardShortcut() {
             }
         } else {
             ScaleManipulatorPressedOnce = true;
+        }
+
+        // Clip once: recompute the clipping range of the hovered viewport camera
+        if (ImGui::IsKeyPressed(ImGuiKey_C, false) && !IsModifierDown()) {
+            _cameras.RequestClip();
         }
 
         // Playback
@@ -828,6 +870,10 @@ void Viewport::Update() {
         _rotationManipulator.OnSelectionChange(*this);
         _scaleManipulator.OnSelectionChange(*this);
     }
+
+    // Last: the cameras have been selected and framed, and the draw target is at its final size, so
+    // the pick sees the view that is about to be rendered. Render() then pushes this camera to hydra.
+    _cameras.UpdateClippingPlanes(*this);
 }
 
 bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath,

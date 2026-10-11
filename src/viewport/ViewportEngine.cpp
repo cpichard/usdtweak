@@ -1,5 +1,8 @@
 #include "ViewportEngine.h"
 
+#include <limits>
+
+#include <pxr/imaging/hdx/pickTask.h>
 #include <pxr/usd/usd/prim.h>
 
 ViewportEngine::ViewportEngine(UsdStageRefPtr stage, const TfToken &rendererPluginId) : _stage(stage) {
@@ -14,7 +17,10 @@ ViewportEngine::ViewportEngine(UsdStageRefPtr stage, const TfToken &rendererPlug
 
 ViewportEngine::~ViewportEngine() { TfNotice::Revoke(_objectsChangedNoticeKey); }
 
-void ViewportEngine::_OnObjectsChanged(const UsdNotice::ObjectsChanged &, const UsdStageWeakPtr &) { _sceneDirty = true; }
+void ViewportEngine::_OnObjectsChanged(const UsdNotice::ObjectsChanged &, const UsdStageWeakPtr &) {
+    _sceneDirty = true;
+    ++_stageEditCount;
+}
 
 void ViewportEngine::SetLightingState(const GlfSimpleLightVector &lights, const GlfSimpleMaterial &material,
                                       const GfVec4f &ambient) {
@@ -99,6 +105,42 @@ bool ViewportEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatr
                                       SdfPath *outHitPrimPath, SdfPath *outHitInstancerPath, int *outHitInstanceIndex) {
     return _engine->TestIntersection(viewMatrix, projectionMatrix, root, params, outHitPoint, outHitNormal, outHitPrimPath,
                                      outHitInstancerPath, outHitInstanceIndex);
+}
+
+bool ViewportEngine::FindPointNearestToCamera(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix,
+                                              const UsdPrim &root, const UsdImagingGLRenderParams &params,
+                                              GfVec3d *outHitPoint) {
+#if PXR_VERSION >= 2411
+    UsdImagingGLEngine::IntersectionResultVector results;
+    if (!_engine->TestIntersection({HdxPickTokens->resolveNearestToCamera}, viewMatrix, projectionMatrix, root, params,
+                                   &results)) {
+        return false;
+    }
+    // There is a single hit in this resolve mode, but nothing is lost by keeping the closest one
+    bool found = false;
+    double closestDepth = std::numeric_limits<double>::infinity();
+    for (const UsdImagingGLEngine::IntersectionResult &result : results) {
+        if (result.hitPrimPath.IsEmpty()) {
+            continue;
+        }
+        // The camera looks down -Z in view space
+        const double depth = -viewMatrix.Transform(result.hitPoint)[2];
+        if (depth < closestDepth) {
+            closestDepth = depth;
+            *outHitPoint = result.hitPoint;
+            found = true;
+        }
+    }
+    return found;
+#else
+    GfVec3d hitNormal;
+    SdfPath hitPrimPath;
+    SdfPath hitInstancerPath;
+    int hitInstanceIndex = -1;
+    return _engine->TestIntersection(viewMatrix, projectionMatrix, root, params, outHitPoint, &hitNormal, &hitPrimPath,
+                                     &hitInstancerPath, &hitInstanceIndex) &&
+           !hitPrimPath.IsEmpty();
+#endif
 }
 
 TfToken ViewportEngine::GetCurrentRendererId() const { return _engine->GetCurrentRendererId(); }

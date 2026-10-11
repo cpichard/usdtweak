@@ -21,6 +21,9 @@ void ViewportSettings::ParseLine(const char *line) {
     if (sscanf(line, "SnapPlaybackToFrame=%i", &value) == 1) {
         _snapPlaybackToFrame = value != 0;
     }
+    if (sscanf(line, "AutoClip=%i", &value) == 1) {
+        _autoClip = value != 0;
+    }
     if (sscanf(line, "ShowCameraMask=%i", &value) == 1) {
         _showCameraMask = value != 0;
     }
@@ -43,6 +46,7 @@ void ViewportSettings::Dump(ImGuiTextBuffer *buf) {
     buf->appendf("UseMaterials=%d\n", _useMaterials);
     buf->appendf("CamFlySpeed=%lf\n", _camFlySpeed);
     buf->appendf("SnapPlaybackToFrame=%d\n", _snapPlaybackToFrame);
+    buf->appendf("AutoClip=%d\n", _autoClip);
     buf->appendf("ShowCameraMask=%d\n", _showCameraMask);
     buf->appendf("ShowCameraFrameOutline=%d\n", _showCameraFrameOutline);
     buf->appendf("CameraMaskColor=%f %f %f %f\n", _cameraMaskColor[0], _cameraMaskColor[1], _cameraMaskColor[2],

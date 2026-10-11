@@ -11,9 +11,6 @@ PXR_NAMESPACE_USING_DIRECTIVE
 /// Camera manipulator, this is copying how usdview freeCamera.py works
 ///
 
-// TODO: Set near and far plane automatically - we need the stage BBox and closest object bbox
-//
-
 double CameraRig::computePlaneAngle(const GfVec3d &axis0, const GfVec3d &axis1, const GfVec3d &vec) {
     double ret = std::atan2(-GfDot(vec, axis0), -GfDot(vec, axis1));
     if (ret < 0)

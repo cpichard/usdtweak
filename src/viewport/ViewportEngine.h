@@ -48,6 +48,10 @@ class ViewportEngine : public TfWeakBase {
     /// a different stage while the render buffer size is unchanged.
     void MarkDirty() { _sceneDirty = true; }
 
+    /// Number of edits of the stage seen by this engine. Lets a client cache data derived from the
+    /// stage, like its bounding box, and tell when it is out of date.
+    size_t GetStageEditCount() const { return _stageEditCount; }
+
     bool IsConverged() const;
 
     // Selection highlighting
@@ -58,6 +62,12 @@ class ViewportEngine : public TfWeakBase {
     bool TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
                           const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint, GfVec3d *outHitNormal,
                           SdfPath *outHitPrimPath, SdfPath *outHitInstancerPath, int *outHitInstanceIndex);
+
+    /// World space point of the scene closest to the camera, searched through the whole frustum.
+    /// Before USD 24.11 the engine only resolves the hit nearest to the center of the frustum, which
+    /// is returned instead.
+    bool FindPointNearestToCamera(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
+                                  const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint);
 
     // Renderer plugin management
     TfToken GetCurrentRendererId() const;
@@ -99,6 +109,9 @@ class ViewportEngine : public TfWeakBase {
 
     /// Set when anything affecting the scene image changed, cleared by Render()
     bool _sceneDirty = true;
+
+    /// Incremented on every ObjectsChanged notice
+    size_t _stageEditCount = 0;
 
     // Last state forwarded to the engine, for the compare-before-set of the
     // per-frame setters above

@@ -18,6 +18,7 @@
 #include "ViewportCameras.h"
 #include <map>
 #include <set>
+#include <pxr/base/gf/frustum.h>
 #include <pxr/base/gf/range2f.h>
 #include <pxr/imaging/glf/drawTarget.h>
 #include <pxr/usd/usd/stage.h>
@@ -51,6 +52,18 @@ class Viewport final {
     void FrameCameraOnSelection(const Selection &);
     void FrameCameraOnRootPrim();
     void FrameAllCameras();
+
+    /// Services the cameras need from the viewport: both go through the hydra engine.
+    ///
+    /// World space bounds of the whole stage, usdview's StageView._bbox. Recomputed only when the
+    /// stage, its content or the time code changed. Empty when there is no stage, or when the
+    /// bounds are empty or infinite.
+    const GfBBox3d &GetStageBBox();
+    /// Point of the scene nearest to the camera, as seen through pickFrustum. False when nothing
+    /// was hit or when there is nothing to render.
+    bool FindClosestPointToCamera(const GfFrustum &pickFrustum, GfVec3d &outHitPoint) const;
+    /// True when hydra is rendering this viewport
+    bool IsHydraEnabled() const { return _renderer != nullptr; }
 
     /// Viewport size
     GfVec2i GetViewportSize() const;
@@ -139,6 +152,22 @@ class Viewport final {
 
   private:
     void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
+
+    /// Measure the world space bounds of the whole stage, taken from the default prim when there is
+    /// one. GetStageBBox caches the result.
+    GfBBox3d ComputeStageWorldBound() const;
+
+    /// True while a transform manipulator is being dragged
+    bool IsDraggingTransformManipulator() const;
+
+    /// Cached stage bounds and what they were computed from, see GetStageBBox
+    struct StageBoundsCache {
+        GfBBox3d bbox;
+        UsdStageRefPtr stage;
+        UsdTimeCode timeCode;
+        size_t editCount = 0;
+    };
+    StageBoundsCache _stageBounds;
 
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;

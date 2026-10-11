@@ -12,6 +12,10 @@ struct ViewportSettings {
     // to feed fractional/subframe timecodes so motion blur can be introspected across renderers.
     bool _snapPlaybackToFrame = true;
 
+    // Default state of the viewport "Auto clip" toggle: near and far planes of the viewport owned cameras
+    // recomputed on every camera move. Off, the clipping range is manual or set with "Clip once".
+    bool _autoClip = true;
+
     // Camera framing overlay, drawn when a USD stage camera is the active viewport camera
     bool _showCameraMask = false;
     bool _showCameraFrameOutline = false;

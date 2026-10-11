@@ -4,6 +4,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/FlyCameraManipulator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/OrbitCameraManipulator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OrbitCameraManipulator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/CameraClipping.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CameraClipping.h
     ${CMAKE_CURRENT_SOURCE_DIR}/CameraRig.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/CameraRig.h
     ${CMAKE_CURRENT_SOURCE_DIR}/Grid.cpp
