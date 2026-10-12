@@ -27,7 +27,8 @@ class Framebuffer final {
 
     unsigned int GetFramebufferId() const { return _framebuffer; }
     unsigned int GetColorTextureId() const { return _colorTexture; }
-
+    unsigned int GetDepthTextureId() const { return _depthTexture; }
+    
   private:
     void AllocateTextures();
 

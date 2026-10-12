@@ -843,10 +843,12 @@ void WriteSplineExtrapolation(Out &out, size_t indent, const char *label, const 
     if (extrap.mode == TsExtrapSloped) {
         Write(out, indent + 1, "%s: %s(%s),\n", label, Stringify(extrap.mode),
               TfStringify(extrap.slope).c_str());
+#if PXR_VERSION >= 2608
     } else if (extrap.IsLooping() && extrap.loopBoundaryTime.has_value()) {
         out.RequestVersion(1, 3); // loopBoundaryTime requires usda 1.3
         Write(out, indent + 1, "%s: %s(%s),\n", label, Stringify(extrap.mode),
               TfStringify(extrap.loopBoundaryTime.value()).c_str());
+#endif
     } else {
         Write(out, indent + 1, "%s: %s,\n", label, Stringify(extrap.mode));
     }

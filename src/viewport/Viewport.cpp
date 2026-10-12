@@ -778,7 +778,7 @@ void Viewport::Render() {
 }
 
 const GLuint Viewport::GetSceneDepthTexture() const {
-    return _renderer && GetCurrentStage() ? _sceneDrawTarget->GetAttachment("depth")->GetGlTextureName() : 0;
+    return _renderer && GetCurrentStage() ? _sceneDrawTarget->GetDepthTextureId() : 0;
 }
 
 void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) { _imagingSettings.frame = tc; }
