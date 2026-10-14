@@ -11,7 +11,9 @@ https://github.com/cpichard/usdtweak/assets/300243/3f34cd6f-de84-428f-9569-a1ac3
 
 ## Status
 
-usdtweak is a side project and the development follows its own pace. The original idea was to improve usdview by adding edition capabilities, for artists, technical directors and users who don't know the OpenUSD ascii syntax and are not familiar with python. The current goal driving the developments is to provide at least the same functionalities as usdview with the ability to edit stages and layers.
+usdtweak has been actively developed since 2020. It started as an idea to bring editing to usdview, for artists, technical directors and anyone who doesn't know the OpenUSD ascii syntax or Python. Today it is a full editor for stages and layers, and the goal driving development is to match usdview's functionality while making everything editable.
+
+Development is independent and community-driven. Feedback, bug reports and contributions directly shape the roadmap.
 
 As of today usdtweak allows
  
@@ -25,11 +27,22 @@ As of today usdtweak allows
  
 **Text editing**: edit any layer with a text editor, navigate layers like a web browser.
 
-**Experimental features**:
- - Connection editor - visualize and edit connection graphs, useful for shader/materials graphs. 
- - A natural language agent named [Twiki](doc/Twiki.md), that can help you find issues in the scene or do bulk modifications.
+**AI agent: Twiki**: usdtweak includes **Twiki**, an experimental natural-language agent built into the editor. Ask it to find problems in a scene ("which prims have no material bound?") or perform bulk modifications ("set all lights' intensity to 2 under /World/Set"), and it inspects and edits the stage for you. Twiki is the start of agentic 3D editing in usdtweak, with more structured scene queries and safer, undoable edit operations on the way. See [Twiki.md](doc/Twiki.md) for details.
 
+**Alpha features**:
+ - Connection editor - visualize and edit connection graphs, useful for shader/materials graphs. 
+ 
 If you want to try usdtweak without the burden of compiling it, you can download the latest installer here https://github.com/cpichard/usdtweak/releases. Feel free to [reach out](#contact) if you have any issue with it (or success).
+
+## Who uses usdtweak
+
+usdtweak is used by people who need to inspect and edit USD without a commercial platform:
+
+- **VFX studios** build it against their DCC's USD (for example Houdini's) so it fits straight into their pipeline and reduce licenses use for simple tasks like reviewing.
+- **Students and educators** use it as a free, visual way to learn how stages, layers and composition work.
+- **AI and robotics researchers** use it to review and edit the USD scenes and assets used for simulation.
+
+Using usdtweak in your work, lab or course? [Tell us on Discord](https://discord.gg/Yjv6HBAc7) or [by email](#contact). We'd love to hear about it.
 
 ## Building
 If you're on windows, you can use `windows-build.ps1` powershell script to build usdtweak. It will download the OpenUSD pre-build binaries from [NVIDIA](https://developer.nvidia.com/usd#bin) and compile usdtweak for you, granted you have the required tools installed (Cmake, Visual Studio 2022 build tools).
