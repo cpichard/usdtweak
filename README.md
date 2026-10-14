@@ -27,7 +27,7 @@ As of today usdtweak allows
  
 **Text editing**: edit any layer with a text editor, navigate layers like a web browser.
 
-**AI agent: Twiki**: usdtweak includes **Twiki**, an experimental natural-language agent built into the editor. Ask it to find problems in a scene ("which prims have no material bound?") or perform bulk modifications ("set all lights' intensity to 2 under /World/Set"), and it inspects and edits the stage for you. Twiki is the start of agentic 3D editing in usdtweak, with more structured scene queries and safer, undoable edit operations on the way. See [Twiki.md](doc/Twiki.md) for details.
+**AI agent**: usdtweak includes **Twiki**, an experimental natural-language agent built into the editor. Ask it to find problems in a scene ("which prims have no material bound?") or perform bulk modifications ("set all lights' intensity to 2 under /World/Set"), it will help you inspect and modify the scene more rapidly without knowing the USD specifics. Twiki is the start of agentic 3D editing in usdtweak. See [Twiki.md](doc/Twiki.md) for details.
 
 **Alpha features**:
  - Connection editor - visualize and edit connection graphs, useful for shader/materials graphs. 
