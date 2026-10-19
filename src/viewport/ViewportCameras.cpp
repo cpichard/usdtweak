@@ -195,9 +195,12 @@ bool ViewportCameras::FindAndUseStageCamera(const UsdStageRefPtr &stage,  UsdTim
         UsdPrimRange range = stage->Traverse();
         for (const auto &prim: range) {
             if (prim.IsA<UsdGeomCamera>()) {
-                const auto stageCameraPrim = UsdGeomCamera::Get(stage, prim.GetPath());
+                const UsdGeomCamera stageCameraPrim = UsdGeomCamera::Get(stage, prim.GetPath());
                 UseInternalCamera(stage, ViewportPerspective);
                 *_renderCamera = stageCameraPrim.GetCamera(tc);
+                // Deactivate autoclip as we are copying an authored camera with clipping planes
+                _autoClip = false;
+                _clipRequested = false;
                 return true;
             }
         }

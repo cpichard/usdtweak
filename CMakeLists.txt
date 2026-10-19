@@ -63,6 +63,7 @@ add_custom_target(stamp
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if (APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 15.7)
     set(MACOSX_BUNDLE_ICON_FILE icon.icns)
 
     # And this part tells CMake where to find and install the file itself
