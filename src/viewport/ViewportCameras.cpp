@@ -402,8 +402,11 @@ void ViewportCameras::ComputeAndSetClosestDistance(Viewport &viewport, const GfB
     // keeping the far plane within the safe precision range.
     GfFrustum pickFrustum = viewport.GetViewportCamera().GetFrustum();
     const double trueFar = pickFrustum.GetNearFar().GetMax();
-    const double smallNear =
-        std::min(ComputeDefaultNear(stageBBox), viewport.GetOrbitCameraManipulator().GetSelectionSize() / 10.0);
+    // The selection size comes from the last framing and is negative infinity after framing empty
+    // bounds (a light, an empty Xform): only use it when it is a real size.
+    const double defaultNear = ComputeDefaultNear(stageBBox);
+    const double selectionSize = viewport.GetOrbitCameraManipulator().GetSelectionSize();
+    const double smallNear = selectionSize > 0.0 ? std::min(defaultNear, selectionSize / 10.0) : defaultNear;
 
     // usdview resolves the hit nearest to the center of the view, which is the depth of whatever sits
     // in the middle of the frame, not the closest geometry. The near plane is then pushed out to half

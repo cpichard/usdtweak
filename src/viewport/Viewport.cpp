@@ -330,15 +330,15 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
 /// Frame the viewport using the bounding box of the root prim
 void Viewport::FrameCameraOnRootPrim() {
     if (GetCurrentStage()) {
-        FrameCameraManipulatorsOnBBox(GetEditableCamera(), GetStageBBox());
+        FrameCameraManipulatorsOnBBox(GetEditableCamera(), ComputeFramingWorldBound());
     }
 }
 
 void Viewport::FrameAllCameras() {
     if (GetCurrentStage()) {
-        const GfBBox3d &stageBBox = GetStageBBox();
+        const GfBBox3d framingBBox = ComputeFramingWorldBound();
         for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
-            FrameCameraManipulatorsOnBBox(*camera, stageBBox);
+            FrameCameraManipulatorsOnBBox(*camera, framingBBox);
         }
     }
 }
@@ -347,10 +347,21 @@ GfBBox3d Viewport::ComputeStageWorldBound() const {
     if (!GetCurrentStage()) {
         return GfBBox3d();
     }
-    UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
+    // Hydra draws the whole stage, not only the default prim, so the clipping range must enclose all of it
+    return ComputeFiniteWorldBound(GetCurrentStage()->GetPseudoRoot());
+}
+
+GfBBox3d Viewport::ComputeFramingWorldBound() const {
+    if (!GetCurrentStage()) {
+        return GfBBox3d();
+    }
     const UsdPrim defaultPrim = GetCurrentStage()->GetDefaultPrim();
-    const GfBBox3d bbox =
-        bboxcache.ComputeWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPrimAtPath(SdfPath("/")));
+    return ComputeFiniteWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPseudoRoot());
+}
+
+GfBBox3d Viewport::ComputeFiniteWorldBound(const UsdPrim &prim) const {
+    UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
+    const GfBBox3d bbox = bboxcache.ComputeWorldBound(prim);
 
     // An infinite bound gives meaningless clipping planes, treat it as empty. Same guard as usdview's
     // StageView._isInfiniteBBox

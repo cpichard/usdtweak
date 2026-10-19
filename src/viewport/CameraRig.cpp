@@ -1,5 +1,6 @@
 #include "CameraRig.h"
 #include "Constants.h"
+#include <algorithm>
 #include <pxr/base/gf/bbox3d.h>
 #include <pxr/base/gf/frustum.h>
 #include <pxr/base/gf/rotation.h>
@@ -102,7 +103,14 @@ void CameraRig::SetZIsUp(bool isZUp) {
 
 /// Frame a bounding box.
 void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
-    if (bbox.GetVolume() == 0) {
+    // A flat box (a ground plane, a card) has no volume but can still be framed: only an empty box or
+    // a single point have nothing to frame
+    if (bbox.GetRange().IsEmpty()) {
+        return;
+    }
+    const GfVec3d bboxSize = bbox.ComputeAlignedRange().GetSize();
+    const double bboxMaxSize = std::max({bboxSize[0], bboxSize[1], bboxSize[2]});
+    if (bboxMaxSize <= 0.0) {
         return;
     }
 
@@ -117,9 +125,8 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
         mat_center.SetTranslate(bbox.ComputeCentroid());
         mat_center *= _zUpMatrix.GetInverse();
 
-        auto bboxRange = bbox.ComputeAlignedRange();
-        auto rect = bboxRange.GetMax() - bboxRange.GetMin();
-        _selectionSize = std::max(rect[0], rect[1]) * 2; // This reset the selection size
+        // All three sides: X and Y alone are 0 for a box flat in both, e.g. a line along Z with Y up
+        _selectionSize = bboxMaxSize * 2; // This reset the selection size
         auto fov = camera.GetFieldOfView(GfCamera::FOVHorizontal);
         auto lengthToFit = _selectionSize * 0.5;
         dist = lengthToFit / atan(fov * 0.5 * (PI_F / 180.f));
@@ -139,9 +146,7 @@ void CameraRig::FrameBoundingBox(GfCamera &camera, const GfBBox3d &bbox) {
         camera.SetTransform(mat);
 
         // Compute framing
-        const GfRange3d bboxRange = bbox.ComputeAlignedRange();
-        const GfVec3d frameSize = bboxRange.GetSize();
-        const float maxSize = fmax(frameSize[0], fmax(frameSize[1], frameSize[2]));
+        const float maxSize = bboxMaxSize;
         const float aspectRatio = camera.GetAspectRatio();
         camera.SetOrthographicFromAspectRatioAndSize(aspectRatio, maxSize,
                                                      aspectRatio > 1.f ? GfCamera::FOVVertical : GfCamera::FOVHorizontal);
