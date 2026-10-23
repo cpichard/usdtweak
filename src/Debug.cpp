@@ -7,14 +7,7 @@
 #include <pxr/base/plug/registry.h>
 #include <pxr/base/tf/debug.h>
 #include <sstream>
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -101,7 +94,9 @@ void DrawDebugUI() {
     if (current_item == 0) {
         ImGui::BeginChild("##Timing");
         ImGui::Text("ImGui: %.3f ms/frame  (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::Text("Working directory: %s", fs::current_path().string().c_str());
+        const fs::path workingDirectory = CurrentPath(); // empty when the directory was deleted
+        ImGui::Text("Working directory: %s",
+                    workingDirectory.empty() ? "unavailable" : ToUtf8(workingDirectory).c_str());
         ImGui::EndChild();
     } else if (current_item == 1) {
         ImGui::BeginChild("##DebugCodes");

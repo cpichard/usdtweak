@@ -36,14 +36,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/base/trace/trace.h>
 #include <pxr/imaging/garch/glApi.h>
@@ -348,7 +341,7 @@ struct SetWorkingDirectoryDialog : public ModalDialog {
         ImGui::Text("Set to: %s", dir.c_str());
         DrawModalButtonsOkCancel([&]() {
             std::error_code ec;
-            fs::current_path(dir, ec);
+            fs::current_path(FromUtf8(dir), ec);
         });
     }
     const char *DialogId() const override { return "Set working directory"; }

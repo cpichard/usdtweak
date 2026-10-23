@@ -3,15 +3,7 @@
 #include "FileBrowser.h"
 #include "ImGuiHelpers.h"
 
-// TODO filesystem include since this is duplicated
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 
 SdfAssetPath AssetPathBrowserDialog::GetBrowserAssetPath() {
     std::string assetPath =
@@ -20,16 +12,17 @@ SdfAssetPath AssetPathBrowserDialog::GetBrowserAssetPath() {
 }
 
 void AssetPathBrowserDialog::InitAuthoredAssetPath(const SdfAssetPath &assetPath) {
-    const fs::path authoredPath = assetPath.GetAuthoredPath();
-    if (fs::exists(authoredPath)) {
-        if (fs::is_regular_file(authoredPath)) {
-            SetFileBrowserFilePath(authoredPath.string());
+    // The authored path comes from the layer and can be anything, the non throwing helpers are required
+    const fs::path authoredPath = FromUtf8(assetPath.GetAuthoredPath());
+    if (PathExists(authoredPath)) {
+        if (IsRegularFile(authoredPath)) {
+            SetFileBrowserFilePath(ToUtf8(authoredPath));
         }
     } else { // The asset path might be relative, let's try to find it with the anchorLayer
         // TODO: the anchor code could live in the file browser.
-        const fs::path anchoredPath = fs::path(_anchorLayer->GetRealPath()).parent_path() / authoredPath;
-        if (fs::exists(anchoredPath) && fs::is_regular_file(anchoredPath)) {
-            SetFileBrowserFilePath(anchoredPath.string());
+        const fs::path anchoredPath = FromUtf8(_anchorLayer->GetRealPath()).parent_path() / authoredPath;
+        if (IsRegularFile(anchoredPath)) {
+            SetFileBrowserFilePath(ToUtf8(anchoredPath));
             _relative = true;
         } // TODO: should we ResetAuthoredAssetPath ? just keep the directory
     }

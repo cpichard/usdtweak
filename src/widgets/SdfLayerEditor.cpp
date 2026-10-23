@@ -32,14 +32,7 @@
 #include "VtDictionaryEditor.h"
 #include "UsdHelpers.h"
 
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 
 // This is very similar to AddSublayer, they should be merged together
 struct EditSublayerPath : public ModalDialog {
@@ -57,27 +50,34 @@ struct EditSublayerPath : public ModalDialog {
         //            -> use the directory of path
         //      2.3 name does not point to an existing file
         //           -> set the directory to layer
-        fs::path layerPath(layer->GetRealPath());
-        SetFileBrowserDirectory(layerPath.parent_path().string());
+        // The sublayer path comes from the layer and can be anything, the non throwing helpers are required
+        fs::path layerPath = FromUtf8(layer->GetRealPath());
+        SetFileBrowserDirectory(ToUtf8(layerPath.parent_path()));
         if (!_sublayerPath.empty()) {
             // Does the file exists ??
-            fs::path path(_sublayerPath);
-            if (fs::exists(path)) {
+            fs::path path = FromUtf8(_sublayerPath);
+            if (PathExists(path)) {
                 // Path is global
                 _relative = false;
-                SetFileBrowserDirectory(path.parent_path().string());
-                SetFileBrowserFilePath(path.string());
+                SetFileBrowserDirectory(ToUtf8(path.parent_path()));
+                SetFileBrowserFilePath(ToUtf8(path));
             } else {
                 // Try relative to this layer
                 auto relativePath = layerPath.parent_path() / path;
-                auto absolutePath = fs::absolute(relativePath);
-                if (fs::exists(absolutePath) || fs::exists(absolutePath.parent_path())) {
+                std::error_code ec;
+                auto absolutePath = fs::absolute(relativePath, ec);
+                if (ec) {
+                    absolutePath = relativePath;
+                }
+                if (PathExists(absolutePath) || PathExists(absolutePath.parent_path())) {
                     _relative = true;
-                    SetFileBrowserDirectory(absolutePath.parent_path().string());
-                    SetFileBrowserFilePath(absolutePath.string());
+                    SetFileBrowserDirectory(ToUtf8(absolutePath.parent_path()));
+                    SetFileBrowserFilePath(ToUtf8(absolutePath));
+                } else {
+                    // Unresolved, keep the path as authored
+                    SetFileBrowserFilePath(_sublayerPath);
                 }
             }
-            SetFileBrowserFilePath(_sublayerPath);
         }
         // Make sure we only use usd layers in the filebrowser
         SetValidExtensions(GetUsdValidExtensions());
@@ -469,13 +469,8 @@ void DrawLayerActionPopupMenu(SdfLayerHandle layer, bool isStage) {
     if (layer->IsDirty() && !layer->IsAnonymous() && ImGui::MenuItem("Save layer")) {
         ExecuteAfterDraw(&SdfLayer::Save, layer, true);
     }
-    if (ImGui::MenuItem("Open in file browser")) {
-        // TODO windows and linux
-        std::string command;
-        command += "open ";
-        fs::path layerPath = layer->GetRealPath();
-        command += layerPath.parent_path().string();
-        system(command.c_str());
+    if (ImGui::MenuItem("Open in file browser", nullptr, false, !layer->IsAnonymous())) {
+        OpenInFileManager(FromUtf8(layer->GetRealPath()).parent_path());
     }
     if (ImGui::MenuItem("Save layer as")) {
         ExecuteAfterDraw<EditorSaveLayerAs>(layer);

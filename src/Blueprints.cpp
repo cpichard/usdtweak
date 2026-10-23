@@ -1,74 +1,87 @@
 #include "Blueprints.h"
+#include <cctype>
 #include <iostream>
+#include <set>
 #include <stack>
 //#include <pxr/base/arch/fileSystem.h>
 #include <pxr/usd/sdf/fileFormat.h>
 
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
+
+// Blueprint names are displayed with an upper case first letter
+static std::string CapitalizedStem(const fs::path &path) {
+    std::string stem = ToGenericUtf8(path.stem());
+    if (!stem.empty()) {
+        stem[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(stem[0])));
+    }
+    return stem;
+}
 
 void Blueprints::SetBlueprintsLocations(const std::vector<std::string> &locations) {
     std::cout << "Reading blueprints" << std::endl;
     const std::set<std::string> allUsdExt = SdfFileFormat::FindAllFileFormatExtensions();
-    std::stack<std::string> folders;
-    std::stack<std::string> paths;
+    // Directories left to read, with the blueprint folder name they map to
+    std::stack<std::pair<fs::path, std::string>> directories;
     for (const auto &loc : locations) {
-        paths.push(loc);
-        folders.push("");
+        directories.emplace(FromUtf8(loc), "");
     }
+    // Canonical paths of the directories already read, a symlink to a parent directory would loop forever
+    std::set<fs::path> visited;
+    const auto CanonicalPath = [](const fs::path &path) {
+        std::error_code ec;
+        const fs::path canonicalPath = fs::canonical(path, ec);
+        return ec ? path : canonicalPath;
+    };
     _subFolders.clear();
     _items.clear();
+    // This runs at startup in the Editor constructor: an exception here would prevent usdtweak from starting,
+    // so only the non throwing filesystem functions are used.
     // TODO: we should measure the time it takes to read all the blueprints as this can affect the application startup time
     // Also this code could be ran in another thread as it is not essential to have the
     // blueprint informations at startup time
     // -> We might just want to read a json file containing a list of file/
     // if there is a json file; otherwise read the dir ??
-    while (!paths.empty()) {
-        if (!fs::exists(paths.top())) {
-            std::cerr << "unable to find blueprint path " << paths.top() << std::endl;
-            paths.pop();
+    while (!directories.empty()) {
+        const fs::path directory = directories.top().first;
+        const std::string folder = directories.top().second;
+        directories.pop();
+        std::error_code ec;
+        if (!fs::is_directory(directory, ec)) {
+            std::cerr << "unable to find blueprint directory " << ToUtf8(directory) << std::endl;
             continue;
         }
-        try {
-            fs::is_directory(paths.top());
-        } catch (fs::filesystem_error &) {
-            std::cerr << "unable to read directory " << paths.top() << std::endl;
-            paths.pop();
+        if (!visited.insert(CanonicalPath(directory)).second) {
             continue;
         }
-        const auto path = fs::directory_iterator(paths.top());
-        paths.pop();
-        const auto folder = folders.top();
-        folders.pop();
-        for (const auto &entry : fs::directory_iterator(path)) {
-            if (fs::is_directory(entry)) {
-                paths.push(entry.path().generic_string());
-                std::string folderStem = entry.path().stem().generic_string();
+        fs::directory_iterator it(directory, fs::directory_options::skip_permission_denied, ec);
+        for (; !ec && it != fs::directory_iterator(); it.increment(ec)) {
+            const fs::directory_entry &entry = *it;
+            std::error_code entryError;
+            if (entry.is_directory(entryError)) {
+                if (visited.count(CanonicalPath(entry.path()))) {
+                    continue; // link to a directory already read, typically a parent
+                }
+                const std::string folderStem = CapitalizedStem(entry.path());
                 if (!folderStem.empty()) {
-                    folderStem[0] = std::toupper(folderStem[0]);
-                    std::string subFolderName = folder + "/" + folderStem;
-                    folders.push(subFolderName);
+                    const std::string subFolderName = folder + "/" + folderStem;
+                    directories.emplace(entry.path(), subFolderName);
                     _subFolders[folder].push_back(subFolderName);
                 }
-            } else if (fs::is_regular_file(entry.path())) {
-                std::string layerPath = entry.path().generic_string();
+            } else if (entry.is_regular_file(entryError)) {
+                const std::string layerPath = ToGenericUtf8(entry.path());
                 const auto ext = SdfFileFormat::GetFileExtension(layerPath);
                 if (allUsdExt.find(ext) != allUsdExt.end()) {
-                    std::string itemName = entry.path().stem().generic_string();
+                    const std::string itemName = CapitalizedStem(entry.path());
                     if (!itemName.empty()) {
-                        itemName[0] = std::toupper(itemName[0]);
                         _items[folder].push_back(std::make_pair(itemName, layerPath));
                     }
                 }
             }
+        }
+        if (ec) {
+            std::cerr << "unable to read blueprint directory " << ToUtf8(directory) << ": " << ec.message() << std::endl;
         }
     }
     std::cout << "Blueprints ready" << std::endl;
