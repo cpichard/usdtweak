@@ -157,9 +157,16 @@ class Viewport final {
   private:
     void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
 
-    /// Measure the world space bounds of the whole stage, taken from the default prim when there is
-    /// one. GetStageBBox caches the result.
+    /// Measure the world space bounds of the whole stage, used for the clipping planes.
+    /// GetStageBBox caches the result.
     GfBBox3d ComputeStageWorldBound() const;
+
+    /// Measure the world space bounds to frame the cameras on: the default prim when there is one,
+    /// the whole stage otherwise
+    GfBBox3d ComputeFramingWorldBound() const;
+
+    /// World space bounds of a prim, empty when they are infinite
+    GfBBox3d ComputeFiniteWorldBound(const UsdPrim &prim) const;
 
     /// True while a transform manipulator is being dragged
     bool IsDraggingTransformManipulator() const;
