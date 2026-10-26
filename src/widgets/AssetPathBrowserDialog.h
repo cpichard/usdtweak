@@ -9,6 +9,8 @@ class AssetPathBrowserDialog : public ModalDialog {
   public:
     AssetPathBrowserDialog(SdfAttributeSpecHandle attribute);
     AssetPathBrowserDialog(const UsdAttribute &attribute);
+    AssetPathBrowserDialog(const SdfLayerHandle &anchorLayer, const std::string &initialPath,
+                           const std::function<void(const SdfAssetPath &)> &onOk);
 
     ~AssetPathBrowserDialog() override {}
 

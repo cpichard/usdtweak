@@ -60,6 +60,16 @@ AssetPathBrowserDialog::AssetPathBrowserDialog(const UsdAttribute &attribute) : 
     };
 };
 
+AssetPathBrowserDialog::AssetPathBrowserDialog(const SdfLayerHandle &anchorLayer, const std::string &initialPath,
+                                               const std::function<void(const SdfAssetPath &)> &onOk)
+    : _anchorLayer(anchorLayer) {
+    if (!_anchorLayer) {
+        return;
+    }
+    InitAuthoredAssetPath(SdfAssetPath(initialPath));
+    _onOk = [=]() { onOk(GetBrowserAssetPath()); };
+};
+
 void AssetPathBrowserDialog::Draw() {
     DrawFileBrowser(RemainingHeight(3));
     ImGui::Checkbox("Use relative path", &_relative);

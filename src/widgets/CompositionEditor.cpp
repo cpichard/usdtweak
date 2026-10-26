@@ -1,4 +1,5 @@
 
+#include "AssetPathBrowserDialog.h"
 #include "Commands.h"
 #include "CompositionEditor.h"
 #include "Constants.h"
@@ -149,7 +150,8 @@ struct CreateAssetPathModalDialog : public ModalDialog {
         ImGui::InputText("File path", &_assetPath);
         ImGui::SameLine();
         if (ImGui::Button(ICON_FA_FILE)) {
-            ImGui::OpenPopup("Asset path browser");
+            DrawModalDialog<AssetPathBrowserDialog>(_primSpec->GetLayer(), _assetPath,
+                                                    [this](const SdfAssetPath &assetPath) { _assetPath = assetPath.GetAssetPath(); });
         }
         ImGui::InputText("Target prim path", &_primPath);
         ImGui::InputDouble("Layer time offset", &_timeOffset);
