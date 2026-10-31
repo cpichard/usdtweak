@@ -235,7 +235,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
 
     DrawPickMode(_selectionManipulator);
     ImGui::SameLine();
-    ImGui::Button(ICON_FA_USER_COG);
+    ImGui::Button(ICON_FA_SLIDERS_H);
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawRendererControls(*_renderer);
         DrawRendererSelectionCombo(*_renderer);
@@ -252,7 +252,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
         ImGui::SetTooltip("Renderer settings");
     }
     ImGui::SameLine();
-    ImGui::Button(ICON_FA_TV);
+    ImGui::Button(ICON_FA_EYE);
     if (_renderer && ImGui::BeginPopupContextItem(nullptr, flags)) {
         DrawImagingSettings(*_renderer, _imagingSettings);
         ImGui::Checkbox("Show menu bar", &_imagingSettings.showViewportMenu);
@@ -263,7 +263,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     }
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, _imagingSettings.enableCameraLight ? selectedColor : defaultColor);
-    if (ImGui::Button(ICON_FA_FIRE)) {
+    if (ImGui::Button(ICON_FA_LIGHTBULB)) {
         _imagingSettings.enableCameraLight = !_imagingSettings.enableCameraLight;
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
@@ -272,7 +272,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
     ImGui::PopStyleColor();
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, _imagingSettings.enableSceneMaterials ? selectedColor : defaultColor);
-    if (ImGui::Button(ICON_FA_HAND_SPARKLES)) {
+    if (ImGui::Button(ICON_FA_PALETTE)) {
         _imagingSettings.enableSceneMaterials = !_imagingSettings.enableSceneMaterials;
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
@@ -295,7 +295,7 @@ void Viewport::DrawToolBar(const ImVec2 widgetPosition) {
 }
 
 void Viewport::DrawHydraEnableButton(bool enabled) {
-    if (ImGui::Button(ICON_FA_FILM)) {
+    if (ImGui::Button(ICON_FA_POWER_OFF)) {
         SetStageHydraEnabled(GetCurrentStage(), enabled);
     }
     if (ImGui::IsItemHovered() && GImGui->HoveredIdTimer > 1) {
@@ -317,7 +317,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(widgetPosition.x);
 
-    if (ImGui::Button(ICON_FA_LOCATION_ARROW, buttonSize)) {
+    if (ImGui::Button(ICON_FA_MOUSE_POINTER, buttonSize)) {
         ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
     }
     ImGui::PopStyleColor();
@@ -338,7 +338,7 @@ void Viewport::DrawManipulatorToolbox(const ImVec2 widgetPosition) {
 
     ImGui::PushStyleColor(ImGuiCol_Button, IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
     ImGui::SetCursorPosX(widgetPosition.x);
-    if (ImGui::Button(ICON_FA_COMPRESS, buttonSize)) {
+    if (ImGui::Button(ICON_FA_EXPAND_ARROWS_ALT, buttonSize)) {
         ExecuteAfterDraw<ViewportsSelectScaleManipulator>();
     }
     ImGui::PopStyleColor();

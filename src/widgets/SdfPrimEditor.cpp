@@ -625,7 +625,7 @@ inline void DrawSecondColumn<AttributeRow>(const int rowId, const SdfAttributeSp
                                            const int &showWhat) {
     // Still not sure we want to show the type at all or in the same column as the name
     ImGui::PushStyleColor(ImGuiCol_Text, attribute->HasDefaultValue() ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored));
-    ImGui::Text(ICON_FA_FLASK);
+    ImGui::Text(ICON_FA_CIRCLE);
     ImGui::PopStyleColor();
     ImGui::SameLine();
     const bool hasTimeSamples = attribute->GetLayer()->GetNumTimeSamplesForPath(attribute->GetPath()) != 0;

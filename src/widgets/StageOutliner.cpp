@@ -205,7 +205,7 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
 
 static inline const char *GetVisibilityIcon(const TfToken &visibility) {
     if (visibility == UsdGeomTokens->inherited) {
-        return ICON_FA_HAND_POINT_UP;
+        return ICON_FA_LEVEL_DOWN_ALT;
     } else if (visibility == UsdGeomTokens->invisible) {
         return ICON_FA_EYE_SLASH;
     } else if (visibility == UsdGeomTokens->visible) {
@@ -356,7 +356,7 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     auto unfolded = ImGui::TreeNodeBehavior(IdOf(GetHash(SdfPath::AbsoluteRootPath())), nodeflags, stageDisplayName.c_str());
 
     ImGui::TableSetColumnIndex(2);
-    ImGui::SmallButton(ICON_FA_PEN);
+    ImGui::SmallButton(ICON_FA_CROSSHAIRS);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         const UsdPrim &selected =
             selectedPaths.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selectedPaths.GetAnchorPrimPath(stage));

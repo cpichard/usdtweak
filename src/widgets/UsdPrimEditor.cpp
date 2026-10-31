@@ -333,7 +333,7 @@ template <> const char *SmallButtonLabel<UsdRelationship>() { return "(r)"; };
 template <typename UsdPropertyT> void DrawMenuClearAuthoredValues(UsdPropertyT &property){};
 template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
     if (attribute.IsAuthored()) {
-        if (ImGui::MenuItem(ICON_FA_EJECT " Clear values")) {
+        if (ImGui::MenuItem(ICON_FA_ERASER " Clear values")) {
             ExecuteAfterDraw(&UsdAttribute::Clear, attribute);
         }
     }
@@ -341,7 +341,7 @@ template <> void DrawMenuClearAuthoredValues(UsdAttribute &attribute) {
 
 template <> void DrawMenuClearAuthoredValues(UsdRelationship &relationship) {
     if (relationship.HasAuthoredTargets()) {
-        if (ImGui::MenuItem(ICON_FA_EJECT " Clear targets")) {
+        if (ImGui::MenuItem(ICON_FA_ERASER " Clear targets")) {
             ExecuteAfterDraw(&UsdRelationship::ClearTargets, relationship, true);
         }
     }
@@ -349,7 +349,7 @@ template <> void DrawMenuClearAuthoredValues(UsdRelationship &relationship) {
 
 template <typename UsdPropertyT> void DrawMenuBlockValues(UsdPropertyT &property){};
 template <> void DrawMenuBlockValues(UsdAttribute &attribute) {
-    if (ImGui::MenuItem(ICON_FA_STOP " Block values")) {
+    if (ImGui::MenuItem(ICON_FA_BAN " Block values")) {
         ExecuteAfterDraw(&UsdAttribute::Block, attribute);
     }
 }
@@ -388,14 +388,14 @@ template <typename UsdPropertyT> void DrawMenuCreateValue(UsdPropertyT &property
 
 template <> void DrawMenuCreateValue(UsdAttribute &attribute) {
     if (!attribute.HasValue()) {
-        if (ImGui::MenuItem(ICON_FA_DONATE " Create value")) {
+        if (ImGui::MenuItem(ICON_FA_PLUS_CIRCLE " Create value")) {
             ExecuteAfterDraw<AttributeCreateDefaultValue>(attribute);
         }
     }
 }
 
 template <> void DrawMenuCreateValue(UsdRelationship &relationship) {
-    if (ImGui::MenuItem(ICON_FA_DONATE " Create relationship")) {
+    if (ImGui::MenuItem(ICON_FA_PLUS_CIRCLE " Create relationship")) {
         DrawModalDialog<CreateRelationshipDialog>(relationship);
     }
 }
@@ -416,7 +416,7 @@ void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTar
         if (ImGui::MenuItem(ICON_FA_COPY " Copy attribute path")) {
             ImGui::SetClipboardText(property.GetPath().GetString().c_str());
         }
-        if (ImGui::BeginMenu(ICON_FA_HAND_HOLDING_USD " Select SdfAttribute")) {
+        if (ImGui::BeginMenu(ICON_FA_MOUSE_POINTER " Select SdfAttribute")) {
             DrawPropertyStack(property, currentTime);
             ImGui::EndMenu();
         }
@@ -654,7 +654,7 @@ bool DrawMaterialBindings(const UsdPrim &prim) {
                 bool isAuthoredAtEditTarget = bindingRel && bindingRel.IsAuthoredAt(prim.GetStage()->GetEditTarget());
                 ImVec4 cogColor = isAuthoredAtEditTarget ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorAttributeAuthored);
                 ScopedStyleColor cogStyle(ImGuiCol_Text, cogColor, ImGuiCol_Button, ImVec4(ColorTransparent));
-                if (ImGui::Button(ICON_FA_COG)) {
+                if (ImGui::Button(ICON_FA_PALETTE)) {
                     ImGui::OpenPopup("MaterialList");
                 }
             }
@@ -857,7 +857,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::TableSetColumnIndex(0);
-        DrawPropertyMiniButton(ICON_FA_PEN);
+        DrawPropertyMiniButton(ICON_FA_CROSSHAIRS);
         ImGuiPopupFlags flags = ImGuiPopupFlags_MouseButtonLeft;
         if (ImGui::BeginPopupContextItem(nullptr, flags)) {
             DrawUsdPrimEditTarget(prim);
@@ -878,7 +878,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::TableSetColumnIndex(0);
         // Draw an option button for certain types of prims
         if (prim.IsA<UsdShadeMaterial>()) {
-            DrawPropertyMiniButton(ICON_FA_USER_COG);
+            DrawPropertyMiniButton(ICON_FA_PROJECT_DIAGRAM);
             if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
                 if (ImGui::MenuItem("Open in connection editor")) {
                     OpenContainerSheet(prim);
@@ -1106,7 +1106,7 @@ static void DrawShaderInputRow(const UsdPrim &prim, const TfToken &name, SdrShad
     } else {
         DrawPropertyMiniButton(SmallButtonLabel<UsdAttribute>());
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            if (ImGui::MenuItem(ICON_FA_DONATE " Create value", nullptr, false, !value.IsEmpty())) {
+            if (ImGui::MenuItem(ICON_FA_PLUS_CIRCLE " Create value", nullptr, false, !value.IsEmpty())) {
                 CreateShaderAttribute(prim, attributeName, type, value);
             }
             ImGui::EndPopup();
@@ -1157,7 +1157,7 @@ static void DrawShaderOutputRow(const UsdPrim &prim, const TfToken &name, SdrSha
     } else {
         DrawPropertyMiniButton(SmallButtonLabel<UsdAttribute>());
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-            if (ImGui::MenuItem(ICON_FA_DONATE " Create output")) {
+            if (ImGui::MenuItem(ICON_FA_PLUS_CIRCLE " Create output")) {
                 CreateShaderAttribute(prim, attributeName, type, VtValue());
             }
             ImGui::EndPopup();

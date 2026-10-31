@@ -146,7 +146,7 @@ static inline void DrawSaveButton(SdfLayerHandle layer) {
 static inline void DrawSelectStageButton(SdfLayerHandle layer, bool isStage, SdfLayerHandle *selectedStage) {
     ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent), ImGuiCol_Text,
         isStage ? ((selectedStage && *selectedStage == layer) ? ImVec4(1.0, 1.0, 1.0, 1.0) : ImVec4(0.6, 0.6, 0.6, 1.0)) : ImVec4(ColorTransparent));
-    if (ImGui::Button(ICON_FA_DESKTOP "###Stage")) {
+    if (ImGui::Button(ICON_FA_LAYER_GROUP "###Stage")) {
         ExecuteAfterDraw<EditorSetCurrentStage>(layer);
     }
 }

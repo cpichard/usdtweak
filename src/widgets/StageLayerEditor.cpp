@@ -71,7 +71,7 @@ static void DrawLayerSublayerTreeNodeButtons(const SdfLayerRefPtr &layer, const 
         ExecuteAfterDraw<LayerUnmute>(layer);
     }
 
-    if (!layer->IsMuted() && ImGui::Button(ICON_FA_VOLUME_OFF)) {
+    if (!layer->IsMuted() && ImGui::Button(ICON_FA_VOLUME_UP)) {
         ExecuteAfterDraw<LayerMute>(layer);
     }
 
@@ -105,7 +105,7 @@ static void DrawLayerSublayerTree(SdfLayerRefPtr layer, SdfLayerRefPtr parent, s
 
     bool unfolded = false;
     std::string label =
-        layer ? (layer->IsAnonymous() ? std::string(ICON_FA_ATOM " ") : std::string(ICON_FA_FILE " ")) + layer->GetDisplayName()
+        layer ? (layer->IsAnonymous() ? std::string(ICON_FA_MEMORY " ") : std::string(ICON_FA_FILE " ")) + layer->GetDisplayName()
               : "Not found " + layerPath;
     {
         ScopedStyleColor color(ImGuiCol_Text,

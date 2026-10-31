@@ -75,7 +75,7 @@ constexpr int ERROR_UNABLE_TO_COMPILE_SHADER = 110;
 /// A set of icons for the application.
 /// _UT_ stands for Usd Tweak
 #define ICON_UT_DELETE ICON_FA_TRASH
-#define ICON_UT_STAGE ICON_FA_BARS
+#define ICON_UT_STAGE ICON_FA_LAYER_GROUP
 
 #define DefaultColorStyle  ImGuiCol_Text, ImVec4(ColorImGuiText), ImGuiCol_Button, ImVec4(ColorImGuiButton), ImGuiCol_FrameBg, ImVec4(ColorImGuiFrameBg)
 

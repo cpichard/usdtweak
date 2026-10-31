@@ -139,7 +139,7 @@ VtValue DrawDictionaryRows(const VtValue &dictValue, const std::string &dictName
                     ScopedStyleColor menuStyle(ImGuiCol_Text, ImVec4(ColorAttributeAuthored), ImGuiCol_Button,
                                                ImVec4(ColorAttributeAuthored));
                     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-                        if (ImGui::BeginMenu(ICON_FA_USER_FRIENDS " Change type")) {
+                        if (ImGui::BeginMenu(ICON_FA_EXCHANGE_ALT " Change type")) {
                             if (ImGui::Selectable("dict")) {
                                 modifiedDict.reset(new VtDictionary(dictSource));
                                 (*modifiedDict)[item.first] = VtDictionary();

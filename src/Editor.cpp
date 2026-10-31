@@ -898,7 +898,7 @@ static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &sele
 
     // Edit target selector
     ImGui::SameLine();
-    ImGui::SmallButton(ICON_FA_PEN);
+    ImGui::SmallButton(ICON_FA_CROSSHAIRS);
     if (stage && ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
         const UsdPrim &selected =
             selection.IsSelectionEmpty(stage) ? stage->GetPseudoRoot() : stage->GetPrimAtPath(selection.GetAnchorPrimPath(stage));
@@ -949,7 +949,7 @@ void Editor::DrawMainMenuBar() {
                 ExecuteAfterDraw<EditorSaveLayerAs>(GetCurrentLayer());
             }
             const bool hasCurrentStage = GetCurrentStage();
-            if (ImGui::BeginMenu(ICON_FA_SHARE " Export Stage", hasCurrentStage)) {
+            if (ImGui::BeginMenu(ICON_FA_FILE_EXPORT " Export Stage", hasCurrentStage)) {
                 if (ImGui::MenuItem("Compressed package (usdz)")) {
                     if (GetCurrentStage()) {
                         DrawModalDialog<ExportStageDialog>(*this, ExportStageDialog::ExportUSDZ);

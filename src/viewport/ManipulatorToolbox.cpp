@@ -100,7 +100,7 @@ static void DockingToolbar(const char* name, Viewport &viewport, ImGuiAxis* p_to
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5.0f, 5.0f));
 
     ImGui::PushStyleColor(ImGuiCol_Button, viewport.IsChosenManipulator<MouseHoverManipulator>() ? selectedColor : defaultColor);
-    if (ImGui::Button(ICON_FA_LOCATION_ARROW, icon_size)) {
+    if (ImGui::Button(ICON_FA_MOUSE_POINTER, icon_size)) {
         ExecuteAfterDraw<ViewportsSelectMouseHoverManipulator>();
     }
     ImGui::PopStyleColor();
@@ -122,7 +122,7 @@ static void DockingToolbar(const char* name, Viewport &viewport, ImGuiAxis* p_to
     if (toolbar_axis == ImGuiAxis_X)
         ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, viewport.IsChosenManipulator<ScaleManipulator>() ? selectedColor : defaultColor);
-    if (ImGui::Button(ICON_FA_COMPRESS, icon_size)) {
+    if (ImGui::Button(ICON_FA_EXPAND_ARROWS_ALT, icon_size)) {
         ExecuteAfterDraw<ViewportsSelectScaleManipulator>();
     }
     ImGui::PopStyleColor();

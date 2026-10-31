@@ -347,7 +347,7 @@ struct ValidationState final {
 #ifdef ENABLE_VALIDATION_FIXERS
                     if (error.GetFixers().empty()) {
                         ImGui::BeginDisabled();
-                        ImGui::Text(ICON_FA_STOP);
+                        ImGui::Text(ICON_FA_MINUS_CIRCLE);
                         ImGui::EndDisabled();
                     } else {
                         ImGui::Checkbox("##sel", &selectedErrors[i]);
