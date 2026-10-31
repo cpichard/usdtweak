@@ -7,9 +7,10 @@
 void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode) {
     const bool hasStage = stage;
     const ImGuiContext& g = *GImGui;
-    const float widgetWidth = g.FontSize * 4.f; // heuristic
+    const float widgetWidth = g.FontSize * 5.f; // heuristic
     int startTime = hasStage ? static_cast<int>(stage->GetStartTimeCode()) : 0;
     int endTime = hasStage ? static_cast<int>(stage->GetEndTimeCode()) : 0;
+    double framesPerSecond = hasStage ? stage->GetFramesPerSecond() : 24.0;
 
     // Start time
     ImGui::PushItemWidth(widgetWidth);
@@ -23,7 +24,7 @@ void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode) {
     // Frame Slider
     ImGui::SameLine();
     ImGui::PushItemWidth(ImGui::GetWindowWidth() -
-                         5 * widgetWidth - 7 * g.Style.ItemSpacing.x ); // 5 to account for the 5 input widgets and the space between them
+                         6 * widgetWidth - 8 * g.Style.ItemSpacing.x ); // 6 to account for the 6 input widgets and the space between them
     int currentTimeSlider = static_cast<int>(currentTimeCode.GetValue());
     if (ImGui::SliderInt("##SliderFrame", &currentTimeSlider, startTime, endTime)) {
         currentTimeCode = static_cast<UsdTimeCode>(currentTimeSlider);
@@ -47,6 +48,16 @@ void DrawTimeline(UsdStageRefPtr stage, UsdTimeCode &currentTimeCode) {
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         if (currentTimeCode.GetValue() != static_cast<double>(currentTime)) {
             currentTimeCode = static_cast<UsdTimeCode>(currentTime);
+        }
+    }
+    
+    // Playback frames per second
+    ImGui::SameLine();
+    ImGui::PushItemWidth(widgetWidth);
+    ImGui::InputDouble("##FramesPerSecond", &framesPerSecond);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (hasStage && stage->GetFramesPerSecond() != static_cast<double>(framesPerSecond)) {
+            ExecuteAfterDraw(&UsdStage::SetFramesPerSecond, stage, static_cast<double>(framesPerSecond));
         }
     }
 

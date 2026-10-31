@@ -745,10 +745,10 @@ void Editor::HydraRender() {
 
     if (_isPlaying && GetCurrentStage()) {
         auto current = clk::steady_clock::now();
-        const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
+        const auto framesPerSecond = GetCurrentStage()->GetFramesPerSecond();
         const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
-        // Advance the continuous accumulator by wall-clock elapsed time so playback stays real-time.
-        _playbackFrame += timesCodePerSec * timeDifference.count();
+        // Advance the continuous accumulator by wall-clock elapsed time so playback stays at the requested rate.
+        _playbackFrame += framesPerSecond * timeDifference.count();
         if (_playbackFrame > GetCurrentStage()->GetEndTimeCode() ||
             _playbackFrame < GetCurrentStage()->GetStartTimeCode()) {
             _playbackFrame = GetCurrentStage()->GetStartTimeCode();
