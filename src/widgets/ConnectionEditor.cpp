@@ -191,9 +191,10 @@ struct ConnectionsSheet {
     
     bool IsRootNode(const UsdPrimNode &node) const { return isContainer && node.primPath == rootPath; }
 
-    // The prims of instances and prototypes can't be edited
+    // The prims of instances and prototypes can't be edited, the children of an instance are instance proxies
     bool IsReadOnly() const {
-        return isContainer && rootPrim.IsValid() && (rootPrim.IsInstanceProxy() || rootPrim.IsInPrototype());
+        return isContainer && rootPrim.IsValid() &&
+               (rootPrim.IsInstance() || rootPrim.IsInstanceProxy() || rootPrim.IsInPrototype());
     }
 
     // The nodes of a container sheet follow the children of the root prim, the nodes already in the sheet are kept
@@ -397,7 +398,12 @@ struct StageSheets {
         std::vector<SheetID> expired;
         for (const auto &sheetID : sheetNames) {
             const ConnectionsSheet &sheet = sheets[sheetID];
-            if (sheet.isContainer && !sheet.rootPrim.IsValid() && !(stage && stage->GetPrimAtPath(sheet.rootPath))) {
+            if (!sheet.isContainer)
+                continue;
+            // A deactivated prim is still a valid prim
+            const UsdPrim rootPrim =
+                sheet.rootPrim.IsValid() ? sheet.rootPrim : (stage ? stage->GetPrimAtPath(sheet.rootPath) : UsdPrim());
+            if (!rootPrim || !rootPrim.IsActive()) {
                 expired.push_back(sheetID);
             }
         }
@@ -451,6 +457,9 @@ struct NodeConnectionEditorData {
     // Storing the unique identifier as a key won't keep the data if we unload and reload the stage
     // with undo/redo
     std::unordered_map<void const *, StageSheets> stageSheets;
+
+    // A sheet was opened, potentially from another window while this one is hidden
+    bool focusRequested = false;
 
     StageSheets * GetSheets(UsdStageWeakPtr stage) {
         if (stage) {
@@ -1150,9 +1159,11 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
         // A connection started from a "+" row: clicking on an input connector completes it, escape cancels it
         if (!pendingConnectionSource.IsEmpty() && state == States::HOVERING_CANVAS) {
             if ((event == NODE_CLICKED || event == CANVAS_CLICKED) && !connectorHeadClicked.IsEmpty()) {
-                ConnectAttributes(currentStage, pendingConnectionSource, pendingConnectionSourceType, connectorHeadClicked,
-                                  SdfValueTypeName());
-                pendingConnectionSource = SdfPath::EmptyPath();
+                if (connectorHeadClicked != pendingConnectionSource) { // an attribute can't be connected to itself
+                    ConnectAttributes(currentStage, pendingConnectionSource, pendingConnectionSourceType,
+                                      connectorHeadClicked, SdfValueTypeName());
+                    pendingConnectionSource = SdfPath::EmptyPath();
+                }
                 event = IDLE; // the click is consumed
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 pendingConnectionSource = SdfPath::EmptyPath();
@@ -1229,7 +1240,7 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
             }
         } else if (state == CONNECTING_NODES) {
             if (event == CLICK_RELEASED) {
-                if (connectorHeadClicked != SdfPath::EmptyPath()) {
+                if (connectorHeadClicked != SdfPath::EmptyPath() && connectorHeadClicked != connectorTailClicked) {
                     // Launch a command !
                     ExecuteAfterDraw<AttributeConnect>(currentStage, connectorTailClicked, connectorHeadClicked);
                 }
@@ -1238,12 +1249,12 @@ struct ConnectionsEditorCanvas { // rename to InfiniteCanvas ??
                 connectorHeadClicked = SdfPath::EmptyPath();
             }
         }
-        // Debug
-        ImGuiContext& g = *GImGui;
-        if (g.FontSize * zooming >= 4.f) {
-            std::string stateDebug = "State " + std::to_string(state);
-            drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(ImVec2(0.2, 0.2)), IM_COL32(255, 255, 255, 255), stateDebug.c_str());
-        }
+        // State debugging
+        //ImGuiContext& g = *GImGui;
+        //if (g.FontSize * zooming >= 4.f) {
+        //    std::string stateDebug = "State " + std::to_string(state);
+        //    drawList->AddText(g.Font, g.FontSize*zooming, CanvasToScreen(ImVec2(0.2, 0.2)), IM_COL32(255, 255, 255, 255), stateDebug.c_str());
+        //}
     }
     
     void ProcessAction() {
@@ -1537,13 +1548,38 @@ static void AutoLayout(ConnectionsSheet &sheet) {
 // Delete the prims of a container sheet in a single undoable command. A prim defined in the edit target layer is
 // removed from it, the others (defined in a weaker layer or a reference) or the ones still composed after the removal
 // are deactivated. A prim only overridden in the edit target keeps its overrides.
-// The prims are siblings, the children of the root prim.
+// The prims are siblings, the children of the root prim. The connections to them from the root prim and its other
+// descendants are removed as well, a dangling connection would not be visible in the sheet.
 static void DeletePrims(const UsdStageWeakPtr &stage, std::vector<SdfPath> paths) {
     if (!stage || paths.empty())
         return;
     std::function<void()> deletePrims = [=]() {
         if (!stage)
             return;
+        const std::unordered_set<SdfPath, SdfPath::Hash> deletedPaths(paths.begin(), paths.end());
+        const auto isDeleted = [&](const SdfPath &target) {
+            const SdfPath primPath = target.GetPrimPath();
+            return std::any_of(deletedPaths.begin(), deletedPaths.end(),
+                               [&](const SdfPath &path) { return primPath.HasPrefix(path); });
+        };
+        if (UsdPrim parent = stage->GetPrimAtPath(paths.front().GetParentPath())) {
+            UsdPrimRange range(parent, UsdPrimAllPrimsPredicate); // the inactive prims can be reactivated
+            for (auto primIt = range.begin(); primIt != range.end(); ++primIt) {
+                if (deletedPaths.count(primIt->GetPath())) {
+                    primIt.PruneChildren();
+                    continue;
+                }
+                for (const UsdAttribute &attribute : primIt->GetAttributes()) {
+                    SdfPathVector targets;
+                    attribute.GetConnections(&targets);
+                    for (const SdfPath &target : targets) {
+                        if (isDeleted(target)) {
+                            attribute.RemoveConnection(target);
+                        }
+                    }
+                }
+            }
+        }
         const UsdEditTarget &editTarget = stage->GetEditTarget();
         for (const SdfPath &path : paths) {
             const SdfPrimSpecHandle spec = editTarget.GetPrimSpecForScenePath(path);
@@ -1663,11 +1699,54 @@ static void DrawCreateNodeMenu(const UsdStageWeakPtr &stage, const SdfPath &root
     }
 }
 
-// The display options are stored per sheet, the menu shows the ones of the selected sheet
-static void DrawConnectionEditorMenuBar(ConnectionsSheet &sheet) {
+// Bake the node positions of the sheet in ui:nodegraph:node:pos
+static void BakeNodePositions(const UsdStageRefPtr &stage, const ConnectionsSheet &sheet) {
+    std::vector<std::pair<SdfPath, ImVec2>> posData;
+    posData.reserve(sheet.nodes.size());
+    for (const auto &node : sheet.nodes)
+        posData.emplace_back(node.primPath, node.position);
+    ExecuteAfterDraw([posData](UsdStageRefPtr stage) {
+        for (const auto &[path, pos] : posData) {
+            UsdPrim prim = stage->GetPrimAtPath(path);
+            if (prim) {
+                UsdUINodeGraphNodeAPI::Apply(prim)
+                    .CreatePosAttr(VtValue(), false)
+                    .Set(GfVec2f(pos.x, pos.y));
+            }
+        }
+    }, stage);
+}
+
+// The menus act on the selected sheet, and the display options are stored per sheet
+static void DrawConnectionEditorMenuBar(const UsdStageRefPtr &stage, const Selection &selection, ConnectionsSheet &sheet,
+                                        bool &fitView) {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("Show")) {
             ImGui::MenuItem("Show all parameters", nullptr, &sheet.showAllParameters);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Actions")) {
+            // The content of a container sheet follows its root prim, prims can't be imported in it
+            if (ImGui::MenuItem(ICON_FA_FILE_IMPORT " Import Selected", nullptr, false, !sheet.isContainer)) {
+                std::vector<UsdPrim> seeds;
+                for (const SdfPath &path : selection.GetSelectedPaths(stage)) {
+                    if (UsdPrim prim = stage->GetPrimAtPath(path))
+                        seeds.push_back(prim);
+                }
+                AddConnectedPrimsToCurrentSession(seeds);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip(sheet.isContainer ? "Only available in the default sheet"
+                                                    : "Import the selected prims and everything connected to them");
+            }
+            if (ImGui::MenuItem(ICON_FA_PROJECT_DIAGRAM " Auto Layout")) {
+                AutoLayout(sheet);
+                fitView = true;
+            }
+            // The positions can't be authored on instance proxies
+            if (ImGui::MenuItem(ICON_FA_SAVE " Bake Positions", nullptr, false, !sheet.IsReadOnly())) {
+                BakeNodePositions(stage, sheet);
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -1716,7 +1795,6 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage, const Selection &selectio
             sheets->DeleteSheet(sheetToDelete);
         }
         ConnectionsSheet &sheet = sheets->GetSelectedSheet();
-        DrawConnectionEditorMenuBar(sheet);
 
         // The interaction state refers to the nodes of the sheet it started on, it's reset when the drawn sheet
         // changes, either by switching tab or stage
@@ -1749,43 +1827,9 @@ void DrawConnectionEditor(const UsdStageRefPtr &stage, const Selection &selectio
             sheet.needsInitialLayout = false;
         }
 
-        // The content of a container sheet follows its root prim, prims can't be imported in it
-        if (!sheet.isContainer) {
-            if (ImGui::Button(ICON_FA_FILE_IMPORT " Import Selected")) {
-                std::vector<UsdPrim> seeds;
-                for (const SdfPath &path : selection.GetSelectedPaths(stage)) {
-                    if (UsdPrim prim = stage->GetPrimAtPath(path))
-                        seeds.push_back(prim);
-                }
-                AddConnectedPrimsToCurrentSession(seeds);
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Import the selected prims and everything connected to them");
-            ImGui::SameLine();
-        }
-        if (ImGui::Button(ICON_FA_PROJECT_DIAGRAM " Auto Layout")) {
-            AutoLayout(sheet);
-            pendingFitView = true;
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(sheet.IsReadOnly()); // the positions can't be authored on instance proxies
-        if (ImGui::Button(ICON_FA_SAVE " Bake Positions")) {
-            std::vector<std::pair<SdfPath, ImVec2>> posData;
-            posData.reserve(sheet.nodes.size());
-            for (const auto &node : sheet.nodes)
-                posData.emplace_back(node.primPath, node.position);
-            ExecuteAfterDraw([posData](UsdStageRefPtr stage) {
-                for (const auto &[path, pos] : posData) {
-                    UsdPrim prim = stage->GetPrimAtPath(path);
-                    if (prim) {
-                        UsdUINodeGraphNodeAPI::Apply(prim)
-                            .CreatePosAttr(VtValue(), false)
-                            .Set(GfVec2f(pos.x, pos.y));
-                    }
-                }
-            }, stage);
-        }
-        ImGui::EndDisabled();
+        // Drawn after the update of the sheet as its actions use the nodes
+        DrawConnectionEditorMenuBar(stage, selection, sheet, pendingFitView);
+
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         canvas.Begin(drawList);
         if (pendingFitView) {
@@ -1969,7 +2013,14 @@ void OpenContainerSheet(const UsdPrim &prim) {
         return;
     if (StageSheets *sbb = editorData.GetSheets(prim.GetStage())) {
         sbb->SetSelectedSheet(sbb->CreateContainerSheet(prim));
+        editorData.focusRequested = true;
     }
+}
+
+bool ConsumeConnectionEditorFocusRequest() {
+    const bool focusRequested = editorData.focusRequested;
+    editorData.focusRequested = false;
+    return focusRequested;
 }
 
 void AddPrimsToDefaultSheet(const std::vector<UsdPrim> &prims) {

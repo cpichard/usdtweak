@@ -14,6 +14,9 @@ void DrawConnectionEditor(const UsdStageRefPtr& stage, const Selection &selectio
 bool CanOpenContainerSheet(const UsdPrim &prim);
 void OpenContainerSheet(const UsdPrim &prim);
 
+// Returns true once after a sheet was opened: the editor window has to be shown and focused
+bool ConsumeConnectionEditorFocusRequest();
+
 // Add the prims and their descendants to the default sheet
 void AddPrimsToDefaultSheet(const std::vector<UsdPrim> &prims);
 

@@ -1263,7 +1263,12 @@ void Editor::Draw() {
         ImGui::End();
     }
 
+    const bool focusConnectionEditor = ConsumeConnectionEditorFocusRequest();
+    _settings._showUsdConnectionEditor |= focusConnectionEditor;
     if (_settings._showUsdConnectionEditor) {
+        if (focusConnectionEditor) {
+            ImGui::SetNextWindowFocus();
+        }
         // NoScrollWithMouse: the canvas handles the mouse wheel itself (zoom), so the
         // window must not also scroll its content when the wheel is used over the canvas.
         // The menu bar is only filled when there is a stage to edit.

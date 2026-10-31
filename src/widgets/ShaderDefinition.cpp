@@ -1,6 +1,7 @@
 #include "ShaderDefinition.h"
 #include <pxr/usd/usdShade/shader.h>
 #include <pxr/usd/sdr/registry.h>
+#include <algorithm>
 
 SdrShaderNodeConstPtr GetShaderDefinition(const UsdPrim &prim) {
     UsdShadeShader shader(prim);
@@ -31,6 +32,15 @@ const std::vector<TfToken> &GetShaderDefinitionOutputNames(SdrShaderNodeConstPtr
     return shaderNode->GetShaderOutputNames();
 #else
     return shaderNode->GetOutputNames();
+#endif
+}
+
+bool IsShaderDefinitionPageOpen(SdrShaderNodeConstPtr shaderNode, const TfToken &page) {
+#if PXR_VERSION >= 2511
+    const auto &openPages = shaderNode->GetOpenPages();
+    return std::find(openPages.begin(), openPages.end(), page) != openPages.end();
+#else
+    return false;
 #endif
 }
 

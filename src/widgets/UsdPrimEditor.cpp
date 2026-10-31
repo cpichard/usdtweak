@@ -401,17 +401,12 @@ template <> void DrawMenuCreateValue(UsdRelationship &relationship) {
 }
 
 // Property mini button, should work with UsdProperty, UsdAttribute and UsdRelationShip
-// extraMenuItems are drawn at the top of the menu
 template <typename UsdPropertyT>
-void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime,
-                            const std::function<void()> &extraMenuItems = {}) {
+void DrawPropertyMiniButton(UsdPropertyT &property, const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
     ImVec4 propertyColor =
         property.IsAuthoredAt(editTarget) ? ImVec4(ColorMiniButtonAuthored) : ImVec4(ColorMiniButtonUnauthored);
     DrawPropertyMiniButton(SmallButtonLabel<UsdPropertyT>(), propertyColor);
     if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
-        if (extraMenuItems) {
-            extraMenuItems();
-        }
         DrawMenuSetKey(property, currentTime);
         DrawMenuCreateValue(property);
         DrawMenuClearAuthoredValues(property);
@@ -1013,8 +1008,8 @@ static bool HasEditableOptions(SdrShaderPropertyConstPtr property, const VtValue
 }
 
 // Combo listing the options of a shader input. An option without value uses its name as value.
-static VtValue DrawShaderInputOptions(const std::string &label, const VtValue &value, const SdrOptionVec &options) {
-    auto toValue = [&](const SdrOption &option) {
+static VtValue DrawShaderInputOptions(const std::string &label, const VtValue &value, const std::vector<ShaderOption> &options) {
+    auto toValue = [&](const ShaderOption &option) {
         const std::string &str = option.second.IsEmpty() ? option.first.GetString() : option.second.GetString();
         if (value.IsHolding<TfToken>())
             return VtValue(TfToken(str));
@@ -1025,7 +1020,7 @@ static VtValue DrawShaderInputOptions(const std::string &label, const VtValue &v
         return VtValue(str);
     };
     std::string preview = TfStringify(value);
-    for (const SdrOption &option : options) {
+    for (const ShaderOption &option : options) {
         if (toValue(option) == value) {
             preview = option.first.GetString();
             break;
@@ -1033,7 +1028,7 @@ static VtValue DrawShaderInputOptions(const std::string &label, const VtValue &v
     }
     VtValue modified;
     if (ImGui::BeginCombo(label.c_str(), preview.c_str())) {
-        for (const SdrOption &option : options) {
+        for (const ShaderOption &option : options) {
             const VtValue optionValue = toValue(option);
             if (ImGui::Selectable(option.first.GetText(), optionValue == value)) {
                 modified = optionValue;
@@ -1107,16 +1102,7 @@ static void DrawShaderInputRow(const UsdPrim &prim, const TfToken &name, SdrShad
 
     ImGui::TableSetColumnIndex(0);
     if (attribute) {
-        // Resetting removes the edit when it's on the edit target, otherwise blocks the values of the other layers
-        DrawPropertyMiniButton(attribute, editTarget, currentTime, [&]() {
-            if (ImGui::MenuItem(ICON_FA_UNDO " Reset to default", nullptr, false, attribute.IsAuthored())) {
-                if (attribute.IsAuthoredAt(editTarget)) {
-                    ExecuteAfterDraw(&UsdPrim::RemoveProperty, attribute.GetPrim(), attribute.GetName());
-                } else {
-                    ExecuteAfterDraw(&UsdAttribute::Block, attribute);
-                }
-            }
-        });
+        DrawPropertyMiniButton(attribute, editTarget, currentTime);
     } else {
         DrawPropertyMiniButton(SmallButtonLabel<UsdAttribute>());
         if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
@@ -1212,7 +1198,6 @@ static bool DrawShaderParameters(const UsdPrim &prim, UsdTimeCode currentTime) {
             page->second.push_back(name);
         }
     }
-    const SdrTokenVec &openPages = shaderNode->GetOpenPages();
 
     if (ImGui::BeginTable("##DrawShaderParameters", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
@@ -1224,7 +1209,7 @@ static bool DrawShaderParameters(const UsdPrim &prim, UsdTimeCode currentTime) {
             if (!page.IsEmpty()) {
                 ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
                 ImGui::TableSetColumnIndex(1);
-                const bool openByDefault = std::find(openPages.begin(), openPages.end(), page) != openPages.end();
+                const bool openByDefault = IsShaderDefinitionPageOpen(shaderNode, page);
                 pageOpen = ImGui::TreeNodeEx(page.GetText(), ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                                  (openByDefault ? ImGuiTreeNodeFlags_DefaultOpen : 0));
             }

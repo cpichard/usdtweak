@@ -16,5 +16,11 @@ SdrShaderNodeConstPtr GetShaderDefinition(const UsdPrim &prim);
 const std::vector<TfToken> &GetShaderDefinitionInputNames(SdrShaderNodeConstPtr shaderNode);
 const std::vector<TfToken> &GetShaderDefinitionOutputNames(SdrShaderNodeConstPtr shaderNode);
 
+/// Name and value of an option of a shader property
+using ShaderOption = std::pair<TfToken, TfToken>;
+
+/// Returns true if the definition asks for this page to be open by default. Always false before USD 25.11.
+bool IsShaderDefinitionPageOpen(SdrShaderNodeConstPtr shaderNode, const TfToken &page);
+
 /// Type of the attribute holding the shader property
 SdfValueTypeName GetShaderPropertySdfType(SdrShaderPropertyConstPtr property);
