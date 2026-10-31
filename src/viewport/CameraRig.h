@@ -46,6 +46,9 @@ class CameraRig {
     GfVec2d GetYawPitch(const GfCamera &camera);
     void SetYawPitch(GfCamera &camera, const GfVec2d &yawPitch);
 
+    /// Size of the last framed bounding box, usdview's FreeCamera._selSize
+    double GetSelectionSize() const { return _selectionSize; }
+
   protected:
     GfMatrix4d _zUpMatrix;
     GfVec2i _viewportSize;

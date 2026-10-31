@@ -88,7 +88,7 @@ class UsdaParser {
     bool ParsePathListOp(SdfPathListOp *out, const std::string &op);
     bool ParseNameVector(std::vector<std::string> *out);
     bool ParseReferenceListOp(VtValue *out, bool isPayload, const std::string &op);
-    bool ParseRelocates(SdfRelocatesMap *out);
+    bool ParseRelocates(SdfRelocates *out);
     bool ParseListOpItems(const TfToken &field, const VtValue &fallback, const std::string &op,
                           ParsedMetadata *metadata);
     bool ParseSchemaTypedField(const TfToken &field, ParsedMetadata *out);

@@ -9,16 +9,7 @@
 #include <algorithm>
 #include <chrono>
 
-
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
-
+#include "FileSystem.h"
 #include "FileBrowser.h"
 #include "Constants.h"
 #include "ImGuiHelpers.h"
@@ -43,18 +34,24 @@ Windows specific implementation
 #include <cstdlib> // wcstombs
 
 std::string GetVolumeName(const std::wstring &currentDrive) {
+    // Querying the name of a slow or disconnected network share blocks, and this runs at startup
+    if (GetDriveTypeW(currentDrive.c_str()) == DRIVE_REMOTE) {
+        return "Network drive";
+    }
     constexpr size_t volumeNameMaxSize = 512;
     WCHAR volumeName[volumeNameMaxSize];
     volumeName[0] = L'\0';
     GetVolumeInformationW(currentDrive.c_str(), volumeName, volumeNameMaxSize, nullptr, nullptr, nullptr, nullptr, 0);
     if (volumeName[0] != 0) {
-        char volumeNameMultiBytes[volumeNameMaxSize];
-        volumeNameMultiBytes[0] = '\0';
-        std::wcstombs(volumeNameMultiBytes, volumeName, volumeNameMaxSize);
-        return volumeNameMultiBytes;
-    } else {
-        return "Local disk";
+        // UTF-8 as expected by ImGui
+        char volumeNameMultiBytes[volumeNameMaxSize * 4];
+        const int written = WideCharToMultiByte(CP_UTF8, 0, volumeName, -1, volumeNameMultiBytes,
+                                                static_cast<int>(sizeof(volumeNameMultiBytes)), nullptr, nullptr);
+        if (written > 0) {
+            return volumeNameMultiBytes;
+        }
     }
+    return "Local disk";
 }
 
 DrivesListT InitDrivesList() {
@@ -103,7 +100,18 @@ static std::string filePath;
 static bool fileExists = false;
 static std::vector<std::string> validExts;
 static std::string lineEditBuffer;
-static fs::path displayedDirectory = fs::current_path();
+static fs::path displayedDirectory = CurrentPath(); // fs::current_path() would throw before main
+// Reason why the displayed directory could not be listed, shown in place of the list
+static std::string directoryError;
+};
+
+/// A directory entry with the information needed to sort and draw it, queried once when the directory is listed
+struct FileBrowserEntry {
+    fs::path path;
+    std::string name;
+    bool isDirectory = false;
+    std::string modified; // empty when unknown
+    std::string size;     // empty for directories, special files or when unknown
 };
 
 void SetValidExtensions(const std::vector<std::string> &extensions) { validExts = extensions; }
@@ -118,32 +126,23 @@ static void EverySecond(const std::function<void()> &deferedFunction) {
     }
 }
 
-inline void ConvertToDirectory(const fs::path &path, std::string &directory) {
-    if (!path.empty() && path == path.root_name()) { // this is a drive
-        auto path_ = path / path.root_directory();
-        directory = path_.string();
-    } else {
-        directory = path.string();;
-    }
-}
-
 constexpr char preferred_separator_char_windows = '\\';
 constexpr char preferred_separator_char_unix = '/';
 
-#ifdef GHC_OS_WINDOWS
-    static constexpr char preferred_separator_char = preferred_separator_char_windows;
-#else
-    static constexpr char preferred_separator_char = preferred_separator_char_unix;
-#endif
+// Taken from the filesystem library rather than GHC_OS_WINDOWS, which is only defined with ghc::filesystem
+static constexpr char preferred_separator_char = static_cast<char>(fs::path::preferred_separator);
+
+// Paths coming from USD or typed by the user can mix '/' and '\' on Windows, fs::path does not normalize them
+static constexpr const char *separator_chars = preferred_separator_char == preferred_separator_char_windows ? "\\/" : "/";
 
 static bool DrawNavigationBar(fs::path &displayedDirectory) {
     // Split the path navigator ??
     std::string lineEditBuffer;
     ScopedStyleColor style(ImGuiCol_Button, ImVec4(ColorTransparent));
-    const std::string &directoryPath = displayedDirectory.string();
+    const std::string directoryPath = ToUtf8(displayedDirectory);
     std::string::size_type pos = 0;
     std::string::size_type len = 0;
-    len = directoryPath.find(preferred_separator_char, pos);
+    len = directoryPath.find_first_of(separator_chars, pos);
     int widgetID = 0;
     while (len != std::string::npos) {
         if (pos == 0 && !drivesList.empty()) {
@@ -157,7 +156,7 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
                     const std::string driveText = driveVolumeName + " (" + driveLetter + ")";
                     if (ImGui::Selectable(driveText.c_str(), false)) {
                         lineEditBuffer = driveLetter + preferred_separator_char;
-                        displayedDirectory = fs::path(lineEditBuffer);
+                        displayedDirectory = FromUtf8(lineEditBuffer);
                         ImGui::EndPopup();
                         return true;
                     }
@@ -170,12 +169,12 @@ static bool DrawNavigationBar(fs::path &displayedDirectory) {
         const std::string dirLabel = directoryPath.substr(pos, len - pos);
         if (ImGui::Button(dirLabel.empty() ? "###emptydirlabel" : dirLabel.c_str())) {
             lineEditBuffer = directoryPath.substr(0, len) + preferred_separator_char;
-            displayedDirectory = fs::path(lineEditBuffer);
+            displayedDirectory = FromUtf8(lineEditBuffer);
             ImGui::PopID();
             return true;
         }
         pos = len + 1;
-        len = directoryPath.find(preferred_separator_char, pos);
+        len = directoryPath.find_first_of(separator_chars, pos);
         ImGui::SameLine();
         ImGui::Text(">");
         ImGui::SameLine();
@@ -197,7 +196,7 @@ static bool DrawRefreshButton() {
 }
 
 static inline bool FileNameStartsWithDot(const fs::path &path) {
-    const std::string &filename = path.filename().string();
+    const auto filename = path.filename().native(); // no conversion, so nothing can throw on Windows
     return filename.size() > 0 && filename[0] == '.';
 }
 
@@ -212,24 +211,19 @@ static bool ShouldBeDisplayed(const fs::directory_entry &p) {
         }
     }
 
-    try {
-        const bool isDirectory = fs::is_directory(p);
-        return !startsWithDot && (isDirectory || endsWithValidExt) && !fs::is_symlink(p);
-    } catch (fs::filesystem_error &) {
+    std::error_code ec;
+    const bool isDirectory = p.is_directory(ec);
+    if (ec) {
         return false;
     }
-}
-
-// Compare function for sorting directories before files
-static bool compareDirectoryThenFile(const fs::directory_entry &a, const fs::directory_entry &b) {
-    if (fs::is_directory(a) == fs::is_directory(b)) {
-        return a < b;
-    } else {
-        return fs::is_directory(a) > fs::is_directory(b);
+    const bool isSymlink = p.is_symlink(ec);
+    if (ec) {
+        return false;
     }
+    return !startsWithDot && (isDirectory || endsWithValidExt) && !isSymlink;
 }
 
-static void DrawFileSize(uintmax_t fileSize) {
+static std::string FileSizeText(uintmax_t fileSize) {
     static const char *format[6] = {"%juB", "%juK", "%juM", "%juG", "%juT", "%juP"};
     constexpr int nbFormat = sizeof(format) / sizeof(const char *);
     int i = 0;
@@ -237,37 +231,80 @@ static void DrawFileSize(uintmax_t fileSize) {
         fileSize /= 1024;
         i++;
     }
-    ImGui::Text(format[i], fileSize);
+    char text[32];
+    snprintf(text, sizeof(text), format[i], fileSize);
+    return text;
+}
+
+static std::string ModifiedTimeText(const fs::directory_entry &dirEntry) {
+    std::error_code ec;
+    const auto lastModified = dirEntry.last_write_time(ec);
+    if (ec) {
+        return {};
+    }
+    const time_t cftime = toTimet(lastModified);
+    struct tm lt; // Convert to local time
+    localtime_(&lt, &cftime);
+    char text[32];
+    snprintf(text, sizeof(text), "%04d/%02d/%02d %02d:%02d", 1900 + lt.tm_year, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour,
+             lt.tm_min);
+    return text;
+}
+
+// Only regular files have a size, file_size fails on sockets, pipes and devices
+static FileBrowserEntry MakeFileBrowserEntry(const fs::directory_entry &dirEntry) {
+    FileBrowserEntry entry;
+    std::error_code ec;
+    entry.path = dirEntry.path();
+    entry.name = ToUtf8(entry.path.filename());
+    entry.isDirectory = dirEntry.is_directory(ec);
+    entry.modified = ModifiedTimeText(dirEntry);
+    if (!entry.isDirectory && dirEntry.is_regular_file(ec)) {
+        const uintmax_t fileSize = dirEntry.file_size(ec);
+        if (!ec) {
+            entry.size = FileSizeText(fileSize);
+        }
+    }
+    return entry;
+}
+
+// Compare function for sorting directories before files
+static bool compareDirectoryThenFile(const FileBrowserEntry &a, const FileBrowserEntry &b) {
+    if (a.isDirectory == b.isDirectory) {
+        return a.path < b.path;
+    } else {
+        return a.isDirectory > b.isDirectory;
+    }
 }
 
 void DrawFileBrowser(int height) {
 
     static fs::path displayedFileName;
-    static std::vector<fs::directory_entry> directoryContent;
+    static std::vector<FileBrowserEntry> directoryContent;
     static fs::path directoryContentPath;
     static bool mustUpdateDirectoryContent = true;
     static bool mustUpdateChosenFileName = false;
 
     // Parse the line buffer containing the user input and try to make sense of it
     auto ParseLineBufferEdit = [&]() {
-        auto path = fs::path(lineEditBuffer);
-        if (path != path.root_name() && fs::is_directory(path)) {
+        auto path = FromUtf8(lineEditBuffer);
+        if (path != path.root_name() && IsDirectory(path)) {
             displayedDirectory = path;
             mustUpdateDirectoryContent = true;
             lineEditBuffer = "";
             displayedFileName = "";
             mustUpdateChosenFileName = true;
-        } else if (path.parent_path() != path.root_name() && fs::is_directory(path.parent_path())) {
+        } else if (path.parent_path() != path.root_name() && IsDirectory(path.parent_path())) {
             displayedDirectory = path.parent_path();
             mustUpdateDirectoryContent = true;
-            lineEditBuffer = path.filename().string();
+            lineEditBuffer = ToUtf8(path.filename());
             displayedFileName = path.filename();
             mustUpdateChosenFileName = true;
         } else {
             if (path.filename() != path) {
                 displayedFileName = path.filename();
                 mustUpdateChosenFileName = true;
-                lineEditBuffer = path.filename().string();
+                lineEditBuffer = ToUtf8(path.filename());
             } else {
                 displayedFileName = path;
                 mustUpdateChosenFileName = true;
@@ -278,10 +315,17 @@ void DrawFileBrowser(int height) {
     // Update the list of entries for the chosen directory
     auto UpdateDirectoryContent = [&]() {
         directoryContent.clear();
-        for (auto &item : fs::directory_iterator(displayedDirectory, fs::directory_options::skip_permission_denied)) {
-            if (ShouldBeDisplayed(item)) {
-                directoryContent.push_back(item);
-            };
+        directoryError.clear();
+        // Explicit increment(ec) as the range-for operator++ throws on error
+        std::error_code ec;
+        fs::directory_iterator it(displayedDirectory, fs::directory_options::skip_permission_denied, ec);
+        for (; !ec && it != fs::directory_iterator(); it.increment(ec)) {
+            if (ShouldBeDisplayed(*it)) {
+                directoryContent.push_back(MakeFileBrowserEntry(*it));
+            }
+        }
+        if (ec) {
+            directoryError = ec.message();
         }
         std::sort(directoryContent.begin(), directoryContent.end(), compareDirectoryThenFile);
         mustUpdateDirectoryContent = false;
@@ -289,14 +333,13 @@ void DrawFileBrowser(int height) {
     };
 
     if (mustUpdateChosenFileName) {
-        if (!displayedDirectory.empty() && !displayedFileName.empty() && fs::exists(displayedDirectory) &&
-            fs::is_directory(displayedDirectory)) {
+        if (!displayedDirectory.empty() && !displayedFileName.empty() && IsDirectory(displayedDirectory)) {
             const auto path_ = displayedDirectory / displayedFileName;
-            filePath = path_.string();
+            filePath = ToUtf8(path_);
         } else {
             filePath = "";
         }
-        fileExists = fs::exists(filePath);
+        fileExists = !filePath.empty() && PathExists(FromUtf8(filePath));
         mustUpdateChosenFileName = false;
     }
 
@@ -319,6 +362,10 @@ void DrawFileBrowser(int height) {
     
     ImVec2 sizeArg(-1, height);
     ImGui::PushItemWidth(-1); // List takes the full width
+    if (!directoryError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "Cannot read this folder: %s", directoryError.c_str());
+        sizeArg.y -= ImGui::GetTextLineHeightWithSpacing();
+    }
     if (ImGui::BeginListBox("##FileList", sizeArg)) {
         constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg
             | ImGuiTableFlags_ScrollY
@@ -332,8 +379,8 @@ void DrawFileBrowser(int height) {
             ImGui::TableHeadersRow();
             int i = 0;
             ImGui::PushID("direntries");
-            for (auto dirEntry : directoryContent) {
-                const bool isDirectory = dirEntry.is_directory();
+            for (const auto &dirEntry : directoryContent) {
+                const bool isDirectory = dirEntry.isDirectory;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i++);
@@ -341,11 +388,11 @@ void DrawFileBrowser(int height) {
                 // to the line edit buffer
                 if (ImGui::Selectable("", false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap)) {
                     if (isDirectory) {
-                        displayedDirectory = dirEntry.path();
+                        displayedDirectory = dirEntry.path;
                         mustUpdateDirectoryContent = true;
                     } else {
-                        displayedFileName = dirEntry.path();
-                        lineEditBuffer = dirEntry.path().string();
+                        displayedFileName = dirEntry.path;
+                        lineEditBuffer = ToUtf8(dirEntry.path);
                         mustUpdateChosenFileName = true;
                     }
                 }
@@ -353,27 +400,17 @@ void DrawFileBrowser(int height) {
                 ImGui::SameLine();
                 if (isDirectory) {
                     ImGui::TextColored(ImVec4(1.0, 1.0, 0.0, 1.0), "%s ", ICON_FA_FOLDER);
-                    ImGui::TableSetColumnIndex(1); // the following line is allocating string for each directory/files, this is BAD
-                    ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.path().filename().string().c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextColored(ImVec4(1.0, 1.0, 1.0, 1.0), "%s", dirEntry.name.c_str());
                 } else {
                     ImGui::TextColored(ImVec4(0.9, 0.9, 0.9, 1.0), "%s ", ICON_FA_FILE);
                     ImGui::TableSetColumnIndex(1);
-                    ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.path().filename().string().c_str());
+                    ImGui::TextColored(ImVec4(0.5, 1.0, 0.5, 1.0), "%s", dirEntry.name.c_str());
                 }
                 ImGui::TableSetColumnIndex(2);
-                try {
-                    const auto lastModified = last_write_time(dirEntry.path());
-                    const time_t cftime = toTimet(lastModified);
-                    struct tm lt; // Convert to local time
-                    localtime_(&lt, &cftime);
-                    ImGui::Text("%04d/%02d/%02d %02d:%02d", 1900 + lt.tm_year, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min);
-                } catch (const std::exception &) {
-                    ImGui::Text("Error reading file");
-                }
+                ImGui::TextUnformatted(dirEntry.modified.c_str());
                 ImGui::TableSetColumnIndex(3);
-                if (!isDirectory) {
-                    DrawFileSize(dirEntry.file_size());
-                }
+                ImGui::TextUnformatted(dirEntry.size.c_str());
             }
             ImGui::PopID(); // direntries
             ImGui::EndTable();
@@ -389,17 +426,21 @@ bool FilePathExists() { return fileExists; }
 
 std::string GetFileBrowserFilePath() { return filePath; }
 
-std::string GetFileBrowserDirectory() { return displayedDirectory.string(); }
+std::string GetFileBrowserDirectory() { return ToUtf8(displayedDirectory); }
 
 
 
 std::string GetFileBrowserFilePathRelativeTo(const std::string &root, bool unixify) {
-    fs::path rootPath(root);
-    const fs::path originalPath(filePath);
+    fs::path rootPath = FromUtf8(root);
+    const fs::path originalPath = FromUtf8(filePath);
     if (rootPath.is_absolute() && originalPath.is_absolute()) {
         rootPath.remove_filename();
-        const fs::path relativePath = fs::relative(originalPath, rootPath);
-        auto relativePathStr = relativePath.string();
+        std::error_code ec;
+        const fs::path relativePath = fs::relative(originalPath, rootPath, ec);
+        if (ec) {
+            return filePath;
+        }
+        auto relativePathStr = ToUtf8(relativePath);
         if (unixify) {
             std::replace(relativePathStr.begin(), relativePathStr.end(), preferred_separator_char_windows,
                          preferred_separator_char_unix);
@@ -410,20 +451,20 @@ std::string GetFileBrowserFilePathRelativeTo(const std::string &root, bool unixi
 }
 
 void EnsureFileBrowserDefaultExtension(const std::string &ext) {
-    fs::path path(filePath);
+    fs::path path = FromUtf8(filePath);
     if (!path.empty() && !path.has_extension()) {
         path.replace_extension(ext);
-        filePath = path.generic_string();
-        fileExists = fs::exists(filePath);
+        filePath = ToGenericUtf8(path);
+        fileExists = PathExists(path);
     }
 }
 
 void EnsureFileBrowserExtension(const std::string &ext) {
-    fs::path path(filePath);
+    fs::path path = FromUtf8(filePath);
     if (!path.empty()) {
         path.replace_extension(ext);
-        filePath = path.generic_string();
-        fileExists = fs::exists(filePath);
+        filePath = ToGenericUtf8(path);
+        fileExists = PathExists(path);
     }
 }
 
@@ -434,8 +475,9 @@ void ResetFileBrowserFilePath() {
 
 
 void SetFileBrowserDirectory(const std::string &directory) {
-    if (fs::exists(directory) && fs::is_directory(directory)) {
-        displayedDirectory = directory;
+    const fs::path directoryPath = FromUtf8(directory);
+    if (IsDirectory(directoryPath)) {
+        displayedDirectory = directoryPath;
     }
 }
 

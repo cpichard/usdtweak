@@ -1,9 +1,11 @@
 #include "ViewportEngine.h"
 
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 #include <pxr/base/tf/stringUtils.h>
+#include <pxr/imaging/hdx/pickTask.h>
 #include <pxr/usd/usd/prim.h>
 
 // Debug override: USDTWEAK_STOCK_ENGINE=1 starts with the stock
@@ -44,7 +46,10 @@ ViewportEngine::ViewportEngine(UsdStageRefPtr stage, const TfToken &rendererPlug
 
 ViewportEngine::~ViewportEngine() { TfNotice::Revoke(_objectsChangedNoticeKey); }
 
-void ViewportEngine::_OnObjectsChanged(const UsdNotice::ObjectsChanged &, const UsdStageWeakPtr &) { _sceneDirty = true; }
+void ViewportEngine::_OnObjectsChanged(const UsdNotice::ObjectsChanged &, const UsdStageWeakPtr &) {
+    _sceneDirty = true;
+    ++_stageEditCount;
+}
 
 void ViewportEngine::SetLightingState(const GlfSimpleLightVector &lights, const GlfSimpleMaterial &material,
                                       const GfVec4f &ambient) {
@@ -233,6 +238,45 @@ bool ViewportEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatr
                                           outHitPrimPath, outHitInstancerPath, outHitInstanceIndex);
 }
 
+bool ViewportEngine::FindPointNearestToCamera(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix,
+                                              const UsdPrim &root, const UsdImagingGLRenderParams &params,
+                                              GfVec3d *outHitPoint) {
+    if (_glEngine) {
+        return _glEngine->FindPointNearestToCamera(viewMatrix, projectionMatrix, root, params, outHitPoint);
+    }
+#if PXR_VERSION >= 2411
+    UsdImagingGLEngine::IntersectionResultVector results;
+    if (!_stockEngine->TestIntersection({HdxPickTokens->resolveNearestToCamera}, viewMatrix, projectionMatrix, root, params,
+                                        &results)) {
+        return false;
+    }
+    // There is a single hit in this resolve mode, but nothing is lost by keeping the closest one
+    bool found = false;
+    double closestDepth = std::numeric_limits<double>::infinity();
+    for (const UsdImagingGLEngine::IntersectionResult &result : results) {
+        if (result.hitPrimPath.IsEmpty()) {
+            continue;
+        }
+        // The camera looks down -Z in view space
+        const double depth = -viewMatrix.Transform(result.hitPoint)[2];
+        if (depth < closestDepth) {
+            closestDepth = depth;
+            *outHitPoint = result.hitPoint;
+            found = true;
+        }
+    }
+    return found;
+#else
+    GfVec3d hitNormal;
+    SdfPath hitPrimPath;
+    SdfPath hitInstancerPath;
+    int hitInstanceIndex = -1;
+    return _stockEngine->TestIntersection(viewMatrix, projectionMatrix, root, params, outHitPoint, &hitNormal, &hitPrimPath,
+                                          &hitInstancerPath, &hitInstanceIndex) &&
+           !hitPrimPath.IsEmpty();
+#endif
+}
+
 TfToken ViewportEngine::GetCurrentRendererId() const {
     return _glEngine ? _glEngine->GetCurrentRendererId() : _stockEngine->GetCurrentRendererId();
 }
@@ -244,18 +288,53 @@ std::string ViewportEngine::GetRendererDisplayName(const TfToken &id) {
 }
 
 bool ViewportEngine::SetRendererPlugin(const TfToken &id) {
-    // Switching the plugin rebuilds the engine internals (render index, task
-    // controller), losing the camera, framing, buffer size and lighting.
-    // Invalidate the cached state so the compare-before-set setters forward
-    // everything again on the next frame.
-    _lightingStateSet = false;
-    _renderBufferSize = GfVec2i(0);
-    _framing = CameraUtilFraming();
-    _windowPolicySet = false;
-    _cameraStateSet = false;
-    _renderParamsSet = false;
     _sceneDirty = true;
-    return _glEngine ? _glEngine->SetRendererPlugin(id) : _stockEngine->SetRendererPlugin(id);
+    if (!(_glEngine ? _glEngine->SetRendererPlugin(id) : _stockEngine->SetRendererPlugin(id))) {
+        return false;
+    }
+    // The switch gives the engine a blank task controller (it only restores
+    // root transform, visibility and selection itself), so every cached state
+    // must be pushed again: the compare-before-set guards above would
+    // otherwise skip it and the new delegate renders black until an actual
+    // state change, e.g. a viewport resize.
+    if (_glEngine) {
+        if (_lightingStateSet) {
+            _glEngine->SetLightingState(_lights, _material, _ambient);
+        }
+        if (_renderBufferSize != GfVec2i(0)) {
+            _glEngine->SetRenderBufferSize(_renderBufferSize);
+        }
+        if (_framing.IsValid()) {
+            _glEngine->SetFraming(_framing);
+        }
+        if (_windowPolicySet) {
+            _glEngine->SetOverrideWindowPolicy(std::make_optional(_windowPolicy));
+        }
+        if (_cameraStateSet) {
+            _glEngine->SetCameraState(_viewMatrix, _projectionMatrix);
+        }
+        return true;
+    }
+    if (_lightingStateSet) {
+        _stockEngine->SetLightingState(_lights, _material, _ambient);
+    }
+    if (_renderBufferSize != GfVec2i(0)) {
+        _stockEngine->SetRenderBufferSize(_renderBufferSize);
+    }
+    if (_framing.IsValid()) {
+        _stockEngine->SetFraming(_framing);
+    }
+    if (_windowPolicySet) {
+#if PXR_VERSION <= 2311
+        _stockEngine->SetOverrideWindowPolicy(std::make_pair(true, _windowPolicy));
+#else
+        _stockEngine->SetOverrideWindowPolicy(std::make_optional(_windowPolicy));
+#endif
+    }
+    if (_cameraStateSet) {
+        _stockEngine->SetCameraState(_viewMatrix, _projectionMatrix);
+    }
+    return true;
 }
 
 TfTokenVector ViewportEngine::GetRendererAovs() const {

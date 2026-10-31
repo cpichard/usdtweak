@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -72,8 +73,14 @@ class TextDocument {
     void Rebuild();
 
     int GetLineCount() const { return static_cast<int>(_lines.size()); }
-    const std::string &GetLine(int index) const { return _lines[index]; }
-    const TextLineInfo &GetLineInfo(int index) const { return _lineInfos[index]; }
+    const std::string &GetLine(int index) const {
+        assert(index >= 0 && index < GetLineCount());
+        return _lines[index];
+    }
+    const TextLineInfo &GetLineInfo(int index) const {
+        assert(index >= 0 && index < static_cast<int>(_lineInfos.size()));
+        return _lineInfos[index];
+    }
     int GetMaxLineLength() const { return _maxLineLength; }
 
     /// Deepest span node containing the line (status bar, clicks).

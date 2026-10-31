@@ -868,9 +868,9 @@ void GLEngine::ClearSelected() {
 }
 
 // Origin: engine.cpp TestIntersection (scene index variant)
-bool GLEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
-                                const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint, GfVec3d *outHitNormal,
-                                SdfPath *outHitPrimPath, SdfPath *outHitInstancerPath, int *outHitInstanceIndex) {
+HdxPickHitVector GLEngine::_Pick(const TfToken &resolveMode, const GfMatrix4d &viewMatrix,
+                                 const GfMatrix4d &projectionMatrix, const UsdPrim &root,
+                                 const UsdImagingGLRenderParams &params) {
     _PrepareBatch(params);
 
     const SdfPathVector paths = {root.GetPath()};
@@ -880,7 +880,7 @@ bool GLEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &
 
     HdxPickHitVector allHits;
     HdxPickTaskContextParams pickCtxParams;
-    pickCtxParams.resolveMode = HdxPickTokens->resolveNearestToCenter;
+    pickCtxParams.resolveMode = resolveMode;
     pickCtxParams.viewMatrix = viewMatrix;
     pickCtxParams.projectionMatrix = projectionMatrix;
     pickCtxParams.clipPlanes = params.clipPlanes;
@@ -890,7 +890,26 @@ bool GLEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &
     _engine->SetTaskContextData(HdxPickTokens->pickParams, VtValue(pickCtxParams));
     HdTaskSharedPtrVector pickingTasks = _taskController->GetPickingTasks();
     _engine->Execute(_renderIndex.get(), &pickingTasks);
+    return allHits;
+}
 
+bool GLEngine::FindPointNearestToCamera(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix,
+                                        const UsdPrim &root, const UsdImagingGLRenderParams &params,
+                                        GfVec3d *outHitPoint) {
+    const HdxPickHitVector allHits =
+        _Pick(HdxPickTokens->resolveNearestToCamera, viewMatrix, projectionMatrix, root, params);
+    if (allHits.size() != 1) {
+        return false;
+    }
+    *outHitPoint = allHits.front().worldSpaceHitPoint;
+    return true;
+}
+
+bool GLEngine::TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
+                                const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint, GfVec3d *outHitNormal,
+                                SdfPath *outHitPrimPath, SdfPath *outHitInstancerPath, int *outHitInstanceIndex) {
+    const HdxPickHitVector allHits =
+        _Pick(HdxPickTokens->resolveNearestToCenter, viewMatrix, projectionMatrix, root, params);
     if (allHits.size() != 1) {
         return false;
     }

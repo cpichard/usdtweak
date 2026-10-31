@@ -38,7 +38,7 @@ class HydraNoticeLogger {
     struct LogEntry {
 
         LogEntry(const LogEntry &logEntry)
-            : logType(logEntry.logType), primPath(logEntry.primPath), repetitions(logEntry.repetitions) {
+            : logType(logEntry.logType), primPath(logEntry.primPath), repetitions(logEntry.repetitions), primType("") {
             if (IsAdded()) {
                 primType = logEntry.primType;
             } else if (IsDirtied()) {

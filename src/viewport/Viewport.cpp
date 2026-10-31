@@ -1,6 +1,7 @@
 #include <pxr/imaging/garch/glApi.h>
 #include <pxr/imaging/cameraUtil/conformWindow.h>
 #include <pxr/base/gf/range2f.h>
+#include <pxr/base/gf/ray.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/bboxCache.h>
 #include <pxr/usd/usdGeom/boundable.h>
@@ -84,26 +85,17 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     _orbitCameraManipulator.ResetPosition(GetEditableCamera());
     _flyCameraManipulator.ResetPosition(GetEditableCamera());
 
-    _drawTarget = GlfDrawTarget::New(_textureSize, false);
-    _drawTarget->Bind();
-    _drawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-    _drawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-    auto color = _drawTarget->GetAttachment("color");
-    _textureId = color->GetGlTextureName();
-    _drawTarget->Unbind();
+    _drawTarget = std::make_unique<Framebuffer>(_textureSize);
 
     // The scene image has its own draw target so it is re-rendered only when needed;
     // it is composited into _drawTarget with the per-frame overlays at every frame
-    _sceneDrawTarget = GlfDrawTarget::New(_textureSize, false);
-    _sceneDrawTarget->Bind();
-    _sceneDrawTarget->AddAttachment("color", GL_RGBA, GL_FLOAT, GL_RGBA);
-    _sceneDrawTarget->AddAttachment("depth", GL_DEPTH_COMPONENT, GL_FLOAT, GL_DEPTH_COMPONENT32F);
-    _sceneDrawTarget->Unbind();
+    _sceneDrawTarget = std::make_unique<Framebuffer>(_textureSize);
 
     // Default settings at construction time
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
     _imagingSettings.camFlySpeed = _defaultSettings._camFlySpeed;
+    _cameras.SetAutoClipEnabled(_defaultSettings._autoClip);
 }
 
 Viewport::~Viewport() {
@@ -149,9 +141,9 @@ void Viewport::Draw() {
     const auto cursorPos = ImGui::GetCursorPos();
     _textureSize = GfVec2i(std::max(1.f, wsize[0]), std::max(1.f, wsize[1] - cursorPos.y));
 
-    if (_textureId) {
+    if (const unsigned int textureId = _drawTarget->GetColorTextureId()) {
         // Get the size of the child (i.e. the whole draw size of the windows).
-        ImGui::Image((ImTextureID)((uintptr_t)_textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image((ImTextureID)((uintptr_t)textureId), ImVec2(_textureSize[0], _textureSize[1]), ImVec2(0, 1), ImVec2(1, 0));
         // TODO: it is possible to have a popup menu on top of the viewport.
         // It should be created depending on the manipulator/editor state
         // if (ImGui::BeginPopupContextItem()) {
@@ -334,7 +326,6 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
         for (const auto &primPath : selection.GetSelectedPaths(GetCurrentStage())) {
             bbox = GfBBox3d::Combine(bboxcache.ComputeWorldBound(GetCurrentStage()->GetPrimAtPath(primPath)), bbox);
         }
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
         FrameCameraManipulatorsOnBBox(GetEditableCamera(), bbox);
     }
 }
@@ -342,32 +333,80 @@ void Viewport::FrameCameraOnSelection(const Selection &selection) { // Camera ma
 /// Frame the viewport using the bounding box of the root prim
 void Viewport::FrameCameraOnRootPrim() {
     if (GetCurrentStage()) {
-        UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        if (defaultPrim) {
-            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(defaultPrim));
-        } else {
-            auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-            FrameCameraManipulatorsOnBBox(GetEditableCamera(), bboxcache.ComputeWorldBound(rootPrim));
-        }
+        FrameCameraManipulatorsOnBBox(GetEditableCamera(), ComputeFramingWorldBound());
     }
 }
 
 void Viewport::FrameAllCameras() {
     if (GetCurrentStage()) {
-        UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
-        auto defaultPrim = GetCurrentStage()->GetDefaultPrim();
-        if (defaultPrim) {
-            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
-                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(defaultPrim));
-            }
-        } else {
-            for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
-                auto rootPrim = GetCurrentStage()->GetPrimAtPath(SdfPath("/"));
-                FrameCameraManipulatorsOnBBox(*camera, bboxcache.ComputeWorldBound(rootPrim));
-            }
+        const GfBBox3d framingBBox = ComputeFramingWorldBound();
+        for (GfCamera *camera : _cameras.GetEditableCameras(GetCurrentStage())) {
+            FrameCameraManipulatorsOnBBox(*camera, framingBBox);
         }
     }
+}
+
+GfBBox3d Viewport::ComputeStageWorldBound() const {
+    if (!GetCurrentStage()) {
+        return GfBBox3d();
+    }
+    // Hydra draws the whole stage, not only the default prim, so the clipping range must enclose all of it
+    return ComputeFiniteWorldBound(GetCurrentStage()->GetPseudoRoot());
+}
+
+GfBBox3d Viewport::ComputeFramingWorldBound() const {
+    if (!GetCurrentStage()) {
+        return GfBBox3d();
+    }
+    const UsdPrim defaultPrim = GetCurrentStage()->GetDefaultPrim();
+    return ComputeFiniteWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPseudoRoot());
+}
+
+GfBBox3d Viewport::ComputeFiniteWorldBound(const UsdPrim &prim) const {
+    UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
+    const GfBBox3d bbox = bboxcache.ComputeWorldBound(prim);
+
+    // An infinite bound gives meaningless clipping planes, treat it as empty. Same guard as usdview's
+    // StageView._isInfiniteBBox
+    const GfRange3d &range = bbox.GetRange();
+    if (range.IsEmpty() || std::isinf(range.GetMin().GetLength()) || std::isinf(range.GetMax().GetLength())) {
+        return GfBBox3d();
+    }
+    return bbox;
+}
+
+const GfBBox3d &Viewport::GetStageBBox() {
+    // Each edit of the stage invalidates its bounds. While a transform manipulator is dragged that is
+    // every frame, so keep the previous bounds until the drag ends: usdview also recomputes them only
+    // once an edit is complete.
+    if (IsDraggingTransformManipulator() && _stageBounds.stage == GetCurrentStage()) {
+        return _stageBounds.bbox;
+    }
+    // Without an engine there is no edit notification, so the bounds can't be trusted and are always
+    // recomputed. This only happens when Hydra is disabled, and nothing calls this per frame then.
+    const size_t editCount = _renderer ? _renderer->GetStageEditCount() : 0;
+    const bool upToDate = _renderer && _stageBounds.stage == GetCurrentStage() &&
+                          _stageBounds.timeCode == GetCurrentTimeCode() && _stageBounds.editCount == editCount;
+    if (!upToDate) {
+        _stageBounds.bbox = ComputeStageWorldBound();
+        _stageBounds.stage = GetCurrentStage();
+        _stageBounds.timeCode = GetCurrentTimeCode();
+        _stageBounds.editCount = editCount;
+    }
+    return _stageBounds.bbox;
+}
+
+bool Viewport::FindClosestPointToCamera(const GfFrustum &pickFrustum, GfVec3d &outHitPoint) const {
+    if (!_renderer || !GetCurrentStage()) {
+        return false;
+    }
+    return _renderer->FindPointNearestToCamera(pickFrustum.ComputeViewMatrix(), pickFrustum.ComputeProjectionMatrix(),
+                                               GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint);
+}
+
+bool Viewport::IsDraggingTransformManipulator() const {
+    return _currentEditingState == &_positionManipulator || _currentEditingState == &_rotationManipulator ||
+           _currentEditingState == &_scaleManipulator;
 }
 
 GfVec2d Viewport::GetPickingBoundarySize() const {
@@ -457,6 +496,11 @@ void Viewport::HandleKeyboardShortcut() {
             }
         } else {
             ScaleManipulatorPressedOnce = true;
+        }
+
+        // Clip once: recompute the clipping range of the hovered viewport camera
+        if (ImGui::IsKeyPressed(ImGuiKey_C, false) && !IsModifierDown()) {
+            _cameras.RequestClip();
         }
 
         // Playback
@@ -770,6 +814,10 @@ void Viewport::Render() {
     _drawTarget->Unbind();
 }
 
+const GLuint Viewport::GetSceneDepthTexture() const {
+    return _renderer && GetCurrentStage() ? _sceneDrawTarget->GetDepthTextureId() : 0;
+}
+
 void Viewport::SetCurrentTimeCode(const UsdTimeCode &tc) { _imagingSettings.frame = tc; }
 
 /// Update anything that could have change after a frame render
@@ -847,12 +895,8 @@ void Viewport::Update() {
 
     const GfVec2i &currentSize = _drawTarget->GetSize();
     if (currentSize != _textureSize) {
-        _drawTarget->Bind();
         _drawTarget->SetSize(_textureSize);
-        _drawTarget->Unbind();
-        _sceneDrawTarget->Bind();
         _sceneDrawTarget->SetSize(_textureSize);
-        _sceneDrawTarget->Unbind();
     }
 
     if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {
@@ -864,6 +908,10 @@ void Viewport::Update() {
         _rotationManipulator.OnSelectionChange(*this);
         _scaleManipulator.OnSelectionChange(*this);
     }
+
+    // Last: the cameras have been selected and framed, and the draw target is at its final size, so
+    // the pick sees the view that is about to be rendered. Render() then pushes this camera to hydra.
+    _cameras.UpdateClippingPlanes(*this);
 }
 
 bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath,

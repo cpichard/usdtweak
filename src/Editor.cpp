@@ -36,14 +36,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 #include <pxr/base/arch/fileSystem.h>
 #include <pxr/base/trace/trace.h>
 #include <pxr/imaging/garch/glApi.h>
@@ -348,7 +341,7 @@ struct SetWorkingDirectoryDialog : public ModalDialog {
         ImGui::Text("Set to: %s", dir.c_str());
         DrawModalButtonsOkCancel([&]() {
             std::error_code ec;
-            fs::current_path(dir, ec);
+            fs::current_path(FromUtf8(dir), ec);
         });
     }
     const char *DialogId() const override { return "Set working directory"; }
@@ -750,7 +743,7 @@ void Editor::TogglePlayback() {
 
 void Editor::HydraRender() {
 
-    if (_isPlaying) {
+    if (_isPlaying && GetCurrentStage()) {
         auto current = clk::steady_clock::now();
         const auto timesCodePerSec = GetCurrentStage()->GetTimeCodesPerSecond();
         const auto timeDifference = std::chrono::duration<double>(current - _lastFrameTime);
@@ -899,8 +892,13 @@ static void DrawStageSelector(const UsdStageRefPtr &stage, const Selection &sele
         ImGui::EndPopup();
     }
     ImGui::SameLine();
-    const std::string editTargetName = stage ? stage->GetEditTarget().GetLayer()->GetDisplayName() : "";
-    ImGui::Text("%s", editTargetName.c_str());
+    if (stage) {
+        const SdfLayerHandle &layer = stage->GetEditTarget().GetLayer();
+        if (layer) {
+            const std::string editTargetName = stage ? stage->GetEditTarget().GetLayer()->GetDisplayName() : "";
+            ImGui::Text("%s", editTargetName.c_str());
+        }
+    }
 }
 
 void Editor::DrawMainMenuBar() {
@@ -1296,6 +1294,7 @@ void Editor::Draw() {
         ImGui::Begin(FindWindowTitle, &_settings._showSearch);
         DrawSearchWidget();
         ImGui::End();
+        DrawUtqlHelp();
     }
 
     if (_settings._showHydraBrowser) {

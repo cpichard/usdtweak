@@ -26,6 +26,7 @@
 #include <pxr/imaging/hd/engine.h>
 #include <pxr/imaging/hd/pluginRenderDelegateUniqueHandle.h>
 #include <pxr/imaging/hd/rprimCollection.h>
+#include <pxr/imaging/hdx/pickTask.h>
 #include <pxr/imaging/hdx/renderSetupTask.h>
 #include <pxr/imaging/hdx/selectionTask.h>
 #include <pxr/imaging/hdx/selectionTracker.h>
@@ -87,6 +88,9 @@ class GLEngine {
     bool TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
                           const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint, GfVec3d *outHitNormal,
                           SdfPath *outHitPrimPath, SdfPath *outHitInstancerPath, int *outHitInstanceIndex);
+    /// World space point of the scene closest to the camera, searched through the whole frustum
+    bool FindPointNearestToCamera(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
+                                  const UsdImagingGLRenderParams &params, GfVec3d *outHitPoint);
 
     // Renderer plugin management
     TfToken GetCurrentRendererId() const;
@@ -122,6 +126,10 @@ class GLEngine {
     bool NeedsAnotherRender() const { return _extraRenderRequested; }
 
   private:
+    /// Run the picking tasks with the given resolve mode and return the hits
+    HdxPickHitVector _Pick(const TfToken &resolveMode, const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix,
+                           const UsdPrim &root, const UsdImagingGLRenderParams &params);
+
     void _InitializeHgiIfNecessary();
     void _SetRenderDelegate(HdPluginRenderDelegateUniqueHandle &&renderDelegate);
     void _CreateUsdImagingSceneIndices();

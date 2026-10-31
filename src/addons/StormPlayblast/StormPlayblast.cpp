@@ -9,14 +9,7 @@
 #include <pxr/usd/usdGeom/camera.h>
 #include <pxr/usdImaging/usdAppUtils/frameRecorder.h>
 
-#if defined(__cplusplus) && __cplusplus >= 201703L && defined(__has_include) && __has_include(<filesystem>)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define GHC_WITH_EXCEPTIONS 0
-#include <ghc/filesystem.hpp>
-namespace fs = ghc::filesystem;
-#endif
+#include "FileSystem.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -51,7 +44,11 @@ int PlayblastModalDialog::width = 960;
 
 PlayblastModalDialog::PlayblastModalDialog(UsdStagePtr stage) : _stage(stage) {
     if (directory.empty()) {
-        directory = fs::temp_directory_path().string();
+        std::error_code ec; // fails when TMPDIR points to a missing directory
+        const fs::path tempDirectory = fs::temp_directory_path(ec);
+        if (!ec) {
+            directory = ToUtf8(tempDirectory);
+        }
     }
     if (filenamePrefix.empty()) {
         filenamePrefix = "playblast";
@@ -106,18 +103,18 @@ void PlayblastModalDialog::Draw() {
         if (isSequence) {
             for (int i = start; i <= end; ++i) {
                 std::string frameName = filenamePrefix + "." + std::to_string(i) + ".jpg";
-                fs::path outputFrame(directory);
-                if (fs::is_directory(outputFrame)) {
-                    outputFrame /= frameName;
-                    _recorder.Record(_stage, camera, UsdTimeCode(i), outputFrame.string());
+                fs::path outputFrame = FromUtf8(directory);
+                if (IsDirectory(outputFrame)) {
+                    outputFrame /= FromUtf8(frameName);
+                    _recorder.Record(_stage, camera, UsdTimeCode(i), ToUtf8(outputFrame));
                 }
             }
         } else {
             std::string frameName = filenamePrefix + "." + ".jpg";
-            fs::path outputFrame(directory);
-            if (fs::is_directory(outputFrame)) {
-                outputFrame /= frameName;
-                _recorder.Record(_stage, camera, UsdTimeCode::Default(), outputFrame.string());
+            fs::path outputFrame = FromUtf8(directory);
+            if (IsDirectory(outputFrame)) {
+                outputFrame /= FromUtf8(frameName);
+                _recorder.Record(_stage, camera, UsdTimeCode::Default(), ToUtf8(outputFrame));
             }
         }
         CloseModal();

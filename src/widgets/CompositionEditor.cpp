@@ -151,24 +151,6 @@ struct CreateAssetPathModalDialog : public ModalDialog {
         if (ImGui::Button(ICON_FA_FILE)) {
             ImGui::OpenPopup("Asset path browser");
         }
-        if (ImGui::BeginPopupModal("Asset path browser")) {
-            DrawFileBrowser(RemainingHeight(7));
-            ImGui::Checkbox("Use relative path", &_relative);
-            ImGui::Checkbox("Unix compatible", &_unixify);
-            if (ImGui::Button("Use selected file")) {
-                if (_relative) {
-                    _assetPath = GetFileBrowserFilePathRelativeTo(_primSpec->GetLayer()->GetRealPath(), _unixify);
-                } else {
-                    _assetPath = GetFileBrowserFilePath();
-                }
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Close")) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
-        }
         ImGui::InputText("Target prim path", &_primPath);
         ImGui::InputDouble("Layer time offset", &_timeOffset);
         ImGui::InputDouble("Layer time scale", &_timeScale);
@@ -188,8 +170,6 @@ struct CreateAssetPathModalDialog : public ModalDialog {
     std::string _primPath;
     SdfListOpType _operation = SdfListOpTypeExplicit;
 
-    bool _relative = false;
-    bool _unixify = false;
     double _timeScale = 1.0;
     double _timeOffset = 0.0;
 };

@@ -13,6 +13,38 @@ if (NOT BUILD_TWIKI)
     return()
 endif()
 
+# Twiki statically links a from-source OpenSSL build (see below), and OpenSSL's
+# own Configure script is Perl — required on every platform, not optional.
+# On Windows the only Perl commonly on PATH is Git for Windows' bundled one,
+# which is MSYS-flavored (Config osname=msys). OpenSSL's Windows Configure is
+# documented upstream to need a native Windows Perl (osname=MSWin32, e.g.
+# Strawberry Perl); under MSYS Perl it fails opaquely (unquoted "C:/Program
+# Files/..."-style paths break its shell-outs). Detect that case and skip
+# Twiki with a clear warning instead of failing the whole build.
+find_program(TWIKI_PERL_EXECUTABLE perl)
+if (NOT TWIKI_PERL_EXECUTABLE)
+    message(WARNING "Twiki addon: no perl found on PATH (needed to build OpenSSL from source) — "
+                     "skipping. Install a Perl (on Windows: Strawberry Perl, https://strawberryperl.com) "
+                     "to enable BUILD_TWIKI.")
+    return()
+endif()
+if (WIN32)
+    execute_process(
+        COMMAND ${TWIKI_PERL_EXECUTABLE} -MConfig -e "print \$Config{osname}"
+        OUTPUT_VARIABLE TWIKI_PERL_OSNAME
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if (NOT TWIKI_PERL_OSNAME STREQUAL "MSWin32")
+        message(WARNING "Twiki addon: found perl at ${TWIKI_PERL_EXECUTABLE} but it reports "
+                         "osname='${TWIKI_PERL_OSNAME}' (likely Git for Windows' bundled MSYS perl). "
+                         "OpenSSL's Windows Configure needs a native Windows perl — skipping Twiki. "
+                         "Install Strawberry Perl (https://strawberryperl.com) and put it ahead of "
+                         "Git's usr/bin on PATH to enable BUILD_TWIKI.")
+        return()
+    endif()
+endif()
+
 include(FetchContent)
 
 # --- cpp-httplib (header-only) ------------------------------------------------
