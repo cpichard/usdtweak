@@ -63,13 +63,6 @@ void PreferencesModalDialog::Draw() {
                                   "itself, so motion blur and the other camera parameters are honoured.\n"
                                   "Off (default): the renderer only receives the view and projection matrices.");
             }
-            ImGui::Checkbox("Auto clip on by default", &viewportSettings._autoClip);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("On (default): the viewport cameras compute their near and far planes on every\n"
-                                  "camera move, which slows navigation down on heavy scenes. Off: the clipping\n"
-                                  "range is set by hand or with the \"Clip once\" button of the camera panel.\n"
-                                  "Applies to the viewports created after the change, the next launch.");
-            }
             ImGui::EndChild();
         }
 

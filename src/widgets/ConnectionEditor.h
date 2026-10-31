@@ -10,9 +10,15 @@ struct Selection;
 
 void DrawConnectionEditor(const UsdStageRefPtr& stage, const Selection &selection);
 
-// Experimental; testing several ways to bring prims in the connection editor
-void CreateSession(const UsdPrim &prim, const std::vector<UsdPrim> &prims);
-void AddPrimsToCurrentSession(const std::vector<UsdPrim> &prims);
+// Materials and NodeGraphs can be opened in a container sheet showing the prim and its children
+bool CanOpenContainerSheet(const UsdPrim &prim);
+void OpenContainerSheet(const UsdPrim &prim);
+
+// Returns true once after a sheet was opened: the editor window has to be shown and focused
+bool ConsumeConnectionEditorFocusRequest();
+
+// Add the prims and their descendants to the default sheet
+void AddPrimsToDefaultSheet(const std::vector<UsdPrim> &prims);
 
 // Add the given prims and every prim transitively reachable from them through
 // authored attribute connections to the current connection editor sheet.

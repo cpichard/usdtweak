@@ -171,16 +171,14 @@ static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selec
         ImGui::EndMenu();
     }
 
-    if (ImGui::MenuItem("Create connection editor sheet")) {
-        std::vector<UsdPrim> prims;
-        for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
-        CreateSession(prim, prims);
+    if (CanOpenContainerSheet(prim) && ImGui::MenuItem("Open in connection editor")) {
+        OpenContainerSheet(prim);
     }
 
-    if (ImGui::MenuItem("Add to connection editor")) {
+    if (ImGui::MenuItem("Add prim to default sheet")) {
         std::vector<UsdPrim> prims;
         for (const auto &p : paths) prims.push_back(stage->GetPrimAtPath(p));
-        AddPrimsToCurrentSession(prims);
+        AddPrimsToDefaultSheet(prims);
     }
 }
 

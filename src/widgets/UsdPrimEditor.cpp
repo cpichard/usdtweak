@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unordered_map>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/variantSets.h>
@@ -9,6 +10,12 @@
 #include <pxr/usd/pcp/layerStack.h>
 #include <pxr/usd/pcp/primIndex.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/nodeGraph.h>
+#include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/usd/notice.h>
+#include <pxr/base/tf/notice.h>
+#include <pxr/base/tf/weakBase.h>
+#include <pxr/base/tf/stringUtils.h>
 #include "Gui.h"
 #include "UsdPrimEditor.h"
 #include "VtValueEditor.h"
@@ -17,6 +24,7 @@
 #include "ImGuiHelpers.h"
 #include "TableLayouts.h"
 #include "AssetPathBrowserDialog.h" // includes ModalDialogs.h
+#include "ShaderDefinition.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -188,6 +196,30 @@ void DrawAttributeDisplayName(const UsdAttribute &attribute) {
     ImGui::Text("%s", displayName.c_str());
 }
 
+// Connected attribute path, clicking on it selects its prim
+static void DrawConnectionLink(const UsdStageWeakPtr &stage, const SdfPath &path) {
+    ScopedStyleColor linkColor(ImGuiCol_Text, ImVec4(ColorAttributeConnection));
+    if (ImGui::Selectable((ICON_FA_LINK " " + path.GetString()).c_str())) {
+        ExecuteAfterDraw<EditorSetSelection>(stage, path.GetPrimPath());
+    }
+}
+
+// Connections of the attribute, with a button to remove them
+static bool DrawAttributeConnections(const UsdAttribute &attribute) {
+    SdfPathVector sources;
+    attribute.GetConnections(&sources);
+    for (auto &connection : sources) {
+        ImGui::PushID(connection.GetString().c_str());
+        if (ImGui::Button(ICON_FA_TRASH)) {
+            ExecuteAfterDraw(&UsdAttribute::RemoveConnection, attribute, connection);
+        }
+        ImGui::SameLine();
+        DrawConnectionLink(attribute.GetStage(), connection);
+        ImGui::PopID();
+    }
+    return !sources.empty();
+}
+
 void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) {
     const std::string attributeLabel = GetDisplayName(attribute);
     VtValue value;
@@ -203,20 +235,7 @@ void DrawAttributeValueAtTime(UsdAttribute &attribute, UsdTimeCode currentTime) 
         }
     }
 
-    const bool HasConnections = attribute.HasAuthoredConnections();
-    if (HasConnections) {
-        SdfPathVector sources;
-        attribute.GetConnections(&sources);
-        for (auto &connection : sources) {
-            ImGui::PushID(connection.GetString().c_str());
-            if (ImGui::Button(ICON_FA_TRASH)) {
-                ExecuteAfterDraw(&UsdAttribute::RemoveConnection, attribute, connection);
-            }
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(ColorAttributeConnection), ICON_FA_LINK " %s", connection.GetString().c_str());
-            ImGui::PopID();
-        }
-    }
+    const bool HasConnections = attribute.HasAuthoredConnections() && DrawAttributeConnections(attribute);
 
     if (!HasValue && !HasConnections) {
         ImGui::TextColored(ImVec4({0.5, 0.5, 0.5, 0.5}), "no value");
@@ -804,6 +823,9 @@ static ImVec4 GetPrimColor(const UsdPrim &prim) {
     return ImVec4(ColorPrimDefault);
 }
 
+// Forward declaration
+void OpenContainerSheet(const UsdPrim &prim);
+
 void DrawUsdPrimHeader(UsdPrim &prim) {
     auto editTarget = prim.GetStage()->GetEditTarget();
     const SdfPath targetPath = editTarget.MapToSpecPath(prim.GetPath());
@@ -854,13 +876,25 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
         ImGui::PushID("Schemas");
         ImGui::TableSetColumnIndex(0);
+        // Draw an option button for certain types of prims
+        if (prim.IsA<UsdShadeMaterial>()) {
+            DrawPropertyMiniButton(ICON_FA_USER_COG);
+            if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+                if (ImGui::MenuItem("Open in connection editor")) {
+                    OpenContainerSheet(prim);
+                }
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::TableSetColumnIndex(1);
+
+        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+        ImGui::TableSetColumnIndex(2);
         if (DrawPropertyMiniButton(ICON_FA_EDIT)) {
             editSchemas = !editSchemas;
         }
-        ImGui::TableSetColumnIndex(1);
-        //ImGui::Text("Schemas");
-        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
-        ImGui::TableSetColumnIndex(2);
+        //ImGui::Text("Schemas"); TODO Hint
+        ImGui::SameLine();
         ImGui::PushItemWidth(-FLT_MIN);
         DrawPrimSchemas(prim, editSchemas);
         ImGui::PopID(); // "Schemas"
@@ -911,6 +945,290 @@ void DrawNavigator(UsdPrim &prim) {
     }
 }
 
+/// Reverse connections of the shading networks: for an attribute, the attributes connected to it.
+/// USD only returns the sources of the connections, so the destinations are found by traversing the network scope,
+/// which is the outermost node graph (or material) containing the shader. The result is kept until the stage changes.
+struct ShadingNetworkConnections : public TfWeakBase {
+    const SdfPathVector &GetDestinations(const UsdPrim &shaderPrim, const SdfPath &attributePath) {
+        const UsdStageWeakPtr stage = shaderPrim.GetStage();
+        if (stage != _stage) {
+            TfNotice::Revoke(_noticeKey);
+            _stage = stage;
+            _noticeKey = TfNotice::Register(TfCreateWeakPtr(this), &ShadingNetworkConnections::OnObjectsChanged, _stage);
+            _dirty = true;
+        }
+        const UsdPrim scope = GetNetworkScope(shaderPrim);
+        if (_dirty || scope.GetPath() != _scopePath) {
+            Compute(scope);
+        }
+        static const SdfPathVector noDestinations;
+        const auto it = _destinations.find(attributePath);
+        return it != _destinations.end() ? it->second : noDestinations;
+    }
+
+  private:
+    void OnObjectsChanged(const UsdNotice::ObjectsChanged &, const UsdStageWeakPtr &) { _dirty = true; }
+
+    static UsdPrim GetNetworkScope(const UsdPrim &shaderPrim) {
+        UsdPrim scope = shaderPrim.GetParent();
+        for (UsdPrim prim = scope; prim && !prim.IsPseudoRoot(); prim = prim.GetParent()) {
+            if (prim.IsA<UsdShadeNodeGraph>()) { // materials are node graphs
+                scope = prim;
+            }
+        }
+        return scope;
+    }
+
+    void Compute(const UsdPrim &scope) {
+        _destinations.clear();
+        _scopePath = scope.GetPath();
+        _dirty = false;
+        for (const UsdPrim &prim : UsdPrimRange(scope, UsdTraverseInstanceProxies())) {
+            for (const UsdAttribute &attribute : prim.GetAttributes()) {
+                SdfPathVector sources;
+                attribute.GetConnections(&sources);
+                for (const SdfPath &source : sources) {
+                    _destinations[source].push_back(attribute.GetPath());
+                }
+            }
+        }
+    }
+
+    UsdStageWeakPtr _stage;
+    TfNotice::Key _noticeKey;
+    SdfPath _scopePath;
+    bool _dirty = true;
+    std::unordered_map<SdfPath, SdfPathVector, SdfPath::Hash> _destinations;
+};
+
+// Options are only supported on the value types we can convert from the option strings
+static bool HasEditableOptions(SdrShaderPropertyConstPtr property, const VtValue &value) {
+    return !property->GetOptions().empty() && (value.IsHolding<TfToken>() || value.IsHolding<std::string>() ||
+                                               value.IsHolding<int>() || value.IsHolding<float>());
+}
+
+// Combo listing the options of a shader input. An option without value uses its name as value.
+static VtValue DrawShaderInputOptions(const std::string &label, const VtValue &value, const std::vector<ShaderOption> &options) {
+    auto toValue = [&](const ShaderOption &option) {
+        const std::string &str = option.second.IsEmpty() ? option.first.GetString() : option.second.GetString();
+        if (value.IsHolding<TfToken>())
+            return VtValue(TfToken(str));
+        if (value.IsHolding<int>())
+            return VtValue(static_cast<int>(std::strtol(str.c_str(), nullptr, 10)));
+        if (value.IsHolding<float>())
+            return VtValue(std::strtof(str.c_str(), nullptr));
+        return VtValue(str);
+    };
+    std::string preview = TfStringify(value);
+    for (const ShaderOption &option : options) {
+        if (toValue(option) == value) {
+            preview = option.first.GetString();
+            break;
+        }
+    }
+    VtValue modified;
+    if (ImGui::BeginCombo(label.c_str(), preview.c_str())) {
+        for (const ShaderOption &option : options) {
+            const VtValue optionValue = toValue(option);
+            if (ImGui::Selectable(option.first.GetText(), optionValue == value)) {
+                modified = optionValue;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    return modified;
+}
+
+// attribute is invalid when the input is not on the prim, the value is then the definition default
+static VtValue DrawShaderInputValue(const std::string &label, UsdAttribute &attribute, SdrShaderPropertyConstPtr property,
+                                    const SdfValueTypeName &type, const VtValue &value) {
+    if (HasEditableOptions(property, value)) {
+        return DrawShaderInputOptions(label, value, property->GetOptions());
+    }
+    if (attribute) {
+        return DrawAttributeValue(label, attribute, value);
+    }
+    if (type.GetRole() == SdfValueRoleNames->Color) {
+        return DrawColorValue(label, value);
+    }
+    return DrawVtValue(label, value);
+}
+
+// Creates the input or output on the prim and sets its value if any, in a single undoable command
+static void CreateShaderAttribute(const UsdPrim &prim, const TfToken &attributeName, const SdfValueTypeName &type,
+                              const VtValue &value) {
+    const UsdStageWeakPtr stage = prim.GetStage();
+    const SdfPath primPath = prim.GetPath();
+    std::function<void()> createAttribute = [=]() {
+        if (UsdPrim prim = stage ? stage->GetPrimAtPath(primPath) : UsdPrim()) {
+            UsdAttribute attribute = prim.CreateAttribute(attributeName, type, false /* custom */);
+            if (attribute && !value.IsEmpty()) {
+                attribute.Set(value);
+            }
+        }
+    };
+    ExecuteAfterDraw<UsdFunctionCall>(TfCreateRefPtrFromProtectedWeakPtr(stage->GetEditTarget().GetLayer()), createAttribute);
+}
+
+// Name of a shader property, the label of the definition if any, with its help in the tooltip
+static void DrawShaderPropertyName(const TfToken &name, SdrShaderPropertyConstPtr property, const TfToken &attributeName,
+                                   const SdfValueTypeName &type, bool authored) {
+    const TfToken &label = property->GetLabel().IsEmpty() ? name : property->GetLabel();
+    ImGui::TextColored(authored ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored), "%s", label.GetText());
+    if (ImGui::IsItemHovered()) {
+        const std::string help = property->GetHelp();
+        ImGui::SetTooltip("%s (%s)%s%s", attributeName.GetText(), type.GetAsToken().GetText(), help.empty() ? "" : "\n",
+                          help.c_str());
+    }
+}
+
+static void DrawShaderInputRow(const UsdPrim &prim, const TfToken &name, SdrShaderPropertyConstPtr property,
+                               const UsdEditTarget &editTarget, UsdTimeCode currentTime) {
+    const TfToken attributeName(UsdShadeTokens->inputs.GetString() + name.GetString());
+    const SdfValueTypeName type = GetShaderPropertySdfType(property);
+    UsdAttribute attribute = prim.GetAttribute(attributeName);
+    ImGui::PushID(attributeName.GetText());
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+
+    // The value of the attribute if it has one, otherwise the default of the definition
+    VtValue value;
+    const bool hasValue = attribute && attribute.Get(&value, currentTime);
+    if (!hasValue) {
+        value = property->GetDefaultValueAsSdfType();
+        if (value.IsEmpty()) {
+            value = type.GetDefaultValue();
+        }
+    }
+
+    ImGui::TableSetColumnIndex(0);
+    if (attribute) {
+        DrawPropertyMiniButton(attribute, editTarget, currentTime);
+    } else {
+        DrawPropertyMiniButton(SmallButtonLabel<UsdAttribute>());
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            if (ImGui::MenuItem(ICON_FA_DONATE " Create value", nullptr, false, !value.IsEmpty())) {
+                CreateShaderAttribute(prim, attributeName, type, value);
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    ImGui::TableSetColumnIndex(1);
+    DrawShaderPropertyName(name, property, attributeName, type, attribute && attribute.IsAuthored());
+
+    ImGui::TableSetColumnIndex(2);
+    ImGui::PushItemWidth(-FLT_MIN);
+    if (!value.IsEmpty()) {
+        VtValue modified;
+        {
+            ScopedStyleColor defaultValueColor(ImGuiCol_Text,
+                                               hasValue ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImVec4(ColorAttributeUnauthored));
+            modified = DrawShaderInputValue(attributeName.GetString(), attribute, property, type, value);
+        }
+        if (!modified.IsEmpty()) {
+            if (attribute) {
+                ExecuteAfterDraw<AttributeSet>(attribute, modified,
+                                               attribute.GetNumTimeSamples() ? currentTime : UsdTimeCode::Default());
+            } else {
+                CreateShaderAttribute(prim, attributeName, type, modified);
+            }
+        }
+    } else {
+        ImGui::TextColored(ImVec4(ColorAttributeUnauthored), "no value");
+    }
+    if (attribute && attribute.HasAuthoredConnections()) {
+        DrawAttributeConnections(attribute);
+    }
+    ImGui::PopItemWidth();
+    ImGui::PopID();
+}
+
+static void DrawShaderOutputRow(const UsdPrim &prim, const TfToken &name, SdrShaderPropertyConstPtr property,
+                                const UsdEditTarget &editTarget, UsdTimeCode currentTime,
+                                ShadingNetworkConnections &connections) {
+    const TfToken attributeName(UsdShadeTokens->outputs.GetString() + name.GetString());
+    const SdfValueTypeName type = GetShaderPropertySdfType(property);
+    UsdAttribute attribute = prim.GetAttribute(attributeName);
+    ImGui::PushID(attributeName.GetText());
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+    ImGui::TableSetColumnIndex(0);
+    if (attribute) {
+        DrawPropertyMiniButton(attribute, editTarget, currentTime);
+    } else {
+        DrawPropertyMiniButton(SmallButtonLabel<UsdAttribute>());
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            if (ImGui::MenuItem(ICON_FA_DONATE " Create output")) {
+                CreateShaderAttribute(prim, attributeName, type, VtValue());
+            }
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::TableSetColumnIndex(1);
+    DrawShaderPropertyName(name, property, attributeName, type, attribute && attribute.IsAuthored());
+    ImGui::TableSetColumnIndex(2);
+    for (const SdfPath &destination : connections.GetDestinations(prim, prim.GetPath().AppendProperty(attributeName))) {
+        ImGui::PushID(destination.GetString().c_str());
+        DrawConnectionLink(prim.GetStage(), destination);
+        ImGui::PopID();
+    }
+    ImGui::PopID();
+}
+
+/// Inputs and outputs of the shader definition, authored or not, the inputs grouped by page.
+/// Returns true if the prim is a shader.
+static bool DrawShaderParameters(const UsdPrim &prim, UsdTimeCode currentTime) {
+    if (!prim.IsA<UsdShadeShader>())
+        return false;
+    SdrShaderNodeConstPtr shaderNode = GetShaderDefinition(prim);
+    if (!shaderNode) {
+        ImGui::TextColored(ImVec4(ColorAttributeUnauthored), "Shader definition not found");
+        return true;
+    }
+    static ShadingNetworkConnections connections;
+    const UsdEditTarget &editTarget = prim.GetStage()->GetEditTarget();
+
+    // Pages in the order of their first input, the inputs without page come first
+    std::vector<std::pair<TfToken, std::vector<TfToken>>> pages = {{TfToken(), {}}};
+    for (const TfToken &name : GetShaderDefinitionInputNames(shaderNode)) {
+        if (SdrShaderPropertyConstPtr property = shaderNode->GetShaderInput(name)) {
+            auto page = std::find_if(pages.begin(), pages.end(), [&](const auto &p) { return p.first == property->GetPage(); });
+            if (page == pages.end()) {
+                page = pages.emplace(pages.end(), property->GetPage(), std::vector<TfToken>());
+            }
+            page->second.push_back(name);
+        }
+    }
+
+    if (ImGui::BeginTable("##DrawShaderParameters", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("Shader parameter");
+        ImGui::TableSetupColumn(shaderNode->GetIdentifier().GetText(), ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        for (const auto &[page, names] : pages) {
+            bool pageOpen = true;
+            if (!page.IsEmpty()) {
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+                ImGui::TableSetColumnIndex(1);
+                const bool openByDefault = IsShaderDefinitionPageOpen(shaderNode, page);
+                pageOpen = ImGui::TreeNodeEx(page.GetText(), ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                                 (openByDefault ? ImGuiTreeNodeFlags_DefaultOpen : 0));
+            }
+            if (pageOpen) {
+                for (const TfToken &name : names) {
+                    DrawShaderInputRow(prim, name, shaderNode->GetShaderInput(name), editTarget, currentTime);
+                }
+            }
+        }
+        for (const TfToken &name : GetShaderDefinitionOutputNames(shaderNode)) {
+            if (SdrShaderPropertyConstPtr property = shaderNode->GetShaderOutput(name)) {
+                DrawShaderOutputRow(prim, name, property, editTarget, currentTime, connections);
+            }
+        }
+        ImGui::EndTable();
+    }
+    return true;
+}
+
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
     DrawPropertyEditorMenuBar(prim, 0);
@@ -928,6 +1246,9 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             ImGui::Separator();
         }
         if (DrawMaterialBindings(prim)) {
+            ImGui::Separator();
+        }
+        if (DrawShaderParameters(prim, currentTime)) {
             ImGui::Separator();
         }
         
