@@ -76,6 +76,8 @@ class ViewportEngine : public TfWeakBase {
     void SetSelectionHighlightMode(SelectionHighlightMode mode);
     unsigned int GetSelectionOutlineRadius() const { return _selectionOutlineRadius; }
     void SetSelectionOutlineRadius(unsigned int radius);
+    bool IsSelectionOutlineSolid() const { return _selectionOutlineSolid; }
+    void SetSelectionOutlineSolid(bool solid);
 
     // Picking
     bool TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
@@ -154,4 +156,5 @@ class ViewportEngine : public TfWeakBase {
     SelectionHighlightMode _selectionHighlightMode = _DefaultSelectionHighlightMode();
     int _debugRenderCount = 0;
     unsigned int _selectionOutlineRadius = 2;
+    bool _selectionOutlineSolid = false;
 };

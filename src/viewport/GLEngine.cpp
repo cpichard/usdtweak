@@ -1,6 +1,10 @@
 #include "GLEngine.h"
+#include "GlslCode.h"
 
+#include <cstddef>
+#include <algorithm>
 #include <cstdlib>
+#include <vector>
 
 #include <pxr/base/tf/staticTokens.h>
 #include <pxr/base/tf/stringUtils.h>
@@ -26,9 +30,12 @@
 #include <pxr/imaging/hdx/renderSetupTask.h>
 #include <pxr/imaging/hdx/renderTask.h>
 #include <pxr/imaging/hdx/selectionTask.h>
+#include <pxr/imaging/hdx/selectionTracker.h>
 #include <pxr/imaging/hdx/task.h>
 #include <pxr/imaging/hdx/taskController.h>
 #include <pxr/imaging/hdx/tokens.h>
+#include <pxr/imaging/hgi/hgi.h>
+#include <pxr/imaging/hgi/sampler.h>
 #include <pxr/imaging/hgi/shaderFunctionDesc.h>
 #include <pxr/imaging/hgi/tokens.h>
 #include <pxr/usd/usd/prim.h>
@@ -97,54 +104,145 @@ class GLEngineTaskDelegate final : public HdSceneDelegate {
     std::map<SdfPath, HdRenderBufferDescriptor> _bufferDescriptors;
 };
 
+// Mask texels per output pixel on each axis for the solid outline. Must match
+// kMaskTexelsPerPixel in SelectionOutlineFrag.glsl
+static constexpr int kSolidOutlineMaskScale = 2;
+
+static CameraUtilFraming ScaleFraming(const CameraUtilFraming &framing, int scale) {
+    const float scaleF = static_cast<float>(scale);
+    const GfRange2f displayWindow(framing.displayWindow.GetMin() * scaleF, framing.displayWindow.GetMax() * scaleF);
+    const GfRect2i dataWindow(framing.dataWindow.GetMin() * scale, framing.dataWindow.GetWidth() * scale,
+                              framing.dataWindow.GetHeight() * scale);
+    return CameraUtilFraming(displayWindow, dataWindow, framing.pixelAspectRatio);
+}
+
 // Parameters of GLEngineOutlineTask
 struct GLEngineOutlineTaskParams {
     SdfPath maskBufferPath;
+    // ID AOVs, set by non Storm renderers instead of maskBufferPath
+    SdfPath primIdBufferPath;
+    SdfPath instanceIdBufferPath;
+    SdfPath elementIdBufferPath;
+    int maskTexelsPerPixel = 1;
     int radius = 2;
+    bool solid = false; // use SelectionOutlineFrag instead of the hdx outline shader
+    GfVec4f color = GfVec4f(0.f); // line color of the solid outline
     bool operator==(const GLEngineOutlineTaskParams &other) const {
-        return maskBufferPath == other.maskBufferPath && radius == other.radius;
+        return maskBufferPath == other.maskBufferPath && primIdBufferPath == other.primIdBufferPath &&
+               instanceIdBufferPath == other.instanceIdBufferPath && elementIdBufferPath == other.elementIdBufferPath &&
+               maskTexelsPerPixel == other.maskTexelsPerPixel && radius == other.radius && solid == other.solid &&
+               color == other.color;
     }
     bool operator!=(const GLEngineOutlineTaskParams &other) const { return !(*this == other); }
 };
 
 // Required by VtValue::operator<< for types held in a scene delegate
 inline std::ostream &operator<<(std::ostream &out, const GLEngineOutlineTaskParams &p) {
-    return out << p.maskBufferPath << " " << p.radius;
+    return out << p.maskBufferPath << " " << p.radius << " " << p.solid;
+}
+
+// Whether the pixel with these IDs is selected, according to the selection offset
+// buffer of HdxSelectionTracker. Same walk as HdxColorizeSelectionTask::_ColorizeSelection
+static bool IsSelectedInOffsets(const VtIntArray &offsets, int primId, int instanceId, int elementId) {
+    if (primId == -1) {
+        return false;
+    }
+    for (int mode = 0; mode < offsets[0]; ++mode) {
+        const int modeOffset = offsets[mode + 1];
+        if (modeOffset == 0) {
+            continue;
+        }
+        const int primMin = offsets[modeOffset];
+        const int primMax = offsets[modeOffset + 1];
+        if (primId < primMin || primId >= primMax) {
+            continue;
+        }
+        int selectionData = offsets[modeOffset + 2 + primId - primMin];
+        bool selected = selectionData & 0x1;
+        int nextOffset = selectionData >> 1;
+        if (nextOffset != 0 && !selected) {
+            constexpr int kInstanceSubprim = 3;
+            constexpr int kElementSubprim = 0;
+            if (offsets[nextOffset] == kInstanceSubprim) {
+                const int instanceMin = offsets[nextOffset + 1];
+                const int instanceMax = offsets[nextOffset + 2];
+                if (instanceId >= instanceMin && instanceId < instanceMax) {
+                    selectionData = offsets[nextOffset + 3 + instanceId - instanceMin];
+                    selected = selectionData & 0x1;
+                    nextOffset = selectionData >> 1;
+                }
+            }
+            if (offsets[nextOffset] == kElementSubprim) {
+                const int elementMin = offsets[nextOffset + 1];
+                const int elementMax = offsets[nextOffset + 2];
+                if (elementId >= elementMin && elementId < elementMax) {
+                    selected = selected || (offsets[nextOffset + 3 + elementId - elementMin] & 0x1);
+                }
+            }
+        }
+        if (selected) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// Compositing task drawing the outline of the selection mask over the color
-/// AOV, using the outline shader shipped with hdx. This is the GPU equivalent
+/// AOV, using the outline shader shipped with hdx or, as an experiment, our solid
+/// one (SelectionOutlineFrag.glsl). This is the GPU equivalent
 /// of the blit part of HdxColorizeSelectionTask (which cannot be used with
 /// Storm: its ID buffers would have to be multisampled integer textures, and
 /// resolving/blending those is invalid).
+///
+/// The mask comes from the mask pass under Storm. The other renderers have no such
+/// pass: the mask is computed on the CPU from their ID AOVs at each render.
 class GLEngineOutlineTask final : public HdxTask {
   public:
     GLEngineOutlineTask(HdSceneDelegate *, const SdfPath &id) : HdxTask(id) {}
 
+    ~GLEngineOutlineTask() override {
+        if (_linearSampler) {
+            _GetHgi()->DestroySampler(&_linearSampler);
+        }
+        if (_idMaskTexture) {
+            _GetHgi()->DestroyTexture(&_idMaskTexture);
+        }
+    }
+
     void Prepare(HdTaskContext *ctx, HdRenderIndex *renderIndex) override {
-        _maskBuffer = static_cast<HdRenderBuffer *>(
-            renderIndex->GetBprim(HdPrimTypeTokens->renderBuffer, _params.maskBufferPath));
+        const auto getBuffer = [renderIndex](const SdfPath &path) {
+            return static_cast<HdRenderBuffer *>(renderIndex->GetBprim(HdPrimTypeTokens->renderBuffer, path));
+        };
+        if (_UsesIdMask()) {
+            _primId = getBuffer(_params.primIdBufferPath);
+            _instanceId = getBuffer(_params.instanceIdBufferPath);
+            _elementId = getBuffer(_params.elementIdBufferPath);
+            _UpdateSelectionOffsets(ctx, renderIndex);
+        } else {
+            _maskBuffer = getBuffer(_params.maskBufferPath);
+        }
     }
 
     void Execute(HdTaskContext *ctx) override {
-        if (!_HasTaskContextData(ctx, HdAovTokens->color) || !_maskBuffer) {
+        if (!_HasTaskContextData(ctx, HdAovTokens->color)) {
             return;
         }
         HgiTextureHandle aovTexture;
         _GetTaskContextData(ctx, HdAovTokens->color, &aovTexture);
-
-        _maskBuffer->Resolve();
-        const VtValue resource = _maskBuffer->GetResource(false);
-        if (!resource.IsHolding<HgiTextureHandle>()) {
-            return;
+        HgiTextureHandle depthTexture;
+        if (_params.solid && _HasTaskContextData(ctx, HdAovTokens->depth)) {
+            _GetTaskContextData(ctx, HdAovTokens->depth, &depthTexture);
         }
-        HgiTextureHandle maskTexture = resource.UncheckedGet<HgiTextureHandle>();
+
+        const HgiTextureHandle maskTexture = _UsesIdMask() ? _BuildIdMaskTexture() : _ResolveMaskTexture();
         if (!maskTexture) {
             return;
         }
 
-        if (!_compositor) {
+        if (!_compositor || _compositorIsSolid != _params.solid) {
             _compositor = std::make_unique<HdxFullscreenShader>(_GetHgi(), "GLEngineOutline");
+            _compositorIsSolid = _params.solid;
+            _parameterData = _ParameterBuffer(); // the new compositor has no constants yet
 
             // Same fragment shader setup as HdxColorizeSelectionTask
             HgiShaderFunctionDesc fragDesc;
@@ -156,11 +254,21 @@ class GLEngineOutlineTask final : public HdxTask {
             HgiShaderFunctionAddConstantParam(&fragDesc, "enableOutline", "int");
             HgiShaderFunctionAddConstantParam(&fragDesc, "radius", "int");
             HgiShaderFunctionAddStageOutput(&fragDesc, "hd_FragColor", "vec4", "color");
-            _compositor->SetProgram(HdxPackageOutlineShader(), _tokens->outlineFrag, fragDesc);
+            if (_params.solid) {
+                HgiShaderFunctionAddConstantParam(&fragDesc, "outlineColor", "vec4");
+                HgiShaderFunctionAddStageOutput(&fragDesc, "gl_FragDepth", "float", "depth(any)");
+                fragDesc.shaderCode = SelectionOutlineFrag;
+                _compositor->SetProgram(fragDesc);
+            } else {
+                _compositor->SetProgram(HdxPackageOutlineShader(), _tokens->outlineFrag, fragDesc);
+            }
 
+            // The solid outline writes depth where it draws: LEqual loads the
+            // scene depth, which an Always compare would leave undefined
             HgiDepthStencilState depthState;
-            depthState.depthTestEnabled = false;
-            depthState.depthWriteEnabled = false;
+            depthState.depthTestEnabled = _params.solid;
+            depthState.depthCompareFn = HgiCompareFunctionLEqual;
+            depthState.depthWriteEnabled = _params.solid;
             depthState.stencilTestEnabled = false;
             _compositor->SetDepthState(depthState);
 
@@ -171,19 +279,27 @@ class GLEngineOutlineTask final : public HdxTask {
                                        HgiBlendFactorZero, HgiBlendFactorOne, HgiBlendOpAdd);
         }
 
-        _compositor->BindTextures({maskTexture});
-
-        _ParameterBuffer parameters;
-        parameters.texelSize =
-            GfVec2f(1.0f / float(_maskBuffer->GetWidth()), 1.0f / float(_maskBuffer->GetHeight()));
-        parameters.enableOutline = 1;
-        parameters.radius = _params.radius;
-        if (!(parameters == _parameterData)) {
-            _parameterData = parameters;
-            _compositor->SetShaderConstants(sizeof(_parameterData), &_parameterData);
+        if (_params.solid) {
+            _compositor->BindTextures({maskTexture}, {_GetLinearSampler()});
+        } else {
+            _compositor->BindTextures({maskTexture});
         }
 
-        _compositor->Draw(aovTexture, /*no depth*/ HgiTextureHandle());
+        _ParameterBuffer parameters;
+        const GfVec3i maskDimensions = maskTexture->GetDescriptor().dimensions;
+        parameters.texelSize = GfVec2f(float(_params.maskTexelsPerPixel) / float(maskDimensions[0]),
+                                       float(_params.maskTexelsPerPixel) / float(maskDimensions[1]));
+        parameters.enableOutline = 1;
+        parameters.radius = _params.radius;
+        parameters.outlineColor = _params.color;
+        if (!(parameters == _parameterData)) {
+            _parameterData = parameters;
+            // outlineColor is not declared by the hdx shader
+            const size_t constantsSize = _params.solid ? sizeof(_parameterData) : offsetof(_ParameterBuffer, outlineColor);
+            _compositor->SetShaderConstants(constantsSize, &_parameterData);
+        }
+
+        _compositor->Draw(aovTexture, depthTexture);
     }
 
   protected:
@@ -198,19 +314,132 @@ class GLEngineOutlineTask final : public HdxTask {
     }
 
   private:
+    bool _UsesIdMask() const { return !_params.primIdBufferPath.IsEmpty(); }
+
+    HgiTextureHandle _ResolveMaskTexture() {
+        if (!_maskBuffer) {
+            return HgiTextureHandle();
+        }
+        _maskBuffer->Resolve();
+        const VtValue resource = _maskBuffer->GetResource(false);
+        return resource.IsHolding<HgiTextureHandle>() ? resource.UncheckedGet<HgiTextureHandle>() : HgiTextureHandle();
+    }
+
+    void _UpdateSelectionOffsets(HdTaskContext *ctx, HdRenderIndex *renderIndex) {
+        HdxSelectionTrackerSharedPtr tracker;
+        if (_GetTaskContextData(ctx, HdxTokens->selectionState, &tracker) && tracker) {
+            tracker->UpdateSelection(renderIndex);
+            if (tracker->GetVersion() != _selectionVersion) {
+                _selectionVersion = tracker->GetVersion();
+                _hasSelection = tracker->GetSelectionOffsetBuffer(renderIndex, true, false, &_selectionOffsets);
+            }
+        }
+    }
+
+    static void _ResolveIfAny(HdRenderBuffer *buffer) {
+        if (buffer) { // instance and element IDs are optional
+            buffer->Resolve();
+        }
+    }
+
+    /// White where selected, from the IDs available so far: a progressive renderer is
+    /// still filling them, so during its first pass the outline follows the rendered
+    /// tiles, like the image itself. Recomputed at each call, as HdxColorizeSelectionTask.
+    HgiTextureHandle _BuildIdMaskTexture() {
+        if (!_primId || !_hasSelection) {
+            return HgiTextureHandle();
+        }
+        _ResolveIfAny(_primId);
+        _ResolveIfAny(_instanceId);
+        _ResolveIfAny(_elementId);
+        const unsigned int width = _primId->GetWidth();
+        const unsigned int height = _primId->GetHeight();
+        const auto hasSameSize = [width, height](HdRenderBuffer *buffer) {
+            return !buffer || (buffer->GetWidth() == width && buffer->GetHeight() == height);
+        };
+        if (width == 0 || height == 0 || !hasSameSize(_instanceId) || !hasSameSize(_elementId)) {
+            return HgiTextureHandle();
+        }
+        const int32_t *primIds = static_cast<const int32_t *>(_primId->Map());
+        if (!primIds) {
+            return HgiTextureHandle();
+        }
+        const int32_t *instanceIds = _instanceId ? static_cast<const int32_t *>(_instanceId->Map()) : nullptr;
+        const int32_t *elementIds = _elementId ? static_cast<const int32_t *>(_elementId->Map()) : nullptr;
+
+        const size_t pixelCount = size_t(width) * height;
+        std::vector<uint8_t> maskPixels(pixelCount * 4, 0);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            const int instanceId = instanceIds ? instanceIds[i] : -1;
+            const int elementId = elementIds ? elementIds[i] : -1;
+            if (IsSelectedInOffsets(_selectionOffsets, primIds[i], instanceId, elementId)) {
+                std::fill_n(maskPixels.begin() + i * 4, 4, uint8_t(255));
+            }
+        }
+
+        _primId->Unmap();
+        if (instanceIds) {
+            _instanceId->Unmap();
+        }
+        if (elementIds) {
+            _elementId->Unmap();
+        }
+
+        if (_idMaskTexture) {
+            _GetHgi()->DestroyTexture(&_idMaskTexture);
+        }
+        HgiTextureDesc desc;
+        desc.debugName = "GLEngineOutlineIdMask";
+        desc.dimensions = GfVec3i(width, height, 1);
+        desc.format = HgiFormatUNorm8Vec4;
+        desc.initialData = maskPixels.data();
+        desc.layerCount = 1;
+        desc.mipLevels = 1;
+        desc.pixelsByteSize = maskPixels.size();
+        desc.sampleCount = HgiSampleCount1;
+        desc.usage = HgiTextureUsageBitsShaderRead;
+        _idMaskTexture = _GetHgi()->CreateTexture(desc);
+        return _idMaskTexture;
+    }
+
+    // The solid outline relies on linear filtering, see SelectionOutlineFrag.glsl
+    HgiSamplerHandle _GetLinearSampler() {
+        if (!_linearSampler) {
+            HgiSamplerDesc desc;
+            desc.debugName = "GLEngineOutlineMask";
+            desc.magFilter = HgiSamplerFilterLinear;
+            desc.minFilter = HgiSamplerFilterLinear;
+            desc.addressModeU = HgiSamplerAddressModeClampToEdge;
+            desc.addressModeV = HgiSamplerAddressModeClampToEdge;
+            _linearSampler = _GetHgi()->CreateSampler(desc);
+        }
+        return _linearSampler;
+    }
+
     // Must match ParameterBuffer in outline.glslfx (std430 rules)
     struct _ParameterBuffer {
         GfVec2f texelSize = GfVec2f(0.f);
         int enableOutline = 1;
         int radius = 2;
+        GfVec4f outlineColor = GfVec4f(0.f);
         bool operator==(const _ParameterBuffer &other) const {
-            return texelSize == other.texelSize && enableOutline == other.enableOutline && radius == other.radius;
+            return texelSize == other.texelSize && enableOutline == other.enableOutline && radius == other.radius &&
+                   outlineColor == other.outlineColor;
         }
     };
 
     GLEngineOutlineTaskParams _params;
     HdRenderBuffer *_maskBuffer = nullptr;
+    HdRenderBuffer *_primId = nullptr;
+    HdRenderBuffer *_instanceId = nullptr;
+    HdRenderBuffer *_elementId = nullptr;
+    VtIntArray _selectionOffsets;
+    bool _hasSelection = false;
+    int _selectionVersion = -1;
+    HgiTextureHandle _idMaskTexture;
     std::unique_ptr<HdxFullscreenShader> _compositor;
+    bool _compositorIsSolid = false;
+    HgiSamplerHandle _linearSampler;
     _ParameterBuffer _parameterData;
 };
 
@@ -422,6 +651,7 @@ void GLEngine::_SetRenderDelegate(HdPluginRenderDelegateUniqueHandle &&renderDel
     _renderDelegate = std::move(renderDelegate);
 
     _maskTasksCreated = false;
+    _outlineTaskCreated = false;
     _outlineTasksActive = false;
     _maskParamsSet = false;
     _freeCameraPath = SdfPath();
@@ -557,8 +787,15 @@ SdfPath GLEngine::_FreeCameraPath() const {
 // GLEngineOutlineTask outlines that mask over the color AOV.
 void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &params) {
     _outlineTasksActive = false;
-    if (!_IsStormRenderer() || _selectionHighlightMode != SelectionHighlightMode::Outline ||
-        _currentAov != HdAovTokens->color || _selectedPaths.empty() || _renderBufferSize == GfVec2i(0)) {
+    _idOutlineActive = false;
+    if (_selectionHighlightMode != SelectionHighlightMode::Outline || _currentAov != HdAovTokens->color ||
+        _selectedPaths.empty() || _renderBufferSize == GfVec2i(0)) {
+        return;
+    }
+    if (!_IsStormRenderer()) {
+        if (params.highlight && _selectionOutlineSolid) {
+            _UpdateIdOutlineTask();
+        }
         return;
     }
     if (_freeCameraPath.IsEmpty()) {
@@ -583,9 +820,10 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
         _appTaskDelegate->SetParameter(maskColorId, _tokens->stormMsaaSampleCount, 1u);
         _renderIndex->InsertTask<HdxSelectionTask>(_appTaskDelegate.get(), maskSelectionTaskId);
         _renderIndex->InsertTask<HdxRenderTask>(_appTaskDelegate.get(), maskTaskId);
-        _renderIndex->InsertTask<GLEngineOutlineTask>(_appTaskDelegate.get(), outlineTaskId);
         _maskTasksCreated = true;
     }
+
+    _EnsureOutlineTask(outlineTaskId);
 
     // The mask pass renders the scene flat black and lets Storm's in-shader
     // selection highlight paint the selected fragments in the selection
@@ -596,7 +834,9 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
     selectionParams.enableSelectionHighlight = true;
     selectionParams.enableLocateHighlight = false;
     selectionParams.occludedSelectionOpacity = 1.f;
-    selectionParams.selectionColor = GfVec4f(_selectionColor[0], _selectionColor[1], _selectionColor[2], 1.f);
+    // The solid outline wants a binary mask, its color is a shader constant
+    selectionParams.selectionColor =
+        _selectionOutlineSolid ? GfVec4f(1.f) : GfVec4f(_selectionColor[0], _selectionColor[1], _selectionColor[2], 1.f);
     selectionParams.locateColor = GfVec4f(0.f);
     if (!_maskParamsSet || !(selectionParams == _lastMaskSelectionParams)) {
         _appTaskDelegate->SetParameter(maskSelectionTaskId, HdTokens->params, selectionParams);
@@ -616,7 +856,9 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
     }
 
     // Mask buffer descriptor, updated on viewport resize
-    const GfVec3i dimensions(_renderBufferSize[0], _renderBufferSize[1], 1);
+    const int maskScale = _selectionOutlineSolid ? kSolidOutlineMaskScale : 1;
+    const GfVec2i maskSize = _renderBufferSize * maskScale;
+    const GfVec3i dimensions(maskSize[0], maskSize[1], 1);
     HdRenderBufferDescriptor colorDesc;
     colorDesc.dimensions = dimensions;
     colorDesc.format = HdFormatUNorm8Vec4;
@@ -649,9 +891,9 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
 
     HdxRenderTaskParams maskParams;
     maskParams.camera = cameraPath;
-    maskParams.framing = _framing;
+    maskParams.framing = maskScale == 1 || !_framing.IsValid() ? _framing : ScaleFraming(_framing, maskScale);
     maskParams.overrideWindowPolicy = std::make_optional(CameraUtilMatchHorizontally);
-    maskParams.viewport = GfVec4d(0, 0, _renderBufferSize[0], _renderBufferSize[1]);
+    maskParams.viewport = GfVec4d(0, 0, maskSize[0], maskSize[1]);
     maskParams.enableLighting = false;
     maskParams.overrideColor = GfVec4f(0.f, 0.f, 0.f, 1.f);
     maskParams.depthBiasUseDefault = true;
@@ -679,17 +921,59 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
     }
 
     const int radius = static_cast<int>(_selectionOutlineRadius);
-    if (!_maskParamsSet || radius != _lastOutlineRadius) {
+    if (!_maskParamsSet || radius != _lastOutlineRadius || _selectionOutlineSolid != _lastOutlineSolid ||
+        _selectionColor != _lastOutlineColor) {
         GLEngineOutlineTaskParams outlineParams;
         outlineParams.maskBufferPath = maskColorId;
+        outlineParams.maskTexelsPerPixel = maskScale;
         outlineParams.radius = radius;
+        outlineParams.solid = _selectionOutlineSolid;
+        outlineParams.color = _selectionColor;
         _appTaskDelegate->SetParameter(outlineTaskId, HdTokens->params, outlineParams);
         _renderIndex->GetChangeTracker().MarkTaskDirty(outlineTaskId, HdChangeTracker::DirtyParams);
         _lastOutlineRadius = radius;
+        _lastOutlineSolid = _selectionOutlineSolid;
+        _lastOutlineColor = _selectionColor;
     }
 
     _maskParamsSet = true;
     _outlineTasksActive = true;
+}
+
+void GLEngine::_EnsureOutlineTask(const SdfPath &outlineTaskId) {
+    if (!_outlineTaskCreated) {
+        _renderIndex->InsertTask<GLEngineOutlineTask>(_appTaskDelegate.get(), outlineTaskId);
+        _outlineTaskCreated = true;
+    }
+}
+
+// Solid outline for the renderers other than Storm: the outline task computes the mask
+// from the ID AOVs of the task controller, which replaces its colorize selection task.
+void GLEngine::_UpdateIdOutlineTask() {
+    const HdRenderBuffer *primId = _taskController->GetRenderOutput(HdAovTokens->primId);
+    if (!primId) {
+        return; // renderer without ID AOVs: keep the stock task
+    }
+    const auto bufferPath = [this](const TfToken &aov) {
+        const HdRenderBuffer *buffer = _taskController->GetRenderOutput(aov);
+        return buffer ? buffer->GetId() : SdfPath();
+    };
+    GLEngineOutlineTaskParams outlineParams;
+    outlineParams.primIdBufferPath = primId->GetId();
+    outlineParams.instanceIdBufferPath = bufferPath(HdAovTokens->instanceId);
+    outlineParams.elementIdBufferPath = bufferPath(HdAovTokens->elementId);
+    outlineParams.radius = static_cast<int>(_selectionOutlineRadius);
+    outlineParams.solid = true;
+    outlineParams.color = _selectionColor;
+
+    const SdfPath outlineTaskId = _appTaskDelegate->GetDelegateID().AppendChild(_tokens->usdtweakOutlineTask);
+    _EnsureOutlineTask(outlineTaskId);
+    // Unlike the mask render task, re-syncing this task is free: no need to compare
+    _appTaskDelegate->SetParameter(outlineTaskId, HdTokens->params, outlineParams);
+    _renderIndex->GetChangeTracker().MarkTaskDirty(outlineTaskId, HdChangeTracker::DirtyParams);
+
+    _outlineTasksActive = true;
+    _idOutlineActive = true;
 }
 
 // The rendering task paths from the task controller, with the outline
@@ -698,6 +982,13 @@ void GLEngine::_UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &pa
 // render graph). The mask pass itself runs separately in _maskEngine.
 SdfPathVector GLEngine::_RenderingTaskPaths() const {
     SdfPathVector paths = _taskController->GetRenderingTaskPaths();
+    if (_idOutlineActive) {
+        paths.erase(std::remove_if(paths.begin(), paths.end(),
+                                   [](const SdfPath &path) {
+                                       return path.GetName().find("colorizeSelectionTask") != std::string::npos;
+                                   }),
+                    paths.end());
+    }
     if (_outlineTasksActive) {
         const SdfPath delegateId = _appTaskDelegate->GetDelegateID();
         auto insertPos = paths.end();
@@ -762,7 +1053,7 @@ void GLEngine::Render(const UsdPrim &root, const UsdImagingGLRenderParams &param
     // the stock engine does; NeedsAnotherRender() then asks the viewport for
     // one more render to draw the outline.
     _extraRenderRequested = false;
-    if (_outlineTasksActive) {
+    if (_outlineTasksActive && !_idOutlineActive) {
         const unsigned int rprimIndexVersion = _renderIndex->GetChangeTracker().GetRprimIndexVersion();
         if (rprimIndexVersion != _maskRprimIndexVersion) {
             _outlineTasksActive = false;
@@ -788,7 +1079,7 @@ bool GLEngine::IsConverged() const {
     if (!_engine || !_renderIndex || !_taskController) {
         return true;
     }
-    return _engine->AreTasksConverged(_renderIndex.get(), _taskController->GetRenderingTaskPaths());
+    return _engine->AreTasksConverged(_renderIndex.get(), _RenderingTaskPaths());
 }
 
 void GLEngine::SetRenderBufferSize(const GfVec2i &size) {

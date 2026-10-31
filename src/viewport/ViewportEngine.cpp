@@ -33,6 +33,7 @@ ViewportEngine::ViewportEngine(UsdStageRefPtr stage, const TfToken &rendererPlug
         _glEngine = std::make_unique<GLEngine>(stage, rendererPluginId);
         _glEngine->SetSelectionHighlightMode(_selectionHighlightMode);
         _glEngine->SetSelectionOutlineRadius(_selectionOutlineRadius);
+        _glEngine->SetSelectionOutlineSolid(_selectionOutlineSolid);
     } else {
         UsdImagingGLEngine::Parameters parameters;
         parameters.rootPath = _stage->GetPseudoRoot().GetPath();
@@ -222,6 +223,16 @@ void ViewportEngine::SetSelectionOutlineRadius(unsigned int radius) {
         _sceneDirty = true;
         if (_glEngine) {
             _glEngine->SetSelectionOutlineRadius(radius);
+        }
+    }
+}
+
+void ViewportEngine::SetSelectionOutlineSolid(bool solid) {
+    if (_selectionOutlineSolid != solid) {
+        _selectionOutlineSolid = solid;
+        _sceneDirty = true;
+        if (_glEngine) {
+            _glEngine->SetSelectionOutlineSolid(solid);
         }
     }
 }

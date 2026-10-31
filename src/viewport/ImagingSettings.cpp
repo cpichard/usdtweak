@@ -151,6 +151,10 @@ void DrawImagingSettings(ViewportEngine &renderer, ImagingSettings &renderparams
         if (ImGui::SliderInt("Outline radius", &radius, 1, 10)) {
             renderer.SetSelectionOutlineRadius(static_cast<unsigned int>(radius));
         }
+        bool solidOutline = renderer.IsSelectionOutlineSolid();
+        if (ImGui::Checkbox("Solid outline (experimental)", &solidOutline)) {
+            renderer.SetSelectionOutlineSolid(solidOutline);
+        }
         ImGui::EndDisabled();
         ImGui::EndDisabled();
     }

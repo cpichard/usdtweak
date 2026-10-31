@@ -83,6 +83,8 @@ class GLEngine {
     void ClearSelected();
     void SetSelectionHighlightMode(SelectionHighlightMode mode) { _selectionHighlightMode = mode; }
     void SetSelectionOutlineRadius(unsigned int radius) { _selectionOutlineRadius = radius; }
+    /// Experimental, Storm only: use our solid outline shader instead of the one shipped with hdx
+    void SetSelectionOutlineSolid(bool solid) { _selectionOutlineSolid = solid; }
 
     // Picking
     bool TestIntersection(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix, const UsdPrim &root,
@@ -144,6 +146,8 @@ class GLEngine {
     SdfPath _FreeCameraPath() const;
     bool _ComputeMaskUsesFullScene() const;
     void _UpdateSelectionHighlightTasks(const UsdImagingGLRenderParams &params);
+    void _EnsureOutlineTask(const SdfPath &outlineTaskId);
+    void _UpdateIdOutlineTask();
     SdfPathVector _RenderingTaskPaths() const;
 
     UsdStageRefPtr _stage;
@@ -176,6 +180,7 @@ class GLEngine {
     GfVec4f _selectionColor = GfVec4f(1.f, 1.f, 0.f, 1.f);
     SelectionHighlightMode _selectionHighlightMode = SelectionHighlightMode::Outline;
     unsigned int _selectionOutlineRadius = 2;
+    bool _selectionOutlineSolid = false;
     SdfPathVector _selectedPaths;
     TfToken _currentAov;
 
@@ -190,6 +195,8 @@ class GLEngine {
     // prims plus an outline composite task (see _UpdateSelectionHighlightTasks).
     // Non-Storm renderers use the task controller's built-in outline instead.
     bool _maskTasksCreated = false;
+    bool _outlineTaskCreated = false;
+    bool _idOutlineActive = false; // solid outline from the ID AOVs, non Storm renderers
     bool _outlineTasksActive = false;
 
     // Last state pushed to the mask/outline tasks. Re-marking the mask render
@@ -213,4 +220,6 @@ class GLEngine {
     HdRprimCollection _lastMaskCollection;
     TfTokenVector _lastMaskRenderTags;
     int _lastOutlineRadius = -1;
+    bool _lastOutlineSolid = false;
+    GfVec4f _lastOutlineColor = GfVec4f(0.f);
 };
