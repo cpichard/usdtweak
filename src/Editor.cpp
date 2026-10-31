@@ -651,11 +651,25 @@ void Editor::OpenStage(const std::string &path, bool openLoaded, bool enableHydr
         Viewport::SetStageHydraEnabled(newStage, enableHydra);
         GetStageCache().Insert(newStage);
         SetCurrentStage(newStage);
+        GoToStageStartFrame(newStage);
         _settings._showContentBrowser = true;
         _settings._showViewport1 = true;
         _settings.UpdateRecentFiles(path);
         StringSearchIndex::GetInstance().IndexStage(newStage);
     }
+}
+
+void Editor::GoToStageStartFrame(const UsdStageRefPtr &stage) {
+    // Without an authored range the start time code is a fallback value, not a frame of the stage
+    if (!stage->HasAuthoredTimeCodeRange()) {
+        return;
+    }
+    const UsdTimeCode startFrame(stage->GetStartTimeCode());
+    _viewport1.SetCurrentTimeCode(startFrame);
+    _viewport2.SetCurrentTimeCode(startFrame);
+    _viewport3.SetCurrentTimeCode(startFrame);
+    _viewport4.SetCurrentTimeCode(startFrame);
+    _playbackFrame = startFrame.GetValue();
 }
 
 void Editor::SaveLayerAs(SdfLayerRefPtr layer, const std::string &path) {

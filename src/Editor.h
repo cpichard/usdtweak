@@ -174,6 +174,9 @@ class Editor {
     /// Selection for stages and layers
     Selection _selection;
 
+    /// Move all the viewports to the first frame of the stage
+    void GoToStageStartFrame(const UsdStageRefPtr &stage);
+
     /// Selected attribute, for showing in the spreadsheet or metadata
     SdfPath _selectedAttribute;
 
