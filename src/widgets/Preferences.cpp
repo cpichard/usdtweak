@@ -57,6 +57,12 @@ void PreferencesModalDialog::Draw() {
                                   "meshes coherent. Off: fractional/subframe timecodes are sent to Hydra so\n"
                                   "motion blur can be introspected between frames.");
             }
+            ImGui::Checkbox("Render with the stage camera", &viewportSettings._renderWithStageCamera);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("On: when looking through a stage camera, the renderer reads the camera prim\n"
+                                  "itself, so motion blur and the other camera parameters are honoured.\n"
+                                  "Off (default): the renderer only receives the view and projection matrices.");
+            }
             ImGui::Checkbox("Auto clip on by default", &viewportSettings._autoClip);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("On (default): the viewport cameras compute their near and far planes on every\n"

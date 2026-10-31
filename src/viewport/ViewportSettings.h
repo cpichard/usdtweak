@@ -12,6 +12,10 @@ struct ViewportSettings {
     // to feed fractional/subframe timecodes so motion blur can be introspected across renderers.
     bool _snapPlaybackToFrame = true;
 
+    // When true, a stage camera is handed to Hydra by path instead of as view and projection matrices,
+    // so the renderer gets the whole camera: shutter for motion blur, depth of field, etc.
+    bool _renderWithStageCamera = false;
+
     // Default state of the viewport "Auto clip" toggle: near and far planes of the viewport owned cameras
     // recomputed on every camera move. Off, the clipping range is manual or set with "Clip once".
     bool _autoClip = true;

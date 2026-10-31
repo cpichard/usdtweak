@@ -729,17 +729,21 @@ void Viewport::Render() {
         CameraUtilFraming framing(displayWindow, dataWindow);
         _renderer->SetRenderBufferSize(renderSize);
         _renderer->SetFraming(framing);
-        _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
         // As of today, camera used for SetCameraPath are similar to GetViewportCamera.
         // This might change in the future and that could cause an issue for the computation
         // of the manipulator positions.
-        //       if (_cameras.IsUsingStageCamera()) {
-        //            _renderer->SetCameraPath(_cameras.GetStageCameraPath());
-        //        } else {
-        const GfCamera viewportCamera = GetViewportCamera(width, height);
-        _renderer->SetCameraState(viewportCamera.GetFrustum().ComputeViewMatrix(),
-                                  viewportCamera.GetFrustum().ComputeProjectionMatrix());
-        //      }
+        if (_cameras.IsUsingStageCamera() && ResourcesLoader::GetViewportSettings()._renderWithStageCamera) {
+            // The renderer conforms the camera itself: same policy as GetViewportCamera, which the
+            // grid, manipulators, picking and camera frame overlay rely on
+            _renderer->SetWindowPolicy(IsCameraFrameVisible() ? CameraUtilConformWindowPolicy::CameraUtilFit
+                                                              : CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
+            _renderer->SetCameraPath(_cameras.GetStageCameraPath());
+        } else {
+            _renderer->SetWindowPolicy(CameraUtilConformWindowPolicy::CameraUtilMatchHorizontally);
+            const GfCamera viewportCamera = GetViewportCamera(width, height);
+            _renderer->SetCameraState(viewportCamera.GetFrustum().ComputeViewMatrix(),
+                                      viewportCamera.GetFrustum().ComputeProjectionMatrix());
+        }
         _renderer->SetRenderParams(_imagingSettings);
 
         // Re-render the scene image only when something changed or the image is still converging

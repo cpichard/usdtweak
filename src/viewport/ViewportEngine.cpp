@@ -69,7 +69,23 @@ void ViewportEngine::SetCameraState(const GfMatrix4d &viewMatrix, const GfMatrix
         _projectionMatrix = projectionMatrix;
         _cameraStateSet = true;
         _sceneDirty = true;
+        // The engine keeps using the last scene camera for time sampling unless it is cleared
+        if (!_cameraPath.IsEmpty()) {
+            _cameraPath = SdfPath::EmptyPath();
+            _engine->SetCameraPath(_cameraPath);
+        }
         _engine->SetCameraState(viewMatrix, projectionMatrix);
+    }
+}
+
+void ViewportEngine::SetCameraPath(const SdfPath &path) {
+    if (_cameraPath != path) {
+        _cameraPath = path;
+        // The engine forgets the matrices, the next SetCameraState must not be skipped by the
+        // compare-before-set even if they are unchanged
+        _cameraStateSet = false;
+        _sceneDirty = true;
+        _engine->SetCameraPath(path);
     }
 }
 
@@ -179,6 +195,9 @@ bool ViewportEngine::SetRendererPlugin(const TfToken &id) {
     }
     if (_cameraStateSet) {
         _engine->SetCameraState(_viewMatrix, _projectionMatrix);
+    }
+    if (!_cameraPath.IsEmpty()) {
+        _engine->SetCameraPath(_cameraPath);
     }
     return true;
 }

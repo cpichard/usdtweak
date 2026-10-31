@@ -33,6 +33,10 @@ class ViewportEngine : public TfWeakBase {
     void SetFraming(const CameraUtilFraming &framing);
     void SetWindowPolicy(CameraUtilConformWindowPolicy policy);
     void SetCameraState(const GfMatrix4d &viewMatrix, const GfMatrix4d &projectionMatrix);
+    /// Render through a camera of the stage instead of the matrices of SetCameraState. The renderer
+    /// reads the camera prim itself, including what the matrices don't carry, like the shutter for
+    /// motion blur. SetCameraPath and SetCameraState replace each other.
+    void SetCameraPath(const SdfPath &path);
     void SetRenderParams(const UsdImagingGLRenderParams &params);
 
     /// Render the scene with the parameters previously passed to SetRenderParams.
@@ -126,6 +130,7 @@ class ViewportEngine : public TfWeakBase {
     GfMatrix4d _viewMatrix = GfMatrix4d(1.0);
     GfMatrix4d _projectionMatrix = GfMatrix4d(1.0);
     bool _cameraStateSet = false;
+    SdfPath _cameraPath;
     UsdImagingGLRenderParams _renderParams;
     bool _renderParamsSet = false;
 };
