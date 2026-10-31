@@ -269,6 +269,96 @@ spec sits under.
 FIND SDFPRIM WHERE IS_IN_VARIANT RETURN PATH, VARIANT_SELECTIONS, LAYER
 ```
 
+## Instancing
+
+An instanceable prim shares its contents with every other instance of the same
+asset, through a hidden prototype. `INSTANCEABLE` is the authored request; the
+other fields report what the stage made of it.
+
+| Field | True for |
+|---|---|
+| `INSTANCEABLE` | prims with `instanceable = true` authored |
+| `IS_INSTANCE` | the prim that is an instance |
+| `IS_INSTANCE_PROXY` | the prims under an instance, which are its view of the shared contents |
+| `IS_PROTOTYPE` | the root of a prototype |
+| `IS_IN_PROTOTYPE` | a prototype root and everything under it |
+
+`INSTANCEABLE` works on `USDPRIM` and `SDFPRIM`. The others are composed facts,
+so they are compile errors on `SDFPRIM`.
+
+A `USDPRIM` scan goes inside instances and into prototypes, so a mesh shared by
+100 instances comes back as 100 proxy rows plus one prototype row. `NOT
+IS_INSTANCE_PROXY` removes the copies and lists each unique prim once:
+
+```utql
+FIND USDPRIM WHERE TYPE = "Mesh" AND NOT IS_INSTANCE_PROXY
+```
+
+The instances themselves:
+
+```utql
+FIND USDPRIM WHERE IS_INSTANCE RETURN PATH
+```
+
+A prim needs a composition arc to become an instance, so this finds prims marked
+instanceable that do not actually instance anything:
+
+```utql
+FIND USDPRIM WHERE INSTANCEABLE AND NOT IS_INSTANCE
+```
+
+## Metadata
+
+`CUSTOMDATA["key"]` reads one `customData` entry on a prim. The key is case
+sensitive, and a colon steps into a nested dictionary. A missing key is `NULL`.
+
+```utql
+FIND USDPRIM WHERE CUSTOMDATA["pipeline:reviewState"] = "approved"
+```
+
+`CUSTOMDATA.KEYS` is the set of keys on a prim, with nested keys written in the
+same colon form, and `HAS_CUSTOMDATA` tests for any entry at all.
+
+```utql
+FIND USDPRIM WHERE CUSTOMDATA.KEYS CONTAINS "pipeline:priority"
+RETURN PATH, CUSTOMDATA["pipeline:priority"]
+```
+
+`assetInfo` has its own fields: `ASSETINFO.NAME`, `.VERSION`, `.IDENTIFIER` and
+`.DEPENDENCIES`, plus `HAS_ASSETINFO`. `.IDENTIFIER` is the path as authored, not
+resolved, and `.DEPENDENCIES` is a set, matched with `CONTAINS`.
+
+```utql
+FIND USDPRIM WHERE HAS_ASSETINFO RETURN PATH, ASSETINFO.NAME, ASSETINFO.VERSION
+```
+
+`METADATA["key"]` reads any other registered metadata field by name, on prims,
+attributes and relationships.
+
+```utql
+FIND USDPRIM WHERE METADATA["documentation"] IS NOT NULL
+RETURN PATH, METADATA["documentation"]
+```
+
+```utql
+FIND USDPRIM WHERE METADATA["hidden"] = true
+```
+
+A key that already has its own field is a compile error that names the field:
+`METADATA["kind"]` asks for `KIND`. Dictionaries and composition lists are not
+available through `METADATA`.
+
+On the `USD*` entities, `CUSTOMDATA` and `METADATA` see authored opinions only, not
+fallback values from a schema. On the `SDF*` entities they see what that one spec
+authors, so `FIND SDFPRIM` tells you which layer set a value.
+
+`METADATA` and the three scalar `ASSETINFO` fields are written with `SET`, like
+`CUSTOMDATA`. `NULL` clears the value.
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Hero" SET ASSETINFO.VERSION = "2", METADATA["documentation"] = "Approved hero"
+```
+
 ## Layers and stage settings
 
 `FIND LAYER` returns one row per layer. Stage settings — up axis, frame rate,
@@ -282,6 +372,13 @@ Layers with unsaved changes:
 
 ```utql
 FIND LAYER WHERE DIRTY RETURN IDENTIFIER, REAL_PATH
+```
+
+`ANONYMOUS` is true for layers that live only in memory, with no file behind
+them. `NOT ANONYMOUS` keeps the layers saved on disk:
+
+```utql
+FIND LAYER WHERE NOT ANONYMOUS RETURN IDENTIFIER, REAL_PATH
 ```
 
 Sublayers form a family like the prim arcs, with `SUBLAYER.ASSET`,
@@ -457,6 +554,95 @@ layers keep pointing at the old path.
 UPDATE SDFPRIM IN LAYER "layout.usda" WHERE NAME = "Cube" SET NAME = "Crate"
 ```
 
+## Where an edit lands
+
+A statement on a `USD*` entity selects composed objects, so it has to be told
+which layer gets the opinion. By default that is the stage's edit target.
+`ON LAYER` picks another layer for this statement. It comes after `WHERE`, and the
+layer must be in the stage's layer stack.
+
+```utql
+UPDATE USDPRIM WHERE NAME LIKE "proxy" ON LAYER "overrides.usda" SET ACTIVE = false
+```
+
+```utql
+CREATE USDPRIM "/World/Lights/Fill" TYPE "SphereLight" ON LAYER "lighting.usda"
+```
+
+A statement on an `SDF*` entity edits the spec it matched, in the layer that holds
+that spec. `IN` already decides the layers, so `ON LAYER` is a compile error here.
+
+```utql
+UPDATE SDFPRIM IN LAYER "layout.usda" WHERE PATH = "/World/Crate" SET KIND = "component"
+```
+
+`LAYER` writes work the same way and set the fields marked in the *Field reference*:
+
+```utql
+UPDATE LAYER IN LAYER "shot.usda" SET FRAMES_PER_SECOND = 25
+```
+
+`COMPOSING INTO` edits every spec feeding a composed prim, whichever layer holds
+it, and takes the place of `IN`. A `WHERE` can then narrow the specs. Deleting this
+way is how to remove a composed prim from all the layers that author it:
+
+```utql
+UPDATE SDFPRIM COMPOSING INTO "/World/Hero" SET ACTIVE = false
+```
+
+```utql
+DELETE SDFPRIM COMPOSING INTO "/World/Junk"
+```
+
+## Variant authoring
+
+Variants are authored through the `USD*` entities. The specs land at the edit
+target, or on the `ON LAYER` layer, and `SDFPRIM` reads can see them afterwards.
+
+`ADD VARIANT` creates a variant, and creates its set first if needed:
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car"
+ADD VARIANT["model"] "sedan" ADD VARIANT["model"] "coupe"
+```
+
+`INSIDE VARIANT` sends every change in the statement into a variant, creating the
+set and the variant if they do not exist. It comes before the changes, after any
+`ON LAYER`. This is how each variant gets its own reference:
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car"
+INSIDE VARIANT "{model=sedan}" ADD REFERENCE "cars/sedan.usd"
+```
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car"
+INSIDE VARIANT "{model=sedan}" CREATE ATTRIBUTE "seats" TYPE "int" VALUE 5
+```
+
+Authoring into a variant does not select it. `SET VARIANT` does that, and `NULL`
+clears the selection:
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car" SET VARIANT["model"] = "sedan"
+```
+
+Nested variants are written outermost first, or by adding a set from inside a
+variant:
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car"
+INSIDE VARIANT "{model=sedan}" ADD VARIANT["trim"] "sport"
+```
+
+```utql
+UPDATE USDPRIM WHERE PATH = "/World/Car"
+INSIDE VARIANT "{model=sedan}{trim=sport}" ADD REFERENCE "cars/sedan_sport.usd"
+```
+
+`REMOVE VARIANT` does not exist yet, and `INSIDE VARIANT` cannot be combined with
+`SET NAME` or `SET PARENT`.
+
 ## Common mistakes
 
 - **Applied APIs are a set.** Use `API CONTAINS "MaterialBindingAPI"`, not
@@ -476,13 +662,123 @@ UPDATE SDFPRIM IN LAYER "layout.usda" WHERE NAME = "Cube" SET NAME = "Crate"
 - **One statement per run.** Two statements in the editor are a compile error;
   run them one after the other.
 
+## Field reference
+
+The **Set** column says whether `SET` can write the field: *yes* on both kinds of
+entity, *SDF* on the `SDF*` entities only, and *—* for read-only fields. Other
+writes have their own form: `SET VALUE`, `ADD` and `REMOVE`, `CREATE ATTRIBUTE`.
+
+`RETURN *` shows every field of the row. `RETURN` also accepts `STAGE` on the
+`USD*` entities and `LAYER` on the `SDF*` entities.
+
+**Prims** — `USDPRIM`, `SDFPRIM`
+
+| Field | Meaning | Set |
+|---|---|---|
+| `NAME` | prim name | SDF |
+| `PATH` | full path | — |
+| `PARENT` | parent prim path, `/` for root prims | SDF |
+| `TYPE` | typed schema, the `Mesh` in `def Mesh` | yes |
+| `KIND` | `component`, `assembly`... | yes |
+| `SPECIFIER` | `def`, `over` or `class` | SDF |
+| `ACTIVE` | the prim is active | yes |
+| `ABSTRACT` | the prim is a `class` | — |
+| `INSTANCEABLE` | see *Instancing* | yes |
+| `DEPTH` | levels below the root; a root prim is 1 | — |
+| `CHILD_COUNT` | number of child prims | — |
+| `ATTRIBUTE_COUNT` | number of attributes | — |
+| `SPEC_COUNT` | specs composing the prim; always 1 on `SDFPRIM` | — |
+| `HAS_REFERENCE` `HAS_PAYLOAD` `HAS_VARIANT` `HAS_API` | presence of that family | — |
+| `HAS_TIME_SAMPLES` `HAS_SPLINE` `HAS_CLIPS` | the prim has animation of that kind | — |
+| `HAS_RELATIONSHIP` | the prim has a relationship | — |
+| `RELATIONSHIPS` | set of relationship names, with `CONTAINS` | — |
+| `API` `API.COUNT` | set of applied schemas, and how many | — |
+| `CUSTOMDATA["key"]` | one `customData` entry | yes |
+| `CUSTOMDATA.KEYS` `HAS_CUSTOMDATA` | `customData` keys, and presence | — |
+| `ASSETINFO.NAME` `.VERSION` `.IDENTIFIER` | `assetInfo` values | yes |
+| `ASSETINFO.DEPENDENCIES` `HAS_ASSETINFO` | dependency set, and presence | — |
+| `METADATA["key"]` | any other registered metadata | yes |
+
+Composed only, on `USDPRIM`: `IS_INSTANCE`, `IS_INSTANCE_PROXY`, `IS_PROTOTYPE`,
+`IS_IN_PROTOTYPE`, `IS_LOADED`. Authored only, on `SDFPRIM`: `IS_IN_VARIANT`,
+`VARIANT_SELECTIONS`. The arc families are listed under *References, payloads and
+variants*.
+
+**Attributes** — `USDATTRIBUTE`, `SDFATTRIBUTE`
+
+| Field | Meaning | Set |
+|---|---|---|
+| `NAME` | full name, with namespace | SDF |
+| `BASENAME` | name after the last colon | — |
+| `NAMESPACE` | namespace part of the name, such as `primvars` | — |
+| `PATH` | full attribute path | — |
+| `PARENT` | owning prim path | — |
+| `TYPE` | value type, such as `float` | — |
+| `VARIABILITY` | `varying` or `uniform` | SDF |
+| `INTERPOLATION` | `vertex`, `faceVarying`... | yes |
+| `VALUE.SCALAR` | the value, when it is not an array | — |
+| `VALUE.IS_ARRAY` | the value is an array | — |
+| `VALUE.ARRAY_SIZE` | element count, `-1` on scalars | — |
+| `VALUE.BYTE_SIZE` | size of the value in bytes | — |
+| `VALUE.IS_BLOCKED` | the value is blocked | — |
+| `VALUE.HAS_TIME_SAMPLES` `VALUE.SAMPLE_COUNT` | time samples, and how many | — |
+| `VALUE.HAS_SPLINE` | the value is a spline | — |
+| `ASSET.IS_MISSING` | the asset path does not resolve | — |
+| `HAS_CONNECTION` `CONNECTION.COUNT` | incoming connections, and how many | — |
+| `CONNECTION.SOURCE` | set of source attribute paths | — |
+| `METADATA["key"]` | registered metadata | yes |
+
+Authored only, on `SDFATTRIBUTE`: `IS_IN_VARIANT`, `VARIANT_SELECTIONS`.
+
+**Relationships** — `USDRELATIONSHIP`, `SDFRELATIONSHIP`
+
+| Field | Meaning | Set |
+|---|---|---|
+| `NAME` | full name, with namespace | SDF |
+| `BASENAME` | name after the last colon | — |
+| `NAMESPACE` | namespace part of the name | — |
+| `PATH` | full relationship path | — |
+| `PARENT` | owning prim path | — |
+| `TARGET` | set of target paths, edited with `ADD TARGET` and `REMOVE TARGET` | — |
+| `TARGET_COUNT` | number of targets | — |
+| `METADATA["key"]` | registered metadata | yes |
+
+Composed only, on `USDRELATIONSHIP`: `TARGET.IS_MISSING`.
+
+**Layers** — `LAYER`
+
+| Field | Meaning | Set |
+|---|---|---|
+| `IDENTIFIER` | the layer's identifier | — |
+| `DISPLAY_NAME` | short name | — |
+| `REAL_PATH` | file on disk, `NULL` when anonymous | — |
+| `FILE_FORMAT` | `usda`, `usdc`... | — |
+| `DIRTY` | has unsaved changes | — |
+| `ANONYMOUS` | lives in memory only | — |
+| `MUTED` | is muted | yes |
+| `EMPTY` | holds no specs | — |
+| `IS_ROOT_LAYER` | root layer of an open stage | — |
+| `IS_SESSION_LAYER` | session layer of an open stage | — |
+| `ROOT_PRIM_COUNT` | number of root prims | — |
+| `DEFAULT_PRIM` | default prim | yes |
+| `UP_AXIS` | `Y` or `Z` | yes |
+| `METERS_PER_UNIT` | scene scale | yes |
+| `START_TIME` `END_TIME` | time range | yes |
+| `TIMECODES_PER_SECOND` `FRAMES_PER_SECOND` | time rates | yes |
+| `HAS_SUBLAYER` `SUBLAYER.COUNT` | sublayers, and how many | — |
+| `SUBLAYER.ASSET` `.IS_MISSING` `.LAYER_OFFSET` | the sublayer family | — |
+
+Fields marked *yes* are written with `UPDATE LAYER`.
+
 ## Cheat sheet
 
 The four statements:
 
 ```
 FIND   <entity> [clauses]
-UPDATE <entity> [targeting] <mutation>+
+UPDATE <entity> [COMPOSING INTO <targets>] [IN <scope>] [AT <time>]
+       [WHERE <cond>] [ON LAYER "id"] [INSIDE VARIANT "{set=sel}"]
+       <mutation>+ [RETURN <fields>] [LIMIT n]
 CREATE USDPRIM "/path" [TYPE "t"] [ON LAYER "id"]
 CREATE SDFPRIM "/path" IN LAYER "id" [SPECIFIER "def"|"over"|"class"] [TYPE "t"]
 DELETE SDFPRIM|SDFATTRIBUTE|SDFRELATIONSHIP (COMPOSING INTO <target> | [IN <scope>] WHERE <cond>)
