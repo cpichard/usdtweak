@@ -36,7 +36,7 @@ ImagingSettings::ImagingSettings() {
     highlight = true;
     gammaCorrectColors = false;
     colorCorrectionMode = TfToken("sRGB");
-    showGuides = true;
+    showGuides = false;
     showProxy = true;
     showRender = false;
 
