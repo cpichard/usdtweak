@@ -26,6 +26,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfPrimEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdPrimEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdPrimEditor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderDefinition.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ShaderDefinition.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/SdfAttributeEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/StageOutliner.cpp
