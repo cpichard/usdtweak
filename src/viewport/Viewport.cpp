@@ -22,9 +22,45 @@
 #include "Viewport.h"
 #include "ViewportSettings.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace clk = std::chrono;
+
+namespace {
+
+const GfRange1d kPresetClippingRanges[] = {{0.001, 100.0}, {0.01, 1000.0}, {0.1, 10000.0}, {1.0, 100000.0}, {10.0, 1000000.0}};
+
+const GfRange1d kEmptyStageClippingRange = kPresetClippingRanges[2];
+
+// The far plane must be this many times further than the diagonal, to leave room to move around the stage
+constexpr double kFarToDiagonal = 10.0;
+
+// Largest absolute coordinate, so that a stage away from the origin is measured from the origin
+double ComputeLargestCoordinate(const GfRange3d &bounds) {
+    double largest = 0.0;
+    for (size_t i = 0; i < 3; ++i) {
+        largest = std::max({largest, std::abs(bounds.GetMin()[i]), std::abs(bounds.GetMax()[i])});
+    }
+    return largest;
+}
+
+// Pick the smallest preset range that comfortably fits the diagonal of the origin centered cube enclosing
+// the bounds. Empty bounds get a middle preset, bounds too large for every preset the largest.
+GfRange1d ComputeClippingRangeFromBounds(const GfRange3d &bounds) {
+    if (bounds.IsEmpty()) {
+        return kEmptyStageClippingRange;
+    }
+    const double diagonal = 2.0 * ComputeLargestCoordinate(bounds) * std::sqrt(3.0);
+    for (const GfRange1d &range : kPresetClippingRanges) {
+        if (range.GetMax() >= diagonal * kFarToDiagonal) {
+            return range;
+        }
+    }
+    return std::end(kPresetClippingRanges)[-1];
+}
+
+} // namespace
 
 std::set<UsdStageRefPtr> Viewport::_hydraDisabledStages;
 
@@ -92,7 +128,6 @@ Viewport::Viewport(UsdStageRefPtr stage, Selection &selection)
     ViewportSettings _defaultSettings = ResourcesLoader::GetViewportSettings();
     _imagingSettings.enableSceneMaterials = _defaultSettings._useMaterials;
     _imagingSettings.camFlySpeed = _defaultSettings._camFlySpeed;
-    _cameras.SetAutoClipEnabled(_defaultSettings._autoClip);
 }
 
 Viewport::~Viewport() {
@@ -343,12 +378,13 @@ void Viewport::FrameAllCameras() {
     }
 }
 
-GfBBox3d Viewport::ComputeStageWorldBound() const {
+GfRange3d Viewport::ComputeStageBounds() const {
     if (!GetCurrentStage()) {
-        return GfBBox3d();
+        return GfRange3d();
     }
     // Hydra draws the whole stage, not only the default prim, so the clipping range must enclose all of it
-    return ComputeFiniteWorldBound(GetCurrentStage()->GetPseudoRoot());
+    const UsdStageRefPtr &stage = GetCurrentStage();
+    return ComputeFiniteWorldBound(stage->GetPseudoRoot(), stage->GetStartTimeCode()).ComputeAlignedRange();
 }
 
 GfBBox3d Viewport::ComputeFramingWorldBound() const {
@@ -356,11 +392,11 @@ GfBBox3d Viewport::ComputeFramingWorldBound() const {
         return GfBBox3d();
     }
     const UsdPrim defaultPrim = GetCurrentStage()->GetDefaultPrim();
-    return ComputeFiniteWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPseudoRoot());
+    return ComputeFiniteWorldBound(defaultPrim ? defaultPrim : GetCurrentStage()->GetPseudoRoot(), GetCurrentTimeCode());
 }
 
-GfBBox3d Viewport::ComputeFiniteWorldBound(const UsdPrim &prim) const {
-    UsdGeomBBoxCache bboxcache(_imagingSettings.frame, UsdGeomImageable::GetOrderedPurposeTokens());
+GfBBox3d Viewport::ComputeFiniteWorldBound(const UsdPrim &prim, UsdTimeCode timeCode) const {
+    UsdGeomBBoxCache bboxcache(timeCode, UsdGeomImageable::GetOrderedPurposeTokens());
     const GfBBox3d bbox = bboxcache.ComputeWorldBound(prim);
 
     // An infinite bound gives meaningless clipping planes, treat it as empty. Same guard as usdview's
@@ -370,40 +406,6 @@ GfBBox3d Viewport::ComputeFiniteWorldBound(const UsdPrim &prim) const {
         return GfBBox3d();
     }
     return bbox;
-}
-
-const GfBBox3d &Viewport::GetStageBBox() {
-    // Each edit of the stage invalidates its bounds. While a transform manipulator is dragged that is
-    // every frame, so keep the previous bounds until the drag ends: usdview also recomputes them only
-    // once an edit is complete.
-    if (IsDraggingTransformManipulator() && _stageBounds.stage == GetCurrentStage()) {
-        return _stageBounds.bbox;
-    }
-    // Without an engine there is no edit notification, so the bounds can't be trusted and are always
-    // recomputed. This only happens when Hydra is disabled, and nothing calls this per frame then.
-    const size_t editCount = _renderer ? _renderer->GetStageEditCount() : 0;
-    const bool upToDate = _renderer && _stageBounds.stage == GetCurrentStage() &&
-                          _stageBounds.timeCode == GetCurrentTimeCode() && _stageBounds.editCount == editCount;
-    if (!upToDate) {
-        _stageBounds.bbox = ComputeStageWorldBound();
-        _stageBounds.stage = GetCurrentStage();
-        _stageBounds.timeCode = GetCurrentTimeCode();
-        _stageBounds.editCount = editCount;
-    }
-    return _stageBounds.bbox;
-}
-
-bool Viewport::FindClosestPointToCamera(const GfFrustum &pickFrustum, GfVec3d &outHitPoint) const {
-    if (!_renderer || !GetCurrentStage()) {
-        return false;
-    }
-    return _renderer->FindPointNearestToCamera(pickFrustum.ComputeViewMatrix(), pickFrustum.ComputeProjectionMatrix(),
-                                               GetCurrentStage()->GetPseudoRoot(), _imagingSettings, &outHitPoint);
-}
-
-bool Viewport::IsDraggingTransformManipulator() const {
-    return _currentEditingState == &_positionManipulator || _currentEditingState == &_rotationManipulator ||
-           _currentEditingState == &_scaleManipulator;
 }
 
 GfVec2d Viewport::GetPickingBoundarySize() const {
@@ -493,11 +495,6 @@ void Viewport::HandleKeyboardShortcut() {
             }
         } else {
             ScaleManipulatorPressedOnce = true;
-        }
-
-        // Clip once: recompute the clipping range of the hovered viewport camera
-        if (ImGui::IsKeyPressed(ImGuiKey_C, false) && !IsModifierDown()) {
-            _cameras.RequestClip();
         }
 
         // Playback
@@ -842,6 +839,9 @@ void Viewport::Update() {
             // Find a camera in the stage and use it. We might want to make it optional as it slows
             // the first render
             if (!_cameras.FindAndUseStageCamera(GetCurrentStage(), GetCurrentTimeCode())) {
+                // No authored clipping planes to use, the size of the stage decides. Kept for the rest of the edit.
+                _cameras.SetPerspectiveClippingRange(GfRange1f(ComputeClippingRangeFromBounds(ComputeStageBounds())));
+
                 // TODO: framing should probably move in the update as we want to also frame when an
                 // internal ortho camera is selected
                 // With the multiple viewport we might want to frame all cameras, not just the current one
@@ -872,10 +872,6 @@ void Viewport::Update() {
         _rotationManipulator.OnSelectionChange(*this);
         _scaleManipulator.OnSelectionChange(*this);
     }
-
-    // Last: the cameras have been selected and framed, and the draw target is at its final size, so
-    // the pick sees the view that is about to be rendered. Render() then pushes this camera to hydra.
-    _cameras.UpdateClippingPlanes(*this);
 }
 
 bool Viewport::TestIntersection(GfVec2d clickedPoint, SdfPath &outHitPrimPath, SdfPath &outHitInstancerPath,

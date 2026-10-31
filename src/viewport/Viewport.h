@@ -54,18 +54,6 @@ class Viewport final {
     void FrameCameraOnRootPrim();
     void FrameAllCameras();
 
-    /// Services the cameras need from the viewport: both go through the hydra engine.
-    ///
-    /// World space bounds of the whole stage, usdview's StageView._bbox. Recomputed only when the
-    /// stage, its content or the time code changed. Empty when there is no stage, or when the
-    /// bounds are empty or infinite.
-    const GfBBox3d &GetStageBBox();
-    /// Point of the scene nearest to the camera, as seen through pickFrustum. False when nothing
-    /// was hit or when there is nothing to render.
-    bool FindClosestPointToCamera(const GfFrustum &pickFrustum, GfVec3d &outHitPoint) const;
-    /// True when hydra is rendering this viewport
-    bool IsHydraEnabled() const { return _renderer != nullptr; }
-
     /// Viewport size
     GfVec2i GetViewportSize() const;
 
@@ -157,28 +145,16 @@ class Viewport final {
   private:
     void FrameCameraManipulatorsOnBBox(GfCamera &cam, const GfBBox3d &bbox);
 
-    /// Measure the world space bounds of the whole stage, used for the clipping planes.
-    /// GetStageBBox caches the result.
-    GfBBox3d ComputeStageWorldBound() const;
-
     /// Measure the world space bounds to frame the cameras on: the default prim when there is one,
     /// the whole stage otherwise
     GfBBox3d ComputeFramingWorldBound() const;
 
-    /// World space bounds of a prim, empty when they are infinite
-    GfBBox3d ComputeFiniteWorldBound(const UsdPrim &prim) const;
+    /// World space bounds of a prim at timeCode, empty when they are infinite
+    GfBBox3d ComputeFiniteWorldBound(const UsdPrim &prim, UsdTimeCode timeCode) const;
 
-    /// True while a transform manipulator is being dragged
-    bool IsDraggingTransformManipulator() const;
-
-    /// Cached stage bounds and what they were computed from, see GetStageBBox
-    struct StageBoundsCache {
-        GfBBox3d bbox;
-        UsdStageRefPtr stage;
-        UsdTimeCode timeCode;
-        size_t editCount = 0;
-    };
-    StageBoundsCache _stageBounds;
+    /// World aligned bounds of the whole stage, all purposes, at its first frame, used for the clipping
+    /// planes. Empty when there is no stage, or when the bounds are empty or infinite.
+    GfRange3d ComputeStageBounds() const;
 
     /// Returns the current camera updated to match the viewport ratio
     GfCamera GetViewportCamera(double width, double height) const;
