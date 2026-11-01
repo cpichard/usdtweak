@@ -1,6 +1,8 @@
 #include <iostream>
 #include <unordered_map>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/kind/registry.h>
+#include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/variantSets.h>
 #include <pxr/usd/usd/primCompositionQuery.h>
@@ -505,6 +507,121 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
     return true;
 }
 
+/// Metadata can't be authored on instance proxies and prototypes, USD refuses the edit.
+static bool CanEditPrimMetadata(const UsdPrim &prim) { return !prim.IsInstanceProxy() && !prim.IsInPrototype(); }
+
+/// Clearing only removes the opinion in the edit target, so that's what we check, not the composed value.
+static bool IsAuthoredInEditTarget(const UsdPrim &prim, const TfToken &field) {
+    const SdfPrimSpecHandle primSpec = prim.GetStage()->GetEditTarget().GetPrimSpecForScenePath(prim.GetPath());
+    return primSpec && primSpec->HasField(field);
+}
+
+/// Draws the clear button and the label, and leaves the cursor in the value column
+static void BeginPrimMetadataRow(const UsdPrim &prim, const TfToken &field, const char *label) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+    ImGui::PushID(label);
+    ImGui::TableSetColumnIndex(0);
+    ImGui::BeginDisabled(!IsAuthoredInEditTarget(prim, field));
+    if (DrawPropertyMiniButton(ICON_FA_TRASH)) {
+        ExecuteAfterDraw(&UsdPrim::ClearMetadata, prim, field);
+    }
+    ImGui::EndDisabled();
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("%s", label);
+    ImGui::TableSetColumnIndex(2);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+}
+
+static void EndPrimMetadataRow() { ImGui::PopID(); }
+
+static void DrawPrimKindRow(const UsdPrim &prim) {
+    BeginPrimMetadataRow(prim, SdfFieldKeys->Kind, "Kind");
+    TfToken primKind;
+    prim.GetKind(&primKind);
+    if (ImGui::BeginCombo("##Kind", primKind.GetText())) {
+        for (const TfToken &kind : KindRegistry::GetAllKinds()) {
+            if (ImGui::Selectable(kind.GetText(), kind == primKind)) {
+                ExecuteAfterDraw(&UsdPrim::SetKind, prim, kind);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    EndPrimMetadataRow();
+}
+
+static void DrawPrimActiveRow(const UsdPrim &prim) {
+    BeginPrimMetadataRow(prim, SdfFieldKeys->Active, "Active");
+    bool isActive = prim.IsActive();
+    if (ImGui::Checkbox("##Active", &isActive)) {
+        ExecuteAfterDraw(&UsdPrim::SetActive, prim, isActive);
+    }
+    EndPrimMetadataRow();
+}
+
+static void DrawPrimInstanceableRow(const UsdPrim &prim) {
+    BeginPrimMetadataRow(prim, SdfFieldKeys->Instanceable, "Instanceable");
+    bool isInstanceable = prim.IsInstanceable();
+    if (ImGui::Checkbox("##Instanceable", &isInstanceable)) {
+        ExecuteAfterDraw(&UsdPrim::SetInstanceable, prim, isInstanceable);
+    }
+    EndPrimMetadataRow();
+}
+
+bool DrawPrimMetadata(UsdPrim &prim) {
+    if (prim.IsPseudoRoot())
+        return false;
+
+    if (ImGui::BeginTable("##DrawPrimMetadata", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("Prim metadata");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        ImGui::BeginDisabled(!CanEditPrimMetadata(prim));
+        DrawPrimKindRow(prim);
+        DrawPrimActiveRow(prim);
+        DrawPrimInstanceableRow(prim);
+        ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
+
+    return true;
+}
+
+/// An empty type can't be authored over a type coming from a weaker layer, we can only remove the local opinion.
+static void ApplyPrimType(const UsdPrim &prim, const std::string &typeName) {
+    if (!typeName.empty()) {
+        ExecuteAfterDraw(&UsdPrim::SetTypeName, prim, TfToken(typeName));
+    } else if (IsAuthoredInEditTarget(prim, SdfFieldKeys->TypeName)) {
+        ExecuteAfterDraw(&UsdPrim::ClearMetadata, prim, SdfFieldKeys->TypeName);
+    }
+}
+
+/// The type name drawn as a label sized to its text, clicking on it opens the list of types.
+static void DrawPrimTypeCombo(const UsdPrim &prim) {
+    const std::string &currentType = prim.GetTypeName().GetString();
+    const char *preview = currentType.empty() ? "(no type)" : currentType.c_str();
+    const auto &allTypes = GetAllSpecTypeNames();
+    static int selected = 0;
+
+    ImGui::BeginDisabled(!CanEditPrimMetadata(prim));
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize(preview).x + ImGui::GetStyle().FramePadding.x * 2.f);
+    // The popup is as wide as the combo by default, which is too narrow to read the types
+    const float popupSize = ImGui::GetFontSize() * 20.f;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(popupSize, 0.f), ImVec2(FLT_MAX, popupSize));
+    // Looks like a label until hovered. The popup content is drawn with the same style, so it keeps its background when open
+    ImGui::PushID("##PrimType");
+    const bool isPopupOpen = ImGui::IsPopupOpen("##ComboPopup");
+    ImGui::PopID();
+    const ImVec4 frameColor = isPopupOpen ? ImGui::GetStyleColorVec4(ImGuiCol_FrameBg) : ImVec4(ColorTransparent);
+    ScopedStyleColor transparentFrame(ImGuiCol_FrameBg, frameColor);
+    if (ComboWithFilter("##PrimType", preview, allTypes, &selected, ImGuiComboFlags_NoArrowButton)) {
+        if (allTypes[selected] != currentType) {
+            ApplyPrimType(prim, allTypes[selected]);
+        }
+    }
+    ImGui::EndDisabled();
+}
+
 bool DrawAssetInfo(UsdPrim &prim) {
     auto assetInfo = prim.GetAssetInfo();
     if (assetInfo.empty())
@@ -888,7 +1005,7 @@ void DrawUsdPrimHeader(UsdPrim &prim) {
         }
         ImGui::TableSetColumnIndex(1);
 
-        ImGui::Text("%s", prim.GetTypeName().GetString().c_str());
+        DrawPrimTypeCombo(prim);
         ImGui::TableSetColumnIndex(2);
         if (DrawPropertyMiniButton(ICON_FA_EDIT)) {
             editSchemas = !editSchemas;
@@ -1235,20 +1352,27 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
     DrawNavigator(prim);
     if (prim) {
         auto headerSize = ImGui::GetWindowSize();
-        headerSize.y = ImGui::GetFrameHeight() * 2; // 2 rows (2 + no header)
+        // 2 rows, the second one holds the type combo which adds the cell padding to the frame height
+        headerSize.y = ImGui::GetFrameHeight() * 2 + ImGui::GetStyle().CellPadding.y * 2.f;
         headerSize.x = -FLT_MIN; // expand as much as possible
-        ImGui::BeginChild("##Header", headerSize);
+        ImGui::BeginChild("##Header", headerSize, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         DrawUsdPrimHeader(prim);
         ImGui::EndChild();
         ImGui::Separator();
         ImGui::BeginChild("##Body");
+        
+        if (DrawShaderParameters(prim, currentTime)) {
+            ImGui::Separator();
+        }
+        
+        if (DrawPrimMetadata(prim)) {
+            ImGui::Separator();
+        }
+        
         if (DrawAssetInfo(prim)) {
             ImGui::Separator();
         }
         if (DrawMaterialBindings(prim)) {
-            ImGui::Separator();
-        }
-        if (DrawShaderParameters(prim, currentTime)) {
             ImGui::Separator();
         }
         
