@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  USD_VERSION: "26.03"
+  USD_VERSION: "26.08"
   PYTHON_VERSION: "3.11"
   USD_INSTALL_DIR: usd-install
   BUILD_TYPE: Release
