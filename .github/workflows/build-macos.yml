@@ -16,7 +16,7 @@ env:
 
 jobs:
   build-usd:
-    runs-on: macos-14
+    runs-on: macos-15
     outputs:
       cache-key: ${{ steps.cache-key.outputs.value }}
     steps:
@@ -78,7 +78,7 @@ jobs:
         run: rm -rf ${{ github.workspace }}/${{ env.USD_INSTALL_DIR }}/build
 
   build-usdtweak:
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build-usd
     steps:
       - name: Checkout
