@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unordered_map>
+#include <array>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/kind/registry.h>
 #include <pxr/usd/sdf/primSpec.h>
@@ -28,6 +29,7 @@
 #include "TableLayouts.h"
 #include "AssetPathBrowserDialog.h" // includes ModalDialogs.h
 #include "ShaderDefinition.h"
+#include "SdfLayerEditor.h" // DrawSdfLayerMetadata
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -708,41 +710,55 @@ bool DrawAssetInfo(UsdPrim &prim) {
     return true;
 }
 
-// WIP
-bool IsMetadataShown(int options) { return true; }
-bool IsTransformShown(int options) { return false; }
+/// The sections of the property editor, in drawing order, the Show menu hides them
+enum class PrimEditorSection {
+    Instancing,
+    ShaderInputs,
+    Metadata,
+    AssetInfo,
+    MaterialBindings,
+    Variants,
+    Transform,
+    Attributes,
+    Relationships,
+    Count
+};
 
-void DrawPropertyEditorMenuBar(UsdPrim &prim, int options) {
+struct PrimEditorSectionToggle {
+    const char *label;
+    bool shown;
+};
 
+/// Not saved in the settings on purpose: we'll see with use if it should be global or per prim type
+static std::array<PrimEditorSectionToggle, static_cast<size_t>(PrimEditorSection::Count)> &GetPrimEditorSections() {
+    static std::array<PrimEditorSectionToggle, static_cast<size_t>(PrimEditorSection::Count)> sections = {{
+        {"Instancing", true},
+        {"Shader inputs", true},
+        {"Metadata", true},
+        {"Asset info", true},
+        {"Material bindings", true},
+        {"Variants", true},
+        {"Transform", true},
+        {"Attributes", true},
+        {"Relationships", true},
+    }};
+    return sections;
+}
+
+static bool IsSectionShown(PrimEditorSection section) { return GetPrimEditorSections()[static_cast<size_t>(section)].shown; }
+
+/// Draws the section when it's shown, followed by a separator when it drew something
+template <typename DrawFuncT> static void DrawSection(PrimEditorSection section, DrawFuncT &&draw) {
+    if (IsSectionShown(section) && draw()) {
+        ImGui::Separator();
+    }
+}
+
+static void DrawPropertyEditorMenuBar() {
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
-            ExecuteAfterDraw<EditorSetPreviousPrim>();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(ICON_FA_ARROW_RIGHT)) {
-            ExecuteAfterDraw<EditorSetNextPrim>();
-        }
-        ImGui::SameLine();
-        if (prim && ImGui::BeginMenu("Create")) {
-            // TODO: list all the attribute missing or incomplete
-            if (ImGui::MenuItem("Attribute", nullptr)) {
-            }
-            if (ImGui::MenuItem("Reference", nullptr)) {
-            }
-            if (ImGui::MenuItem("Relation", nullptr)) {
-            }
-            ImGui::EndMenu();
-        }
         if (ImGui::BeginMenu("Show")) {
-            if (ImGui::MenuItem("Metadata", nullptr, IsMetadataShown(options))) {
-            }
-            if (ImGui::MenuItem("Transform", nullptr, IsTransformShown(options))) {
-            }
-            if (ImGui::MenuItem("Attributes", nullptr, false)) {
-            }
-            if (ImGui::MenuItem("Relations", nullptr, false)) {
-            }
-            if (ImGui::MenuItem("Composition", nullptr, false)) {
+            for (PrimEditorSectionToggle &section : GetPrimEditorSections()) {
+                ImGui::MenuItem(section.label, nullptr, &section.shown);
             }
             ImGui::EndMenu();
         }
@@ -1158,7 +1174,10 @@ static void DrawNavigatorBreadcrumb(const UsdPrim &prim) {
         ImGui::EndChild();
         return;
     }
-    ImGui::Text("/");
+    // The root selects the pseudo root, showing the stage metadata
+    if (NavigationLink("/")) {
+        ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), SdfPath::AbsoluteRootPath());
+    }
     const int lastIndex = static_cast<int>(prefixes.size()) - 1;
     for (int i = 0; i <= lastIndex; ++i) {
         ImGui::SameLine(0, 0);
@@ -1496,10 +1515,303 @@ static bool DrawShaderParameters(const UsdPrim &prim, UsdTimeCode currentTime) {
     return true;
 }
 
+//
+// Stage metadata, shown when the pseudo root is selected
+//
+
+/// USD reads the stage metadata from the session and root layers only, and writes it to the session layer
+/// when it's the edit target, to the root layer otherwise
+static SdfLayerHandle GetStageMetadataLayer(const UsdStageWeakPtr &stage) {
+    const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+    return editLayer == stage->GetSessionLayer() ? editLayer : stage->GetRootLayer();
+}
+
+/// Why the stage metadata can't be edited with the current edit target, empty when it can
+static std::string GetStageMetadataBlockedReason(const UsdStageWeakPtr &stage) {
+    const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+    if (!editLayer) {
+        return "The stage has no edit target.\nChoose the root or session layer with the edit target button.";
+    }
+    if (editLayer != stage->GetRootLayer() && editLayer != stage->GetSessionLayer()) {
+        return "USD reads the stage metadata from the root and session layers only, the edit target " +
+               editLayer->GetDisplayName() + " is neither.\nChoose one of them with the edit target button.";
+    }
+    if (!editLayer->PermissionToEdit()) {
+        return "The edit target " + editLayer->GetDisplayName() + " is read-only.";
+    }
+    return {};
+}
+
+static void DrawStageEditTargetMenuItems(const UsdStageWeakPtr &stage) {
+    ScopedStyleColor defaultStyle(DefaultColorStyle);
+    const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+    if (ImGui::MenuItem("Root layer", nullptr, editLayer == stage->GetRootLayer())) {
+        ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(stage->GetRootLayer()));
+    }
+    if (ImGui::MenuItem("Session layer", nullptr, editLayer == stage->GetSessionLayer())) {
+        ExecuteAfterDraw<EditorSetEditTarget>(stage, UsdEditTarget(stage->GetSessionLayer()));
+    }
+}
+
+static void DrawStageHeader(const UsdStageWeakPtr &stage) {
+    if (ImGui::BeginTable("##DrawStageHeader", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("button", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::TableSetColumnIndex(0);
+        DrawPropertyMiniButton(ICON_FA_CROSSHAIRS);
+        if (ImGui::BeginPopupContextItem(nullptr, ImGuiPopupFlags_MouseButtonLeft)) {
+            DrawStageEditTargetMenuItems(stage);
+            ImGui::EndPopup();
+        }
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Edit target");
+        ImGui::TableSetColumnIndex(2);
+        const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
+        ImGui::Text("%s", editLayer ? editLayer->GetDisplayName().c_str() : "none");
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::Text("Stage");
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("%s", stage->GetRootLayer()->GetIdentifier().c_str());
+        ImGui::EndTable();
+    }
+}
+
+static void DrawStageProperties(const UsdStageWeakPtr &stage) {
+    const std::string blockedReason = GetStageMetadataBlockedReason(stage);
+    ImVec2 headerSize(-FLT_MIN, ImGui::GetFrameHeight() * 2 + ImGui::GetStyle().CellPadding.y * 2.f);
+    if (!blockedReason.empty()) {
+        headerSize.y += ImGui::GetStyle().ItemSpacing.y + ImGui::GetTextLineHeight();
+    }
+    ImGui::BeginChild("##Header", headerSize, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    DrawStageHeader(stage);
+    DrawEditBlockedBanner(blockedReason);
+    ImGui::EndChild();
+    ImGui::Separator();
+    ImGui::BeginChild("##Body");
+    ImGui::BeginDisabled(!blockedReason.empty());
+    DrawSdfLayerMetadata(GetStageMetadataLayer(stage));
+    ImGui::EndDisabled();
+    DrawEditBlockedTooltip(blockedReason);
+    ImGui::EndChild();
+}
+
+//
+// Instancing section
+//
+
+/// The closest prim, starting from the prim itself, passing the test
+static UsdPrim FindSelfOrAncestor(const UsdPrim &prim, bool (UsdPrim::*test)() const) {
+    for (UsdPrim current = prim; current && !current.IsPseudoRoot(); current = current.GetParent()) {
+        if ((current.*test)()) {
+            return current;
+        }
+    }
+    return {};
+}
+
+static const char *GetArcTypeName(PcpArcType arcType) {
+    switch (arcType) {
+    case PcpArcTypeReference:
+        return "reference";
+    case PcpArcTypePayload:
+        return "payload";
+    case PcpArcTypeInherit:
+        return "inherit";
+    case PcpArcTypeSpecialize:
+        return "specialize";
+    case PcpArcTypeVariant:
+        return "variant";
+    case PcpArcTypeRelocate:
+        return "relocate";
+    default:
+        return "arc";
+    }
+}
+
+/// The strongest layer of the node layer stack having a spec at the path, the root layer of the stack when none has
+static SdfLayerHandle FindLayerWithSpec(const PcpNodeRef &node, const SdfPath &path) {
+    for (const SdfLayerRefPtr &layer : node.GetLayerStack()->GetLayers()) {
+        if (layer->HasSpec(path)) {
+            return layer;
+        }
+    }
+    return node.GetLayerStack()->GetIdentifier().rootLayer;
+}
+
+static void BeginInstancingRow(const char *label) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("%s", label);
+    ImGui::TableSetColumnIndex(2);
+}
+
+static void DrawSelectPrimLink(const UsdPrim &prim, const SdfPath &path) {
+    if (NavigationLink(path.GetText())) {
+        ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), path);
+    }
+}
+
+/// Turns off instanceable on the instance, its children become regular prims that can be edited
+static void DrawMakeInstanceEditableRow(const UsdPrim &instance) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
+    ImGui::TableSetColumnIndex(2);
+    const std::string blockedReason = GetEditBlockedReason(instance);
+    ImGui::BeginDisabled(!blockedReason.empty());
+    if (ImGui::Button("Make this instance editable")) {
+        ExecuteAfterDraw(&UsdPrim::SetInstanceable, instance, false);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", blockedReason.empty() ? ("Sets instanceable to false on " + instance.GetPath().GetString() +
+                                                         " in the edit target.\nIts prims stop sharing the prototype and can be edited.")
+                                                            .c_str()
+                                                      : blockedReason.c_str());
+    }
+}
+
+/// Composition arcs of an instance, the content shared by all the instances of the prototype comes from them.
+/// The links open the layer at the path matching the prim, relative to the prototype.
+static void DrawPrototypeOrigin(const UsdPrim &instance, const SdfPath &relativePath) {
+    const PcpNodeRef root = instance.GetPrimIndex().GetRootNode();
+    int linkId = 0;
+    TF_FOR_ALL(child, root.GetChildrenRange()) {
+        const PcpNodeRef node = *child;
+        if (node.IsInert() || node.IsCulled()) {
+            continue;
+        }
+        const SdfPath path = relativePath.IsEmpty() ? node.GetPath() : node.GetPath().AppendPath(relativePath);
+        const SdfLayerHandle layer = FindLayerWithSpec(node, path);
+        if (!layer) {
+            continue;
+        }
+        if (linkId > 0) {
+            BeginInstancingRow("");
+        }
+        ImGui::PushID(linkId++);
+        ImGui::Text("%s", GetArcTypeName(node.GetArcType()));
+        ImGui::SameLine();
+        const std::string label = layer->GetDisplayName() + " " + path.GetString();
+        if (NavigationLink(label.c_str())) {
+            ExecuteAfterDraw<EditorSetSelection>(layer, path);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", layer->GetIdentifier().c_str());
+        }
+        ImGui::PopID();
+    }
+    if (linkId == 0) {
+        ImGui::TextUnformatted("no arc found");
+    }
+}
+
+/// The paths of the prims matching the prim in each instance of its prototype
+static SdfPathVector GetPathsInInstances(const std::vector<UsdPrim> &instances, const SdfPath &relativePath) {
+    SdfPathVector paths;
+    for (const UsdPrim &instance : instances) {
+        paths.push_back(relativePath.IsEmpty() ? instance.GetPath() : instance.GetPath().AppendPath(relativePath));
+    }
+    return paths;
+}
+
+/// Links to the matching prims in the instances, clipped as there can be thousands
+static void DrawInstancesList(const UsdPrim &prim, const SdfPathVector &paths) {
+    if (ImGui::SmallButton("Select all")) {
+        ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), paths);
+    }
+    constexpr int maxVisibleLines = 8;
+    const int visibleLines = std::min(static_cast<int>(paths.size()), maxVisibleLines);
+    const float height = ImGui::GetTextLineHeightWithSpacing() * visibleLines + ImGui::GetStyle().WindowPadding.y;
+    ImGui::BeginChild("##Instances", ImVec2(-FLT_MIN, height));
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(paths.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            ImGui::PushID(i);
+            DrawSelectPrimLink(prim, paths[i]);
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+}
+
+static void DrawInstanceRows(const UsdPrim &instance) {
+    const UsdPrim prototype = instance.GetPrototype();
+    BeginInstancingRow("Prototype");
+    DrawSelectPrimLink(instance, prototype.GetPath());
+    BeginInstancingRow("Shared with");
+    ImGui::Text("%zu other instances", prototype.GetInstances().size() - 1);
+    DrawMakeInstanceEditableRow(instance);
+}
+
+static void DrawInstanceProxyRows(const UsdPrim &proxy) {
+    const UsdPrim instance = FindSelfOrAncestor(proxy, &UsdPrim::IsInstance);
+    BeginInstancingRow("Instance proxy of");
+    DrawSelectPrimLink(proxy, proxy.GetPrimInPrototype().GetPath());
+    if (instance) {
+        BeginInstancingRow("Inside instance");
+        DrawSelectPrimLink(proxy, instance.GetPath());
+        DrawMakeInstanceEditableRow(instance);
+    }
+}
+
+static void DrawPrototypeRows(const UsdPrim &prim) {
+    const UsdPrim prototype = FindSelfOrAncestor(prim, &UsdPrim::IsPrototype);
+    if (!prototype) {
+        return;
+    }
+    // Empty for the prototype itself
+    const SdfPath relativePath = prim == prototype ? SdfPath() : prim.GetPath().MakeRelativePath(prototype.GetPath());
+    if (prim != prototype) {
+        BeginInstancingRow("In prototype");
+        DrawSelectPrimLink(prim, prototype.GetPath());
+    }
+    const std::vector<UsdPrim> instances = prototype.GetInstances();
+    if (instances.empty()) {
+        return;
+    }
+    const SdfPathVector paths = GetPathsInInstances(instances, relativePath);
+    // All the instances share the same arcs, that's why they share the prototype
+    BeginInstancingRow("Comes from");
+    DrawPrototypeOrigin(instances.front(), relativePath);
+    const std::string instancesLabel = "Instances (" + std::to_string(paths.size()) + ")";
+    BeginInstancingRow(instancesLabel.c_str());
+    DrawInstancesList(prim, paths);
+}
+
+/// Where the content of an instanced prim comes from and where it's used, with the ways to edit it.
+/// Returns true when the prim is involved in instancing.
+static bool DrawInstancing(const UsdPrim &prim) {
+    if (!prim.IsInstance() && !prim.IsInstanceProxy() && !prim.IsPrototype() && !prim.IsInPrototype()) {
+        return false;
+    }
+    if (ImGui::BeginTable("##DrawInstancing", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
+        ImGui::TableSetupColumn("Instancing");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        if (prim.IsInstance()) {
+            DrawInstanceRows(prim);
+        } else if (prim.IsInstanceProxy()) {
+            DrawInstanceProxyRows(prim);
+        } else {
+            DrawPrototypeRows(prim);
+        }
+        ImGui::EndTable();
+    }
+    return true;
+}
+
 void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
 
-    DrawPropertyEditorMenuBar(prim, 0);
+    DrawPropertyEditorMenuBar();
     DrawNavigator(prim);
+    if (prim && prim.IsPseudoRoot()) {
+        DrawStageProperties(prim.GetStage());
+        return;
+    }
     if (prim) {
         const std::string editBlockedReason = GetEditBlockedReason(prim);
         auto headerSize = ImGui::GetWindowSize();
@@ -1518,32 +1830,18 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
         ImGui::Separator();
         ImGui::BeginChild("##Body");
         
-        if (DrawShaderParameters(prim, currentTime)) {
-            ImGui::Separator();
-        }
-        
-        if (DrawPrimMetadata(prim)) {
-            ImGui::Separator();
-        }
-        
-        if (DrawAssetInfo(prim)) {
-            ImGui::Separator();
-        }
-        if (DrawMaterialBindings(prim)) {
-            ImGui::Separator();
-        }
-        
-        // Draw variant sets
-        if (DrawVariantSetsCombos(prim)) {
-            ImGui::Separator();
-        }
+        DrawSection(PrimEditorSection::Instancing, [&]() { return DrawInstancing(prim); });
+        DrawSection(PrimEditorSection::ShaderInputs, [&]() { return DrawShaderParameters(prim, currentTime); });
+        DrawSection(PrimEditorSection::Metadata, [&]() { return DrawPrimMetadata(prim); });
+        DrawSection(PrimEditorSection::AssetInfo, [&]() { return DrawAssetInfo(prim); });
+        DrawSection(PrimEditorSection::MaterialBindings, [&]() { return DrawMaterialBindings(prim); });
+        DrawSection(PrimEditorSection::Variants, [&]() { return DrawVariantSetsCombos(prim); });
+        DrawSection(PrimEditorSection::Transform, [&]() { return DrawXformsCommon(prim, currentTime); });
 
-        // Transforms
-        if (DrawXformsCommon(prim, currentTime)) {
-            ImGui::Separator();
-        }
-
-        if (ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+        const bool showAttributes = IsSectionShown(PrimEditorSection::Attributes);
+        const bool showRelationships = IsSectionShown(PrimEditorSection::Relationships);
+        if ((showAttributes || showRelationships) &&
+            ImGui::BeginTable("##DrawPropertyEditorTable", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, GetMiniButtonSize());
             ImGui::TableSetupColumn("Property name");
             ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
@@ -1555,7 +1853,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             const OpinionStrength editTargetStrength = editable ? GetEditTargetStrength(prim) : OpinionStrength();
 
             // Draw attributes
-            for (auto &attribute : prim.GetAttributes()) {
+            std::vector<UsdAttribute> attributes = showAttributes ? prim.GetAttributes() : std::vector<UsdAttribute>();
+            for (auto &attribute : attributes) {
                 ImGui::TableNextRow(ImGuiTableRowFlags_None, TableRowMinHeight);
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(miniButtonId++);
@@ -1583,7 +1882,8 @@ void DrawUsdPrimProperties(UsdPrim &prim, UsdTimeCode currentTime) {
             }
 
             // Draw relations
-            for (auto &relationship : prim.GetRelationships()) {
+            std::vector<UsdRelationship> relationships = showRelationships ? prim.GetRelationships() : std::vector<UsdRelationship>();
+            for (auto &relationship : relationships) {
                 ImGui::TableNextRow();
 
                 ImGui::TableSetColumnIndex(0);

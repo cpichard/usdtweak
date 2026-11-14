@@ -12,6 +12,7 @@
 #include "Editor.h"
 #include "Gui.h"
 #include "ImGuiHelpers.h"
+#include "UsdHelpers.h"
 #include "UsdPrimEditor.h" // for DrawUsdPrimEditTarget
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
@@ -106,8 +107,150 @@ static void ExploreComposition(PcpNodeRef root, int &itemId) {
     TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode, itemId); }
 }
 
+/// The prim the new prim popup is about to create, filled when the popup is requested
+struct NewPrimRequest {
+    UsdStageWeakPtr stage;
+    SdfPath parentPath;
+    std::string name;
+    int typeIndex = 0;
+    bool openPopup = false;
+};
+
+static NewPrimRequest &GetNewPrimRequest() {
+    static NewPrimRequest request;
+    return request;
+}
+
+static constexpr const char *NewPrimPopupId = "##NewPrimPopup";
+
+/// First name made of the prefix and a number not used by a child of the parent, in any layer of the stage
+static std::string FindAvailableChildName(const UsdPrim &parent, const std::string &prefix) {
+    const UsdStageWeakPtr stage = parent.GetStage();
+    for (int number = 1;; ++number) {
+        const std::string name = prefix + std::to_string(number);
+        if (!stage->GetPrimAtPath(parent.GetPath().AppendChild(TfToken(name)))) {
+            return name;
+        }
+    }
+}
+
+static int FindDefaultNewPrimType() {
+    const auto &types = GetAllSpecTypeNames();
+    const auto xform = std::find(types.begin(), types.end(), "Xform");
+    return xform == types.end() ? 0 : static_cast<int>(std::distance(types.begin(), xform));
+}
+
+/// Why no child can be created under the parent, empty when it can
+static std::string GetNewPrimParentProblem(const UsdPrim &parent) {
+    if (!parent) {
+        return "The parent prim doesn't exist anymore.";
+    }
+    if (parent.IsInstance()) {
+        return "The children of an instance come from its prototype, a new child would be ignored.\n"
+               "Turn off Instanceable on " + parent.GetPath().GetString() + " first.";
+    }
+    return GetEditBlockedReason(parent);
+}
+
+/// Why the prim can't be created with this name, empty when it can
+static std::string GetNewPrimProblem(const UsdPrim &parent, const std::string &name) {
+    const std::string parentProblem = GetNewPrimParentProblem(parent);
+    if (!parentProblem.empty()) {
+        return parentProblem;
+    }
+    if (!SdfPath::IsValidIdentifier(name)) {
+        return "\"" + name + "\" is not a valid prim name.";
+    }
+    if (parent.GetStage()->GetPrimAtPath(parent.GetPath().AppendChild(TfToken(name)))) {
+        return parent.GetPath().AppendChild(TfToken(name)).GetString() + " already exists.";
+    }
+    return {};
+}
+
+/// Where the prim is written, so the artist knows which layer receives it before creating it
+static std::string GetNewPrimDestination(const UsdPrim &parent, const std::string &name) {
+    const UsdEditTarget editTarget = parent.GetStage()->GetEditTarget();
+    const SdfPath specPath = editTarget.MapToSpecPath(parent.GetPath().AppendChild(TfToken(name)));
+    std::string destination = "def in " + editTarget.GetLayer()->GetDisplayName() + " at " + specPath.GetString();
+    if (!parent.IsPseudoRoot() && !editTarget.GetPrimSpecForScenePath(parent.GetPath())) {
+        destination += "\nThe parent prims are added as overs in this layer.";
+    }
+    return destination;
+}
+
+static void RequestNewPrim(const UsdPrim &parent) {
+    NewPrimRequest &request = GetNewPrimRequest();
+    request.stage = parent.GetStage();
+    request.parentPath = parent.GetPath();
+    request.name = FindAvailableChildName(parent, SdfPrimSpecDefaultName);
+    request.typeIndex = FindDefaultNewPrimType();
+    request.openPopup = true;
+}
+
+/// Menu item opening the new prim popup, greyed with the reason in the tooltip when the parent can't get children
+static void DrawNewPrimMenuItem(const char *label, const UsdPrim &parent) {
+    const std::string problem = GetNewPrimParentProblem(parent);
+    if (ImGui::MenuItem(label, nullptr, false, problem.empty())) {
+        RequestNewPrim(parent);
+    }
+    if (!problem.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", problem.c_str());
+    }
+}
+
+static void CreateNewPrim(const UsdStageWeakPtr &stage, const SdfPath &path, const TfToken &typeName) {
+    const UsdStageRefPtr stageRef = stage;
+    ExecuteAfterDraw<UsdFunctionCall>(stageRef, std::function<void()>([stage, path, typeName]() {
+        if (stage->DefinePrim(path, typeName)) {
+            ExecuteAfterDraw<EditorSetSelection>(stage, path);
+        }
+    }));
+}
+
+/// Name, type and destination of the new prim. Drawn at the window level, the context menus only request it.
+static void DrawNewPrimPopup() {
+    NewPrimRequest &request = GetNewPrimRequest();
+    if (request.openPopup) {
+        ImGui::OpenPopup(NewPrimPopupId);
+        request.openPopup = false;
+    }
+    if (!ImGui::BeginPopup(NewPrimPopupId)) {
+        return;
+    }
+    const UsdPrim parent = request.stage ? request.stage->GetPrimAtPath(request.parentPath) : UsdPrim();
+    ImGui::Text("New prim under %s", request.parentPath.GetText());
+    if (ImGui::IsWindowAppearing()) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    const bool enterPressed = ImGui::InputText("Name", &request.name, ImGuiInputTextFlags_EnterReturnsTrue);
+    const auto &types = GetAllSpecTypeNames();
+    const char *typePreview = types[request.typeIndex].empty() ? "(no type)" : types[request.typeIndex].c_str();
+    ComboWithFilter("Type", typePreview, types, &request.typeIndex, ImGuiComboFlags_None);
+
+    const std::string problem = GetNewPrimProblem(parent, request.name);
+    if (problem.empty()) {
+        ImGui::TextUnformatted(GetNewPrimDestination(parent, request.name).c_str());
+    } else {
+        ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", problem.c_str());
+    }
+    ImGui::BeginDisabled(!problem.empty());
+    if (ImGui::Button("Create") || (enterPressed && problem.empty())) {
+        CreateNewPrim(request.stage, request.parentPath.AppendChild(TfToken(request.name)), TfToken(types[request.typeIndex]));
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
 static void DrawUsdPrimEditMenuItems(const UsdPrim &prim, const Selection &selection) {
     const UsdStageRefPtr stage = prim.GetStage();
+    DrawNewPrimMenuItem("New child prim...", prim);
+    DrawNewPrimMenuItem("New sibling prim...", prim.GetParent());
+    ImGui::Separator();
     std::vector<SdfPath> paths =
         selection.IsSelected(stage, prim.GetPath())
             ? selection.GetSelectedPaths(stage)
@@ -351,9 +494,25 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
 
+    // Selecting the stage row selects the pseudo root, the property editor then shows the stage metadata
+    const bool isSelected = selectedPaths.IsSelected(stage, SdfPath::AbsoluteRootPath());
+    DrawBackgroundSelection(stage->GetPseudoRoot(), isSelected);
+    bool clicked = ImGui::IsItemClicked();
+
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
     std::string stageDisplayName(stage->GetRootLayer()->GetDisplayName());
     auto unfolded = ImGui::TreeNodeBehavior(IdOf(GetHash(SdfPath::AbsoluteRootPath())), nodeflags, stageDisplayName.c_str());
+    clicked = clicked || (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen());
+    if (clicked && !isSelected) {
+        ExecuteAfterDraw<EditorSetSelection>(stage, SdfPath::AbsoluteRootPath());
+    }
+    {
+        ScopedStyleColor popupColor(ImGuiCol_Text, ImVec4(ColorPrimDefault));
+        if (ImGui::BeginPopupContextItem()) {
+            DrawNewPrimMenuItem("New root prim...", stage->GetPseudoRoot());
+            ImGui::EndPopup();
+        }
+    }
 
     ImGui::TableSetColumnIndex(2);
     ImGui::SmallButton(ICON_FA_CROSSHAIRS);
@@ -522,6 +681,11 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
         if (selectionHasChanged) {            // We could use the imgui id as well instead of a static ??
             OpenSelectedPaths(stage, selectedPaths); // Also we could have a UsdTweakFrame which contains all the changes that happened
                                               // between the last frame and the new one
+            // Navigating to a prototype (from the instancing section) must show it
+            const UsdPrim anchor = stage->GetPrimAtPath(selectedPaths.GetAnchorPrimPath(stage));
+            if (anchor && (anchor.IsPrototype() || anchor.IsInPrototype()) && !displayOptions.GetShowPrototypes()) {
+                displayOptions.ToggleShowPrototypes();
+            }
         }
 
         // Find all the opened paths
@@ -593,5 +757,6 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     if (ImGui::Button("Select next") || enterPressed) {
         ExecuteAfterDraw<EditorFindPrim>(std::string(patternBuffer), useRegex);
     }
+    DrawNewPrimPopup();
 
 }
