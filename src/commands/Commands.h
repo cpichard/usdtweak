@@ -89,6 +89,7 @@ struct AttributeDisconnectBatch;
 struct RelationshipReplace;
 
 struct UsdFunctionCall; // This should be name a SdfLayerFunctionCall to be precise
+struct MultiLayerFunctionCall; // (prepare: returns the layers to record, apply: the edits) as one undo
 
 // Commands using the usd APIs
 struct UsdAPIMaterialBind;
