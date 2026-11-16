@@ -163,7 +163,9 @@ ImplementLayerSetSelected(SdfLayerHandle);
         if (!_data || !stage)                                                                                                    \
             return;                                                                                                              \
         _data->_stageSelection.reset(new HdSelection());                                                                         \
-        _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, selectedPath);                                        \
+        if (!selectedPath.IsEmpty()) { /* An empty path clears the selection, Hydra would highlight the whole scene */          \
+            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, selectedPath);                                    \
+        }                                                                                                                        \
         _data->_stageSelection.mustRecomputeHash = true;                                                                         \
     }
 

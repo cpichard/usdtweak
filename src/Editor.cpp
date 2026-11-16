@@ -1251,8 +1251,7 @@ void Editor::Draw() {
 
     if (_settings._showPropertyEditor) {
         TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
-        // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
+        const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar; // Show menu
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
             const SdfPath anchorPath = _selection.GetAnchorPrimPath(GetCurrentStage());
