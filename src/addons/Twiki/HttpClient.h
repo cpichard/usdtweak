@@ -1,7 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
+
+#include <llm_retry.hpp>
 
 namespace UsdAgent {
 
@@ -33,5 +36,10 @@ HttpResponse HttpPostJson(const std::string&             url,
 HttpResponse HttpGetJson(const std::string&             url,
                          const std::vector<HttpHeader>& headers,
                          int                            timeoutSeconds = 30);
+
+// Runs post() and retries 408/429/5xx/529 with exponential backoff (llm-retry).
+// Transport failures (status 0) are returned as-is. Returns the last response.
+HttpResponse PostWithRetry(const std::function<HttpResponse()>& post,
+                           const llm::RetryConfig&              config = {});
 
 } // namespace UsdAgent

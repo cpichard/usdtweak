@@ -144,8 +144,10 @@ LLMResponse AnthropicBackend::Send(const Conversation& conv,
     if (_wireLog) _wireLog->Request("anthropic", _model, body);
 
     // Shared chat read timeout (see kChatTimeoutSeconds in LLMBackend.h).
-    HttpResponse http = HttpPostJson("https://api.anthropic.com/v1/messages",
-                                     headers, body, kChatTimeoutSeconds);
+    HttpResponse http = PostWithRetry([&] {
+        return HttpPostJson("https://api.anthropic.com/v1/messages",
+                            headers, body, kChatTimeoutSeconds);
+    });
 
     if (_wireLog)
         _wireLog->Response(http.status,

@@ -62,6 +62,17 @@ set(HTTPLIB_USE_BROTLI_IF_AVAILABLE  OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZLIB_IF_AVAILABLE    OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cpp_httplib)
 
+# --- llm-retry (header-only) --------------------------------------------------
+# Backoff for 429/529/5xx on the chat calls. SOURCE_SUBDIR points at a missing
+# dir so only the header is fetched, none of llm-retry's own targets.
+FetchContent_Declare(
+    llm_retry
+    GIT_REPOSITORY https://github.com/Mattbusel/llm-retry.git
+    GIT_TAG        v0.3.0
+    SOURCE_SUBDIR  include
+)
+FetchContent_MakeAvailable(llm_retry)
+
 # --- OpenSSL (built from source, linked statically) ---------------------------
 # Notes for CI:
 #   * Linux: OpenSSL's Perl Configure needs FindBin/IPC::Cmd/Data::Dumper —
@@ -123,6 +134,7 @@ usdtweak_add_addon(Twiki
 # httplib headers + src/commands/ (UsdToolDispatcher includes "Commands.h").
 target_include_directories(usdtweak PRIVATE
     ${cpp_httplib_SOURCE_DIR}
+    ${llm_retry_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/commands
 )
 target_compile_definitions(usdtweak PRIVATE ${_twiki_tls_define})
@@ -186,6 +198,7 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${PXR_INCLUDE_DIRS}
             ${cpp_httplib_SOURCE_DIR}
+            ${llm_retry_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src/commands
             ${CMAKE_SOURCE_DIR}/src
         )
@@ -213,6 +226,11 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
     _twiki_add_test(test_js_helpers TRUE
         ${CMAKE_CURRENT_SOURCE_DIR}/JsHelpers.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestJsHelpers.cpp
+    )
+
+    _twiki_add_test(test_http_retry TRUE
+        ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestHttpRetry.cpp
     )
 
     _twiki_add_test(test_backend_format TRUE

@@ -62,7 +62,9 @@ LLMResponse OpenAIBackend::Send(const Conversation& conv,
 
     if (_wireLog) _wireLog->Request("openai-compatible", _model, body);
 
-    HttpResponse http = HttpPostJson(url, headers, body, kChatTimeoutSeconds);
+    HttpResponse http = PostWithRetry([&] {
+        return HttpPostJson(url, headers, body, kChatTimeoutSeconds);
+    });
 
     if (_wireLog)
         _wireLog->Response(http.status,
