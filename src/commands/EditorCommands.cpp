@@ -61,10 +61,7 @@ struct EditorSetSelection : public EditorCommand {
             }
             if (_stageRefPtr) {
                 _editor->SetCurrentStage(_stageRefPtr);
-                _editor->SetStagePathSelection(_path);
-                for (const SdfPath &path : _otherPaths) {
-                    _editor->AddStagePathSelection(path);
-                }
+                _editor->SetStagePathsSelection(_path, _otherPaths);
             }
         }
         return false;

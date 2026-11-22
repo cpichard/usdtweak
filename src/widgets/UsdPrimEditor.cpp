@@ -29,7 +29,7 @@
 #include "TableLayouts.h"
 #include "AssetPathBrowserDialog.h" // includes ModalDialogs.h
 #include "ShaderDefinition.h"
-#include "SdfLayerEditor.h" // DrawSdfLayerMetadata
+#include "StageMetadataEditor.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
 
@@ -156,7 +156,7 @@ struct CreateRelationshipDialog : public ModalDialog {
 /// Shows the reason when that item is in the current window, its children or the popups opened from them.
 static void DrawEditBlockedTooltip(const std::string &reason) {
     const ImGuiContext &g = *GImGui;
-    if (reason.empty() || g.HoveredId == 0 || !g.HoveredIdIsDisabled || !g.HoveredWindow)
+    if (reason.empty() || g.HoveredId == 0 || !g.HoveredIdIsDisabled || !g.HoveredWindow || !IsMouseRestingForHint())
         return;
     if (ImGui::IsWindowChildOf(g.HoveredWindow, ImGui::GetCurrentWindow(), true, false)) {
         ImGui::SetTooltip("%s", reason.c_str());
@@ -169,7 +169,7 @@ static void DrawEditBlockedBanner(const std::string &reason) {
         return;
     const std::string firstLine = reason.substr(0, reason.find('\n'));
     ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", firstLine.c_str());
-    if (ImGui::IsItemHovered()) {
+    if (IsItemHoveredForHint()) {
         ImGui::SetTooltip("%s", reason.c_str());
     }
 }
@@ -185,7 +185,7 @@ static std::string GetShadowedValueReason(const UsdAttribute &attribute, UsdTime
 
 /// The shadowed value tooltip shows when hovering the value column of the current row
 static void DrawShadowedValueTooltip(const std::string &reason) {
-    if (!reason.empty() && ImGui::TableGetHoveredColumn() == 2 && ImGui::TableGetHoveredRow() == ImGui::TableGetRowIndex()) {
+    if (!reason.empty() && IsMouseRestingForHint() && ImGui::TableGetHoveredColumn() == 2 && ImGui::TableGetHoveredRow() == ImGui::TableGetRowIndex()) {
         ImGui::SetTooltip("%s", reason.c_str());
     }
 }
@@ -555,7 +555,7 @@ bool DrawVariantSetsCombos(UsdPrim &prim) {
     }
     if (editingInVariant) {
         ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        if (IsItemHoveredForHint(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Variant selection is fixed by the current edit target");
     }
     return true;
@@ -1350,7 +1350,7 @@ static void DrawShaderPropertyName(const TfToken &name, SdrShaderPropertyConstPt
                                    const SdfValueTypeName &type, bool authored) {
     const TfToken &label = property->GetLabel().IsEmpty() ? name : property->GetLabel();
     ImGui::TextColored(authored ? ImVec4(ColorAttributeAuthored) : ImVec4(ColorAttributeUnauthored), "%s", label.GetText());
-    if (ImGui::IsItemHovered()) {
+    if (IsItemHoveredForHint()) {
         const std::string help = property->GetHelp();
         ImGui::SetTooltip("%s (%s)%s%s", attributeName.GetText(), type.GetAsToken().GetText(), help.empty() ? "" : "\n",
                           help.c_str());
@@ -1519,13 +1519,6 @@ static bool DrawShaderParameters(const UsdPrim &prim, UsdTimeCode currentTime) {
 // Stage metadata, shown when the pseudo root is selected
 //
 
-/// USD reads the stage metadata from the session and root layers only, and writes it to the session layer
-/// when it's the edit target, to the root layer otherwise
-static SdfLayerHandle GetStageMetadataLayer(const UsdStageWeakPtr &stage) {
-    const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
-    return editLayer == stage->GetSessionLayer() ? editLayer : stage->GetRootLayer();
-}
-
 /// Why the stage metadata can't be edited with the current edit target, empty when it can
 static std::string GetStageMetadataBlockedReason(const UsdStageWeakPtr &stage) {
     const SdfLayerHandle editLayer = stage->GetEditTarget().GetLayer();
@@ -1592,7 +1585,7 @@ static void DrawStageProperties(const UsdStageWeakPtr &stage) {
     ImGui::Separator();
     ImGui::BeginChild("##Body");
     ImGui::BeginDisabled(!blockedReason.empty());
-    DrawSdfLayerMetadata(GetStageMetadataLayer(stage));
+    DrawStageMetadata(stage);
     ImGui::EndDisabled();
     DrawEditBlockedTooltip(blockedReason);
     ImGui::EndChild();
@@ -1664,7 +1657,7 @@ static void DrawMakeInstanceEditableRow(const UsdPrim &instance) {
         ExecuteAfterDraw(&UsdPrim::SetInstanceable, instance, false);
     }
     ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (IsItemHoveredForHint(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("%s", blockedReason.empty() ? ("Sets instanceable to false on " + instance.GetPath().GetString() +
                                                          " in the edit target.\nIts prims stop sharing the prototype and can be edited.")
                                                             .c_str()
@@ -1697,7 +1690,7 @@ static void DrawPrototypeOrigin(const UsdPrim &instance, const SdfPath &relative
         if (NavigationLink(label.c_str())) {
             ExecuteAfterDraw<EditorSetSelection>(layer, path);
         }
-        if (ImGui::IsItemHovered()) {
+        if (IsItemHoveredForHint()) {
             ImGui::SetTooltip("%s", layer->GetIdentifier().c_str());
         }
         ImGui::PopID();
@@ -1707,30 +1700,38 @@ static void DrawPrototypeOrigin(const UsdPrim &instance, const SdfPath &relative
     }
 }
 
-/// The paths of the prims matching the prim in each instance of its prototype
+/// The path of the prim matching the prototype prim in an instance, relativePath is empty for the prototype itself
+static SdfPath GetPathInInstance(const UsdPrim &instance, const SdfPath &relativePath) {
+    return relativePath.IsEmpty() ? instance.GetPath() : instance.GetPath().AppendPath(relativePath);
+}
+
+/// The paths of the prims matching the prototype prim in each instance
 static SdfPathVector GetPathsInInstances(const std::vector<UsdPrim> &instances, const SdfPath &relativePath) {
     SdfPathVector paths;
+    paths.reserve(instances.size());
     for (const UsdPrim &instance : instances) {
-        paths.push_back(relativePath.IsEmpty() ? instance.GetPath() : instance.GetPath().AppendPath(relativePath));
+        paths.push_back(GetPathInInstance(instance, relativePath));
     }
     return paths;
 }
 
-/// Links to the matching prims in the instances, clipped as there can be thousands
-static void DrawInstancesList(const UsdPrim &prim, const SdfPathVector &paths) {
+/// Links to the matching prims in the instances, clipped as there can be thousands: the paths are only built for the
+/// visible lines, and for all the instances when "Select all" is clicked
+static void DrawInstancesList(const UsdPrim &prim, const std::vector<UsdPrim> &instances, const SdfPath &relativePath) {
     if (ImGui::SmallButton("Select all")) {
-        ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), paths);
+        ExecuteAfterDraw<EditorSetSelection>(prim.GetStage(), GetPathsInInstances(instances, relativePath));
     }
+    const int nbInstances = static_cast<int>(instances.size());
     constexpr int maxVisibleLines = 8;
-    const int visibleLines = std::min(static_cast<int>(paths.size()), maxVisibleLines);
+    const int visibleLines = std::min(nbInstances, maxVisibleLines);
     const float height = ImGui::GetTextLineHeightWithSpacing() * visibleLines + ImGui::GetStyle().WindowPadding.y;
     ImGui::BeginChild("##Instances", ImVec2(-FLT_MIN, height));
     ImGuiListClipper clipper;
-    clipper.Begin(static_cast<int>(paths.size()));
+    clipper.Begin(nbInstances);
     while (clipper.Step()) {
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
             ImGui::PushID(i);
-            DrawSelectPrimLink(prim, paths[i]);
+            DrawSelectPrimLink(prim, GetPathInInstance(instances[i], relativePath));
             ImGui::PopID();
         }
     }
@@ -1772,13 +1773,12 @@ static void DrawPrototypeRows(const UsdPrim &prim) {
     if (instances.empty()) {
         return;
     }
-    const SdfPathVector paths = GetPathsInInstances(instances, relativePath);
     // All the instances share the same arcs, that's why they share the prototype
     BeginInstancingRow("Comes from");
     DrawPrototypeOrigin(instances.front(), relativePath);
-    const std::string instancesLabel = "Instances (" + std::to_string(paths.size()) + ")";
+    const std::string instancesLabel = "Instances (" + std::to_string(instances.size()) + ")";
     BeginInstancingRow(instancesLabel.c_str());
-    DrawInstancesList(prim, paths);
+    DrawInstancesList(prim, instances, relativePath);
 }
 
 /// Where the content of an instanced prim comes from and where it's used, with the ways to edit it.

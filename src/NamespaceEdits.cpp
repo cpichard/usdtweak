@@ -7,6 +7,9 @@
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/usd/sdf/listOp.h>
 #include <pxr/usd/sdf/payload.h>
+#include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
 #include <pxr/usd/sdf/reference.h>
 #include <pxr/usd/sdf/schema.h>
 #include <pxr/usd/usd/namespaceEditor.h>
@@ -173,16 +176,36 @@ bool RelocatesTouchEditedPrims(const SdfLayerHandle &layer, const std::vector<Pr
     return false;
 }
 
-/// One traversal of the layer, stopping at the first spec pointing at an edited prim
-bool LayerPointsAtEditedPrims(const SdfLayerHandle &layer, const std::vector<PrimNamespaceEdit> &edits) {
-    if (RelocatesTouchEditedPrims(layer, edits)) {
+/// Walks the prim spec, its properties, its children and its variants, stopping at the first spec pointing at an edited
+/// prim. SdfLayer::Traverse can't stop early, it would visit the whole layer.
+bool PrimSpecPointsAtEditedPrims(const SdfLayerHandle &layer, const SdfPrimSpecHandle &primSpec,
+                                 const std::vector<PrimNamespaceEdit> &edits) {
+    if (SpecFieldsTargetEditedPrims(layer, primSpec->GetPath(), edits)) {
         return true;
     }
-    bool found = false;
-    layer->Traverse(SdfPath::AbsoluteRootPath(), [&](const SdfPath &specPath) {
-        found = found || SpecFieldsTargetEditedPrims(layer, specPath, edits);
-    });
-    return found;
+    for (const SdfPropertySpecHandle &property : primSpec->GetProperties()) {
+        if (SpecFieldsTargetEditedPrims(layer, property->GetPath(), edits)) {
+            return true;
+        }
+    }
+    for (const SdfPrimSpecHandle &child : primSpec->GetNameChildren()) {
+        if (PrimSpecPointsAtEditedPrims(layer, child, edits)) {
+            return true;
+        }
+    }
+    for (const auto &variantSet : primSpec->GetVariantSets()) {
+        const SdfVariantSetSpecHandle variantSetSpec = variantSet.second;
+        for (const SdfVariantSpecHandle &variant : variantSetSpec->GetVariantList()) {
+            if (PrimSpecPointsAtEditedPrims(layer, variant->GetPrimSpec(), edits)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool LayerPointsAtEditedPrims(const SdfLayerHandle &layer, const std::vector<PrimNamespaceEdit> &edits) {
+    return RelocatesTouchEditedPrims(layer, edits) || PrimSpecPointsAtEditedPrims(layer, layer->GetPseudoRoot(), edits);
 }
 
 /// The editor also rewrites, in the root layer stack, the relationship targets, connections, inherits, specializes,
@@ -354,8 +377,34 @@ static std::string GetNewParentProblem(const UsdPrim &newParent) {
     return {};
 }
 
+std::string GetMovedPrimsProblem(const UsdStageRefPtr &stage, const SdfPathVector &topMostPaths) {
+    if (!stage) {
+        return "No stage";
+    }
+    for (const SdfPath &path : topMostPaths) {
+        const std::string primProblem = GetPrimProblem(stage, path);
+        if (!primProblem.empty()) {
+            return primProblem;
+        }
+        const std::string editProblem = GetNamespaceEditPrimProblem(stage->GetPrimAtPath(path), "moved");
+        if (!editProblem.empty()) {
+            return editProblem;
+        }
+    }
+    return {};
+}
+
 std::string GetReparentProblem(const UsdStageRefPtr &stage, const SdfPathVector &paths, const SdfPath &newParent) {
-    const UsdPrim parentPrim = stage ? stage->GetPrimAtPath(newParent) : UsdPrim();
+    if (!stage) {
+        return "No stage";
+    }
+    const SdfPathVector topMostPaths = KeepTopMostPaths(paths);
+    // The dragged prims first: their problem doesn't depend on the target, it shows on the first one hovered
+    const std::string movedProblem = GetMovedPrimsProblem(stage, topMostPaths);
+    if (!movedProblem.empty()) {
+        return movedProblem;
+    }
+    const UsdPrim parentPrim = stage->GetPrimAtPath(newParent);
     if (!parentPrim) {
         return "No prim at " + newParent.GetString();
     }
@@ -364,11 +413,7 @@ std::string GetReparentProblem(const UsdStageRefPtr &stage, const SdfPathVector 
         return parentProblem;
     }
     std::vector<TfToken> movedNames;
-    for (const SdfPath &path : KeepTopMostPaths(paths)) {
-        const std::string primProblem = GetPrimProblem(stage, path);
-        if (!primProblem.empty()) {
-            return primProblem;
-        }
+    for (const SdfPath &path : topMostPaths) {
         if (newParent.HasPrefix(path)) {
             return "A prim can't be moved under itself";
         }

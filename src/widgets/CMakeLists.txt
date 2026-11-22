@@ -34,6 +34,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/StageOutliner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/StageLayerEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/StageLayerEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/StageMetadataEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/StageMetadataEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ContentBrowser.h
     ${CMAKE_CURRENT_SOURCE_DIR}/VtArrayEditor.h

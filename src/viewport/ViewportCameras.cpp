@@ -35,13 +35,13 @@ void DrawStageCameraNavigationCombo(StageCameraNavigation &mode) {
             if (ImGui::Selectable(stageCameraNavigationLabels[i], i == current)) {
                 mode = static_cast<StageCameraNavigation>(i);
             }
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("%s", stageCameraNavigationTooltips[i]);
             }
         }
         ImGui::EndCombo();
     }
-    if (ImGui::IsItemHovered()) {
+    if (IsItemHoveredForHint()) {
         ImGui::SetTooltip("%s", stageCameraNavigationHelp);
     }
 }
@@ -51,7 +51,7 @@ void DrawStageCameraNavigationButton(StageCameraNavigation &mode) {
     if (ImGui::Button(stageCameraNavigationIcons[current])) {
         ImGui::OpenPopup("##StageCameraNavigation");
     }
-    if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("##StageCameraNavigation")) {
+    if (IsItemHoveredForHint() && !ImGui::IsPopupOpen("##StageCameraNavigation")) {
         ImGui::SetTooltip("Camera navigation: %s", stageCameraNavigationLabels[current]);
     }
     if (ImGui::BeginPopup("##StageCameraNavigation")) {
@@ -60,7 +60,7 @@ void DrawStageCameraNavigationButton(StageCameraNavigation &mode) {
             if (ImGui::MenuItem(label.c_str(), nullptr, i == current)) {
                 mode = static_cast<StageCameraNavigation>(i);
             }
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("%s", stageCameraNavigationTooltips[i]);
             }
         }

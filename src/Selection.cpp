@@ -1,4 +1,5 @@
 #include "Selection.h"
+#include <algorithm>
 #include <functional>
 #include <pxr/usd/sdf/attributeSpec.h>
 #include <pxr/usd/sdf/layer.h>
@@ -35,6 +36,11 @@ struct StageSelection : public std::unique_ptr<HdSelection> {
     // a performance killer, so it will likely change in the future
     SelectionHash selectionHash = 0;
     bool mustRecomputeHash = true;
+    // The stage itself is selected, the HdSelection is empty then
+    bool isStageSelected = false;
+    // The prim standing for the selection in the property editor, the manipulators, ...: the first selected prim.
+    // The HdSelection doesn't keep the selection order.
+    SdfPath anchorPath;
 };
 
 struct Selection::SelectionData {
@@ -48,7 +54,6 @@ struct Selection::SelectionData {
     std::unordered_set<SdfSpecHandle> _sdfPropSelectionDomain;
 
     // Selection data for the stages
-    // TODO: keep an anchor, basically the first selected prim, we would need a list to keep the order
     StageSelection _stageSelection;
 };
 
@@ -67,8 +72,31 @@ template <> void Selection::Clear(const UsdStageRefPtr &stage) {
     if (!_data || !stage)
         return;
     _data->_stageSelection.reset(new HdSelection());
+    _data->_stageSelection.isStageSelected = false;
+    _data->_stageSelection.anchorPath = SdfPath();
     _data->_stageSelection.mustRecomputeHash = true;
 }
+
+#define ImplementSetStageSelected(StageT)                                                                                        \
+    template <> void Selection::SetStageSelected(const StageT &stage) {                                                          \
+        if (!_data || !stage)                                                                                                    \
+            return;                                                                                                              \
+        _data->_stageSelection.reset(new HdSelection());                                                                         \
+        _data->_stageSelection.isStageSelected = true;                                                                           \
+        _data->_stageSelection.anchorPath = SdfPath();                                                                           \
+        _data->_stageSelection.mustRecomputeHash = true;                                                                         \
+    }
+
+ImplementSetStageSelected(UsdStageRefPtr);
+ImplementSetStageSelected(UsdStageWeakPtr);
+
+#define ImplementIsStageSelected(StageT)                                                                                         \
+    template <> bool Selection::IsStageSelected(const StageT &stage) const {                                                     \
+        return _data && stage && _data->_stageSelection.isStageSelected;                                                         \
+    }
+
+ImplementIsStageSelected(UsdStageRefPtr);
+ImplementIsStageSelected(UsdStageWeakPtr);
 
 // Layer add a selection
 template <> void Selection::AddSelected(const SdfLayerRefPtr &layer, const SdfPath &selectedPath) {
@@ -83,12 +111,16 @@ template <> void Selection::AddSelected(const SdfLayerRefPtr &layer, const SdfPa
 
 #define ImplementStageAddSelected(StageT)                                                                                        \
     template <> void Selection::AddSelected(const StageT &stage, const SdfPath &selectedPath) {                                  \
-        if (!_data || !stage)                                                                                                    \
+        if (!_data || !stage || selectedPath.IsAbsoluteRootPath()) /* The stage is selected with SetStageSelected */            \
             return;                                                                                                              \
         if (!_data->_stageSelection) {                                                                                           \
             _data->_stageSelection.reset(new HdSelection());                                                                     \
         }                                                                                                                        \
         _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, selectedPath);                                        \
+        if (_data->_stageSelection.anchorPath.IsEmpty()) {                                                                       \
+            _data->_stageSelection.anchorPath = selectedPath;                                                                    \
+        }                                                                                                                        \
+        _data->_stageSelection.isStageSelected = false;                                                                          \
         _data->_stageSelection.mustRecomputeHash = true;                                                                         \
     }
 
@@ -117,28 +149,31 @@ template <> void Selection::RemoveSelected(const SdfLayerHandle &layer, const Sd
     }
 }
 
+/// Removes the path from the stage selection, the anchor moves to another selected path when it is removed
+static void RemoveStagePath(StageSelection &stageSelection, const SdfPath &path) {
+    const SdfPathVector paths = stageSelection->GetAllSelectedPrimPaths();
+    stageSelection.reset(new HdSelection());
+    for (const SdfPath &p : paths) {
+        if (p != path)
+            stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
+    }
+    if (stageSelection.anchorPath == path) {
+        const SdfPathVector remaining = stageSelection->GetAllSelectedPrimPaths();
+        stageSelection.anchorPath = remaining.empty() ? SdfPath() : remaining.front();
+    }
+    stageSelection.mustRecomputeHash = true;
+}
+
 template <> void Selection::RemoveSelected(const UsdStageRefPtr &stage, const SdfPath &path) {
     if (!_data || !stage || !_data->_stageSelection)
         return;
-    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
-    _data->_stageSelection.reset(new HdSelection());
-    for (const auto &p : paths) {
-        if (p != path)
-            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
-    }
-    _data->_stageSelection.mustRecomputeHash = true;
+    RemoveStagePath(_data->_stageSelection, path);
 }
 
 template <> void Selection::RemoveSelected(const UsdStageWeakPtr &stage, const SdfPath &path) {
     if (!_data || !stage || !_data->_stageSelection)
         return;
-    auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
-    _data->_stageSelection.reset(new HdSelection());
-    for (const auto &p : paths) {
-        if (p != path)
-            _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, p);
-    }
-    _data->_stageSelection.mustRecomputeHash = true;
+    RemoveStagePath(_data->_stageSelection, path);
 }
 
 #define ImplementLayerSetSelected(LayerT)                                                                                        \
@@ -162,10 +197,16 @@ ImplementLayerSetSelected(SdfLayerHandle);
     template <> void Selection::SetSelected(const StageT &stage, const SdfPath &selectedPath) {                                  \
         if (!_data || !stage)                                                                                                    \
             return;                                                                                                              \
+        if (selectedPath.IsAbsoluteRootPath()) {                                                                                 \
+            SetStageSelected(stage);                                                                                             \
+            return;                                                                                                              \
+        }                                                                                                                        \
         _data->_stageSelection.reset(new HdSelection());                                                                         \
+        _data->_stageSelection.anchorPath = selectedPath;                                                                        \
         if (!selectedPath.IsEmpty()) { /* An empty path clears the selection, Hydra would highlight the whole scene */          \
             _data->_stageSelection->AddRprim(HdSelection::HighlightModeSelect, selectedPath);                                    \
         }                                                                                                                        \
+        _data->_stageSelection.isStageSelected = false;                                                                          \
         _data->_stageSelection.mustRecomputeHash = true;                                                                         \
     }
 
@@ -233,6 +274,9 @@ template <> bool Selection::UpdateSelectionHash(const UsdStageRefPtr &stage, Sel
     if (_data->_stageSelection && _data->_stageSelection.mustRecomputeHash) {
         auto paths = _data->_stageSelection->GetAllSelectedPrimPaths();
         _data->_stageSelection.selectionHash = std::hash<SdfPathVector>{}(paths);
+        if (_data->_stageSelection.isStageSelected) { // Selecting the stage is a change even though no path is selected
+            _data->_stageSelection.selectionHash ^= 0x9e3779b97f4a7c15ull;
+        }
     }
 
     if (_data->_stageSelection.selectionHash != lastSelectionHash) {
@@ -278,7 +322,10 @@ ImplementGetAnchorPropertyPath(SdfLayerRefPtr);
 template <> SdfPath Selection::GetAnchorPrimPath(const UsdStageRefPtr &stage) const {
     if (!_data || !stage)
         return {};
-    if (_data->_stageSelection) {
+    if (!_data->_stageSelection.anchorPath.IsEmpty()) {
+        return _data->_stageSelection.anchorPath;
+    }
+    if (_data->_stageSelection) { // Not expected, all the selection changes keep the anchor
         const auto &paths = _data->_stageSelection->GetSelectedPrimPaths(HdSelection::HighlightModeSelect);
         if (!paths.empty()) {
             return paths[0];
@@ -315,11 +362,14 @@ template <> bool Selection::UpdateSelectionHash(const SdfLayerRefPtr &layer, Sel
     return false;
 }
 
+/// The anchor comes first, the commands reselecting the paths after an edit keep it
 template <> std::vector<SdfPath> Selection::GetSelectedPaths(const UsdStageRefPtr &stage) const {
-    if (!_data || !stage)
+    if (!_data || !stage || !_data->_stageSelection)
         return {};
-    if (_data->_stageSelection) {
-        return _data->_stageSelection->GetAllSelectedPrimPaths();
+    SdfPathVector paths = _data->_stageSelection->GetAllSelectedPrimPaths();
+    const auto anchor = std::find(paths.begin(), paths.end(), _data->_stageSelection.anchorPath);
+    if (anchor != paths.end()) {
+        std::iter_swap(paths.begin(), anchor);
     }
-    return {};
+    return paths;
 }

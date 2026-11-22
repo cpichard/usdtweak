@@ -51,8 +51,13 @@ std::string GetRenameNameProblem(const UsdPrim &prim, const std::string &newName
 /// The editor analysis scans the whole stage (about 50 ms for 200k prims), don't run it every frame.
 NamespaceEditPreview PreviewRenamePrim(const UsdPrim &prim, const std::string &newName);
 
+/// Why the prims can't be moved anywhere, whatever the new parent: same rules as rename and delete
+/// (GetNamespaceEditPrimProblem). Pass the top-most paths. Empty when they can.
+std::string GetMovedPrimsProblem(const UsdStageRefPtr &stage, const SdfPathVector &topMostPaths);
+
 /// Problems with moving the prims under newParent found without the editor analysis, cheap enough to run every
-/// frame while dragging. Empty when none.
+/// frame while dragging. Empty when none. The moved prims are checked first with GetMovedPrimsProblem, then the
+/// new parent.
 std::string GetReparentProblem(const UsdStageRefPtr &stage, const SdfPathVector &paths, const SdfPath &newParent);
 
 /// Preview of moving the prims under newParent, keeping their names. Prims under another moved prim are moved with it.

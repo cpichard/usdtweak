@@ -47,6 +47,18 @@ bool Splitter(bool splitVertically, float thickness, float *size1, float *size2,
 /// buttons opening a menu.
 bool NavigationLink(const char *label);
 
+/// Seconds the mouse must rest on an item before its hint tooltip shows. ImGui's own delays are capped by the style
+/// (HoverDelayNormal, 0.4 s), too short for explanations that would pop up all the time while moving around.
+constexpr float HintTooltipDelay = 1.5f;
+
+/// IsItemHovered once the mouse has rested HintTooltipDelay seconds on the last item. Use it for explanatory
+/// tooltips, not for tooltips the user needs right away (drag and drop status, ...).
+bool IsItemHoveredForHint(ImGuiHoveredFlags flags = ImGuiHoveredFlags_None);
+
+/// True once the mouse has rested HintTooltipDelay seconds, for hint tooltips not tied to an item: a table cell, the
+/// disabled item under the mouse, ... The caller checks what is under the mouse.
+bool IsMouseRestingForHint();
+
 /// Creates a combo box with a search bar filtering the list elements
 bool ComboWithFilter(const char *label, const char *preview_value, const std::vector<std::string> &items, int *current_item,
                      ImGuiComboFlags combo_flags, int popup_max_height_in_items = -1);
@@ -137,7 +149,10 @@ inline bool ApplyMultiSelectRequests(ImGuiMultiSelectIO *msIO, Selection &select
             int last = 0;
             if (!GetClampedSelectionRange(req, itemCount, first, last))
                 continue;
-            for (int i = first; i <= last; ++i) {
+            // Walk the range from the item the shift-click started on, it becomes the selection anchor
+            const bool backward = req.RangeDirection < 0;
+            for (int n = 0; n <= last - first; ++n) {
+                const int i = backward ? last - n : first + n;
                 if (req.Selected)
                     selection.AddSelected(owner, indexToPath(i));
                 else

@@ -1,6 +1,7 @@
 
 #include "Gui.h"
 #include "ModalDialogs.h"
+#include <algorithm>
 #include <vector>
 
 // Stack of modal dialogs
@@ -10,6 +11,10 @@ void _PushModalDialog(ModalDialog *modal) { modalDialogStack.push_back(modal); }
 
 bool modalOpenTriggered = false;
 bool modalCloseTriggered = false;
+// The dialog being drawn, and the one deleted at the next frame. A dialog can be pushed after another one asked to close,
+// by a command run after the draw: closing the last dialog of the stack would delete the new one.
+static ModalDialog *drawnModal = nullptr;
+static ModalDialog *modalToClose = nullptr;
 
 bool ShouldOpenModal() {
     if (modalDialogStack.empty()) {
@@ -24,14 +29,25 @@ bool ShouldOpenModal() {
 
 void ModalDialog::CloseModal() {
     modalCloseTriggered = true; // Delete the dialog at the next frame;
+    modalToClose = drawnModal ? drawnModal : (modalDialogStack.empty() ? nullptr : modalDialogStack.back());
     ImGui::CloseCurrentPopup(); // this is called in the draw function
 }
 
 void CheckCloseModal() {
     if (modalCloseTriggered) {
         modalCloseTriggered = false;
-        delete modalDialogStack.back();
-        modalDialogStack.pop_back();
+        const auto found = std::find(modalDialogStack.begin(), modalDialogStack.end(), modalToClose);
+        modalToClose = nullptr;
+        if (found != modalDialogStack.end()) {
+            delete *found;
+            modalDialogStack.erase(found);
+        }
+    }
+}
+
+void CloseModalOnEscape() {
+    if (ImGui::Shortcut(ImGuiKey_Escape)) {
+        ModalDialog::CloseModal();
     }
 }
 
@@ -55,7 +71,9 @@ static void BeginPopupModalRecursive(const std::vector<ModalDialog *> &modals, i
         const bool isOpen = ImGui::BeginPopupModal(modal->DialogId(), nullptr, modal->WindowFlags());
         ImGui::PopStyleVar(styleCount);
         if (isOpen) {
+            drawnModal = modal;
             modal->Draw();
+            drawnModal = nullptr;
             BeginPopupModalRecursive(modals, index + 1);
             ImGui::EndPopup();
         }

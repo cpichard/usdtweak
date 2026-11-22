@@ -866,11 +866,7 @@ void Viewport::Update() {
 
     if (_renderer && _selection.UpdateSelectionHash(GetCurrentStage(), _lastSelectionHash)) {
         _renderer->ClearSelected();
-        // The pseudo root is selected to edit the stage metadata, highlighting it would highlight the whole scene
-        SdfPathVector selectedPaths = _selection.GetSelectedPaths(GetCurrentStage());
-        selectedPaths.erase(std::remove(selectedPaths.begin(), selectedPaths.end(), SdfPath::AbsoluteRootPath()),
-                            selectedPaths.end());
-        _renderer->SetSelected(selectedPaths);
+        _renderer->SetSelected(_selection.GetSelectedPaths(GetCurrentStage()));
 
         // Tell the manipulators the selection has changed
         _positionManipulator.OnSelectionChange(*this);

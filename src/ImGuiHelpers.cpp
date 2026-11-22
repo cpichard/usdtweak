@@ -14,6 +14,16 @@ bool Splitter(bool splitVertically, float thickness, float *size1, float *size2,
     return ImGui::SplitterBehavior(bb, id, splitVertically ? ImGuiAxis_X : ImGuiAxis_Y, size1, size2, minSize1, minSize2, 0.0f);
 }
 
+bool IsItemHoveredForHint(ImGuiHoveredFlags flags) {
+    // The delay flag makes ImGui time the hover of this item, NoSharedDelay restarts the timer on each item,
+    // Stationary waits for the mouse to stop before timing
+    constexpr ImGuiHoveredFlags timedFlags =
+        ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay | ImGuiHoveredFlags_Stationary;
+    return ImGui::IsItemHovered(flags | timedFlags) && GImGui->HoverItemDelayTimer >= HintTooltipDelay;
+}
+
+bool IsMouseRestingForHint() { return GImGui->MouseStationaryTimer >= HintTooltipDelay; }
+
 // Same layout as ImGui::TextLink, but keeps the current text color and only underlines on hover
 bool NavigationLink(const char *label) {
     ImGuiWindow *window = ImGui::GetCurrentWindow();

@@ -36,5 +36,9 @@ void DrawModalButtonsOkCancel(const std::function<void()> &onOk, bool disableOk 
 /// Convenience function to draw an Close button in a Modal dialog
 void DrawModalButtonClose();
 
+/// Closes the dialog being drawn when Escape is pressed, ImGui doesn't close modals on Escape. Call in Draw.
+/// An active text field gets the first Escape.
+void CloseModalOnEscape();
+
 /// Force closing the current modal dialog
 void ForceCloseCurrentModal();

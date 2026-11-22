@@ -18,6 +18,7 @@
 #include "StageOutliner.h"
 #include "VtValueEditor.h"
 #include "ConnectionEditor.h"
+#include "ModalDialogs.h"
 
 
 #define StageOutlinerSeed 2342934
@@ -108,22 +109,6 @@ static void ExploreComposition(PcpNodeRef root, int &itemId) {
     TF_FOR_ALL(childNode, root.GetChildrenRange()) { ExploreComposition(*childNode, itemId); }
 }
 
-/// The prim the new prim popup is about to create, filled when the popup is requested
-struct NewPrimRequest {
-    UsdStageWeakPtr stage;
-    SdfPath parentPath;
-    std::string name;
-    int typeIndex = 0;
-    bool openPopup = false;
-};
-
-static NewPrimRequest &GetNewPrimRequest() {
-    static NewPrimRequest request;
-    return request;
-}
-
-static constexpr const char *NewPrimPopupId = "##NewPrimPopup";
-
 /// First name made of the prefix and a number not used by a child of the parent, in any layer of the stage
 static std::string FindAvailableChildName(const UsdPrim &parent, const std::string &prefix) {
     const UsdStageWeakPtr stage = parent.GetStage();
@@ -179,26 +164,6 @@ static std::string GetNewPrimDestination(const UsdPrim &parent, const std::strin
     return destination;
 }
 
-static void RequestNewPrim(const UsdPrim &parent) {
-    NewPrimRequest &request = GetNewPrimRequest();
-    request.stage = parent.GetStage();
-    request.parentPath = parent.GetPath();
-    request.name = FindAvailableChildName(parent, SdfPrimSpecDefaultName);
-    request.typeIndex = FindDefaultNewPrimType();
-    request.openPopup = true;
-}
-
-/// Menu item opening the new prim popup, greyed with the reason in the tooltip when the parent can't get children
-static void DrawNewPrimMenuItem(const char *label, const UsdPrim &parent) {
-    const std::string problem = GetNewPrimParentProblem(parent);
-    if (ImGui::MenuItem(label, nullptr, false, problem.empty())) {
-        RequestNewPrim(parent);
-    }
-    if (!problem.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s", problem.c_str());
-    }
-}
-
 static void CreateNewPrim(const UsdStageWeakPtr &stage, const SdfPath &path, const TfToken &typeName) {
     const UsdStageRefPtr stageRef = stage;
     ExecuteAfterDraw<UsdFunctionCall>(stageRef, std::function<void()>([stage, path, typeName]() {
@@ -208,43 +173,64 @@ static void CreateNewPrim(const UsdStageWeakPtr &stage, const SdfPath &path, con
     }));
 }
 
-/// Name, type and destination of the new prim. Drawn at the window level, the context menus only request it.
-static void DrawNewPrimPopup() {
-    NewPrimRequest &request = GetNewPrimRequest();
-    if (request.openPopup) {
-        ImGui::OpenPopup(NewPrimPopupId);
-        request.openPopup = false;
-    }
-    if (!ImGui::BeginPopup(NewPrimPopupId)) {
-        return;
-    }
-    const UsdPrim parent = request.stage ? request.stage->GetPrimAtPath(request.parentPath) : UsdPrim();
-    ImGui::Text("New prim under %s", request.parentPath.GetText());
-    if (ImGui::IsWindowAppearing()) {
-        ImGui::SetKeyboardFocusHere();
-    }
-    const bool enterPressed = ImGui::InputText("Name", &request.name, ImGuiInputTextFlags_EnterReturnsTrue);
-    const auto &types = GetAllSpecTypeNames();
-    const char *typePreview = types[request.typeIndex].empty() ? "(no type)" : types[request.typeIndex].c_str();
-    ComboWithFilter("Type", typePreview, types, &request.typeIndex, ImGuiComboFlags_None);
-
-    const std::string problem = GetNewPrimProblem(parent, request.name);
-    if (problem.empty()) {
-        ImGui::TextUnformatted(GetNewPrimDestination(parent, request.name).c_str());
-    } else {
-        ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", problem.c_str());
-    }
-    ImGui::BeginDisabled(!problem.empty());
-    if (ImGui::Button("Create") || (enterPressed && problem.empty())) {
-        CreateNewPrim(request.stage, request.parentPath.AppendChild(TfToken(request.name)), TfToken(types[request.typeIndex]));
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
+/// Draws a "Cancel" button closing the dialog, Escape cancels as well
+static void DrawDialogCancelButton() {
     if (ImGui::Button("Cancel")) {
-        ImGui::CloseCurrentPopup();
+        ModalDialog::CloseModal();
     }
-    ImGui::EndPopup();
+    CloseModalOnEscape();
+}
+
+/// Name, type and destination of the new prim
+struct NewPrimDialog : public ModalDialog {
+    NewPrimDialog(const UsdPrim &parent)
+        : stage(parent.GetStage()), parentPath(parent.GetPath()),
+          name(FindAvailableChildName(parent, SdfPrimSpecDefaultName)), typeIndex(FindDefaultNewPrimType()) {}
+
+    void Draw() override {
+        const UsdPrim parent = stage ? stage->GetPrimAtPath(parentPath) : UsdPrim();
+        ImGui::Text("New prim under %s", parentPath.GetText());
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        const bool enterPressed = ImGui::InputText("Name", &name, ImGuiInputTextFlags_EnterReturnsTrue);
+        const auto &types = GetAllSpecTypeNames();
+        const char *typePreview = types[typeIndex].empty() ? "(no type)" : types[typeIndex].c_str();
+        ComboWithFilter("Type", typePreview, types, &typeIndex, ImGuiComboFlags_None);
+
+        const std::string problem = GetNewPrimProblem(parent, name);
+        if (problem.empty()) {
+            ImGui::TextUnformatted(GetNewPrimDestination(parent, name).c_str());
+        } else {
+            ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", problem.c_str());
+        }
+        ImGui::BeginDisabled(!problem.empty());
+        if (ImGui::Button("Create") || (enterPressed && problem.empty())) {
+            CreateNewPrim(stage, parentPath.AppendChild(TfToken(name)), TfToken(types[typeIndex]));
+            CloseModal();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        DrawDialogCancelButton();
+    }
+
+    const char *DialogId() const override { return "New prim"; }
+
+    UsdStageWeakPtr stage;
+    SdfPath parentPath;
+    std::string name;
+    int typeIndex = 0;
+};
+
+/// Menu item opening the new prim dialog, greyed with the reason in the tooltip when the parent can't get children
+static void DrawNewPrimMenuItem(const char *label, const UsdPrim &parent) {
+    const std::string problem = GetNewPrimParentProblem(parent);
+    if (ImGui::MenuItem(label, nullptr, false, problem.empty())) {
+        DrawModalDialog<NewPrimDialog>(parent);
+    }
+    if (!problem.empty() && IsItemHoveredForHint(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", problem.c_str());
+    }
 }
 
 /// Prims opened in the tree at the last frame, filled by the traversal
@@ -286,24 +272,24 @@ static void KeepOpenStateAfterNamespaceEdits(const std::vector<PrimNamespaceEdit
     }
 }
 
-/// Why a drop was refused or an edit failed, opened after the fact since the drag tooltip or the popup is gone
-struct NamespaceEditMessage {
+/// Why a drop was refused or an edit failed, opened after the fact since the drag tooltip or the dialog is gone
+struct NamespaceEditMessageDialog : public ModalDialog {
+    NamespaceEditMessageDialog(const std::string &message) : message(message) {}
+
+    void Draw() override {
+        ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", message.c_str());
+        if (ImGui::Button("Ok")) {
+            CloseModal();
+        }
+        CloseModalOnEscape();
+    }
+
+    const char *DialogId() const override { return "Namespace edit"; }
+
     std::string message;
-    bool openPopup = false;
 };
 
-static NamespaceEditMessage &GetNamespaceEditMessage() {
-    static NamespaceEditMessage failure;
-    return failure;
-}
-
-static constexpr const char *NamespaceEditMessagePopupId = "##NamespaceEditMessagePopup";
-
-static void ShowNamespaceEditMessage(const std::string &message) {
-    NamespaceEditMessage &failure = GetNamespaceEditMessage();
-    failure.message = message;
-    failure.openPopup = true;
-}
+static void ShowNamespaceEditMessage(const std::string &message) { DrawModalDialog<NamespaceEditMessageDialog>(message); }
 
 /// Applies the edits as one undoable command, then selects the selected prims at their new paths.
 /// The open state is applied at the next frame, after the command ran: the new paths exist then.
@@ -364,13 +350,75 @@ static void DrawOtherLayersConfirmation(OtherLayersConfirmation &confirmation, c
     }
 }
 
-/// The prim the rename popup is about to rename, filled when the popup is requested
-struct RenamePrimRequest {
+static constexpr double RenamePreviewTypingPause = 0.3; // seconds
+
+/// New name with the layers it edits, or the reason it can't be renamed
+struct RenamePrimDialog : public ModalDialog {
+    RenamePrimDialog(const UsdPrim &prim, const SdfPathVector &selectedPaths)
+        : stage(prim.GetStage()), path(prim.GetPath()), name(prim.GetName().GetString()), selectedPaths(selectedPaths),
+          previewName(name) {} // Same name: nothing to preview
+
+    void Draw() override {
+        const UsdPrim prim = stage ? stage->GetPrimAtPath(path) : UsdPrim();
+        ImGui::Text("Rename %s", path.GetText());
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        const bool enterPressed =
+            ImGui::InputText("Name", &name, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        if (ImGui::IsItemEdited()) {
+            lastTypingTime = ImGui::GetTime();
+        }
+        const bool typingPaused = ImGui::GetTime() - lastTypingTime > RenamePreviewTypingPause;
+        if (previewName != name && typingPaused) {
+            preview = PreviewRenamePrim(prim, name);
+            previewName = name;
+        }
+        const bool previewIsCurrent = previewName == name;
+
+        // While typing, only the cheap checks are shown
+        const std::string nameProblem = previewIsCurrent ? std::string() : GetRenameNameProblem(prim, name);
+        const std::string description = !nameProblem.empty() ? nameProblem
+                                        : previewIsCurrent  ? FormatNamespaceEditPreview(preview)
+                                                            : std::string("Checking...");
+        if (!nameProblem.empty() || (previewIsCurrent && !preview.errors.empty())) {
+            ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", description.c_str());
+        } else if (!description.empty()) {
+            ImGui::TextUnformatted(description.c_str());
+        } else { // The status line is always there, the dialog doesn't resize when typing starts
+            ImGui::TextDisabled("Type the new name");
+        }
+
+        if (previewIsCurrent) {
+            UpdateOtherLayersConfirmation(confirmation, stage, preview);
+            DrawOtherLayersConfirmation(confirmation, preview, "renamed");
+        }
+
+        const bool canRename = previewIsCurrent ? preview.CanApply() && !confirmation.IsBlocking() : nameProblem.empty();
+        ImGui::BeginDisabled(!canRename);
+        if (ImGui::Button("Rename") || (enterPressed && canRename)) {
+            if (!previewIsCurrent) { // Validated before the typing pause
+                preview = PreviewRenamePrim(prim, name);
+                previewName = name;
+                // The checkbox shows next frame when other layers are edited, and the rename waits for it
+                UpdateOtherLayersConfirmation(confirmation, stage, preview);
+            }
+            if (preview.CanApply() && !confirmation.IsBlocking()) {
+                ApplyNamespaceEdits(stage, preview.edits, selectedPaths);
+                CloseModal();
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        DrawDialogCancelButton();
+    }
+
+    const char *DialogId() const override { return "Rename prim"; }
+
     UsdStageWeakPtr stage;
     SdfPath path;
     std::string name;
     SdfPathVector selectedPaths;
-    bool openPopup = false;
     // The full preview scans the whole stage: it is computed when the typing pauses, not every frame
     std::string previewName;
     NamespaceEditPreview preview;
@@ -378,135 +426,17 @@ struct RenamePrimRequest {
     OtherLayersConfirmation confirmation;
 };
 
-static constexpr double RenamePreviewTypingPause = 0.3; // seconds
-
-static RenamePrimRequest &GetRenamePrimRequest() {
-    static RenamePrimRequest request;
-    return request;
-}
-
-static constexpr const char *RenamePrimPopupId = "##RenamePrimPopup";
-
 static void DrawRenamePrimMenuItem(const UsdPrim &prim, const Selection &selection) {
     const std::string problem = GetNamespaceEditPrimProblem(prim, "renamed");
     if (ImGui::MenuItem("Rename...", nullptr, false, problem.empty())) {
-        RenamePrimRequest &request = GetRenamePrimRequest();
-        request.stage = prim.GetStage();
-        request.path = prim.GetPath();
-        request.name = prim.GetName().GetString();
-        request.selectedPaths = selection.GetSelectedPaths(UsdStageRefPtr(prim.GetStage()));
-        request.openPopup = true;
-        request.previewName = request.name;
-        request.preview = NamespaceEditPreview(); // Same name: nothing to preview
-        request.lastTypingTime = 0.0;
-        request.confirmation = OtherLayersConfirmation();
+        DrawModalDialog<RenamePrimDialog>(prim, selection.GetSelectedPaths(UsdStageRefPtr(prim.GetStage())));
     }
-    if (!problem.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (!problem.empty() && IsItemHoveredForHint(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("%s", problem.c_str());
     }
 }
 
-/// New name with the layers it edits, or the reason it can't be renamed. Drawn at the window level, the context menus only request it.
-static void DrawRenamePrimPopup() {
-    RenamePrimRequest &request = GetRenamePrimRequest();
-    if (request.openPopup) {
-        ImGui::OpenPopup(RenamePrimPopupId);
-        request.openPopup = false;
-    }
-    if (!ImGui::BeginPopup(RenamePrimPopupId)) {
-        return;
-    }
-    const UsdPrim prim = request.stage ? request.stage->GetPrimAtPath(request.path) : UsdPrim();
-    ImGui::Text("Rename %s", request.path.GetText());
-    if (ImGui::IsWindowAppearing()) {
-        ImGui::SetKeyboardFocusHere();
-    }
-    const bool enterPressed = ImGui::InputText("Name", &request.name, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-    if (ImGui::IsItemEdited()) {
-        request.lastTypingTime = ImGui::GetTime();
-    }
-    const bool typingPaused = ImGui::GetTime() - request.lastTypingTime > RenamePreviewTypingPause;
-    if (request.previewName != request.name && typingPaused) {
-        request.preview = PreviewRenamePrim(prim, request.name);
-        request.previewName = request.name;
-    }
-    const bool previewIsCurrent = request.previewName == request.name;
-
-    // While typing, only the cheap checks are shown
-    const std::string nameProblem = previewIsCurrent ? std::string() : GetRenameNameProblem(prim, request.name);
-    const std::string description = !nameProblem.empty() ? nameProblem
-                                    : previewIsCurrent  ? FormatNamespaceEditPreview(request.preview)
-                                                        : std::string("Checking...");
-    if (!nameProblem.empty() || (previewIsCurrent && !request.preview.errors.empty())) {
-        ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", description.c_str());
-    } else if (!description.empty()) {
-        ImGui::TextUnformatted(description.c_str());
-    } else { // The status line is always there, the popup doesn't resize when typing starts
-        ImGui::TextDisabled("Type the new name");
-    }
-
-    if (previewIsCurrent) {
-        UpdateOtherLayersConfirmation(request.confirmation, request.stage, request.preview);
-        DrawOtherLayersConfirmation(request.confirmation, request.preview, "renamed");
-    }
-
-    const bool canRename = previewIsCurrent ? request.preview.CanApply() && !request.confirmation.IsBlocking()
-                                            : nameProblem.empty();
-    ImGui::BeginDisabled(!canRename);
-    if (ImGui::Button("Rename") || (enterPressed && canRename)) {
-        if (!previewIsCurrent) { // Validated before the typing pause
-            request.preview = PreviewRenamePrim(prim, request.name);
-            request.previewName = request.name;
-            // The checkbox shows next frame when other layers are edited, and the rename waits for it
-            UpdateOtherLayersConfirmation(request.confirmation, request.stage, request.preview);
-        }
-        if (request.preview.CanApply() && !request.confirmation.IsBlocking()) {
-            ApplyNamespaceEdits(request.stage, request.preview.edits, request.selectedPaths);
-            ImGui::CloseCurrentPopup();
-        }
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel")) {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-}
-
-/// The prims the delete popup is about to delete, with the preview computed once when the popup is requested
-struct DeletePrimsRequest {
-    UsdStageWeakPtr stage;
-    SdfPathVector selectedPaths;
-    NamespaceEditPreview preview;
-    OtherLayersConfirmation confirmation;
-    bool openPopup = false;
-};
-
-static DeletePrimsRequest &GetDeletePrimsRequest() {
-    static DeletePrimsRequest request;
-    return request;
-}
-
-static constexpr const char *DeletePrimsPopupId = "##DeletePrimsPopup";
 static constexpr size_t DeletePrimsListedMax = 8;
-
-/// Deletes the selection when the prim is selected, otherwise the prim alone, like the other outliner menu items
-static void DrawDeletePrimsMenuItem(const UsdPrim &prim, const SdfPathVector &selectionOrPrim, const Selection &selection) {
-    const UsdStageRefPtr stage = prim.GetStage();
-    const SdfPathVector paths = KeepExistingPrimPaths(stage, selectionOrPrim);
-    const std::string problem = GetNamespaceEditPrimsProblem(stage, paths, "deleted");
-    if (ImGui::MenuItem(paths.size() > 1 ? "Delete prims..." : "Delete...", nullptr, false, problem.empty())) {
-        DeletePrimsRequest &request = GetDeletePrimsRequest();
-        request.stage = stage;
-        request.selectedPaths = selection.GetSelectedPaths(stage);
-        request.preview = PreviewDeletePrims(stage, paths); // Scans the stage once per prim
-        request.confirmation = OtherLayersConfirmation();
-        request.openPopup = true;
-    }
-    if (!problem.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s", problem.c_str());
-    }
-}
 
 static void DrawDeletedPrimList(const NamespaceEditPreview &preview) {
     const size_t count = preview.edits.size();
@@ -523,38 +453,52 @@ static void DrawDeletedPrimList(const NamespaceEditPreview &preview) {
     }
 }
 
-/// What will be deleted, the layers edited, or why it can't be deleted. Drawn at the window level.
-static void DrawDeletePrimsPopup() {
-    DeletePrimsRequest &request = GetDeletePrimsRequest();
-    if (request.openPopup) {
-        ImGui::OpenPopup(DeletePrimsPopupId);
-        request.openPopup = false;
+/// What will be deleted, the layers edited, or why it can't be deleted. The preview is computed once, when the dialog
+/// opens.
+struct DeletePrimsDialog : public ModalDialog {
+    DeletePrimsDialog(const UsdStageRefPtr &stage, const SdfPathVector &paths, const SdfPathVector &selectedPaths)
+        : stage(stage), selectedPaths(selectedPaths), preview(PreviewDeletePrims(stage, paths)) {} // Scans the stage once per prim
+
+    void Draw() override {
+        DrawDeletedPrimList(preview);
+        const std::string description = FormatNamespaceEditPreview(preview);
+        if (!preview.errors.empty()) {
+            ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", description.c_str());
+        } else {
+            ImGui::TextUnformatted(description.c_str());
+            ImGui::TextDisabled("Relationships and connections targeting them are cleared.");
+        }
+        UpdateOtherLayersConfirmation(confirmation, stage, preview);
+        DrawOtherLayersConfirmation(confirmation, preview, "deleted");
+        ImGui::BeginDisabled(!preview.CanApply() || confirmation.IsBlocking());
+        if (ImGui::Button("Delete")) {
+            ApplyNamespaceEdits(stage, preview.edits, selectedPaths);
+            CloseModal();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        DrawDialogCancelButton();
     }
-    if (!ImGui::BeginPopup(DeletePrimsPopupId)) {
-        return;
+
+    const char *DialogId() const override { return "Delete prims"; }
+
+    UsdStageWeakPtr stage;
+    SdfPathVector selectedPaths;
+    NamespaceEditPreview preview;
+    OtherLayersConfirmation confirmation;
+};
+
+/// Deletes the selection when the prim is selected, otherwise the prim alone, like the other outliner menu items
+static void DrawDeletePrimsMenuItem(const UsdPrim &prim, const SdfPathVector &selectionOrPrim, const Selection &selection) {
+    const UsdStageRefPtr stage = prim.GetStage();
+    const SdfPathVector paths = KeepExistingPrimPaths(stage, selectionOrPrim);
+    const std::string problem = GetNamespaceEditPrimsProblem(stage, paths, "deleted");
+    if (ImGui::MenuItem(paths.size() > 1 ? "Delete prims..." : "Delete...", nullptr, false, problem.empty())) {
+        DrawModalDialog<DeletePrimsDialog>(stage, paths, selection.GetSelectedPaths(stage));
     }
-    const NamespaceEditPreview &preview = request.preview;
-    DrawDeletedPrimList(preview);
-    const std::string description = FormatNamespaceEditPreview(preview);
-    if (!preview.errors.empty()) {
-        ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", description.c_str());
-    } else {
-        ImGui::TextUnformatted(description.c_str());
-        ImGui::TextDisabled("Relationships and connections targeting them are cleared.");
+    if (!problem.empty() && IsItemHoveredForHint(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", problem.c_str());
     }
-    UpdateOtherLayersConfirmation(request.confirmation, request.stage, preview);
-    DrawOtherLayersConfirmation(request.confirmation, preview, "deleted");
-    ImGui::BeginDisabled(!preview.CanApply() || request.confirmation.IsBlocking());
-    if (ImGui::Button("Delete")) {
-        ApplyNamespaceEdits(request.stage, preview.edits, request.selectedPaths);
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel")) {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
 }
 
 /// Prims being dragged and the drop target under the mouse.
@@ -568,6 +512,12 @@ struct DragMovePrims {
     std::string cheapProblem;
     bool previewReady = false;
     NamespaceEditPreview preview;
+    // Why the dragged prims can't be moved anywhere, computed when the drag starts
+    std::string movedProblem;
+    // Set by the drop target under the mouse, shown by DrawDragMoveTooltip after the tree
+    bool targetHovered = false;
+    bool refused = false;
+    std::string status;
 };
 
 static DragMovePrims &GetDragMovePrims() {
@@ -578,73 +528,45 @@ static DragMovePrims &GetDragMovePrims() {
 static constexpr const char *StagePrimsPayloadType = "USD_PRIM_PATHS"; // Not the layer outliner "DND" payload
 static constexpr double DropPreviewHoverPause = 0.3; // seconds
 
-static void DrawNamespaceEditMessagePopup() {
-    NamespaceEditMessage &failure = GetNamespaceEditMessage();
-    if (failure.openPopup) {
-        ImGui::OpenPopup(NamespaceEditMessagePopupId);
-        failure.openPopup = false;
-    }
-    if (!ImGui::BeginPopup(NamespaceEditMessagePopupId)) {
-        return;
-    }
-    ImGui::TextColored(ImVec4(ColorHighlight), ICON_FA_LOCK " %s", failure.message.c_str());
-    if (ImGui::Button("Ok")) {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-}
-
 /// A drop editing layers other than the edit target, applied once the user confirmed it
-struct ConfirmDropRequest {
+struct ConfirmDropDialog : public ModalDialog {
+    ConfirmDropDialog(const DragMovePrims &drag)
+        : stage(drag.stage), targetParent(drag.targetParent), selectedPaths(drag.selectedPaths), preview(drag.preview) {}
+
+    void Draw() override {
+        if (preview.edits.size() == 1) {
+            ImGui::Text("Move %s under %s", preview.edits.front().oldPath.GetText(), targetParent.GetText());
+        } else {
+            ImGui::Text("Move %zu prims under %s", preview.edits.size(), targetParent.GetText());
+        }
+        ImGui::TextUnformatted(FormatNamespaceEditPreview(preview).c_str());
+        UpdateOtherLayersConfirmation(confirmation, stage, preview);
+        DrawOtherLayersConfirmation(confirmation, preview, "moved");
+        ImGui::BeginDisabled(!preview.CanApply() || confirmation.IsBlocking());
+        if (ImGui::Button("Move")) {
+            ApplyNamespaceEdits(stage, preview.edits, selectedPaths);
+            CloseModal();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        DrawDialogCancelButton();
+    }
+
+    const char *DialogId() const override { return "Move prims"; }
+
     UsdStageWeakPtr stage;
     SdfPath targetParent;
     SdfPathVector selectedPaths;
     NamespaceEditPreview preview;
     OtherLayersConfirmation confirmation;
-    bool openPopup = false;
 };
 
-static ConfirmDropRequest &GetConfirmDropRequest() {
-    static ConfirmDropRequest request;
-    return request;
-}
-
-static constexpr const char *ConfirmDropPopupId = "##ConfirmDropPopup";
-
-static void DrawConfirmDropPopup() {
-    ConfirmDropRequest &request = GetConfirmDropRequest();
-    if (request.openPopup) {
-        ImGui::OpenPopup(ConfirmDropPopupId);
-        request.openPopup = false;
-    }
-    if (!ImGui::BeginPopup(ConfirmDropPopupId)) {
-        return;
-    }
-    const NamespaceEditPreview &preview = request.preview;
-    if (preview.edits.size() == 1) {
-        ImGui::Text("Move %s under %s", preview.edits.front().oldPath.GetText(), request.targetParent.GetText());
-    } else {
-        ImGui::Text("Move %zu prims under %s", preview.edits.size(), request.targetParent.GetText());
-    }
-    ImGui::TextUnformatted(FormatNamespaceEditPreview(preview).c_str());
-    UpdateOtherLayersConfirmation(request.confirmation, request.stage, preview);
-    DrawOtherLayersConfirmation(request.confirmation, preview, "moved");
-    ImGui::BeginDisabled(!preview.CanApply() || request.confirmation.IsBlocking());
-    if (ImGui::Button("Move")) {
-        ApplyNamespaceEdits(request.stage, preview.edits, request.selectedPaths);
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel")) {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-}
-
 /// Starts dragging the selection when the prim is selected, otherwise the prim alone. Call right after the prim tree node.
+/// The tooltip is drawn by DrawDragMoveTooltip: when the source and the target both draw one, the last one drawn in the
+/// frame hides the other, and the target is above or below the source.
 static void HandlePrimDragSource(const UsdPrim &prim, const Selection &selection) {
-    if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoDisableHover | ImGuiDragDropFlags_SourceNoHoldToOpenOthers)) {
+    if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoDisableHover | ImGuiDragDropFlags_SourceNoHoldToOpenOthers |
+                                    ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
         return;
     }
     DragMovePrims &drag = GetDragMovePrims();
@@ -656,15 +578,44 @@ static void HandlePrimDragSource(const UsdPrim &prim, const Selection &selection
         drag.selectedPaths = selection.GetSelectedPaths(stage);
         const SdfPathVector dragged = selection.IsSelected(stage, prim.GetPath()) ? drag.selectedPaths : SdfPathVector{prim.GetPath()};
         drag.paths = KeepTopMostPaths(KeepExistingPrimPaths(stage, dragged)); // Children follow their dragged parent
+        drag.movedProblem = GetMovedPrimsProblem(stage, drag.paths);
         const char marker = 0; // The paths are in DragMovePrims, ImGui copies the payload bytes
         ImGui::SetDragDropPayload(StagePrimsPayloadType, &marker, sizeof(marker), ImGuiCond_Once);
     }
-    if (drag.paths.size() == 1) {
-        ImGui::Text("Moving %s", drag.paths.front().GetText());
-    } else {
-        ImGui::Text("Moving %zu prims", drag.paths.size());
-    }
     ImGui::EndDragDropSource();
+}
+
+static bool IsDraggingPrims() {
+    const ImGuiPayload *payload = ImGui::GetDragDropPayload();
+    return payload && payload->IsDataType(StagePrimsPayloadType);
+}
+
+static std::string GetDraggedPrimsText(const DragMovePrims &drag) {
+    return drag.paths.size() == 1 ? "Moving " + drag.paths.front().GetString()
+                                  : "Moving " + std::to_string(drag.paths.size()) + " prims";
+}
+
+/// The single tooltip of the drag: why the prims can't be moved at all, the drop status over a target, the dragged
+/// prims elsewhere. Call after the tree.
+static void DrawDragMoveTooltip() {
+    DragMovePrims &drag = GetDragMovePrims();
+    if (!IsDraggingPrims()) {
+        drag.targetHovered = false;
+        return;
+    }
+    ImGui::BeginTooltip();
+    if (!drag.movedProblem.empty()) { // Refused wherever the mouse is
+        ImGui::SetMouseCursor(ImGuiMouseCursor_NotAllowed);
+        ImGui::TextColored(ImVec4(ColorRefused), ICON_FA_BAN " %s", drag.movedProblem.c_str());
+    } else if (!drag.targetHovered) {
+        ImGui::TextUnformatted(GetDraggedPrimsText(drag).c_str());
+    } else if (drag.refused) {
+        ImGui::TextColored(ImVec4(ColorRefused), ICON_FA_BAN " %s", drag.status.c_str());
+    } else {
+        ImGui::TextUnformatted(drag.status.c_str());
+    }
+    ImGui::EndTooltip();
+    drag.targetHovered = false; // The target sets it again next frame if still hovered
 }
 
 /// Restarts the hover pause and the cheap checks when the mouse reaches another target
@@ -719,13 +670,7 @@ static void DropPrims(DragMovePrims &drag) {
     if (drag.preview.CanApply() && !EditsOtherLayers(drag)) {
         ApplyNamespaceEdits(drag.stage, drag.preview.edits, drag.selectedPaths);
     } else if (drag.preview.CanApply()) {
-        ConfirmDropRequest &request = GetConfirmDropRequest();
-        request.stage = drag.stage;
-        request.targetParent = drag.targetParent;
-        request.selectedPaths = drag.selectedPaths;
-        request.preview = drag.preview;
-        request.confirmation = OtherLayersConfirmation();
-        request.openPopup = true;
+        DrawModalDialog<ConfirmDropDialog>(drag);
     } else if (!drag.preview.errors.empty()) {
         ShowNamespaceEditMessage(FormatNamespaceEditPreview(drag.preview));
     } // No edits and no errors: nothing to move
@@ -743,12 +688,11 @@ static void HandlePrimDropTarget(const UsdStageRefPtr &stage, const SdfPath &new
         if (drag.cheapProblem.empty() && ImGui::GetTime() - drag.targetHoverStart > DropPreviewHoverPause) {
             ComputeDropPreview(drag);
         }
-        bool refused = false;
-        const std::string status = GetDropStatus(drag, refused);
-        if (refused) {
+        drag.status = GetDropStatus(drag, drag.refused);
+        drag.targetHovered = true;
+        if (drag.refused) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_NotAllowed);
         }
-        ImGui::SetTooltip("%s", status.c_str());
         if (payload->IsDelivery()) {
             DropPrims(drag);
         }
@@ -1021,7 +965,7 @@ static void DrawStageTreeRow(const UsdStageRefPtr &stage, Selection &selectedPat
     ImGui::TableSetColumnIndex(0);
 
     // Selecting the stage row selects the pseudo root, the property editor then shows the stage metadata
-    const bool isSelected = selectedPaths.IsSelected(stage, SdfPath::AbsoluteRootPath());
+    const bool isSelected = selectedPaths.IsStageSelected(stage);
     bool clicked = DrawBackgroundSelection(stage->GetPseudoRoot(), isSelected);
 
     ImGuiTreeNodeFlags nodeflags = ImGuiTreeNodeFlags_OpenOnArrow;
@@ -1289,11 +1233,7 @@ void DrawStageOutliner(UsdStageRefPtr stage, Selection &selectedPaths) {
     if (ImGui::Button("Select next") || enterPressed) {
         ExecuteAfterDraw<EditorFindPrim>(std::string(patternBuffer), useRegex);
     }
-    DrawNewPrimPopup();
 #ifdef USDTWEAK_HAS_NAMESPACE_EDITOR
-    DrawRenamePrimPopup();
-    DrawDeletePrimsPopup();
-    DrawNamespaceEditMessagePopup();
-    DrawConfirmDropPopup();
+    DrawDragMoveTooltip();
 #endif
 }
