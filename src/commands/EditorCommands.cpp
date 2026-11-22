@@ -44,6 +44,10 @@ struct EditorSetSelection : public EditorCommand {
 
     EditorSetSelection(SdfLayerHandle layer, SdfPath path) : _layer(layer), _path(path) {}
 
+    /// Several stage paths at once, the first one is the anchor shown in the property editor
+    EditorSetSelection(const UsdStageWeakPtr &stage, SdfPathVector paths)
+        : _stageRefPtr(stage), _path(paths.empty() ? SdfPath() : paths.front()), _otherPaths(paths.begin() + (paths.empty() ? 0 : 1), paths.end()) {}
+
     ~EditorSetSelection() override {}
 
     // TODO: wip, we want an "Selection" object to be passed around
@@ -57,7 +61,7 @@ struct EditorSetSelection : public EditorCommand {
             }
             if (_stageRefPtr) {
                 _editor->SetCurrentStage(_stageRefPtr);
-                _editor->SetStagePathSelection(_path);
+                _editor->SetStagePathsSelection(_path, _otherPaths);
             }
         }
         return false;
@@ -65,11 +69,13 @@ struct EditorSetSelection : public EditorCommand {
     UsdStageRefPtr _stageRefPtr;
     SdfLayerRefPtr _layer;
     SdfPath _path;
+    SdfPathVector _otherPaths;
 };
 template void ExecuteAfterDraw<EditorSetSelection>(UsdStageWeakPtr, SdfPath);
 template void ExecuteAfterDraw<EditorSetSelection>(UsdStageRefPtr, SdfPath);
 template void ExecuteAfterDraw<EditorSetSelection>(SdfLayerRefPtr, SdfPath);
 template void ExecuteAfterDraw<EditorSetSelection>(SdfLayerHandle, SdfPath);
+template void ExecuteAfterDraw<EditorSetSelection>(UsdStageWeakPtr, SdfPathVector);
 
 // TODO use setlayerlocation instead ???
 struct EditorSelectAttributePath : public EditorCommand {

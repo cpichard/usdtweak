@@ -40,14 +40,14 @@ void PreferencesModalDialog::Draw() {
             ImGui::Separator();
             ImGui::Checkbox("Show splash screen at startup", &editor.GetShowSplashScreen());
             ImGui::Checkbox("Dropped files open as stages", &editor.GetDropOpensStage());
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("On (default): a file dragged from the desktop or file manager opens as a stage,\n"
                                   "shown in the viewport and stage outliner. Off: it opens as a layer, shown in the\n"
                                   "layer editors. Dropping an empty file always creates a new stage.");
             }
             EditorSettings &editorSettings = ResourcesLoader::GetEditorSettings();
             ImGui::Checkbox("Hide cursor when navigating", &editorSettings._hideCursorWhenNavigating);
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("On (default): the cursor is hidden and stays put while orbiting the camera or\n"
                                   "panning the connection editor. Off: the cursor stays visible and moves with the\n"
                                   "mouse. Turn it off if the cursor jumps around when you start navigating.");
@@ -59,13 +59,13 @@ void PreferencesModalDialog::Draw() {
             ViewportSettings &viewportSettings = ResourcesLoader::GetViewportSettings();
             ImGui::Checkbox("Texture On by default", &viewportSettings._useMaterials);
             ImGui::Checkbox("Snap playback to whole frames", &viewportSettings._snapPlaybackToFrame);
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("On (default): playback lands on whole frames, keeping topology-varying\n"
                                   "meshes coherent. Off: fractional/subframe timecodes are sent to Hydra so\n"
                                   "motion blur can be introspected between frames.");
             }
             ImGui::Checkbox("Render with the stage camera", &viewportSettings._renderWithStageCamera);
-            if (ImGui::IsItemHovered()) {
+            if (IsItemHoveredForHint()) {
                 ImGui::SetTooltip("On: when looking through a stage camera, the renderer reads the camera prim\n"
                                   "itself, so motion blur and the other camera parameters are honoured.\n"
                                   "Off (default): the renderer only receives the view and projection matrices.");

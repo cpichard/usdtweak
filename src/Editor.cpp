@@ -899,6 +899,17 @@ void Editor::SetStagePathSelection(const SdfPath &primPath) {
     UsdTweakSelectionChangedNotice().Send();
 }
 
+void Editor::SetStagePathsSelection(const SdfPath &anchorPath, const SdfPathVector &otherPaths) {
+    const UsdStageRefPtr stage = GetCurrentStage();
+    _selection.SetSelected(stage, anchorPath);
+    for (const SdfPath &path : otherPaths) {
+        _selection.AddSelected(stage, path);
+    }
+    SetCurrentUsdPrim(stage, anchorPath);
+    RevealWindow(EditorWindow::StagePropertyEditor);
+    UsdTweakSelectionChangedNotice().Send();
+}
+
 void Editor::SetPreviousPrim() {
     if (_primHistoryPointer > 0) {
         --_primHistoryPointer;
@@ -1251,11 +1262,12 @@ void Editor::Draw() {
 
     if (_settings._showPropertyEditor) {
         TRACE_SCOPE(UsdPrimPropertiesWindowTitle);
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
-        // WIP windowFlags |= ImGuiWindowFlags_MenuBar;
+        const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar; // Show menu
         ImGui::Begin(UsdPrimPropertiesWindowTitle, &_settings._showPropertyEditor, windowFlags);
         if (GetCurrentStage()) {
-            const SdfPath anchorPath = _selection.GetAnchorPrimPath(GetCurrentStage());
+            // A selected stage shows its metadata, the pseudo root stands for the stage in the property editor
+            const SdfPath anchorPath = _selection.IsStageSelected(GetCurrentStage()) ? SdfPath::AbsoluteRootPath()
+                                                                                     : _selection.GetAnchorPrimPath(GetCurrentStage());
             SetCurrentUsdPrim(GetCurrentStage(), anchorPath);
             auto prim = GetCurrentStage()->GetPrimAtPath(_lastShownPrimEntry.second);
             DrawUsdPrimProperties(prim, GetViewport().GetCurrentTimeCode());

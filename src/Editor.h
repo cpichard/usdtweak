@@ -75,6 +75,9 @@ class Editor {
     void SetCurrentUsdPrim(UsdStageRefPtr stage, SdfPath primPath);
     void SetStagePathSelection(const SdfPath &primPath);
     void AddStagePathSelection(const SdfPath &primPath);
+    /// Selects several stage paths at once, anchorPath is shown in the property editor. The window is revealed and the
+    /// selection change notified once for all the paths.
+    void SetStagePathsSelection(const SdfPath &anchorPath, const SdfPathVector &otherPaths);
 
     /// Makes the window showing the result of an action visible: selects its dock tab, raises it when floating, and
     /// opens it when closed if openIfClosed (explicit navigations only, a selection change must not reopen a window the

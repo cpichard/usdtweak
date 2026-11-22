@@ -21,6 +21,8 @@ target_sources(usdtweak PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ImGuiHelpers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdHelpers.h
     ${CMAKE_CURRENT_SOURCE_DIR}/UsdHelpers.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/NamespaceEdits.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/NamespaceEdits.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Selection.h
     ${CMAKE_CURRENT_SOURCE_DIR}/SplashScreen.h
