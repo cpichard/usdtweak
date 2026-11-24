@@ -144,15 +144,16 @@ LLMResponse AnthropicBackend::Send(const Conversation& conv,
     if (_wireLog) _wireLog->Request("anthropic", _model, body);
 
     // Shared chat read timeout (see kChatTimeoutSeconds in LLMBackend.h).
+    // Every attempt goes to the wire log, so retried 429/529 responses show up too.
     HttpResponse http = PostWithRetry([&] {
-        return HttpPostJson("https://api.anthropic.com/v1/messages",
-                            headers, body, kChatTimeoutSeconds);
+        HttpResponse attempt = HttpPostJson("https://api.anthropic.com/v1/messages",
+                                            headers, body, kChatTimeoutSeconds);
+        if (_wireLog)
+            _wireLog->Response(attempt.status,
+                               attempt.status == 0 ? "[transport error] " + attempt.error
+                                                   : attempt.body);
+        return attempt;
     });
-
-    if (_wireLog)
-        _wireLog->Response(http.status,
-                           http.status == 0 ? "[transport error] " + http.error
-                                            : http.body);
 
     if (http.status == 0) {
         LLMResponse r;

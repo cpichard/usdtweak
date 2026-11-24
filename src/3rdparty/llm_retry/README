@@ -1,0 +1,2 @@
+llm_retry.hpp is llm-retry v0.3.0 (https://github.com/Mattbusel/llm-retry), MIT License (see LICENSE).
+Used by the Twiki addon to retry 408/429/5xx/529 responses on chat calls.
