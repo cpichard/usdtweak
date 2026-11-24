@@ -123,6 +123,7 @@ usdtweak_add_addon(Twiki
 # httplib headers + src/commands/ (UsdToolDispatcher includes "Commands.h").
 target_include_directories(usdtweak PRIVATE
     ${cpp_httplib_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/llm_retry
     ${CMAKE_SOURCE_DIR}/src/commands
 )
 target_compile_definitions(usdtweak PRIVATE ${_twiki_tls_define})
@@ -186,6 +187,7 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${PXR_INCLUDE_DIRS}
             ${cpp_httplib_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/llm_retry
             ${CMAKE_SOURCE_DIR}/src/commands
             ${CMAKE_SOURCE_DIR}/src
         )
@@ -213,6 +215,11 @@ if (USDTWEAK_BUILD_TWIKI_TESTS)
     _twiki_add_test(test_js_helpers TRUE
         ${CMAKE_CURRENT_SOURCE_DIR}/JsHelpers.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestJsHelpers.cpp
+    )
+
+    _twiki_add_test(test_http_retry TRUE
+        ${CMAKE_CURRENT_SOURCE_DIR}/HttpClient.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/TestHttpRetry.cpp
     )
 
     _twiki_add_test(test_backend_format TRUE

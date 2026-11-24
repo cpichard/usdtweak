@@ -1,3 +1,4 @@
+#define LLM_RETRY_IMPLEMENTATION
 #include "HttpClient.h"
 
 // cpp-httplib relies on these defines being set BEFORE the header is included.
@@ -156,6 +157,21 @@ HttpResponse HttpGetJson(const std::string&             url,
     out.status = result->status;
     out.body   = result->body;
     return out;
+}
+
+HttpResponse PostWithRetry(const std::function<HttpResponse()>& post,
+                           const llm::RetryConfig&              config) {
+    HttpResponse last;
+    try {
+        return llm::with_retry<HttpResponse>([&] {
+            last = post();
+            if (last.status != 0 && (last.status < 200 || last.status >= 300))
+                throw llm::LLMError{last.status, last.body, true};
+            return last;
+        }, config).value;
+    } catch (const llm::LLMError&) {
+        return last;
+    }
 }
 
 } // namespace UsdAgent

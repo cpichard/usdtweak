@@ -62,12 +62,15 @@ LLMResponse OpenAIBackend::Send(const Conversation& conv,
 
     if (_wireLog) _wireLog->Request("openai-compatible", _model, body);
 
-    HttpResponse http = HttpPostJson(url, headers, body, kChatTimeoutSeconds);
-
-    if (_wireLog)
-        _wireLog->Response(http.status,
-                           http.status == 0 ? "[transport error] " + http.error
-                                            : http.body);
+    // Every attempt goes to the wire log, so retried 429/529 responses show up too.
+    HttpResponse http = PostWithRetry([&] {
+        HttpResponse attempt = HttpPostJson(url, headers, body, kChatTimeoutSeconds);
+        if (_wireLog)
+            _wireLog->Response(attempt.status,
+                               attempt.status == 0 ? "[transport error] " + attempt.error
+                                                   : attempt.body);
+        return attempt;
+    });
 
     if (http.status == 0) {
         LLMResponse r;
